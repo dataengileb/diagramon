@@ -62,6 +62,8 @@ de verdad. Ese tipo de información no debería viajar a un servicio de terceros
 - 🏷️ **Clasificación de datos y cifrado en tránsito**: marca nodos y conexiones como *Público, Interno, Confidencial, PII, PCI* o *PHI*, indica si cada conexión va cifrada 🔒 o no, y recibe un aviso en rojo cuando datos sensibles viajan sin cifrar.
 - ⌨️ **Diagrama como código**: escribe en texto y el lienzo se actualiza al momento. Texto, JSON y lienzo siempre sincronizados.
 - 🗂️ **Versiones y ambientes**: guarda el lienzo como *Versión 1, 2, 3…* o como *Desarrollo, Calidad, Producción*, ábrelos cuando quieras y compáralos con el lienzo: lo nuevo en verde, lo cambiado en amarillo y lo eliminado como fantasma rojo.
+- 📐 **Conectores en ángulo recto**: cambia entre curvas y líneas en ángulo recto que esquivan los nodos, para todo el diagrama o para una sola conexión.
+- 🧾 **Leyenda y cajetín** en las exportaciones SVG y PNG: estilos de conexión, colores de los componentes, clasificaciones de datos, autor, versión, fecha y costo estimado. Listo para entregar.
 - 🔦 **Resaltar el flujo** de un componente: vecinos, destinos, orígenes o todo.
 - 🌐 **Inglés o español**: la app abre en inglés; el botón 🌐 de la barra superior (o la tecla **`L`**) la pasa a español y recuerda tu elección.
 - 🌗 **Modo oscuro** por defecto, **modo claro** con una tecla y paletas pastel (Pastel, Sorbete, Nórdico).
@@ -157,7 +159,12 @@ Abre la pestaña **Versiones**.
 
 - **Flujo** (o **`P`**) ilumina el diagrama paso a paso, de los clientes a los datos.
 - **Ordenar** recoloca todo automáticamente. **Ajustar** (o **`F`**) centra el diagrama.
+- **Ángulos** (o **`E`**) cambia las conexiones entre curvas y líneas en ángulo recto que esquivan los nodos.
+  Para cambiar una sola conexión, selecciónala y elige su **Línea**.
 - **Exportar** › SVG, PNG o JSON. Guarda el JSON para volver a abrirlo más tarde con **Importar**.
+- El menú **Exportar** también tiene **Leyenda y cajetín** (activado por defecto), con los campos **Autor** y **Versión**.
+  Los archivos SVG y PNG llevan entonces un panel abajo con solo lo que usa el diagrama (estilos de conexión, candados,
+  colores de los componentes, clasificaciones de datos) y un cajetín con título, autor, versión, fecha y costo estimado.
 
 ### Atajos de teclado
 
@@ -173,6 +180,7 @@ Abre la pestaña **Versiones**.
 | `P` | Reproducir el flujo |
 | `T` | Cambiar entre modo oscuro y claro |
 | `L` | Cambiar entre inglés y español |
+| `E` | Cambiar entre conectores curvos y en ángulo recto |
 | `Esc` | Cancelar o quitar la selección |
 
 ---
@@ -184,6 +192,9 @@ La forma más rápida de dibujar. Escribe y el lienzo se actualiza solo. Todo se
 ```text
 título: Tienda online
 dirección: LR
+líneas: codos
+autor: Equipo de plataforma
+versión: 1.2
 
 grupo aws "AWS" color=melocoton {
   api: API Gateway [aws/apigateway] "REST"
@@ -206,6 +217,8 @@ api ~> cola : eventos
 | `grupo id "Nombre" color=… { … }` | Grupo; se pueden anidar |
 | `a -> b` · `a => b` · `a ~> b` · `a ..> b` | Petición · datos · evento · opcional |
 | `a -> b -> c : etiqueta` | Cadena; la etiqueta va en la última flecha |
+| `líneas: codos` · `a -> b : x línea=curva` | Líneas en ángulo recto o curvas, para el diagrama o una conexión |
+| `autor: …` · `versión: …` | Salen en el cajetín de la exportación |
 | `# …` o `// …` | Comentario |
 
 Las palabras clave funcionan en los dos idiomas: `title`/`título`, `group`/`grupo`, `cost`/`costo`, `/month`/`/mes`, `/hour`/`/hora`, `/year`/`/año`, `/3years`/`/3años`.
@@ -230,6 +243,7 @@ El texto no guarda posiciones: los nodos que ya existían no se mueven y los nue
 
 - Solo `id` y `type` son necesarios en los nodos. Sin `x`/`y` se colocan solos.
 - `costPeriod`: `hour`, `year` o `multi` (con `costYears`). Sin `costPeriod` el costo es mensual.
+- `routing: "elbow"` pone líneas en ángulo recto en todo el diagrama; `route` (`curved` o `elbow`) lo cambia en una conexión. `meta` guarda `author` y `version`.
 - `data` es la lista de clasificaciones (`["pii", "pci"]`) en nodos y conexiones. `encrypted` (`true` o `false`) es el cifrado en tránsito de una conexión.
 - El archivo exportado también lleva `versions` (cada una con `kind`: `version` o `env`, y su propio `diagram`) y `active`.
 - `color` acepta una clave de la paleta o cualquier color CSS.

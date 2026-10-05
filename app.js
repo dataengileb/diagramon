@@ -172,6 +172,12 @@
     raw = raw && typeof raw === 'object' ? raw : {};
     const m = { title: String(raw.title || T('model.untitled')), groups: [], nodes: [], edges: [] };
     if (raw.direction === 'LR' || raw.direction === 'TB') m.direction = raw.direction;
+    if (raw.routing === 'elbow') m.routing = 'elbow';
+    if (raw.meta && typeof raw.meta === 'object') {
+      const meta = {};
+      ['author', 'version'].forEach(k => { if (raw.meta[k] != null && String(raw.meta[k]).trim()) meta[k] = String(raw.meta[k]).trim(); });
+      if (Object.keys(meta).length) m.meta = meta;
+    }
     const used = new Set();
     const take = (id, prefix, i) => {
       let v = id != null && id !== '' ? String(id) : `${prefix}${i + 1}`;
@@ -216,6 +222,7 @@
       if (cleanData(o.data).length) o.data = cleanData(o.data); else delete o.data;
       const enc = typeof o.encrypted === 'string' ? (/^(yes|true|si|sí)$/i.test(o.encrypted) ? true : /^(no|false)$/i.test(o.encrypted) ? false : null) : o.encrypted;
       if (enc === true || enc === false) o.encrypted = enc; else delete o.encrypted;
+      if (o.route !== 'curved' && o.route !== 'elbow') delete o.route;
       m.edges.push(o);
     });
     m.versions = normVersions(raw.versions);
@@ -507,6 +514,53 @@
     const k = Math.max(30, Math.abs(ey - sy) * 0.5);
     return `M${sx},${sy} C${sx},${sy + dir * k} ${ex},${ey - dir * k} ${ex},${ey}`;
   }
+  /* ---------- conectores en ángulo recto que esquivan los nodos ---------- */
+  // Prueba varios caminos de 1, 3 o 5 tramos y se queda con el más corto que no pisa ningún nodo
+  function elbowPath(a, b, off, obstacles) {
+    const hgap = Math.max(b.x - (a.x + a.w), a.x - (b.x + b.w));
+    const vgap = Math.max(b.y - (a.y + a.h), a.y - (b.y + b.h));
+    const flip = hgap < vgap; // en vertical se trabaja con x e y cambiados
+    const T = flip ? q => ({ x: q.y, y: q.x, w: q.h, h: q.w }) : q => q;
+    const A = T(a), B = T(b), obs = obstacles.map(T);
+    const dir = B.x + B.w / 2 >= A.x + A.w / 2 ? 1 : -1;
+    const sx = dir > 0 ? A.x + A.w : A.x, ex = dir > 0 ? B.x : B.x + B.w;
+    const sy = A.y + A.h / 2 + off * dir, ey = B.y + B.h / 2 + off * dir;
+    const M = 16, STUB = 18, pad = 10;
+    const blocks = (x1, y1, x2, y2, list) => list.some(o => {
+      const l = o.x - pad, t = o.y - pad, rr = o.x + o.w + pad, bb = o.y + o.h + pad;
+      return Math.max(x1, x2) > l && Math.min(x1, x2) < rr && Math.max(y1, y2) > t && Math.min(y1, y2) < bb;
+    });
+    // El primer y el último tramo salen del nodo de origen y llegan al de destino: esos dos no cuentan
+    const hits = pts => pts.slice(1).reduce((n, q, i) => n + (blocks(pts[i][0], pts[i][1], q[0], q[1], i === 0 || i === pts.length - 2 ? obs : [...obs, A, B]) ? 1 : 0), 0);
+    const cands = [];
+    if (Math.abs(sy - ey) < 1) cands.push([[sx, sy], [ex, ey]]);
+    const lo = Math.min(sx, ex), hi = Math.max(sx, ex);
+    if ((ex - sx) * dir > STUB * 2) {
+      [(sx + ex) / 2, ...obs.flatMap(o => [o.x - M, o.x + o.w + M])].filter(x => x > lo + STUB - 1 && x < hi - STUB + 1)
+        .forEach(x => cands.push([[sx, sy], [x, sy], [x, ey], [ex, ey]]));
+    }
+    const x1 = sx + dir * STUB, x2 = ex - dir * STUB;
+    [A, B, ...obs].flatMap(o => [o.y - M, o.y + o.h + M]).forEach(y => cands.push([[sx, sy], [x1, sy], [x1, y], [x2, y], [x2, ey], [ex, ey]]));
+    const score = pts => pts.slice(1).reduce((n, q, i) => n + Math.abs(q[0] - pts[i][0]) + Math.abs(q[1] - pts[i][1]), 0) + (pts.length - 2) * 40 + hits(pts) * 1e5;
+    let best = cands[0], bs = Infinity;
+    cands.forEach(c => { const v = score(c); if (v < bs) { bs = v; best = c; } });
+    return roundPath(best.map(([x, y]) => (flip ? [y, x] : [x, y])));
+  }
+  // Une los puntos con esquinas redondeadas y quita los que sobran (repetidos o en línea recta)
+  function roundPath(pts, rad = 10) {
+    pts = pts.filter((q, i) => !i || Math.hypot(q[0] - pts[i - 1][0], q[1] - pts[i - 1][1]) > 0.5);
+    pts = pts.filter((q, i) => !i || i === pts.length - 1 || !((pts[i - 1][0] === q[0] && q[0] === pts[i + 1][0]) || (pts[i - 1][1] === q[1] && q[1] === pts[i + 1][1])));
+    let d = `M${pts[0][0]},${pts[0][1]}`;
+    for (let i = 1; i < pts.length - 1; i++) {
+      const [px, py] = pts[i - 1], [x, y] = pts[i], [nx, ny] = pts[i + 1];
+      const k = Math.min(rad, Math.hypot(x - px, y - py) / 2, Math.hypot(nx - x, ny - y) / 2);
+      d += ` L${x - Math.sign(x - px) * k},${y - Math.sign(y - py) * k} Q${x},${y} ${x + Math.sign(nx - x) * k},${y + Math.sign(ny - y) * k}`;
+    }
+    const [lx, ly] = pts[pts.length - 1];
+    return `${d} L${lx},${ly}`;
+  }
+  const routeOf = e => e.route || S.model.routing || 'curved';
+
   const loopPath = a => `M${a.x + a.w - 34},${a.y} C${a.x + a.w - 34},${a.y - 56} ${a.x + a.w + 52},${a.y - 30} ${a.x + a.w},${a.y + a.h / 2 - 6}`;
 
   function updateGeometry() {
@@ -515,9 +569,11 @@
     m.nodes.forEach(n => R.nodes.get(n.id)?.setAttribute('transform', `translate(${n.x} ${n.y})`));
 
     const pairs = new Set(m.edges.map(e => e.from + '\0' + e.to));
+    const allRects = m.nodes.map(n => ({ id: n.id, ...rect(n.id) }));
     R.edges.forEach(r => {
-      const e = r.e, a = rect(e.from), b = rect(e.to);
-      const d = e.from === e.to ? loopPath(a) : curvePath(a, b, pairs.has(e.to + '\0' + e.from) ? 7 : 0);
+      const e = r.e, a = rect(e.from), b = rect(e.to), off = pairs.has(e.to + '\0' + e.from) ? 7 : 0;
+      const d = e.from === e.to ? loopPath(a)
+        : routeOf(e) === 'elbow' ? elbowPath(a, b, off, allRects.filter(o => o.id !== e.from && o.id !== e.to)) : curvePath(a, b, off);
       r.hit.setAttribute('d', d);
       r.line.setAttribute('d', d);
       r.len = r.line.getTotalLength();
@@ -735,7 +791,7 @@
   const ORDER = {
     group: ['id', 'label', 'color', 'parent'],
     node: ['id', 'label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'x', 'y', 'cost', 'costPeriod', 'costYears', 'data', 'desc'],
-    edge: ['id', 'from', 'to', 'label', 'style', 'color', 'data', 'encrypted']
+    edge: ['id', 'from', 'to', 'label', 'style', 'route', 'color', 'data', 'encrypted']
   };
   function serialize(m, full = false) {
     const ordered = (o, keys) => { const r = {}; keys.forEach(k => k in o && (r[k] = o[k])); Object.keys(o).forEach(k => k in r || (r[k] = o[k])); return r; };
@@ -748,6 +804,8 @@
       : `  "${name}": []`;
     const head = [`  "title": ${JSON.stringify(m.title)}`];
     if (m.direction) head.push(`  "direction": ${JSON.stringify(m.direction)}`);
+    if (m.routing) head.push(`  "routing": ${JSON.stringify(m.routing)}`);
+    if (m.meta) head.push(`  "meta": ${JSON.stringify(m.meta)}`);
     const body = [...head, arr('groups', m.groups, ORDER.group), arr('nodes', m.nodes, ORDER.node), arr('edges', m.edges, ORDER.edge)];
     // El archivo exportado lleva también las versiones; el editor JSON no las muestra
     if (full && m.versions?.length) {
@@ -802,6 +860,7 @@
     if (S.connecting && !S.model.nodes.some(n => n.id === S.connecting)) cancelConnect();
     render(!!opts.animate);
     S.model.nodes.forEach(n => posCache.set(n.id, { x: n.x, y: n.y }));
+    updateRouteButton();
     writeEditors(opts.fromEditor, !opts.fromEditor);
     renderInspector();
     save();
@@ -1122,7 +1181,7 @@
   const findVersion = id => S.model.versions.find(v => v.id === id);
   // Solo lo que se dibuja: sin versiones y con posiciones redondeadas
   const snapshotOf = m => {
-    const d = clone({ title: m.title, ...(m.direction ? { direction: m.direction } : {}), groups: m.groups, nodes: m.nodes, edges: m.edges });
+    const d = clone({ title: m.title, ...(m.direction ? { direction: m.direction } : {}), ...(m.routing ? { routing: m.routing } : {}), groups: m.groups, nodes: m.nodes, edges: m.edges });
     d.nodes.forEach(n => { n.x = Math.round(n.x); n.y = Math.round(n.y); });
     return d;
   };
@@ -1187,7 +1246,7 @@
   // Diferencias entre lo guardado (a) y el lienzo (b). La posición no cuenta como cambio.
   const DIFF_FIELDS = {
     node: ['label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'cost', 'costPeriod', 'costYears', 'data', 'desc'],
-    edge: ['label', 'style', 'color', 'data', 'encrypted'],
+    edge: ['label', 'style', 'route', 'color', 'data', 'encrypted'],
     group: ['label', 'color', 'parent']
   };
   function diffModels(a, b) {
@@ -1245,7 +1304,7 @@
     const rect = id => { const n = cur.get(id) || old.get(id); return n && { x: n.x, y: n.y, w: R.width.get(id) || nodeWidth(n), h: H }; };
     d.edges.removed.forEach(e => {
       const a = rect(e.from), b = rect(e.to);
-      if (a && b && e.from !== e.to) el('path', { class: 'ghost-edge', d: curvePath(a, b, 0) }, L.ghosts);
+      if (a && b && e.from !== e.to) el('path', { class: 'ghost-edge', d: routeOf(e) === 'elbow' ? elbowPath(a, b, 0, []) : curvePath(a, b, 0) }, L.ghosts);
     });
     d.nodes.removed.forEach(n => {
       const w = nodeWidth(n), g = el('g', { class: 'ghost', transform: `translate(${n.x} ${n.y})` }, L.ghosts);
@@ -1294,7 +1353,7 @@
     if (!(d.count.a + d.count.r + d.count.c)) return `<p class="ver-sum">${esc(T('ver.same'))}</p>`;
     const FIELD = { label: 'insp.name', sub: 'insp.detail', type: 'insp.type', icon: 'insp.icon', group: 'insp.group', color: 'insp.color', badge: 'field.badge',
       cost: 'cost.label', costPeriod: 'cost.period', costYears: 'cost.yearsAria', desc: 'insp.desc', style: 'insp.style', parent: 'insp.parent',
-      data: 'data.label', encrypted: 'enc.label' };
+      data: 'data.label', encrypted: 'enc.label', route: 'insp.route' };
     const fields = (fs, kind) => fs.map(f => T(kind === 'edge' && f === 'label' ? 'insp.label' : FIELD[f] || f).toLowerCase()).join(', ');
     const names = new Map([...S.compare.base.nodes, ...S.model.nodes].map(n => [n.id, n.label]));
     const edgeName = e => `${names.get(e.from) || e.from} → ${names.get(e.to) || e.to}`;
@@ -1440,6 +1499,8 @@
       html = head(colorVar(t.color) || nodeColor(a), '', T('insp.edge'), `${a.label} → ${b.label}`) + `
         <label>${T('insp.label')}<input data-field="label" value="${esc(t.label || '')}" placeholder="${esc(T('insp.label.ph'))}"></label>
         <label>${T('insp.style')}<select data-field="style">${Object.entries(C.edgeStyles).map(([k, v]) => `<option value="${k}"${k === (C.edgeStyles[t.style] ? t.style : 'sync') ? ' selected' : ''}>${esc(loc(v.label))}</option>`).join('')}</select></label>
+        <label>${T('insp.route')}<select data-field="route">${[['', T('route.default', { name: T(`route.${S.model.routing || 'curved'}`) })], ['curved', T('route.curved')], ['elbow', T('route.elbow')]]
+          .map(([k, l]) => `<option value="${k}"${(t.route || '') === k ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select></label>
         ${encField(t)}
         ${dataField(t, true)}
         <div class="field">${T('insp.color')}${swatches(t.color)}</div>
@@ -1717,6 +1778,16 @@
   $('#btn-undo').addEventListener('click', undo);
   $('#btn-redo').addEventListener('click', redo);
   $('#btn-layout').addEventListener('click', relayout);
+  function toggleRouting() {
+    pushHistory();
+    if (S.model.routing === 'elbow') delete S.model.routing; else S.model.routing = 'elbow';
+    changed(false);
+    renderInspector();
+    updateRouteButton();
+    toast(T(S.model.routing === 'elbow' ? 'toast.elbow' : 'toast.curved'));
+  }
+  const updateRouteButton = () => $('#btn-route').classList.toggle('on', S.model?.routing === 'elbow');
+  $('#btn-route').addEventListener('click', toggleRouting);
   $('#btn-fit').addEventListener('click', () => fitView());
   $('#btn-play').addEventListener('click', togglePlay);
   $('#btn-anim').addEventListener('click', () => {
@@ -1783,8 +1854,27 @@
   });
 
   const exportMenu = $('#export-menu');
+  // Leyenda y cajetín: la preferencia es del navegador; autor y versión van en el diagrama (meta)
+  const legendBox = $('#exp-legend'), authorBox = $('#exp-author'), versionBox = $('#exp-version');
+  legendBox.checked = store.get('legend', true);
+  legendBox.addEventListener('change', () => store.set('legend', legendBox.checked));
+  [[authorBox, 'author'], [versionBox, 'version']].forEach(([box, k]) => {
+    box.addEventListener('focus', beginEdit);
+    box.addEventListener('blur', endEdit);
+    box.addEventListener('input', () => {
+      markEdit();
+      const meta = { ...S.model.meta };
+      if (box.value.trim()) meta[k] = box.value.trim(); else delete meta[k];
+      if (Object.keys(meta).length) S.model.meta = meta; else delete S.model.meta;
+      syncEditor(); save();
+    });
+  });
   exportMenu.addEventListener('toggle', () => {
     if (!exportMenu.open) return;
+    authorBox.value = S.model.meta?.author || '';
+    versionBox.value = S.model.meta?.version || '';
+    const av = activeVersion();
+    versionBox.placeholder = av ? verLabel(av) : '1.0';
     const r = exportMenu.querySelector('summary').getBoundingClientRect(), pop = exportMenu.querySelector('.menu-pop');
     pop.style.top = `${r.bottom}px`;
     pop.style.right = `${Math.max(8, innerWidth - r.right)}px`;
@@ -1813,10 +1903,81 @@
     a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 3000);
   }
+  /* ---------- leyenda y cajetín de las exportaciones ---------- */
+  // Solo lo que el diagrama usa: estilos de conexión, candados, tipos de componente y clasificaciones
+  function buildLegend() {
+    const m = S.model, g = document.createElementNS(NS, 'g');
+    g.setAttribute('class', 'legend');
+    const cols = [], RH = 22;
+    const col = (head, rows) => rows.length && cols.push({ head, rows });
+    const textRow = (x, y, txt, cls = 'legend-text') => { const t = el('text', { class: cls, x, y: y + 4 }, g); t.textContent = txt; return textW(txt, '400 12px'); };
+    // Conexiones
+    const styles = [...new Set(m.edges.map(e => (C.edgeStyles[e.style] ? e.style : 'sync')))];
+    const conn = styles.map(st => ({ w: 46 + textW(loc(C.edgeStyles[st].label), '400 12px'), draw: (x, y) => {
+      const cfg = C.edgeStyles[st], eg = el('g', { class: `edge edge-${st}${cfg.dash ? ' edge-dashed' : ''}`, style: `--c:var(--muted);--w:${cfg.width}px` }, g);
+      el('path', { class: 'edge-line', d: `M${x},${y} L${x + 30},${y}`, ...(cfg.dash ? { 'stroke-dasharray': cfg.dash } : {}) }, eg);
+      el('path', { class: 'edge-arrow', d: `M${x + 34},${y} L${x + 26},${y - 4} L${x + 26},${y + 4} Z` }, eg);
+      textRow(x + 46, y, loc(cfg.label));
+    } }));
+    [[true, 'leg.encrypted'], [false, 'leg.unencrypted']].forEach(([on, key]) => {
+      if (m.edges.some(e => e.encrypted === on)) conn.push({ w: 46 + textW(T(key), '400 12px'), draw: (x, y) => {
+        const lg = el('g', { transform: `translate(${x + 10} ${y})` }, g);
+        lockIcon(lg, 0, on);
+        textRow(x + 46, y, T(key));
+      } });
+    });
+    col(T('leg.connections'), conn);
+    // Componentes: un color por tipo (los nodos con color propio no entran)
+    const types = [...new Map(m.nodes.filter(n => !n.color).map(n => [n.type, n])).keys()].slice(0, 16);
+    const comp = types.map(k => ({ w: 22 + textW(typeLabel(k), '400 12px'), draw: (x, y) => {
+      el('circle', { cx: x + 6, cy: y, r: 6, style: `fill:${colorVar(typeOf({ type: k }).color) || 'var(--accent)'}` }, g);
+      textRow(x + 22, y, typeLabel(k));
+    } }));
+    for (let i = 0; i < comp.length; i += 8) col(i ? '' : T('leg.components'), comp.slice(i, i + 8));
+    // Datos
+    const used = new Set([...m.nodes, ...m.edges].flatMap(x => x.data || []));
+    col(T('leg.data'), dataTags({ data: [...used] }).map(t => ({ w: Math.ceil(textW(t.short, FONT.dtag)) + 20 + textW(t.label, '400 12px'), draw: (x, y) => {
+      const tw = dataTag(g, x, y - 8, t, 16);
+      textRow(x + tw + 8, y, t.label);
+    } })));
+    // Cajetín
+    const av = activeVersion(), cost = m.nodes.some(hasCost) ? `≈ ${money(round2(monthlyTotal(m.nodes)))}${T('cost.mo')}` : '';
+    const info = [[T('leg.author'), m.meta?.author || '—'], [T('leg.version'), m.meta?.version || (av ? verLabel(av) : '—')],
+      [T('leg.date'), new Intl.DateTimeFormat(I.lang, { dateStyle: 'long' }).format(new Date())], ...(cost ? [[T('leg.cost'), cost]] : [])];
+    const keyW = Math.max(...info.map(([k]) => textW(k, '400 11.5px'))) + 14;
+    const infoW = Math.max(220, textW(m.title, '700 14px'), keyW + Math.max(...info.map(([, v]) => textW(v, '400 12px')))) + 4;
+    const colW = c => Math.max(textW(c.head, '750 10.5px') + 10, ...c.rows.map(rw => rw.w));
+    const P = 20, GAP = 34, HEAD = 26;
+    const rowsH = Math.max(0, ...cols.map(c => c.rows.length)) * RH;
+    const h = P * 2 + Math.max(HEAD + rowsH, 28 + info.length * 20 + 18);
+    let x = P;
+    cols.forEach(c => {
+      if (c.head) { const t = el('text', { class: 'legend-head', x, y: P + 9 }, g); t.textContent = c.head; }
+      c.rows.forEach((rw, i) => rw.draw(x, P + HEAD + i * RH + RH / 2 - 4));
+      x += colW(c) + GAP;
+    });
+    return { g, h, colsW: x - GAP + P, infoW, info, keyW, P };
+  }
+  function placeLegend(lg, W) {
+    const { g, h, infoW, info, keyW, P } = lg, ix = W - P - infoW;
+    const panel = el('rect', { class: 'legend-panel', x: 0, y: 0, width: W, height: h, rx: 14 });
+    g.insertBefore(panel, g.firstChild);
+    el('line', { x1: ix - 18, y1: P - 4, x2: ix - 18, y2: h - P + 4, style: 'stroke:var(--border)' }, g);
+    el('text', { class: 'legend-head', x: ix, y: P + 9 }, g).textContent = T('leg.document');
+    el('text', { class: 'legend-title', x: ix, y: P + 32 }, g).textContent = S.model.title;
+    info.forEach(([k, v], i) => {
+      el('text', { class: 'legend-muted', x: ix, y: P + 54 + i * 20 }, g).textContent = k;
+      el('text', { class: 'legend-text', x: ix + keyW, y: P + 54 + i * 20 }, g).textContent = v;
+    });
+    el('text', { class: 'legend-muted', x: W - P, y: h - P + 6, 'text-anchor': 'end', style: 'font-size:10.5px' }, g).textContent = T('leg.made');
+  }
+
   function buildSVG() {
     const b = contentBox() || { x: 0, y: 0, w: 400, h: 200 };
     const pad = 40, top = 56;
-    const W = Math.ceil(b.w + pad * 2), Ht = Math.ceil(b.h + pad * 2 + top);
+    const lg = $('#exp-legend').checked ? buildLegend() : null;
+    const W = Math.ceil(Math.max(b.w + pad * 2, lg ? lg.colsW + lg.infoW + 40 + pad * 2 : 0));
+    const Ht = Math.ceil(b.h + pad * 2 + top + (lg ? lg.h + 28 : 0));
     const out = svg.cloneNode(true);
     out.removeAttribute('id');
     out.removeAttribute('style');
@@ -1840,6 +2001,11 @@
     const av = activeVersion();
     title.textContent = av ? `${S.model.title}  ·  ${verLabel(av)}` : S.model.title;
     out.insertBefore(title, vp);
+    if (lg) {
+      placeLegend(lg, W - pad * 2);
+      lg.g.setAttribute('transform', `translate(${pad} ${Ht - pad - lg.h})`);
+      out.appendChild(lg.g);
+    }
     return { str: '<?xml version="1.0" encoding="UTF-8"?>\n' + new XMLSerializer().serializeToString(out), W, H: Ht };
   }
   function exportSVG() { download(buildSVG().str, fileName('svg'), 'image/svg+xml'); toast(T('toast.svg')); }
@@ -2035,6 +2201,7 @@
     else if (k === 'p') togglePlay();
     else if (k === 't') toggleTheme();
     else if (k === 'l') toggleLang();
+    else if (k === 'e') toggleRouting();
     else if (k === 'c' && S.sel?.kind === 'node') startConnect(S.sel.id);
     else if (k === '+' || k === '=') animateView(zoomTarget(1.25), 200);
     else if (k === '-') animateView(zoomTarget(1 / 1.25), 200);
@@ -2086,7 +2253,7 @@
     get lang() { return I.lang; },
     select: ids => select({ kind: 'multi', ids: [].concat(ids) }), align: alignNodes,
     saveVersion, openVersion, compareVersion, deleteVersion,
-    exportSVG, exportPNG, exportJSON, config: C, icons: ICONS
+    exportSVG, exportPNG, exportJSON, toggleRouting, config: C, icons: ICONS
   };
 
   init();

@@ -37,6 +37,9 @@ window.DiagramonI18n = (() => {
       'text.help': 'Text syntax quick guide', 'text.aria': 'Diagram as text', 'json.aria': 'Diagram as JSON',
       'text.guide': `title: Online store
 direction: LR            (or TB)
+lines: elbow             (or curved)
+author: Platform team
+version: 1.2
 
 group aws "AWS" color=peach {
   api: API Gateway [aws/apigateway] "REST"
@@ -55,6 +58,7 @@ api ..&gt; cache            ..&gt; optional
 cost=0.1/hour · 120/month · 1400/year · 5000/3years  (USD)
 data=pii,pci      public internal confidential pii pci phi
 encrypted=yes|no  encryption in transit (connections)
+line=elbow        one connection with elbows (or curved)
 #     comment`,
       'stage.empty': '<b>Empty canvas</b>Drag a component from the left<br>or double-click here.',
       'stage.banner': 'Pick the connection target · <kbd>Esc</kbd> cancels',
@@ -120,7 +124,15 @@ encrypted=yes|no  encryption in transit (connections)
       'data.label': 'Data classification', 'data.edge': 'Data in transit', 'data.none': 'Tag the data it stores or handles.', 'data.noneEdge': 'Tag the data this connection carries.',
       'enc.label': 'Encryption in transit', 'enc.unset': 'Not set', 'enc.yes': 'Encrypted', 'enc.no': 'Not encrypted',
       'enc.warn': 'Sensitive data travels here without encryption.',
-      'meta.insecure': n => `⚠ ${n} unencrypted sensitive ${n === 1 ? 'flow' : 'flows'}`
+      'meta.insecure': n => `⚠ ${n} unencrypted sensitive ${n === 1 ? 'flow' : 'flows'}`,
+
+      'top.route': 'Connector lines: curved or elbow (E)', 'top.route.lbl': 'Elbows',
+      'toast.elbow': 'Elbow connectors', 'toast.curved': 'Curved connectors',
+      'insp.route': 'Line', 'route.default': ({ name }) => `Diagram default (${name})`, 'route.curved': 'Curved', 'route.elbow': 'Elbow',
+      'exp.legend': 'Legend and title block', 'exp.author.ph': 'Your name or team', 'exp.legend.note': 'Added at the bottom of SVG and PNG exports.',
+      'leg.connections': 'CONNECTIONS', 'leg.components': 'COMPONENTS', 'leg.data': 'DATA', 'leg.document': 'DOCUMENT',
+      'leg.encrypted': 'Encrypted in transit', 'leg.unencrypted': 'Not encrypted',
+      'leg.author': 'Author', 'leg.version': 'Version', 'leg.date': 'Date', 'leg.cost': 'Estimated cost', 'leg.made': 'Made with Diagramon'
     },
 
     es: {
@@ -145,6 +157,9 @@ encrypted=yes|no  encryption in transit (connections)
       'text.help': 'Guía rápida del lenguaje', 'text.aria': 'Diagrama en texto', 'json.aria': 'Diagrama en JSON',
       'text.guide': `título: Tienda online
 dirección: LR            (o TB)
+líneas: codos            (o curvas)
+autor: Equipo de plataforma
+versión: 1.2
 
 grupo aws "AWS" color=melocoton {
   api: API Gateway [aws/apigateway] "REST"
@@ -163,6 +178,7 @@ api ..&gt; cache            ..&gt; opcional
 costo=0.1/hora · 120/mes · 1400/año · 5000/3años  (USD)
 datos=pii,pci     public internal confidential pii pci phi
 cifrado=sí|no     cifrado en tránsito (conexiones)
+línea=codo        una conexión en ángulo recto (o curva)
 #     comentario`,
       'stage.empty': '<b>Lienzo vacío</b>Arrastra un componente desde la izquierda<br>o haz doble clic aquí.',
       'stage.banner': 'Elige el destino de la conexión · <kbd>Esc</kbd> cancela',
@@ -228,7 +244,15 @@ cifrado=sí|no     cifrado en tránsito (conexiones)
       'data.label': 'Clasificación de datos', 'data.edge': 'Datos en tránsito', 'data.none': 'Marca los datos que guarda o maneja.', 'data.noneEdge': 'Marca los datos que viajan por esta conexión.',
       'enc.label': 'Cifrado en tránsito', 'enc.unset': 'Sin indicar', 'enc.yes': 'Cifrado', 'enc.no': 'Sin cifrar',
       'enc.warn': 'Por aquí viajan datos sensibles sin cifrar.',
-      'meta.insecure': n => `⚠ ${n} ${n === 1 ? 'flujo sensible' : 'flujos sensibles'} sin cifrar`
+      'meta.insecure': n => `⚠ ${n} ${n === 1 ? 'flujo sensible' : 'flujos sensibles'} sin cifrar`,
+
+      'top.route': 'Líneas de conexión: curvas o en ángulo recto (E)', 'top.route.lbl': 'Ángulos',
+      'toast.elbow': 'Conectores en ángulo recto', 'toast.curved': 'Conectores curvos',
+      'insp.route': 'Línea', 'route.default': ({ name }) => `La del diagrama (${name})`, 'route.curved': 'Curva', 'route.elbow': 'En ángulo recto',
+      'exp.legend': 'Leyenda y cajetín', 'exp.author.ph': 'Tu nombre o equipo', 'exp.legend.note': 'Se añade abajo en las exportaciones SVG y PNG.',
+      'leg.connections': 'CONEXIONES', 'leg.components': 'COMPONENTES', 'leg.data': 'DATOS', 'leg.document': 'DOCUMENTO',
+      'leg.encrypted': 'Cifrado en tránsito', 'leg.unencrypted': 'Sin cifrar',
+      'leg.author': 'Autor', 'leg.version': 'Versión', 'leg.date': 'Fecha', 'leg.cost': 'Costo estimado', 'leg.made': 'Hecho con Diagramon'
     }
   };
 
