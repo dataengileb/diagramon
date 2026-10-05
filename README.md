@@ -194,7 +194,7 @@ Open the **Versions** tab.
 
 - **Flow** (or **`P`**) lights up the diagram step by step, from clients to data.
 - **Arrange** lays everything out automatically, following the flow. Each group is arranged inside its own box, so groups never overlap. **Fit** (or **`F`**) centers the diagram.
-- **Elbows** (or **`E`**) switches the connections between curves and right-angle lines that go around the nodes.
+- **Elbows** (or **`E`**) switches the connections between curves and right-angle lines that go around the nodes. Several elbow lines on the same side of a node leave from separate, evenly spaced points so they never overlap.
   To change only one connection, select it and pick its **Line**.
 - **Export** › SVG, PNG or JSON. Keep the JSON to open it again later with **Import**.
 - **Export › Mermaid, PlantUML or draw.io** turns the diagram into code or a file for other tools: a Mermaid flowchart (renders in GitHub, GitLab and Notion), a PlantUML diagram with no external includes, or a `.drawio` file that keeps the same layout, nested groups and official icons.
