@@ -182,6 +182,7 @@ Open the **Versions** tab.
   The card lists every difference; click one to jump to it. **Esc** or **Stop** ends the comparison.
 - Each card shows its **status**: **Draft**, **In review**, **Approved** or **Rejected**, also shown above the title and in the exported title block.
 - **✎** edits the status, the **architecture author**, the **created** and **updated** dates and the note, with no need to delete and save again. The last author you typed is suggested for new versions.
+- Above the list, **status chips** (*All*, *Draft*, *In review*…) with their counts filter versions and environments; click the active chip again to show everything.
 - Updating an environment that was **Approved** or **Rejected** puts it back **In review**, because its content changed.
 - Saving, opening, deleting and every edit can be undone with **`⌘Z`**.
 - Versions are stored inside the diagram, so **Export › JSON** carries them all.

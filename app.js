@@ -1493,7 +1493,14 @@
         </div>
       </div>`;
     };
-    const section = (title, list) => (list.length ? `<div class="cat">${esc(title)}</div>${list.map(card).join('')}` : '');
+    // Filtro por estado: si el guardado ya no tiene entradas, vuelve a Todos
+    const counts = Object.fromEntries(Object.keys(VSTATUS).map(k => [k, vs.filter(v => v.status === k).length]));
+    let fil = store.get('verFilter', 'all');
+    if (!counts[fil]) fil = 'all';
+    const shown = v => fil === 'all' || v.status === fil;
+    const chip = (k, n, label, color) => `<button class="vchip${fil === k ? ' on' : ''}" data-vfilter="${k}" aria-pressed="${fil === k}"${color ? ` style="--s:${color}"` : ''}>${esc(label)} <b>${n}</b></button>`;
+    const filterBar = vs.length < 2 ? '' : `<div class="ver-filter" role="group" aria-label="${esc(T('ver.filter'))}">${chip('all', vs.length, T('ver.f.all'))}${Object.keys(VSTATUS).filter(k => counts[k]).map(k => chip(k, counts[k], T(`ver.st.${k}`), VSTATUS[k])).join('')}</div>`;
+    const section = (title, list) => ((list = list.filter(shown)).length ? `<div class="cat">${esc(title)}</div>${list.map(card).join('')}` : '');
     const envList = envs.flatMap(([k]) => vs.filter(v => v.kind === 'env' && v.env === k)).concat(vs.filter(v => v.kind === 'env' && !C.environments?.[v.env]));
     box.innerHTML = `<div class="ver-save">
         <div class="cat">${esc(T('ver.saveAs'))}</div>
@@ -1504,7 +1511,9 @@
         }).join('')}</div>` : ''}
         <input class="search" id="ver-note" style="padding-left:10px" value="${esc(S.verNote)}" placeholder="${esc(T('ver.note.ph'))}" aria-label="${esc(T('ver.note'))}" autocomplete="off">
       </div>
+      ${filterBar}
       <div class="ver-list">${section(T('ver.envs'), envList)}${section(T('ver.versions'), vs.filter(v => v.kind === 'version').sort((a, b) => b.n - a.n))}</div>
+      ${vs.length && !vs.some(shown) ? `<p class="empty-list">${esc(T('ver.f.none'))} <button class="btn small" data-vfilter="all">${esc(T('ver.f.clear'))}</button></p>` : ''}
       ${vs.length ? '' : `<p class="empty-list">${esc(T('ver.empty'))}</p>`}`;
     const back = fkey && box.querySelector(fkey);
     if (back) { back.focus(); if (caret) back.setSelectionRange(...caret); }
@@ -1563,6 +1572,11 @@
     const b = ev.target.closest('button');
     if (!b) return;
     if (b.dataset.save) return saveVersion(b.dataset.save, b.dataset.env);
+    if (b.dataset.vfilter) {
+      store.set('verFilter', b.dataset.vfilter === store.get('verFilter', 'all') ? 'all' : b.dataset.vfilter);
+      renderVersions();
+      return versionsBox.querySelector('.ver-filter .on')?.focus();
+    }
     const id = b.closest('.ver')?.dataset.id;
     if (b.dataset.ver === 'open') openVersion(id);
     else if (b.dataset.ver === 'compare') compareVersion(id);
