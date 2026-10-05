@@ -663,7 +663,7 @@
   }
   /* ---------- conectores en ángulo recto que esquivan los nodos ---------- */
   // Prueba varios caminos de 1, 3 o 5 tramos y se queda con el más corto que no pisa ningún nodo
-  function elbowPath(a, b, off, obstacles) {
+  function elbowPath(a, b, off, obstacles, eoff = off) {
     const hgap = Math.max(b.x - (a.x + a.w), a.x - (b.x + b.w));
     const vgap = Math.max(b.y - (a.y + a.h), a.y - (b.y + b.h));
     const flip = hgap < vgap; // en vertical se trabaja con x e y cambiados
@@ -671,7 +671,7 @@
     const A = T(a), B = T(b), obs = obstacles.map(T);
     const dir = B.x + B.w / 2 >= A.x + A.w / 2 ? 1 : -1;
     const sx = dir > 0 ? A.x + A.w : A.x, ex = dir > 0 ? B.x : B.x + B.w;
-    const sy = A.y + A.h / 2 + off * dir, ey = B.y + B.h / 2 + off * dir;
+    const sy = A.y + A.h / 2 + off, ey = B.y + B.h / 2 + eoff;
     const M = 16, STUB = 18, pad = 10;
     const blocks = (x1, y1, x2, y2, list) => list.some(o => {
       const l = o.x - pad, t = o.y - pad, rr = o.x + o.w + pad, bb = o.y + o.h + pad;
@@ -692,6 +692,38 @@
     let best = cands[0], bs = Infinity;
     cands.forEach(c => { const v = score(c); if (v < bs) { bs = v; best = c; } });
     return roundPath(best.map(([x, y]) => (flip ? [y, x] : [x, y])));
+  }
+  // Lado por el que sale el origen y entra el destino (misma regla que elbowPath): 'r', 'l', 'b' o 't'
+  function elbowSides(a, b) {
+    const hgap = Math.max(b.x - (a.x + a.w), a.x - (b.x + b.w));
+    const vgap = Math.max(b.y - (a.y + a.h), a.y - (b.y + b.h));
+    if (hgap >= vgap) return b.x + b.w / 2 >= a.x + a.w / 2 ? ['r', 'l'] : ['l', 'r'];
+    return b.y + b.h / 2 >= a.y + a.h / 2 ? ['b', 't'] : ['t', 'b'];
+  }
+  // Desplazamientos centrados para n anclajes en un lado de longitud len, sin pasar de las esquinas redondeadas
+  function spreadOffsets(n, len, rad, gap = 16) {
+    const step = n > 1 ? Math.min(gap, Math.max(0, len - 2 * rad) / (n - 1)) : 0;
+    return Array.from({ length: n }, (_, i) => (i - (n - 1) / 2) * step);
+  }
+  // Reparte los anclajes de los codos por nodo y lado; ordena por el centro del otro extremo para que no se crucen
+  function elbowPorts(edges, rect, routeOf) {
+    const sides = new Map(), out = new Map();
+    edges.forEach((e, i) => {
+      if (e.from === e.to || routeOf(e) !== 'elbow') return;
+      const a = rect(e.from), b = rect(e.to), [ss, ts] = elbowSides(a, b);
+      const add = (id, side, o) => { const k = id + '\0' + side; if (!sides.has(k)) sides.set(k, []); sides.get(k).push({ e, i, id, side, c: side === 'l' || side === 'r' ? o.y + o.h / 2 : o.x + o.w / 2 }); };
+      add(e.from, ss, b); add(e.to, ts, a);
+    });
+    sides.forEach(list => {
+      list.sort((p, q) => p.c - q.c || p.i - q.i);
+      const r = rect(list[0].id), len = list[0].side === 'l' || list[0].side === 'r' ? r.h : r.w;
+      const offs = spreadOffsets(list.length, len, C.node.radius);
+      list.forEach((p, k) => {
+        const o = out.get(p.e.id) || (out.set(p.e.id, { s: 0, t: 0 }), out.get(p.e.id));
+        if (p.id === p.e.from) o.s = offs[k]; else o.t = offs[k];
+      });
+    });
+    return out;
   }
   // Une los puntos con esquinas redondeadas y quita los que sobran (repetidos o en línea recta)
   function roundPath(pts, rad = 10) {
@@ -717,10 +749,11 @@
 
     const pairs = new Set(m.edges.map(e => e.from + '\0' + e.to));
     const allRects = m.nodes.map(n => ({ id: n.id, ...rect(n.id) }));
+    const ports = elbowPorts(m.edges, rect, routeOf);
     R.edges.forEach(r => {
-      const e = r.e, a = rect(e.from), b = rect(e.to), off = pairs.has(e.to + '\0' + e.from) ? 7 : 0;
+      const e = r.e, a = rect(e.from), b = rect(e.to), off = pairs.has(e.to + '\0' + e.from) ? 7 : 0, pt = ports.get(e.id);
       const d = e.from === e.to ? loopPath(a)
-        : routeOf(e) === 'elbow' ? elbowPath(a, b, off, allRects.filter(o => o.id !== e.from && o.id !== e.to)) : curvePath(a, b, off);
+        : pt ? elbowPath(a, b, pt.s, allRects.filter(o => o.id !== e.from && o.id !== e.to), pt.t) : curvePath(a, b, off);
       r.hit.setAttribute('d', d);
       r.line.setAttribute('d', d);
       r.len = r.line.getTotalLength();
