@@ -1333,11 +1333,15 @@
     updateMeta();
     renderVersions();
   }
-  function saveVersion(kind = 'version', env) {
+  // Hallazgos de revisión abiertos dentro de la foto de una versión
+  const openFindings = v => (v.diagram?.nodes || []).filter(n => n.review && n.review.status !== 'resolved');
+  async function saveVersion(kind = 'version', env, { force } = {}) {
     const vs = S.model.versions, note = S.verNote.trim();
     if (kind === 'env' && !C.environments?.[env]) return;
-    pushHistory();
     let v = kind === 'env' ? vs.find(x => x.kind === 'env' && x.env === env) : null;
+    // Actualizar algo aprobado lo devuelve a revisión: se pide confirmación
+    if (v?.status === 'approved' && !force && !(await confirmBox({ title: T('ver.cf.updTitle', { name: verLabel(v) }), text: T('ver.cf.updText'), ok: T('ver.saveHere'), cancel: T('ver.cf.cancel') }))) return;
+    pushHistory();
     const existed = !!v;
     if (!v) {
       const n = Math.max(0, ...vs.filter(x => x.kind === 'version').map(x => x.n)) + 1;
@@ -1370,9 +1374,10 @@
     setModel({ ...clone(v.diagram), versions: S.model.versions, active: v.id }, { history: true });
     toast(T('ver.opened', { name: verLabel(v) }));
   }
-  function deleteVersion(id) {
+  async function deleteVersion(id, { force } = {}) {
     const v = findVersion(id);
     if (!v) return;
+    if (v.status === 'approved' && !force && !(await confirmBox({ title: T('ver.cf.delTitle', { name: verLabel(v) }), text: T('ver.cf.delText'), ok: T('ver.delete'), cancel: T('ver.cf.cancel'), danger: true }))) return;
     pushHistory();
     S.model.versions = S.model.versions.filter(x => x.id !== id);
     if (S.model.active === id) delete S.model.active;
@@ -1473,6 +1478,7 @@
             <button class="btn small icon${editing ? ' on' : ''}" data-ver="edit" title="${esc(T(editing ? 'ver.editDone' : 'ver.edit'))}" aria-label="${esc(T('ver.edit'))}">${editing ? ICON.check : ICON.pencil}</button>
             <button class="btn small danger icon" data-ver="delete" title="${esc(T('ver.delete'))}" aria-label="${esc(T('ver.delete'))}">${ICON.x}</button>
           </span></div>
+        ${v.status === 'approved' && openFindings(v).length ? `<div class="ver-warn">⚑ ${esc(T('ver.openFindings', openFindings(v).length))}</div>` : ''}
         ${on ? `<div class="ver-flag${dirty ? ' dirty' : ''}">${esc(T(dirty ? 'ver.dirty' : 'ver.current'))}</div>` : ''}
         <div class="ver-meta">${esc(verMeta(v))}</div>
         ${v.note && !editing ? `<div class="ver-note">${esc(v.note)}</div>` : ''}
@@ -1537,7 +1543,28 @@
     const f = ev.target, k = f.dataset?.vfield, v = k && findVersion(f.closest('.ver')?.dataset.id);
     if (!v) return;
     const val = f.value.trim();
-    if (k === 'status') { if (!VSTATUS[val] || val === v.status) return; }
+    if (k === 'status') {
+      if (!VSTATUS[val] || val === v.status) return;
+      const open = val === 'approved' ? openFindings(v) : [];
+      if (open.length) {
+        // Aprobar con hallazgos abiertos: se restaura el estado y se pregunta (select dispara input y change)
+        f.value = v.status;
+        if (S.verAsk) return;
+        S.verAsk = true;
+        const list = open.slice(0, 5).map(n => `${n.label}${n.review.note ? `: ${n.review.note}` : ''}`);
+        if (open.length > 5) list.push(`… +${open.length - 5}`);
+        confirmBox({ title: T('ver.cf.apprTitle', open.length), text: T('ver.cf.apprText'), list, ok: T('ver.cf.apprOk'), cancel: T('ver.cf.cancel') }).then(ok => {
+          S.verAsk = false;
+          if (!ok || !findVersion(v.id) || v.status === 'approved') return;
+          markEdit(); v.status = 'approved'; endEdit();
+          store.set('model', S.model);
+          updateMeta();
+          renderVersions();
+          toast(T('ver.statusSet', { name: verLabel(v), status: T('ver.st.approved') }));
+        });
+        return;
+      }
+    }
     else if ((k === 'created' || k === 'updated') && !isDay(val)) return;
     markEdit();
     if (k === 'status' || k === 'created' || k === 'updated') v[k] = val;
@@ -2552,6 +2579,30 @@
 
   /* ---------- avisos ---------- */
   let toastTimer;
+  // Diálogo de confirmación propio: Promise<boolean>; Esc cancela, Enter acepta, foco en lo seguro
+  function confirmBox({ title, text, list, ok = 'OK', cancel = 'Cancel', danger = false }) {
+    return new Promise(done => {
+      const prev = document.activeElement, id = `cf${Date.now()}`;
+      const back = document.createElement('div');
+      back.className = 'cf-back';
+      back.innerHTML = `<div class="cf" role="dialog" aria-modal="true" aria-labelledby="${id}t" aria-describedby="${id}d">
+        <h3 id="${id}t">${esc(title)}</h3>
+        <div id="${id}d">${text ? `<p>${esc(text)}</p>` : ''}${list?.length ? `<ul>${list.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}</div>
+        <div class="cf-actions"><button class="btn" data-cf="no">${esc(cancel)}</button><button class="btn${danger ? ' danger' : ' primary'}" data-cf="ok">${esc(ok)}</button></div></div>`;
+      const close = r => { document.removeEventListener('keydown', key, true); back.remove(); prev?.focus?.(); done(r); };
+      const key = ev => {
+        if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); close(false); }
+        else if (ev.key === 'Enter') { ev.preventDefault(); ev.stopPropagation(); close(document.activeElement?.dataset?.cf === 'ok'); }
+        else if (ev.key === 'Tab') { ev.preventDefault(); const b = [...back.querySelectorAll('button')]; b[(b.indexOf(document.activeElement) + (ev.shiftKey ? b.length - 1 : 1)) % b.length].focus(); }
+      };
+      back.addEventListener('mousedown', ev => { if (ev.target === back) close(false); });
+      back.addEventListener('click', ev => { const b = ev.target.closest('[data-cf]'); if (b) close(b.dataset.cf === 'ok'); });
+      document.addEventListener('keydown', key, true);
+      document.body.appendChild(back);
+      back.querySelector('[data-cf="no"]').focus();
+    });
+  }
+
   function toast(msg, ms = 1800) {
     const t = $('#toast');
     t.textContent = msg;
