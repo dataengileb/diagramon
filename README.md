@@ -53,7 +53,7 @@ de verdad. Ese tipo de información no debería viajar a un servicio de terceros
 ## ✨ Qué puedes hacer
 
 - 🎞️ **Diagramas vivos**: partículas que recorren las conexiones, trazos que fluyen y un botón **Flujo** que reproduce el recorrido paso a paso.
-- ☁️ **Iconos oficiales** de **AWS, Azure y Google Cloud** (unos 190 servicios), además de iconos genéricos.
+- ☁️ **Iconos oficiales** de **AWS, Azure, Google Cloud y SAP BTP** (unos 250 servicios), además de iconos genéricos.
 - 🧩 **Grupos anidados**: región › VPC › subred, clúster › namespace…
 - 🖱️ **Selección múltiple, alineación y guías**: alinea, reparte con el mismo espacio y pega nodos a bordes y centros.
 - 💵 **Costos a mano**: precio en USD por hora, mes, año o varios años, en un recuadro bajo cada servicio y con el total mensual.
@@ -88,7 +88,7 @@ de verdad. Ese tipo de información no debería viajar a un servicio de terceros
 
 1. Abre la pestaña **Plantillas** y elige *Web app en AWS · 3 capas* para ver un ejemplo completo.
 2. Pulsa **Nuevo** para empezar con el lienzo vacío.
-3. En **Componentes**, elige **AWS**, **Azure**, **GCP** o **Genéricos**. Usa el buscador: `lambda`, `s3`, `kafka`…
+3. En **Componentes**, elige **AWS**, **Azure**, **GCP**, **SAP** o **Genéricos**. Usa el buscador: `lambda`, `s3`, `hana`…
 4. Haz **clic** en un componente para añadirlo al centro, o **arrástralo** al lienzo.
    Doble clic en un hueco del lienzo añade otro igual al último.
 
@@ -217,9 +217,11 @@ Todo lo personalizable está en **`config.js`**. Guarda y recarga `index.html`.
 <summary><b>Actualizar o añadir iconos oficiales</b></summary>
 
 1. Descarga los paquetes oficiales: [AWS](https://aws.amazon.com/architecture/icons/),
-   [Azure](https://learn.microsoft.com/azure/architecture/icons/) y [Google Cloud](https://cloud.google.com/icons)
-   (core products y category icons).
-2. Descomprímelos en una carpeta con `aws/`, `azure/`, `gcp-core/` y `gcp-cat/`.
+   [Azure](https://learn.microsoft.com/azure/architecture/icons/), [Google Cloud](https://cloud.google.com/icons)
+   (core products y category icons) y [SAP BTP](https://github.com/SAP/btp-solution-diagrams)
+   (carpeta `assets/shape-libraries-and-editable-presets/svg`).
+2. Descomprímelos en una carpeta con `aws/`, `azure/`, `gcp-core/`, `gcp-cat/` y `sap/`.
+   Si falta una carpeta, esa nube se salta y su archivo no se toca.
 3. Añade servicios a las listas de `tools/build-icons.py` (o pon `ALL = True` para incluirlos todos).
 4. Ejecuta:
 
@@ -251,7 +253,7 @@ El lenguaje de texto está en `window.DiagramonText` (`parse` y `stringify`).
 | `app.js` | Motor del editor |
 | `text-lang.js` | Lenguaje de texto (diagrama como código) |
 | `examples.js` | Plantillas |
-| `icons/*.js` | Iconos oficiales de AWS, Azure y Google Cloud, incrustados |
+| `icons/*.js` | Iconos oficiales de AWS, Azure, Google Cloud y SAP BTP, incrustados |
 | `tools/build-icons.py` | Genera `icons/*.js` desde los paquetes oficiales |
 
 ---
@@ -273,10 +275,12 @@ Para mantener el espíritu del proyecto:
 El código de Diagramon es **open source** bajo la [licencia MIT](LICENSE): úsalo, modifícalo y compártelo libremente,
 también en proyectos comerciales.
 
-Los **iconos oficiales** de `icons/` pertenecen a Amazon Web Services, Microsoft y Google, y **no** están cubiertos por la licencia MIT.
-Cada proveedor permite usarlos en diagramas de arquitectura según sus propias condiciones.
+Los **iconos oficiales** de `icons/` pertenecen a Amazon Web Services, Microsoft, Google y SAP, y **no** están cubiertos por la licencia MIT.
+AWS, Microsoft y Google permiten usarlos en diagramas de arquitectura según sus propias condiciones.
+Los iconos de SAP BTP vienen de [SAP/btp-solution-diagrams](https://github.com/SAP/btp-solution-diagrams)
+bajo la licencia Apache 2.0 (copia en [`icons/LICENSE-SAP.txt`](icons/LICENSE-SAP.txt)).
 Diagramon los muestra sin cambios: no los recortes, gires ni deformes, y no los uses para representar un producto propio.
-AWS, Azure y Google Cloud son marcas de sus respectivos dueños. Diagramon no está afiliado a ninguno de ellos.
+AWS, Azure, Google Cloud y SAP son marcas de sus respectivos dueños. Diagramon no está afiliado a ninguno de ellos.
 
 <div align="center">
 <sub>Hecho con 💜 y colores pastel. Tus diagramas, en tu equipo.</sub>
