@@ -88,7 +88,8 @@ de verdad. Ese tipo de información no debería viajar a un servicio de terceros
 
 1. Abre la pestaña **Plantillas** y elige *Web app en AWS · 3 capas* para ver un ejemplo completo.
 2. Pulsa **Nuevo** para empezar con el lienzo vacío.
-3. En **Componentes**, elige **AWS**, **Azure**, **GCP**, **SAP** o **Genéricos**. Usa el buscador: `lambda`, `s3`, `hana`…
+3. En **Componentes**, abre la lista **Proveedor** y elige **Genéricos**, **AWS**, **Azure**, **Google Cloud** o **SAP BTP**.
+   Solo verás los componentes de ese proveedor. Usa el buscador: `lambda`, `s3`, `hana`…
    En **SAP**, arriba salen los **sistemas SAP** sin icono oficial (S/4HANA, ECC, TM, EWM…).
 4. Haz **clic** en un componente para añadirlo al centro, o **arrástralo** al lienzo.
    Doble clic en un hueco del lienzo añade otro igual al último.
@@ -209,7 +210,7 @@ Todo lo personalizable está en **`config.js`**. Guarda y recarga `index.html`.
 - **Tema por defecto**: `app.defaultTheme: 'dark' | 'light'`.
 - **Tamaño de los nodos**: con `node.sameSize: true` (por defecto) todos miden `node.width` y los nombres largos usan 2 líneas.
   Con `false`, cada nodo crece con su texto.
-- **Atajos sin icono oficial**: `presets` añade elementos arriba de la pestaña de una nube (por ejemplo, los sistemas SAP).
+- **Atajos sin icono oficial**: `presets` añade elementos arriba de la lista de un proveedor (por ejemplo, los sistemas SAP).
 - **Paletas**: añade una entrada en `palettes` con las mismas claves de color (`rosa`, `coral`, …) para `dark` y `light`.
 - **Nuevo tipo de componente**: copia una entrada de `types` y cambia `label`, `category`, `color`, `keywords` e `icon` (SVG de 24×24).
 - **Conexiones**: `edgeStyles` define trazo, grosor y número de partículas.
