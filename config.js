@@ -56,7 +56,7 @@ window.DIAGRAMON_CONFIG = {
     }
   },
 
-  /* Iconos oficiales de AWS, Azure, Google Cloud y SAP BTP (carpeta icons/).
+  /* Iconos oficiales de AWS, Azure, Google Cloud, SAP BTP y Microsoft Fabric (carpeta icons/).
      Se regeneran con: python3 tools/build-icons.py <carpeta con los paquetes>.
      enabled: false = usar solo los iconos propios de abajo. */
   icons: { enabled: true },

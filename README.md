@@ -53,7 +53,7 @@ de verdad. Ese tipo de información no debería viajar a un servicio de terceros
 ## ✨ Qué puedes hacer
 
 - 🎞️ **Diagramas vivos**: partículas que recorren las conexiones, trazos que fluyen y un botón **Flujo** que reproduce el recorrido paso a paso.
-- ☁️ **Iconos oficiales** de **AWS, Azure, Google Cloud y SAP BTP** (unos 250 servicios), además de iconos genéricos.
+- ☁️ **Iconos oficiales** de **AWS, Azure, Google Cloud, SAP BTP y Microsoft Fabric** (unos 290 servicios), además de iconos genéricos.
 - 🧩 **Grupos anidados**: región › VPC › subred, clúster › namespace…
 - 🖱️ **Selección múltiple, alineación y guías**: alinea, reparte con el mismo espacio y pega nodos a bordes y centros.
 - 💵 **Costos a mano**: precio en USD por hora, mes, año o varios años, en un recuadro bajo cada servicio y con el total mensual.
@@ -88,7 +88,8 @@ de verdad. Ese tipo de información no debería viajar a un servicio de terceros
 
 1. Abre la pestaña **Plantillas** y elige *Web app en AWS · 3 capas* para ver un ejemplo completo.
 2. Pulsa **Nuevo** para empezar con el lienzo vacío.
-3. En **Componentes**, elige **AWS**, **Azure**, **GCP**, **SAP** o **Genéricos**. Usa el buscador: `lambda`, `s3`, `hana`…
+3. En **Componentes**, abre la lista **Proveedor** y elige **Genéricos**, **AWS**, **Azure**, **Google Cloud**, **SAP BTP** o **Microsoft Fabric**.
+   Solo verás los componentes de ese proveedor. Usa el buscador: `lambda`, `s3`, `hana`…
    En **SAP**, arriba salen los **sistemas SAP** sin icono oficial (S/4HANA, ECC, TM, EWM…).
 4. Haz **clic** en un componente para añadirlo al centro, o **arrástralo** al lienzo.
    Doble clic en un hueco del lienzo añade otro igual al último.
@@ -209,7 +210,7 @@ Todo lo personalizable está en **`config.js`**. Guarda y recarga `index.html`.
 - **Tema por defecto**: `app.defaultTheme: 'dark' | 'light'`.
 - **Tamaño de los nodos**: con `node.sameSize: true` (por defecto) todos miden `node.width` y los nombres largos usan 2 líneas.
   Con `false`, cada nodo crece con su texto.
-- **Atajos sin icono oficial**: `presets` añade elementos arriba de la pestaña de una nube (por ejemplo, los sistemas SAP).
+- **Atajos sin icono oficial**: `presets` añade elementos arriba de la lista de un proveedor (por ejemplo, los sistemas SAP).
 - **Paletas**: añade una entrada en `palettes` con las mismas claves de color (`rosa`, `coral`, …) para `dark` y `light`.
 - **Nuevo tipo de componente**: copia una entrada de `types` y cambia `label`, `category`, `color`, `keywords` e `icon` (SVG de 24×24).
 - **Conexiones**: `edgeStyles` define trazo, grosor y número de partículas.
@@ -223,8 +224,9 @@ Todo lo personalizable está en **`config.js`**. Guarda y recarga `index.html`.
 1. Descarga los paquetes oficiales: [AWS](https://aws.amazon.com/architecture/icons/),
    [Azure](https://learn.microsoft.com/azure/architecture/icons/), [Google Cloud](https://cloud.google.com/icons)
    (core products y category icons) y [SAP BTP](https://github.com/SAP/btp-solution-diagrams)
-   (carpeta `assets/shape-libraries-and-editable-presets/svg`).
-2. Descomprímelos en una carpeta con `aws/`, `azure/`, `gcp-core/`, `gcp-cat/` y `sap/`.
+   (carpeta `assets/shape-libraries-and-editable-presets/svg`) y [Microsoft Fabric](https://learn.microsoft.com/fabric/fundamentals/icons)
+   (`Icons.zip`, carpeta `package/dist/svg`).
+2. Descomprímelos en una carpeta con `aws/`, `azure/`, `gcp-core/`, `gcp-cat/`, `sap/` y `fabric/`.
    Si falta una carpeta, esa nube se salta y su archivo no se toca.
 3. Añade servicios a las listas de `tools/build-icons.py` (o pon `ALL = True` para incluirlos todos).
 4. Ejecuta:
@@ -257,7 +259,7 @@ El lenguaje de texto está en `window.DiagramonText` (`parse` y `stringify`).
 | `app.js` | Motor del editor |
 | `text-lang.js` | Lenguaje de texto (diagrama como código) |
 | `examples.js` | Plantillas |
-| `icons/*.js` | Iconos oficiales de AWS, Azure, Google Cloud y SAP BTP, incrustados |
+| `icons/*.js` | Iconos oficiales de AWS, Azure, Google Cloud, SAP BTP y Microsoft Fabric, incrustados |
 | `tools/build-icons.py` | Genera `icons/*.js` desde los paquetes oficiales |
 
 ---
@@ -283,10 +285,12 @@ Los **iconos oficiales** de `icons/` pertenecen a Amazon Web Services, Microsoft
 AWS, Microsoft y Google permiten usarlos en diagramas de arquitectura según sus propias condiciones.
 Los iconos de SAP BTP vienen de [SAP/btp-solution-diagrams](https://github.com/SAP/btp-solution-diagrams)
 bajo la licencia Apache 2.0 (copia en [`icons/LICENSE-SAP.txt`](icons/LICENSE-SAP.txt)).
+Los iconos de Microsoft Fabric vienen del paquete oficial `@fabric-msft/svg-icons` de Microsoft, con licencia MIT
+(copia en [`icons/LICENSE-FABRIC.txt`](icons/LICENSE-FABRIC.txt)), y siguen las mismas reglas de uso que los de Azure.
 SAP solo publica iconos para sus servicios BTP. Sus aplicaciones de negocio (S/4HANA, ECC, TM, EWM…) no tienen icono oficial:
 la guía de SAP las dibuja como cajas con nombre, y Diagramon hace lo mismo con un icono genérico propio.
 Diagramon los muestra sin cambios: no los recortes, gires ni deformes, y no los uses para representar un producto propio.
-AWS, Azure, Google Cloud y SAP son marcas de sus respectivos dueños. Diagramon no está afiliado a ninguno de ellos.
+AWS, Azure, Microsoft Fabric, Google Cloud y SAP son marcas de sus respectivos dueños. Diagramon no está afiliado a ninguno de ellos.
 
 <div align="center">
 <sub>Hecho con 💜 y colores pastel. Tus diagramas, en tu equipo.</sub>

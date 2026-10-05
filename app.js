@@ -1213,19 +1213,20 @@
   const chip = (attrs, color, iconHtml, label, isLogo) =>
     `<button class="chip" draggable="true" ${attrs} style="--c:${color}" title="${esc(label)}"><i${isLogo ? ' class="logo"' : ''}>${iconHtml}</i><span>${esc(label)}</span></button>`;
 
+  // Lista desplegable de proveedores: el panel solo muestra los componentes del elegido
   function renderProviders() {
-    const box = $('#providers'), list = [['generic', 'Genéricos'], ...Object.entries(ICONS).map(([k, s]) => [k, s.short || s.label])];
+    const sel = $('#provider');
+    const list = [['generic', `Genéricos (${Object.keys(C.types).length})`],
+      ...Object.entries(ICONS).map(([k, s]) => [k, `${s.label} (${Object.keys(s.items).length + (C.presets?.[k]?.items.length || 0)})`])];
     if (!ICONS[S.provider]) S.provider = 'generic';
-    box.hidden = list.length < 2;
-    box.innerHTML = list.map(([k, l]) => `<button data-provider="${k}" class="${S.provider === k ? 'on' : ''}">${esc(l)}</button>`).join('');
+    $('#provider-wrap').hidden = list.length < 2;
+    sel.innerHTML = list.map(([k, l]) => `<option value="${k}"${S.provider === k ? ' selected' : ''}>${esc(l)}</option>`).join('');
   }
-  $('#providers').addEventListener('click', ev => {
-    const b = ev.target.closest('[data-provider]');
-    if (!b) return;
-    S.provider = b.dataset.provider;
+  $('#provider').addEventListener('change', ev => {
+    S.provider = ev.target.value;
     store.set('provider', S.provider);
-    renderProviders();
     renderPalette();
+    $('.pane[data-pane="components"]').scrollTop = 0;
   });
 
   function renderPalette() {
