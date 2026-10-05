@@ -37,8 +37,8 @@ de verdad. Ese tipo de información no debería viajar a un servicio de terceros
 
 **Cómo lo garantiza**
 
-- **Es un solo HTML con JavaScript propio.** Sin librerías externas, sin CDN, sin fuentes web, sin trackers.
-  Los iconos oficiales van incrustados en los archivos `icons/*.js`.
+- **Es un solo HTML con JavaScript propio.** Sin librerías externas, sin CDN, sin fuentes web cargadas de internet, sin trackers.
+  Los iconos oficiales van incrustados en los archivos `icons/*.js` y las tres tipografías en `fonts/fonts.js` (base64).
 - **El navegador bloquea la red.** `index.html` declara una política de seguridad
   (`Content-Security-Policy: connect-src 'none'`). Aunque alguien añadiera código que intente enviar datos,
   el navegador lo rechaza.
@@ -68,7 +68,7 @@ de verdad. Ese tipo de información no debería viajar a un servicio de terceros
 - 🧾 **Leyenda y cajetín** en las exportaciones SVG y PNG: estilos de conexión, colores de los componentes, clasificaciones de datos, autor, versión, fecha y costo estimado. Listo para entregar.
 - 🔦 **Resaltar el flujo** de un componente: vecinos, destinos, orígenes o todo.
 - 🌐 **Inglés o español**: la app abre en inglés; el botón 🌐 de la barra superior (o la tecla **`L`**) la pasa a español y recuerda tu elección.
-- 🌗 **Modo oscuro** por defecto, **modo claro** con una tecla y paletas pastel (Pastel, Sorbete, Nórdico).
+- 🌗 **Modo oscuro** por defecto, modos **claro** y **negro de alto contraste** con una tecla, y dos paletas (Pastel y Neón).
 - 📤 **Exporta** a SVG (animado), PNG o JSON. **Importa** un JSON arrastrándolo al lienzo.
 - ↩️ **Deshacer y rehacer**, guardado automático y orden automático del diagrama.
 
@@ -99,6 +99,7 @@ de verdad. Ese tipo de información no debería viajar a un servicio de terceros
 2. Pulsa **Nuevo** para empezar con el lienzo vacío.
 3. En **Componentes**, abre la lista **Proveedor** y elige **Genéricos**, **AWS**, **Azure**, **Google Cloud**, **SAP BTP** o **Microsoft Fabric**.
    Solo verás los componentes de ese proveedor. Usa el buscador: `lambda`, `s3`, `hana`…
+   También entiende sinónimos y equivalentes, en español e inglés: `sql` encuentra RDS, Cloud SQL y Azure SQL; `k8s` encuentra EKS, AKS y GKE; `cola` encuentra SQS y Service Bus.
    En **SAP**, arriba salen los **sistemas SAP** sin icono oficial (S/4HANA, ECC, TM, EWM…).
 4. Haz **clic** en un componente para añadirlo al centro, o **arrástralo** al lienzo.
    Doble clic en un hueco del lienzo añade otro igual al último.
@@ -179,7 +180,7 @@ Abre la pestaña **Versiones**.
 
 - **Flujo** (o **`P`**) ilumina el diagrama paso a paso, de los clientes a los datos.
 - **Ordenar** recoloca todo automáticamente, siguiendo el flujo. Cada grupo se ordena dentro de su propia caja, así los grupos nunca se pisan. **Ajustar** (o **`F`**) centra el diagrama.
-- **Ángulos** (o **`E`**) cambia las conexiones entre curvas y líneas en ángulo recto que esquivan los nodos.
+- **Ángulos** (o **`E`**) cambia las conexiones entre curvas y líneas en ángulo recto que esquivan los nodos. Varias líneas en el mismo lado de un nodo salen de puntos separados y repartidos, para que no se solapen.
   Para cambiar una sola conexión, selecciónala y elige su **Línea**.
 - **Exportar** › SVG, PNG o JSON. Guarda el JSON para volver a abrirlo más tarde con **Importar**.
 - **Exportar › Mermaid, PlantUML o draw.io** convierte el diagrama en código o en un archivo para otras herramientas: un flowchart de Mermaid (se ve en GitHub, GitLab y Notion), un diagrama de PlantUML sin inclusiones externas, o un `.drawio` que conserva la misma disposición, los grupos anidados y los iconos oficiales.
@@ -200,7 +201,7 @@ Abre la pestaña **Versiones**.
 | `C` | Conectar |
 | `F` | Ajustar a la vista |
 | `P` | Reproducir el flujo |
-| `T` | Cambiar entre modo oscuro y claro |
+| `T` | Alternar claro → oscuro → negro de alto contraste |
 | `L` | Cambiar entre inglés y español |
 | `E` | Cambiar entre conectores curvos y en ángulo recto |
 | `Esc` | Cancelar o quitar la selección |
@@ -317,14 +318,15 @@ El texto no guarda posiciones: los nodos que ya existían no se mueven y los nue
 
 Todo lo personalizable está en **`config.js`**. Guarda y recarga `index.html`.
 
-- **Tema por defecto**: `app.defaultTheme: 'dark' | 'light'`.
+- **Tema por defecto**: `app.defaultTheme: 'dark' | 'light' | 'black'`. La tecla `T` y el botón de tema alternan claro → oscuro → negro.
 - **Idioma por defecto**: `app.defaultLang: 'en' | 'es'`. Los textos de la interfaz están en `i18n.js`; los de `config.js` y `examples.js` pueden ser `{ en: '…', es: '…' }`.
 - **Clasificaciones de datos**: `dataClasses` define las etiquetas (nombre, texto corto y color). `sensitive: true` activa el aviso rojo en flujos sin cifrar.
 - **Ambientes**: `environments` define los botones de la pestaña *Versiones* (nombre, texto corto y color). Añade o quita los que necesites.
 - **Tamaño de los nodos**: con `node.sameSize: true` (por defecto) todos miden `node.width` y los nombres largos usan 2 líneas.
   Con `false`, cada nodo crece con su texto.
 - **Atajos sin icono oficial**: `presets` añade elementos arriba de la lista de un proveedor (por ejemplo, los sistemas SAP).
-- **Paletas**: añade una entrada en `palettes` con las mismas claves de color (`rosa`, `coral`, …) para `dark` y `light`.
+- **Tipografías**: elige Inter (por defecto), IBM Plex Sans o Fira Code en la barra superior; la elección se guarda en tu navegador y se incrusta en las exportaciones SVG/PNG. Vienen incluidas en la app (no se cargan de la web). Para añadir una, deja sus archivos `.woff2` en `fonts/`, añade una entrada a `FONTS` en `tools/build-fonts.py` (mira su cabecera) y ejecuta `python3 tools/build-fonts.py`.
+- **Paletas**: añade una entrada en `palettes` con las mismas claves de color (`rosa`, `coral`, …) para `dark`, `light` y `black` (por defecto vienen Pastel y Neón). Una paleta guardada que ya no existe vuelve a Pastel.
 - **Nuevo tipo de componente**: copia una entrada de `types` y cambia `label`, `category`, `color`, `keywords` e `icon` (SVG de 24×24).
 - **Conexiones**: `edgeStyles` define trazo, grosor y número de partículas.
 - **Animación**: velocidad, aparición y duración de los pasos en `animation`.
@@ -379,6 +381,8 @@ El lenguaje de texto está en `window.DiagramonText` (`parse` y `stringify`).
 | `samples/` | Archivos de IaC de ejemplo para probar la importación |
 | `icons/*.js` | Iconos oficiales de AWS, Azure, Google Cloud, SAP BTP y Microsoft Fabric, incrustados |
 | `tools/build-icons.py` | Genera `icons/*.js` desde los paquetes oficiales |
+| `fonts/` | Tipografías incluidas (`.woff2`, licencias OFL) y el `fonts.js` generado |
+| `tools/build-fonts.py` | Genera `fonts/fonts.js` desde `fonts/*.woff2` |
 
 ---
 
@@ -389,7 +393,7 @@ El lenguaje de texto está en `window.DiagramonText` (`parse` y `stringify`).
 Para mantener el espíritu del proyecto:
 
 - **Sin dependencias externas** ni pasos de compilación: tiene que seguir funcionando con doble clic.
-- **Sin conexiones de red**: nada de analítica, CDN, fuentes web ni APIs.
+- **Sin conexiones de red**: nada de analítica, CDN, fuentes web cargadas de internet ni APIs (las tipografías van incluidas).
 - Lo personalizable va en `config.js`.
 
 ---
@@ -406,6 +410,9 @@ Gracias por la idea y el punto de partida. 💜
 
 El código de Diagramon es **open source** bajo la [licencia MIT](LICENSE): úsalo, modifícalo y compártelo libremente,
 también en proyectos comerciales.
+
+Las tipografías incluidas son [Inter](https://github.com/rsms/inter), [IBM Plex Sans](https://github.com/IBM/plex) y [Fira Code](https://github.com/tonsky/FiraCode), con la licencia SIL Open Font License 1.1
+(copias en [`fonts/OFL-Inter.txt`](fonts/OFL-Inter.txt), [`fonts/OFL-IBMPlexSans.txt`](fonts/OFL-IBMPlexSans.txt) y [`fonts/OFL-FiraCode.txt`](fonts/OFL-FiraCode.txt)).
 
 Los **iconos oficiales** de `icons/` pertenecen a Amazon Web Services, Microsoft, Google y SAP, y **no** están cubiertos por la licencia MIT.
 AWS, Microsoft y Google permiten usarlos en diagramas de arquitectura según sus propias condiciones.

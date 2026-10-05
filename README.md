@@ -52,8 +52,8 @@ around 290 official cloud icons, and the browser itself blocks every network req
 
 **How it is enforced**
 
-- **One HTML page with plain JavaScript.** No third-party libraries, no CDN, no web fonts, no trackers.
-  The official icons are embedded in `icons/*.js`.
+- **One HTML page with plain JavaScript.** No third-party libraries, no CDN, no web fonts loaded from the internet, no trackers.
+  The official icons are embedded in `icons/*.js` and the three fonts in `fonts/fonts.js` (base64).
 - **The browser blocks the network.** `index.html` sets a Content Security Policy (`connect-src 'none'`).
   Even if someone added code that tried to send data, the browser would refuse it.
 - **Short, open code.** You can read every line. There are no calls to `fetch`, `XMLHttpRequest`, `WebSocket` or `sendBeacon`.
@@ -81,7 +81,7 @@ around 290 official cloud icons, and the browser itself blocks every network req
 - 🧾 **Legend and title block** in SVG and PNG exports: connection styles, component colors, data classes, author, version, date and estimated cost. Ready to hand in.
 - 🔦 **Flow highlighting** for any component: neighbors, targets, sources or everything.
 - 🌐 **English and Spanish UI**: the 🌐 button in the top bar (or the **`L`** key) switches the language and remembers your choice.
-- 🌗 **Dark mode** by default, **light mode** with one key, and pastel palettes (Pastel, Sherbet, Nordic).
+- 🌗 **Dark mode** by default, **light** and **high-contrast black** modes with one key, and two palettes (Pastel and Neon).
 - 📤 **Export** to SVG (animated), PNG or JSON. **Import** JSON by dropping it on the canvas.
 - ↩️ **Undo and redo**, autosave and automatic layout.
 
@@ -114,6 +114,7 @@ Prefer Spanish? Click the 🌐 **EN** button in the top bar, or press **`L`**.
 2. Click **New** to start with an empty canvas.
 3. In **Components**, open the **Provider** list and pick **Generic**, **AWS**, **Azure**, **Google Cloud**, **SAP BTP** or **Microsoft Fabric**.
    Only that provider's components are shown. Use the search box: `lambda`, `s3`, `hana`…
+   It also matches synonyms and equivalents, in English and Spanish: `sql` finds RDS, Cloud SQL and Azure SQL; `k8s` finds EKS, AKS and GKE; `cola` finds SQS and Service Bus.
    For **SAP**, the **SAP systems** without an official icon (S/4HANA, ECC, TM, EWM…) appear at the top.
 4. **Click** a component to add it to the center, or **drag** it onto the canvas.
    Double-click an empty spot on the canvas to add another one like the last.
@@ -194,7 +195,7 @@ Open the **Versions** tab.
 
 - **Flow** (or **`P`**) lights up the diagram step by step, from clients to data.
 - **Arrange** lays everything out automatically, following the flow. Each group is arranged inside its own box, so groups never overlap. **Fit** (or **`F`**) centers the diagram.
-- **Elbows** (or **`E`**) switches the connections between curves and right-angle lines that go around the nodes.
+- **Elbows** (or **`E`**) switches the connections between curves and right-angle lines that go around the nodes. Several elbow lines on the same side of a node leave from separate, evenly spaced points so they never overlap.
   To change only one connection, select it and pick its **Line**.
 - **Export** › SVG, PNG or JSON. Keep the JSON to open it again later with **Import**.
 - **Export › Mermaid, PlantUML or draw.io** turns the diagram into code or a file for other tools: a Mermaid flowchart (renders in GitHub, GitLab and Notion), a PlantUML diagram with no external includes, or a `.drawio` file that keeps the same layout, nested groups and official icons.
@@ -215,7 +216,7 @@ Open the **Versions** tab.
 | `C` | Connect |
 | `F` | Fit to view |
 | `P` | Play the flow |
-| `T` | Switch dark / light mode |
+| `T` | Cycle light → dark → high-contrast black mode |
 | `L` | Switch English / Spanish |
 | `E` | Switch curved / elbow connectors |
 | `Esc` | Cancel or clear the selection |
@@ -331,14 +332,15 @@ The text does not store positions: existing nodes stay where they are, and new n
 
 Everything you can customize is in **`config.js`**. Save and reload `index.html`.
 
-- **Default theme**: `app.defaultTheme: 'dark' | 'light'`.
+- **Default theme**: `app.defaultTheme: 'dark' | 'light' | 'black'`. The `T` key and the theme button cycle light → dark → black.
 - **Default language**: `app.defaultLang: 'en' | 'es'`. UI texts live in `i18n.js`; texts in `config.js` and `examples.js` can be `{ en: '…', es: '…' }`.
 - **Data classes**: `dataClasses` sets the tags (name, short label, color). `sensitive: true` turns on the red warning for unencrypted flows.
 - **Environments**: `environments` sets the buttons of the *Versions* tab (name, short label and color). Add or remove as many as you need.
 - **Node size**: with `node.sameSize: true` (default) every node is `node.width` wide and long names wrap to 2 lines.
   With `false`, each node grows with its text.
 - **Shortcuts without an official icon**: `presets` adds items at the top of a provider's list (for example, SAP systems).
-- **Palettes**: add an entry to `palettes` with the same color keys (`rosa`, `coral`, …) for `dark` and `light`.
+- **Fonts**: pick Inter (default), IBM Plex Sans or Fira Code from the top bar; the choice is saved in your browser and embedded in SVG/PNG exports. They are bundled with the app (not loaded from the web). To add one, drop its `.woff2` files in `fonts/`, add an entry to `FONTS` in `tools/build-fonts.py` (see the header) and run `python3 tools/build-fonts.py`.
+- **Palettes**: add an entry to `palettes` with the same color keys (`rosa`, `coral`, …) for `dark`, `light` and `black` (Pastel and Neon ship by default). A saved palette that no longer exists falls back to Pastel.
 - **New component type**: copy an entry in `types` and change `label`, `category`, `color`, `keywords` and `icon` (a 24×24 SVG).
 - **Connections**: `edgeStyles` sets dash, width and particle count.
 - **Animation**: speed, entrance and step duration in `animation`.
@@ -393,6 +395,8 @@ The text language is in `window.DiagramonText` (`parse` and `stringify`). UI tra
 | `samples/` | Sample IaC files to try the import |
 | `icons/*.js` | Embedded official icons for AWS, Azure, Google Cloud, SAP BTP and Microsoft Fabric |
 | `tools/build-icons.py` | Builds `icons/*.js` from the official packs |
+| `fonts/` | Bundled fonts (`.woff2`, OFL licenses) and the generated `fonts.js` |
+| `tools/build-fonts.py` | Builds `fonts/fonts.js` from `fonts/*.woff2` |
 
 ---
 
@@ -403,7 +407,7 @@ Contributions are welcome! Open an *issue* with your idea or send a *pull reques
 To keep the spirit of the project:
 
 - **No external dependencies** and no build step: it must keep working with a double-click.
-- **No network connections**: no analytics, CDN, web fonts or APIs.
+- **No network connections**: no analytics, CDN, web fonts loaded from the web or APIs (the fonts are bundled).
 - Customizable things belong in `config.js`. New UI text goes in `i18n.js`, in both languages.
 
 ---
@@ -420,6 +424,9 @@ Thank you for the idea and the starting point. 💜
 
 Diagramon's code is **open source** under the [MIT license](LICENSE): use it, change it and share it freely,
 including in commercial projects.
+
+The bundled fonts are [Inter](https://github.com/rsms/inter), [IBM Plex Sans](https://github.com/IBM/plex) and [Fira Code](https://github.com/tonsky/FiraCode), under the SIL Open Font License 1.1
+(copies in [`fonts/OFL-Inter.txt`](fonts/OFL-Inter.txt), [`fonts/OFL-IBMPlexSans.txt`](fonts/OFL-IBMPlexSans.txt) and [`fonts/OFL-FiraCode.txt`](fonts/OFL-FiraCode.txt)).
 
 The **official icons** in `icons/` belong to Amazon Web Services, Microsoft, Google and SAP, and are **not** covered by the MIT license.
 AWS, Microsoft and Google allow their use in architecture diagrams under their own terms.

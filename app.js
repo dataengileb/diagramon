@@ -35,11 +35,20 @@
     }
   } catch { /* sin almacenamiento disponible */ }
 
+  /* ---------- tipografías (las incluidas vienen de fonts/fonts.js, en base64) ---------- */
+  // Familias disponibles: `system` siempre; el resto solo si tienen archivos empaquetados
+  const FONTS = {};
+  for (const [k, f] of Object.entries(C.fonts.families)) if (k === 'system' || window.DIAGRAMON_FONTS?.[k]) FONTS[k] = { ...f };
+  for (const [k, f] of Object.entries(window.DIAGRAMON_FONTS || {})) FONTS[k] = { label: f.label, ...FONTS[k], css: f.css };
+  for (const [k, f] of Object.entries(FONTS)) { f.faces = window.DIAGRAMON_FONTS?.[k]?.faces || []; f.family = window.DIAGRAMON_FONTS?.[k]?.family; }
+  const fontKey = k => FONTS[k] ? k : FONTS[C.fonts.default] ? C.fonts.default : 'system';
+
   /* ---------- estado ---------- */
   const S = {
     model: null,
     theme: C.themes[store.get('theme')] ? store.get('theme') : C.app.defaultTheme,
-    palette: C.palettes[store.get('palette')] ? store.get('palette') : C.app.defaultPalette,
+    palette: C.palettes[store.get('palette')] ? store.get('palette') : C.app.defaultPalette,  // paletas retiradas caen a la por defecto
+    font: fontKey(store.get('font')),
     anim: store.get('anim', C.animation.enabled) && !reducedMotion,
     reach: store.get('reach', C.focus.defaultMode),
     view: { x: 0, y: 0, k: 1 },
@@ -153,6 +162,36 @@
   // Alto ocupado por un nodo, contando el recuadro de costo de abajo
   const nodeBoxH = n => H + (hasCost(n) ? 26 : 0);
 
+  const THEME_ORDER = ['light', 'dark', 'black'];
+  const fontCss = () => FONTS[S.font].css;
+  // Reglas @font-face de una familia (solo las caras que cubren `text`, si se da)
+  const fontFaces = (key, text) => {
+    const f = FONTS[key];
+    const inRange = rng => {
+      if (text == null) return true;
+      const rs = rng.split(',').map(s => s.trim().slice(2).split('-').map(h => parseInt(h, 16)));
+      return [...text].some(ch => { const c = ch.codePointAt(0); return rs.some(([a, b]) => c >= a && c <= (b ?? a)); });
+    };
+    return f.faces.filter(x => inRange(x.unicodeRange)).map(x => `@font-face{font-family:"${f.family}";font-style:${x.style};font-weight:${x.weight};font-display:swap;src:url(${x.src}) format("woff2");unicode-range:${x.unicodeRange}}`).join('\n');
+  };
+  // Inyecta las tipografías en la página y vuelve a medir y pintar cuando terminan de cargar
+  function loadFonts() {
+    const st = document.createElement('style');
+    st.id = 'font-faces';
+    st.textContent = Object.keys(FONTS).map(k => fontFaces(k)).join('\n');
+    document.head.appendChild(st);
+    refreshFont();
+  }
+  function refreshFont() {
+    const f = FONTS[S.font], key = S.font;
+    if (!f.family) return;
+    Promise.all(['400', '500', '600', '700', '800'].map(w => document.fonts.load(`${w} 13px "${f.family}"`, 'AÁñŁ'))).catch(() => {}).then(() => {
+      if (key !== S.font || !S.model) return;
+      render(false);
+      renderInspector();
+    });
+  }
+
   function applyTheme() {
     const root = document.documentElement;
     root.dataset.theme = S.theme;
@@ -161,14 +200,14 @@
     const p = C.palettes[S.palette] || Object.values(C.palettes)[0];
     for (const [k, v] of Object.entries(p[S.theme] || p.dark)) root.style.setProperty(`--p-${k}`, v);
     root.style.setProperty('--accent', `var(--p-${p.accent || 'lavanda'})`);
-    root.style.setProperty('--font', C.fonts.ui);
+    root.style.setProperty('--font', fontCss());
     root.style.setProperty('--mono', C.fonts.mono);
   }
 
   /* ---------- medidas de texto ---------- */
   const mctx = document.createElement('canvas').getContext('2d');
   const FONT = { dtag: '800 9.5px', label: '600 13.5px', sub: '400 11.5px', tag: '700 11px', edge: '500 11px', badge: '800 10.5px', cost: '700 10.5px' };
-  const textW = (t, f) => { mctx.font = `${f} ${C.fonts.ui}`; return mctx.measureText(String(t ?? '')).width; };
+  const textW = (t, f) => { mctx.font = `${f} ${fontCss()}`; return mctx.measureText(String(t ?? '')).width; };
   const fitText = (t, f, max) => {
     t = String(t ?? '');
     if (textW(t, f) <= max) return t;
@@ -663,7 +702,7 @@
   }
   /* ---------- conectores en ángulo recto que esquivan los nodos ---------- */
   // Prueba varios caminos de 1, 3 o 5 tramos y se queda con el más corto que no pisa ningún nodo
-  function elbowPath(a, b, off, obstacles) {
+  function elbowPath(a, b, off, obstacles, eoff = off) {
     const hgap = Math.max(b.x - (a.x + a.w), a.x - (b.x + b.w));
     const vgap = Math.max(b.y - (a.y + a.h), a.y - (b.y + b.h));
     const flip = hgap < vgap; // en vertical se trabaja con x e y cambiados
@@ -671,7 +710,7 @@
     const A = T(a), B = T(b), obs = obstacles.map(T);
     const dir = B.x + B.w / 2 >= A.x + A.w / 2 ? 1 : -1;
     const sx = dir > 0 ? A.x + A.w : A.x, ex = dir > 0 ? B.x : B.x + B.w;
-    const sy = A.y + A.h / 2 + off * dir, ey = B.y + B.h / 2 + off * dir;
+    const sy = A.y + A.h / 2 + off, ey = B.y + B.h / 2 + eoff;
     const M = 16, STUB = 18, pad = 10;
     const blocks = (x1, y1, x2, y2, list) => list.some(o => {
       const l = o.x - pad, t = o.y - pad, rr = o.x + o.w + pad, bb = o.y + o.h + pad;
@@ -692,6 +731,38 @@
     let best = cands[0], bs = Infinity;
     cands.forEach(c => { const v = score(c); if (v < bs) { bs = v; best = c; } });
     return roundPath(best.map(([x, y]) => (flip ? [y, x] : [x, y])));
+  }
+  // Lado por el que sale el origen y entra el destino (misma regla que elbowPath): 'r', 'l', 'b' o 't'
+  function elbowSides(a, b) {
+    const hgap = Math.max(b.x - (a.x + a.w), a.x - (b.x + b.w));
+    const vgap = Math.max(b.y - (a.y + a.h), a.y - (b.y + b.h));
+    if (hgap >= vgap) return b.x + b.w / 2 >= a.x + a.w / 2 ? ['r', 'l'] : ['l', 'r'];
+    return b.y + b.h / 2 >= a.y + a.h / 2 ? ['b', 't'] : ['t', 'b'];
+  }
+  // Desplazamientos centrados para n anclajes en un lado de longitud len, sin pasar de las esquinas redondeadas
+  function spreadOffsets(n, len, rad, gap = 16) {
+    const step = n > 1 ? Math.min(gap, Math.max(0, len - 2 * rad) / (n - 1)) : 0;
+    return Array.from({ length: n }, (_, i) => (i - (n - 1) / 2) * step);
+  }
+  // Reparte los anclajes de los codos por nodo y lado; ordena por el centro del otro extremo para que no se crucen
+  function elbowPorts(edges, rect, routeOf) {
+    const sides = new Map(), out = new Map();
+    edges.forEach((e, i) => {
+      if (e.from === e.to || routeOf(e) !== 'elbow') return;
+      const a = rect(e.from), b = rect(e.to), [ss, ts] = elbowSides(a, b);
+      const add = (id, side, o) => { const k = id + '\0' + side; if (!sides.has(k)) sides.set(k, []); sides.get(k).push({ e, i, id, side, c: side === 'l' || side === 'r' ? o.y + o.h / 2 : o.x + o.w / 2 }); };
+      add(e.from, ss, b); add(e.to, ts, a);
+    });
+    sides.forEach(list => {
+      list.sort((p, q) => p.c - q.c || p.i - q.i);
+      const r = rect(list[0].id), len = list[0].side === 'l' || list[0].side === 'r' ? r.h : r.w;
+      const offs = spreadOffsets(list.length, len, C.node.radius);
+      list.forEach((p, k) => {
+        const o = out.get(p.e.id) || (out.set(p.e.id, { s: 0, t: 0 }), out.get(p.e.id));
+        if (p.id === p.e.from) o.s = offs[k]; else o.t = offs[k];
+      });
+    });
+    return out;
   }
   // Une los puntos con esquinas redondeadas y quita los que sobran (repetidos o en línea recta)
   function roundPath(pts, rad = 10) {
@@ -717,10 +788,11 @@
 
     const pairs = new Set(m.edges.map(e => e.from + '\0' + e.to));
     const allRects = m.nodes.map(n => ({ id: n.id, ...rect(n.id) }));
+    const ports = elbowPorts(m.edges, rect, routeOf);
     R.edges.forEach(r => {
-      const e = r.e, a = rect(e.from), b = rect(e.to), off = pairs.has(e.to + '\0' + e.from) ? 7 : 0;
+      const e = r.e, a = rect(e.from), b = rect(e.to), off = pairs.has(e.to + '\0' + e.from) ? 7 : 0, pt = ports.get(e.id);
       const d = e.from === e.to ? loopPath(a)
-        : routeOf(e) === 'elbow' ? elbowPath(a, b, off, allRects.filter(o => o.id !== e.from && o.id !== e.to)) : curvePath(a, b, off);
+        : pt ? elbowPath(a, b, pt.s, allRects.filter(o => o.id !== e.from && o.id !== e.to), pt.t) : curvePath(a, b, off);
       r.hit.setAttribute('d', d);
       r.line.setAttribute('d', d);
       r.len = r.line.getTotalLength();
@@ -1684,14 +1756,17 @@
   let iconIndex = null;
   const allIcons = () => iconIndex || (iconIndex = Object.entries(ICONS).flatMap(([p, set]) => Object.entries(set.items).map(([k, it]) => ({
     ref: `${p}/${k}`, label: it.label, provider: set.label, category: it.category, src: set.files[it.file],
-    text: fold(`${it.label} ${k} ${set.label} ${set.short || ''} ${it.category}`), name: fold(it.label)
+    text: fold(`${it.label} ${k} ${set.label} ${set.short || ''} ${it.category}`), kw: it.keywords || '', name: fold(it.label)
   }))));
-  // Primero los que empiezan por lo escrito, luego los que tienen una palabra que empieza así, luego el resto
+  // Las palabras clave valen desde el inicio de una palabra: "sql" no debe encontrar "nosql"
+  const kwHit = (kw, q) => !!kw && ` ${fold(kw)}`.includes(` ${q}`);
+  // Orden: etiqueta empieza por lo escrito, tiene una palabra que empieza así, la contiene, y al final solo por palabras clave
+  const iconRank = (name, w) => (name.startsWith(w) ? 0 : name.split(/[\s/()-]+/).some(x => x.startsWith(w)) ? 1 : name.includes(w) ? 2 : 3);
   function searchIcons(q, max = 40) {
     const words = fold(q).trim().split(/\s+/).filter(Boolean);
     if (!words.length) return allIcons().slice(0, max);
-    const rank = it => (it.name.startsWith(words[0]) ? 0 : it.name.split(/[\s/()-]+/).some(w => w.startsWith(words[0])) ? 1 : 2);
-    return allIcons().filter(it => words.every(w => it.text.includes(w)))
+    const rank = it => iconRank(it.name, words[0]);
+    return allIcons().filter(it => words.every(w => it.text.includes(w) || kwHit(it.kw, w)))
       .sort((a, b) => rank(a) - rank(b) || a.label.localeCompare(b.label)).slice(0, max);
   }
   const iconPicker = n => {
@@ -2035,8 +2110,13 @@
       const preItems = (pre?.items || []).map(p => ({ ...p, sub: loc(p.sub) })).filter(p => !q || fold(`${p.label} ${p.sub || ''} ${p.keywords || ''}`).includes(q));
       if (preItems.length) groups.set(loc(pre.title), preItems.map(p => [null, p]));
       Object.entries(set.items)
-        .filter(([k, it]) => !q || fold(`${it.label} ${k} ${it.category} ${I.category(it.category)}`).includes(q))
+        .filter(([k, it]) => !q || fold(`${it.label} ${k} ${it.category} ${I.category(it.category)}`).includes(q) || kwHit(it.keywords, q))
         .forEach(([k, it]) => { if (!groups.has(it.category)) groups.set(it.category, []); groups.get(it.category).push([k, it]); });
+      // Con búsqueda, dentro de cada categoría primero las coincidencias por nombre y luego las de palabras clave
+      if (q) for (const items of groups.values()) {
+        const r = ([k, it]) => (k == null ? 0 : iconRank(fold(it.label), q.split(/\s+/)[0]));
+        items.sort((a, b) => r(a) - r(b));
+      }
       $('#palette-list').innerHTML = [...groups].map(([cat, items]) => `<div class="cat">${esc(I.category(cat))}</div><div class="chips">${items.map(([k, it]) => k == null
         ? chip(`data-type="${esc(it.type)}" data-label="${esc(it.label)}" data-sub="${esc(it.sub || '')}"`, colorVar(it.color || (C.types[it.type] || C.types.generic).color), typeIcon(it.type), it.label)
         : chip(`data-type="${it.type}" data-icon="${S.provider}/${k}" data-label="${esc(it.label)}"`, colorVar((C.types[it.type] || C.types.generic).color), `<img src="${set.files[it.file]}" alt="">`, it.label, true)).join('')}</div>`).join('')
@@ -2207,12 +2287,19 @@
   $('#file').addEventListener('change', ev => { const fs = [...ev.target.files]; ev.target.value = ''; if (fs.length) importFiles(fs); });
 
   function toggleTheme() {
-    S.theme = S.theme === 'dark' ? 'light' : 'dark';
+    S.theme = THEME_ORDER[(THEME_ORDER.indexOf(S.theme) + 1) % THEME_ORDER.length];
     store.set('theme', S.theme);
     applyTheme();
     const b = $('#btn-theme');
     b.classList.remove('spin'); void b.offsetWidth; b.classList.add('spin');
-    toast(T(S.theme === 'dark' ? 'toast.dark' : 'toast.light'));
+    toast(T('toast.' + S.theme));
+    syncThemeTip();
+  }
+  // Tooltip del botón: indica el modo que viene a continuación
+  function syncThemeTip() {
+    const next = THEME_ORDER[(THEME_ORDER.indexOf(S.theme) + 1) % THEME_ORDER.length];
+    const b = $('#btn-theme'), tip = T('top.theme.' + next);
+    b.title = tip; b.setAttribute('aria-label', tip);
   }
   $('#btn-theme').addEventListener('click', toggleTheme);
 
@@ -2220,8 +2307,10 @@
   // Vuelve a pintar todo lo que tiene texto de la interfaz. El contenido del diagrama no se traduce.
   function applyLang() {
     I.apply();
+    syncThemeTip();
     $('#lang-code').textContent = I.lang.toUpperCase();
     [...paletteSel.options].forEach(o => { o.textContent = loc(C.palettes[o.value]?.label) || o.value; });
+    [...fontSel.options].forEach(o => { o.textContent = loc(FONTS[o.value]?.label) || o.value; });
     wideLabels();
     textCtx = null;
     renderProviders();
@@ -2252,6 +2341,18 @@
     applyTheme();
     render(false);
     renderInspector();
+  });
+
+  const fontSel = $('#font');
+  fontSel.innerHTML = Object.entries(FONTS).map(([k, f]) => `<option value="${k}">${esc(loc(f.label) || k)}</option>`).join('');
+  fontSel.value = S.font;
+  fontSel.addEventListener('change', () => {
+    S.font = fontSel.value;
+    store.set('font', S.font);
+    applyTheme();
+    render(false);
+    renderInspector();
+    refreshFont();
   });
 
   const exportMenu = $('#export-menu');
@@ -2394,6 +2495,7 @@
     const W = Math.ceil(Math.max(b.w + pad * 2, lg ? lg.colsW + lg.infoW + 40 + pad * 2 : 0));
     const Ht = Math.ceil(b.h + pad * 2 + top + (lg ? lg.h + 28 : 0));
     const out = svg.cloneNode(true);
+    out.setAttribute('data-theme', S.theme);
     out.removeAttribute('id');
     out.removeAttribute('style');
     out.setAttribute('xmlns', NS);
@@ -2407,12 +2509,12 @@
     vp.removeAttribute('id');
     vp.setAttribute('transform', `translate(${pad - b.x} ${pad + top - b.y})`);
     const t = C.themes[S.theme], p = C.palettes[S.palette];
-    const vars = [...Object.entries(t).map(([k, v]) => `--${k}:${v}`), ...Object.entries(p[S.theme] || p.dark).map(([k, v]) => `--p-${k}:${v}`), `--font:${C.fonts.ui}`].join(';');
+    const vars = [...Object.entries(t).map(([k, v]) => `--${k}:${v}`), ...Object.entries(p[S.theme] || p.dark).map(([k, v]) => `--p-${k}:${v}`), `--font:${fontCss()}`].join(';');
     const style = document.createElementNS(NS, 'style');
     style.textContent = `svg{${vars}}\n${$('#diagram-css').textContent}`;
     out.insertBefore(style, out.firstChild);
     out.insertBefore(el('rect', { width: W, height: Ht, fill: t.bg }), style.nextSibling);
-    const title = el('text', { x: pad, y: pad + 10, fill: t.text, 'font-size': 20, 'font-weight': 700, 'font-family': C.fonts.ui });
+    const title = el('text', { x: pad, y: pad + 10, fill: t.text, 'font-size': 20, 'font-weight': 700, 'font-family': fontCss() });
     const av = activeVersion();
     title.textContent = av ? `${S.model.title}  ·  ${verLabel(av)}` : S.model.title;
     out.insertBefore(title, vp);
@@ -2421,6 +2523,8 @@
       lg.g.setAttribute('transform', `translate(${pad} ${Ht - pad - lg.h})`);
       out.appendChild(lg.g);
     }
+    // Incrusta solo las caras de la tipografía elegida que cubren el texto usado: el archivo se ve igual en cualquier lado
+    style.textContent += '\n' + fontFaces(S.font, out.textContent);
     return { str: '<?xml version="1.0" encoding="UTF-8"?>\n' + new XMLSerializer().serializeToString(out), W, H: Ht };
   }
   function exportSVG() { download(buildSVG().str, fileName('svg'), 'image/svg+xml'); toast(T('toast.svg')); }
@@ -2484,7 +2588,7 @@
       form.querySelector('[type="submit"]').textContent = T('share.busy');
       try {
         const av = activeVersion();
-        const payload = { title: S.model.title, version: av ? verLabel(av) : S.model.meta?.version || '', sharedAt: new Date().toISOString(), dark: svgFor('dark'), light: svgFor('light') };
+        const payload = { title: S.model.title, version: av ? verLabel(av) : S.model.meta?.version || '', sharedAt: new Date().toISOString(), theme: S.theme, dark: svgFor('dark'), light: svgFor('light'), black: svgFor('black') };
         const env = await SH.encrypt(payload, pw.value);
         download(SH.viewer(env, I.lang), `diagramon-${today()}.html`, 'text/html');
         close();
@@ -2775,6 +2879,7 @@
 
   /* ---------- arranque ---------- */
   function init() {
+    loadFonts();
     applyTheme();
     applyLang();
     $('#app-name').textContent = C.app.name;
