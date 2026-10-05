@@ -1216,9 +1216,8 @@
   // Lista desplegable de proveedores: el panel solo muestra los componentes del elegido
   function renderProviders() {
     const sel = $('#provider');
-    const count = n => `${n} ${n === 1 ? 'componente' : 'componentes'}`;
-    const list = [['generic', `Genéricos · ${count(Object.keys(C.types).length)}`],
-      ...Object.entries(ICONS).map(([k, s]) => [k, `${s.label} · ${count(Object.keys(s.items).length + (C.presets?.[k]?.items.length || 0))}`])];
+    const list = [['generic', `Genéricos (${Object.keys(C.types).length})`],
+      ...Object.entries(ICONS).map(([k, s]) => [k, `${s.label} (${Object.keys(s.items).length + (C.presets?.[k]?.items.length || 0)})`])];
     if (!ICONS[S.provider]) S.provider = 'generic';
     $('#provider-wrap').hidden = list.length < 2;
     sel.innerHTML = list.map(([k, l]) => `<option value="${k}"${S.provider === k ? ' selected' : ''}>${esc(l)}</option>`).join('');

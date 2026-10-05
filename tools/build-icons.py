@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Diagramon · empaqueta los iconos oficiales de AWS, Azure, Google Cloud y SAP.
+Diagramon · empaqueta los iconos oficiales de AWS, Azure, Google Cloud, SAP y Microsoft Fabric.
 
 Lee los paquetes oficiales ya descomprimidos y escribe icons/aws.js,
-icons/azure.js, icons/gcp.js e icons/sap.js. Esos archivos funcionan al abrir index.html
+icons/azure.js, icons/gcp.js, icons/sap.js e icons/fabric.js. Esos archivos funcionan al abrir index.html
 con doble clic (sin servidor) y viajan dentro de las exportaciones SVG/PNG.
 
 Uso:
@@ -16,6 +16,8 @@ Uso:
     gcp-cat/   category-icons.zip               (cloud.google.com/icons)
     sap/       assets/shape-libraries-and-editable-presets/svg
                de github.com/SAP/btp-solution-diagrams
+    fabric/    package/dist/svg de Icons.zip
+               (github.com/microsoft/fabric-samples, carpeta docs-samples)
 
 Si falta la carpeta de una nube, esa nube se salta y su archivo no se toca.
 
@@ -32,7 +34,7 @@ import re
 import sys
 
 ALL = False  # True = incluir todos los iconos, no solo la selección
-SHORT = {'gcp': 'GCP', 'sap': 'SAP'}  # nombre corto para la pestaña del panel
+SHORT = {'gcp': 'GCP', 'sap': 'SAP', 'fabric': 'Fabric'}  # nombre corto para la pestaña del panel
 
 # Cada entrada: (clave, archivo a buscar, nombre visible, tipo de Diagramon, categoría)
 # El tipo de Diagramon da el color pastel del borde; la categoría agrupa en el panel.
@@ -303,6 +305,53 @@ SAP = [
     ('btpservice', 'placeholder-icon-for-sap-btp-services', 'Servicio SAP BTP', 'generic', 'Otros'),
 ]
 
+# Microsoft Fabric: paquete @fabric-msft/svg-icons (Icons.zip de
+# github.com/microsoft/fabric-samples/docs-samples), carpeta package/dist/svg.
+# Se usan los iconos de 48 px: «_color» = producto o carga de trabajo, «_item» = elemento.
+FABRIC = [
+    ('fabric', 'fabric_color', 'Microsoft Fabric', 'generic', 'Plataforma'),
+    ('onelake', 'one_lake_color', 'OneLake', 'storage', 'Plataforma'),
+    ('copilot', 'copilot_color', 'Copilot', 'ai', 'Plataforma'),
+    ('purview', 'purview_color', 'Purview', 'auth', 'Plataforma'),
+    ('dataengineering', 'data_engineering_color', 'Data Engineering', 'analytics', 'Cargas de trabajo'),
+    ('datafactory', 'data_factory_color', 'Data Factory', 'events', 'Cargas de trabajo'),
+    ('datascience', 'data_science_color', 'Data Science', 'ai', 'Cargas de trabajo'),
+    ('datawarehouse', 'data_warehouse_color', 'Data Warehouse', 'analytics', 'Cargas de trabajo'),
+    ('databases', 'databases_color', 'Databases', 'db', 'Cargas de trabajo'),
+    ('realtime', 'real_time_intelligence_color', 'Real-Time Intelligence', 'stream', 'Cargas de trabajo'),
+    ('powerbi', 'power_bi_color', 'Power BI', 'analytics', 'Cargas de trabajo'),
+    ('graph', 'graph_intelligence_color', 'Graph Intelligence', 'analytics', 'Cargas de trabajo'),
+    ('industry', 'industry_solutions_color', 'Industry Solutions', 'external', 'Cargas de trabajo'),
+    ('lakehouse', 'lakehouse_item', 'Lakehouse', 'storage', 'Almacenamiento'),
+    ('warehouse', 'data_warehouse_item', 'Warehouse', 'analytics', 'Almacenamiento'),
+    ('sqldatabase', 'sql_database_item', 'SQL Database', 'db', 'Almacenamiento'),
+    ('mirroreddb', 'mirrored_generic_database_item', 'Mirrored Database', 'db', 'Almacenamiento'),
+    ('datamart', 'datamart_item', 'Datamart', 'db', 'Almacenamiento'),
+    ('pipeline', 'pipeline_item', 'Data Pipeline', 'events', 'Integración'),
+    ('dataflow', 'dataflow_gen2_item', 'Dataflow Gen2', 'stream', 'Integración'),
+    ('copyjob', 'copy_job_item', 'Copy Job', 'events', 'Integración'),
+    ('notebook', 'notebook_item', 'Notebook', 'compute', 'Ingeniería de datos'),
+    ('sparkjob', 'spark_job_direction_item', 'Spark Job Definition', 'compute', 'Ingeniería de datos'),
+    ('environment', 'environment_item', 'Environment', 'compute', 'Ingeniería de datos'),
+    ('udf', 'user_data_function_item', 'User Data Functions', 'function', 'Ingeniería de datos'),
+    ('eventhouse', 'event_house_item', 'Eventhouse', 'stream', 'Tiempo real'),
+    ('eventstream', 'eventstream_item', 'Eventstream', 'stream', 'Tiempo real'),
+    ('kqldatabase', 'kql_database_item', 'KQL Database', 'db', 'Tiempo real'),
+    ('kqlqueryset', 'kql_queryset_item', 'KQL Queryset', 'analytics', 'Tiempo real'),
+    ('rtdashboard', 'real_time_dashboard_item', 'Real-Time Dashboard', 'monitor', 'Tiempo real'),
+    ('experiment', 'experiments_item', 'ML Experiment', 'ai', 'IA'),
+    ('mlmodel', 'model_item', 'ML Model', 'ai', 'IA'),
+    ('dataagent', 'data_agent_item', 'Data Agent', 'ai', 'IA'),
+    ('opsagent', 'operations_agent_item', 'Operations Agent', 'ai', 'IA'),
+    ('semanticmodel', 'semantic_model_item', 'Semantic Model', 'analytics', 'Power BI'),
+    ('report', 'report_item', 'Report', 'analytics', 'Power BI'),
+    ('dashboard', 'dashboard_item', 'Dashboard', 'monitor', 'Power BI'),
+    ('paginated', 'paginated_report_item', 'Paginated Report', 'analytics', 'Power BI'),
+    ('scorecard', 'scorecard_item', 'Scorecard', 'analytics', 'Power BI'),
+    ('orgapp', 'apps_item', 'Org App', 'web', 'Power BI'),
+    ('variables', 'variable_library_item', 'Variable Library', 'secrets', 'Operaciones'),
+]
+
 
 def clean_svg(text):
     """Quita prólogo, comentarios, metadatos y espacios sobrantes."""
@@ -383,6 +432,9 @@ def main():
             svgs = [f for f in sorted(files) if f.endswith('.svg')]
             if svgs and os.path.basename(dirpath) == 'SVG':
                 gcp_files.setdefault(os.path.basename(os.path.dirname(dirpath)), os.path.join(dirpath, svgs[0]))
+    fabric_files = {f'{m.group(1)}_{m.group(2)}': p for p, m in
+                    ((os.path.join(d, f), re.match(r'^(.+)_48_(item|color)\.svg$', f))
+                     for d, _, fs in os.walk(os.path.join(src, 'fabric')) for f in fs) if m}
     sap_files = index_files(os.path.join(src, 'sap'), re.compile(r'^\d+-(.+?)(?:_sd)?\.svg$'))
 
     jobs = [
@@ -395,6 +447,9 @@ def main():
         ('sap', 'SAP BTP', SAP, sap_files,
          'SAP BTP service icons: (c) SAP SE or an SAP affiliate company and btp-solution-diagrams contributors. '
          'Apache License 2.0 (icons/LICENSE-SAP.txt). Origen: github.com/SAP/btp-solution-diagrams.'),
+        ('fabric', 'Microsoft Fabric', FABRIC, fabric_files,
+         'Microsoft Fabric icons (@fabric-msft/svg-icons): (c) Microsoft Corporation, MIT (icons/LICENSE-FABRIC.txt). '
+         'Microsoft permite usarlos en diagramas de arquitectura; no recortar, girar ni deformar.'),
     ]
     for provider, label, entries, files, licence in jobs:
         if not files:
