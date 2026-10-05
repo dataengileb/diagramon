@@ -661,9 +661,12 @@
     el('rect', { class: 'zone-hatch', width: z.w, height: z.h, rx: 14, fill: `url(#hatch-${sev})` }, g);
     el('rect', { class: 'zone-line', width: z.w, height: z.h, rx: 14 }, g);
     el('rect', { class: 'zone-hit', width: z.w, height: z.h, rx: 14 }, g);
-    const tag = el('g', { class: 'zone-tag', transform: 'translate(10 10)' }, g);
-    const head = `⚠ ${sevLabel(sev).toUpperCase()}`, label = fitText(z.label ? ` · ${z.label}` : '', FONT.tag, Math.max(20, z.w - 24 - textW(head, FONT.tag) - 22));
-    const tw = Math.ceil(textW(head + label, FONT.tag) + 22);
+    // Etiqueta abajo a la izquierda: arriba suele estar la del grupo que la zona rodea
+    const tag = el('g', { class: 'zone-tag', transform: `translate(10 ${z.h - 32})` }, g);
+    // El CSS añade .04em de espaciado entre letras (11px → 0,44px por carácter)
+    const tagW = t => textW(t, FONT.tag) + String(t).length * 0.44;
+    const head = `⚠ ${sevLabel(sev).toUpperCase()}`, label = fitText(z.label ? ` · ${z.label}` : '', FONT.tag, Math.max(20, z.w - 24 - tagW(head) - 22));
+    const tw = Math.ceil(tagW(head + label) + 22);
     el('rect', { width: tw, height: 22, rx: 7 }, tag);
     const tx = el('text', { x: 10, y: 15 }, tag);
     el('tspan', { class: 'zone-sev' }, tx).textContent = head;
