@@ -110,7 +110,8 @@ window.DiagramonExport.plantuml = (() => {
         label += '\\n<size:10>' + dataShort(n.data).join(' · ') + '</size>';
       }
       const st = clean(ctx.typeLabel(n.type)).replace(/[<>]/g, '');
-      return `${pad}${kw} "${label}" as ${nAlias[n.id]} <<${st}>> ${mix(c, 0.55)};line:${c}`;
+      // El color del borde va sin # (PlantUML no acepta line:#hex)
+      return `${pad}${kw} "${label}" as ${nAlias[n.id]} <<${st}>> ${mix(c, 0.55)};line:${c.replace('#', '')}`;
     };
 
     const out = [];
@@ -118,7 +119,7 @@ window.DiagramonExport.plantuml = (() => {
       if (depth > 50) return;
       const c = hexOf(ctx.color(g));
       const kw = groupKeyword(g.label);
-      out.push(`${pad}${kw} "${clean(g.label || g.id)}" as ${gAlias[g.id]} <<group>> ${mix(c, 0.82)};line:${c} {`);
+      out.push(`${pad}${kw} "${clean(g.label || g.id)}" as ${gAlias[g.id]} <<group>> ${mix(c, 0.82)};line:${c.replace('#', '')};line.dashed {`);
       (children[g.id] || []).forEach(k => emitGroup(k, pad + '  ', depth + 1));
       (nodesIn[g.id] || []).forEach(n => out.push(nodeLine(n, pad + '  ')));
       out.push(`${pad}}`);
@@ -140,7 +141,8 @@ window.DiagramonExport.plantuml = (() => {
     out.push('skinparam ComponentStyle rectangle');
     out.push('skinparam stereotypeFontSize 9');
     out.push('skinparam stereotypeFontColor #6B6485');
-    out.push('skinparam padding 4');
+    // Los grupos llevan <<group>> solo para poder darles estilo; no se muestra
+    out.push('hide <<group>> stereotype');
     out.push('');
 
     rootGroups.forEach(g => emitGroup(g, '', 0));
