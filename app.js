@@ -272,6 +272,8 @@
       const o = { id, kind };
       if (kind === 'env') o.env = String(v.env || 'env'); else o.n = Math.max(1, Math.round(+v.n) || i + 1);
       if (v.note) o.note = String(v.note);
+      const name = String(v.name ?? '').trim().slice(0, 40);
+      if (name) o.name = name;
       o.savedAt = String(v.savedAt || '');
       // Aprobación: estado, autor de la arquitectura y fechas AAAA-MM-DD (editables)
       o.status = VSTATUS[v.status] ? v.status : 'draft';
@@ -1310,7 +1312,11 @@
   }
 
   /* ---------- versiones y ambientes ---------- */
-  const verLabel = v => (v.kind === 'env' ? loc(C.environments?.[v.env]?.label) || v.env.toUpperCase() : T('ver.versionN', v.n));
+  // Nombre libre: si parece número se muestra como "Versión 1.2"; si no, tal cual ("MVP")
+  const verLabel = v => {
+    if (v.kind === 'env') { const l = loc(C.environments?.[v.env]?.label) || v.env.toUpperCase(); return v.name ? `${l} · ${v.name}` : l; }
+    return v.name ? (/^v?\d/i.test(v.name) ? T('ver.versionN', v.name) : v.name) : T('ver.versionN', v.n);
+  };
   const verColor = v => (v.kind === 'env' ? colorVar(C.environments?.[v.env]?.color) : null) || 'var(--accent)';
   const activeVersion = () => S.model?.versions.find(v => v.id === S.model.active) || null;
   const findVersion = id => S.model.versions.find(v => v.id === id);
@@ -1477,6 +1483,7 @@
         <div class="ver-meta">${esc(verMeta(v))}</div>
         ${v.note && !editing ? `<div class="ver-note">${esc(v.note)}</div>` : ''}
         ${editing ? `<div class="ver-form">
+          <label>${T('ver.name')}<input data-vfield="name" value="${esc(v.name || '')}" maxlength="40" placeholder="${esc(T('ver.name.ph'))}" autocomplete="off"></label>
           <label>${T('ver.status')}<select data-vfield="status">${Object.keys(VSTATUS).map(k => `<option value="${k}"${k === v.status ? ' selected' : ''}>${esc(T(`ver.st.${k}`))}</option>`).join('')}</select></label>
           <label>${T('ver.author')}<input data-vfield="author" value="${esc(v.author || '')}" placeholder="${esc(T('ver.author.ph'))}" autocomplete="off"></label>
           <div class="ver-dates">
@@ -1536,7 +1543,7 @@
   const onVerField = ev => {
     const f = ev.target, k = f.dataset?.vfield, v = k && findVersion(f.closest('.ver')?.dataset.id);
     if (!v) return;
-    const val = f.value.trim();
+    const val = k === 'name' ? f.value.trim().slice(0, 40) : f.value.trim();
     if (k === 'status') { if (!VSTATUS[val] || val === v.status) return; }
     else if ((k === 'created' || k === 'updated') && !isDay(val)) return;
     markEdit();
@@ -1549,6 +1556,7 @@
     c.style.setProperty('--s', VSTATUS[v.status]);
     c.querySelector('.ver-status').textContent = T(`ver.st.${v.status}`);
     c.querySelector('.ver-meta').textContent = verMeta(v);
+    c.querySelector('.ver-head b').textContent = verLabel(v);
     store.set('model', S.model);
     updateMeta();
   };
@@ -2261,7 +2269,7 @@
     }), 38);
     // Cajetín
     const av = activeVersion(), cost = m.nodes.some(hasCost) ? `≈ ${money(round2(monthlyTotal(m.nodes)))}${T('cost.mo')}` : '';
-    const info = [[T('leg.author'), m.meta?.author || av?.author || '—'], [T('leg.version'), m.meta?.version || (av ? verLabel(av) : '—')],
+    const info = [[T('leg.author'), m.meta?.author || av?.author || '—'], [T('leg.version'), m.meta?.version || (av ? av.name || verLabel(av) : '—')],
       ...(av ? [[T('leg.status'), T(`ver.st.${av.status}`)], [T('ver.created'), fmtDay(av.created)], [T('ver.updatedOn'), fmtDay(av.updated)]] : [[T('leg.date'), new Intl.DateTimeFormat(I.lang, { dateStyle: 'long' }).format(new Date())]]),
       ...(cost ? [[T('leg.cost'), cost]] : [])];
     const keyW = Math.max(...info.map(([k]) => textW(k, '400 11.5px'))) + 14;

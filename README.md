@@ -181,6 +181,7 @@ Open the **Versions** tab.
 - **Compare** marks the differences with the canvas: **green** is new, **yellow** changed, and **red dashed** ghosts were removed.
   The card lists every difference; click one to jump to it. **Esc** or **Stop** ends the comparison.
 - Each card shows its **status**: **Draft**, **In review**, **Approved** or **Rejected**, also shown above the title and in the exported title block.
+- **Version name**: in **✎**, give a version or environment an optional name such as `1.2`, `2026-Q4` or `MVP`. A number-like name shows as *Version 1.2*, any other as is, and an environment as *Production · 1.2*. It also feeds the title block.
 - **✎** edits the status, the **architecture author**, the **created** and **updated** dates and the note, with no need to delete and save again. The last author you typed is suggested for new versions.
 - Updating an environment that was **Approved** or **Rejected** puts it back **In review**, because its content changed.
 - Saving, opening, deleting and every edit can be undone with **`⌘Z`**.
