@@ -58,10 +58,10 @@
     compare: null, verNote: '', verEdit: null
   };
   // Referencias a elementos SVG y medidas calculadas (nunca se guardan en el modelo)
-  const R = { nodes: new Map(), edges: new Map(), groups: new Map(), width: new Map(), gbox: new Map() };
+  const R = { nodes: new Map(), edges: new Map(), groups: new Map(), width: new Map(), gbox: new Map(), notes: new Map(), zones: new Map() };
 
   const svg = $('#canvas'), viewport = $('#viewport'), stage = $('#stage');
-  const L = { groups: $('#l-groups'), edges: $('#l-edges'), ghosts: $('#l-ghosts'), nodes: $('#l-nodes'), guides: $('#l-guides') };
+  const L = { zones: $('#l-zones'), groups: $('#l-groups'), edges: $('#l-edges'), ghosts: $('#l-ghosts'), nodes: $('#l-nodes'), notes: $('#l-notes'), guides: $('#l-guides') };
 
   const ICON = {
     x: '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>',
@@ -206,7 +206,7 @@
 
   /* ---------- medidas de texto ---------- */
   const mctx = document.createElement('canvas').getContext('2d');
-  const FONT = { dtag: '800 9.5px', label: '600 13.5px', sub: '400 11.5px', tag: '700 11px', edge: '500 11px', badge: '800 10.5px', cost: '700 10.5px' };
+  const FONT = { dtag: '800 9.5px', label: '600 13.5px', sub: '400 11.5px', tag: '700 11px', edge: '500 11px', badge: '800 10.5px', cost: '700 10.5px', note: '500 12.5px' };
   const textW = (t, f) => { mctx.font = `${f} ${fontCss()}`; return mctx.measureText(String(t ?? '')).width; };
   const fitText = (t, f, max) => {
     t = String(t ?? '');
@@ -295,10 +295,28 @@
       if (o.route !== 'curved' && o.route !== 'elbow') delete o.route;
       m.edges.push(o);
     });
+    m.notes = []; m.zones = [];
+    list(raw.notes).forEach((n, i) => {
+      const o = { id: take(n.id, 'note', i), ...cleanBox(n, 180, 110), text: String(n.text ?? '') };
+      if (n.color != null && String(n.color).trim()) o.color = String(n.color).trim();
+      m.notes.push(o);
+    });
+    list(raw.zones).forEach((z, i) => {
+      const o = { id: take(z.id, 'zone', i), ...cleanBox(z, 360, 220), label: String(z.label ?? ''), severity: SEVERITY.includes(z.severity) ? z.severity : 'medium' };
+      if (z.desc != null && String(z.desc).trim()) o.desc = String(z.desc);
+      m.zones.push(o);
+    });
     m.versions = normVersions(raw.versions);
     if (raw.active != null && m.versions.some(v => v.id === String(raw.active))) m.active = String(raw.active);
     return m;
   }
+
+  // Notas adhesivas y zonas de riesgo: posición y tamaño numéricos, con un mínimo de 60×40
+  const SEVERITY = ['low', 'medium', 'high', 'critical'];
+  const cleanBox = (o, w, h) => {
+    const num = (v, d) => (Number.isFinite(+v) && v !== '' && v != null ? +v : d);
+    return { x: num(o.x, 0), y: num(o.y, 0), w: Math.max(60, num(o.w, w)), h: Math.max(40, num(o.h, h)) };
+  };
 
   // Versiones (fotos fijas) y ambientes (una copia por ambiente) guardados dentro del diagrama
   function normVersions(list) {
@@ -378,7 +396,7 @@
     return false;
   }
   function uniqueId(prefix) {
-    const used = new Set([...S.model.nodes, ...S.model.edges, ...S.model.groups].map(x => x.id));
+    const used = new Set([...S.model.nodes, ...S.model.edges, ...S.model.groups, ...S.model.notes, ...S.model.zones].map(x => x.id));
     let i = 1;
     while (used.has(prefix + i)) i++;
     return prefix + i;
@@ -567,6 +585,7 @@
     for (const k in L) L[k].textContent = '';
     R.nodes.clear(); R.edges.clear(); R.groups.clear(); R.width.clear();
     m.nodes.forEach(n => R.width.set(n.id, nodeWidth(n)));
+    drawItems();
     [...m.groups].sort((a, b) => groupDepth(a) - groupDepth(b)).forEach(g => buildGroup(g, animate));
     const base = m.nodes.length * C.animation.enterStagger * 0.6;
     m.edges.forEach((e, i) => buildEdge(e, animate ? base + i * 30 : -1));
@@ -603,6 +622,85 @@
     el('text', { x: 10, y: 15 }, tag).textContent = g.label;
     R.groups.set(g.id, { g: root, box, tag, tw });
   }
+
+  /* ---------- notas adhesivas y zonas de riesgo ---------- */
+  const sevLabel = k => T(`sev.${k}`);
+  const itemSel = () => (S.sel?.kind === 'note' || S.sel?.kind === 'zone' ? S.sel : null);
+  const handle = (parent, w, h) => {
+    const g = el('g', { class: 'resize-handle', transform: `translate(${w - 13} ${h - 13})` }, parent);
+    el('rect', { width: 14, height: 14, rx: 4 }, g);
+    el('path', { d: 'M5 11 11 5M8 11l3-3' }, g);
+  };
+  // Parte el texto en líneas que caben en `max`, respeta los saltos y recorta con «…» si no hay alto
+  function wrapLines(t, f, max, maxLines) {
+    const out = [];
+    String(t ?? '').split('\n').forEach(par => {
+      let line = '';
+      par.split(/\s+/).filter(Boolean).forEach(w => {
+        while (textW(w, f) > max) { // palabra más larga que la línea: se corta por letras
+          let i = w.length - 1;
+          while (i > 1 && textW(w.slice(0, i), f) > max) i--;
+          if (line) { out.push(line); line = ''; }
+          out.push(w.slice(0, i)); w = w.slice(i);
+        }
+        const next = line ? `${line} ${w}` : w;
+        if (line && textW(next, f) > max) { out.push(line); line = w; } else line = next;
+      });
+      out.push(line);
+    });
+    if (out.length <= maxLines) return out;
+    const cut = out.slice(0, maxLines);
+    cut[maxLines - 1] = fitText(cut[maxLines - 1] + '…', f, max);
+    return cut;
+  }
+  function buildZone(z) {
+    const sev = SEVERITY.includes(z.severity) ? z.severity : 'medium';
+    const g = el('g', { class: `zone zone-${sev}`, 'data-id': z.id }, L.zones);
+    el('rect', { class: 'zone-tint', width: z.w, height: z.h, rx: 14 }, g);
+    el('rect', { class: 'zone-hatch', width: z.w, height: z.h, rx: 14, fill: `url(#hatch-${sev})` }, g);
+    el('rect', { class: 'zone-line', width: z.w, height: z.h, rx: 14 }, g);
+    el('rect', { class: 'zone-hit', width: z.w, height: z.h, rx: 14 }, g);
+    const tag = el('g', { class: 'zone-tag', transform: 'translate(10 10)' }, g);
+    const head = `⚠ ${sevLabel(sev).toUpperCase()}`, label = fitText(z.label ? ` · ${z.label}` : '', FONT.tag, Math.max(20, z.w - 24 - textW(head, FONT.tag) - 22));
+    const tw = Math.ceil(textW(head + label, FONT.tag) + 22);
+    el('rect', { width: tw, height: 22, rx: 7 }, tag);
+    const tx = el('text', { x: 10, y: 15 }, tag);
+    el('tspan', { class: 'zone-sev' }, tx).textContent = head;
+    tx.appendChild(document.createTextNode(label));
+    if (z.desc) el('title', null, g).textContent = z.desc;
+    handle(g, z.w, z.h);
+    R.zones.set(z.id, { g, tag, tw });
+  }
+  function buildNote(n) {
+    const g = el('g', { class: 'note', 'data-id': n.id }, L.notes);
+    g.style.setProperty('--c', colorVar(n.color) || 'var(--p-limon)');
+    const F = 16, d = `M0,0 H${n.w - F} L${n.w},${F} V${n.h} H0 Z`;
+    el('path', { class: 'note-paper', d }, g);
+    el('path', { class: 'note-tint', d }, g);
+    el('path', { class: 'note-fold', d: `M${n.w - F},0 V${F} H${n.w} Z` }, g);
+    wrapLines(n.text, FONT.note, n.w - 24, Math.max(1, Math.floor((n.h - 16) / 17))).forEach((l, i) => {
+      el('text', { class: 'note-text', x: 12, y: 24 + i * 17 }, g).textContent = l;
+    });
+    handle(g, n.w, n.h);
+    R.notes.set(n.id, { g });
+  }
+  // Redibuja las dos capas desde el modelo (al crear, borrar, redimensionar o editar el texto)
+  function drawItems() {
+    L.zones.textContent = ''; L.notes.textContent = '';
+    R.zones.clear(); R.notes.clear();
+    S.model.zones.forEach(buildZone);
+    S.model.notes.forEach(buildNote);
+    updateItems();
+    markItems();
+  }
+  function updateItems() {
+    [[S.model.zones, R.zones], [S.model.notes, R.notes]].forEach(([list, map]) => list.forEach(o => map.get(o.id)?.g.setAttribute('transform', `translate(${o.x} ${o.y})`)));
+  }
+  const markItems = () => {
+    const s = itemSel();
+    R.zones.forEach((r, id) => r.g.classList.toggle('sel', s?.kind === 'zone' && s.id === id));
+    R.notes.forEach((r, id) => r.g.classList.toggle('sel', s?.kind === 'note' && s.id === id));
+  };
 
   function buildEdge(e, delay) {
     const st = C.edgeStyles[e.style] ? e.style : 'sync', cfg = C.edgeStyles[st];
@@ -785,6 +883,7 @@
     const m = S.model, byId = new Map(m.nodes.map(n => [n.id, n]));
     const rect = id => { const n = byId.get(id); return { x: n.x, y: n.y, w: R.width.get(id), h: H }; };
     m.nodes.forEach(n => R.nodes.get(n.id)?.setAttribute('transform', `translate(${n.x} ${n.y})`));
+    updateItems();
 
     const pairs = new Set(m.edges.map(e => e.from + '\0' + e.to));
     const allRects = m.nodes.map(n => ({ id: n.id, ...rect(n.id) }));
@@ -881,6 +980,7 @@
       r.g.classList.toggle('sel', s?.kind === 'edge' && s.id === id);
     });
     R.groups.forEach((r, id) => r.g.classList.toggle('sel', s?.kind === 'group' && s.id === id));
+    markItems();
   }
 
   /* ---------- partículas (bucle de animación) ---------- */
@@ -944,6 +1044,7 @@
     const add = (x, y, w, h) => { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x + w); y1 = Math.max(y1, y + h); };
     S.model.nodes.forEach(n => add(n.x, n.y, R.width.get(n.id) || C.node.width, nodeBoxH(n)));
     R.gbox.forEach(b => add(b.x, b.y, b.w, b.h));
+    [...S.model.notes, ...S.model.zones].forEach(o => add(o.x, o.y, o.w, o.h));
     return x0 === Infinity ? null : { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
   }
   function fitView(smooth = true) {
@@ -1010,7 +1111,9 @@
   const ORDER = {
     group: ['id', 'label', 'color', 'parent'],
     node: ['id', 'label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'x', 'y', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc'],
-    edge: ['id', 'from', 'to', 'label', 'style', 'route', 'color', 'data', 'encrypted']
+    edge: ['id', 'from', 'to', 'label', 'style', 'route', 'color', 'data', 'encrypted'],
+    note: ['id', 'x', 'y', 'w', 'h', 'text', 'color'],
+    zone: ['id', 'x', 'y', 'w', 'h', 'label', 'severity', 'desc']
   };
   function serialize(m, full = false) {
     const ordered = (o, keys) => { const r = {}; keys.forEach(k => k in o && (r[k] = o[k])); Object.keys(o).forEach(k => k in r || (r[k] = o[k])); return r; };
@@ -1026,6 +1129,8 @@
     if (m.routing) head.push(`  "routing": ${JSON.stringify(m.routing)}`);
     if (m.meta) head.push(`  "meta": ${JSON.stringify(m.meta)}`);
     const body = [...head, arr('groups', m.groups, ORDER.group), arr('nodes', m.nodes, ORDER.node), arr('edges', m.edges, ORDER.edge)];
+    if (m.notes?.length) body.push(arr('notes', m.notes, ORDER.note));
+    if (m.zones?.length) body.push(arr('zones', m.zones, ORDER.zone));
     // El archivo exportado lleva también las versiones; el editor JSON no las muestra
     if (full && m.versions?.length) {
       if (m.active) body.push(`  "active": ${JSON.stringify(m.active)}`);
@@ -1072,6 +1177,11 @@
     if (opts.history) pushHistory();
     // El texto y el JSON del editor no incluyen las versiones: se conservan las que había
     if (opts.fromEditor && S.model && raw && typeof raw === 'object' && !Array.isArray(raw.versions)) raw = { ...raw, versions: S.model.versions, active: S.model.active };
+    // Tampoco el texto incluye notas ni zonas: si el editor no las trae, se conservan
+    if (opts.fromEditor && S.model && raw && typeof raw === 'object') {
+      if (!Array.isArray(raw.notes)) raw = { ...raw, notes: S.model.notes };
+      if (!Array.isArray(raw.zones)) raw = { ...raw, zones: S.model.zones };
+    }
     S.model = normalize(raw);
     ensurePositions(S.model);
     S.sel = normSel(S.sel);
@@ -1101,8 +1211,10 @@
     const costs = m.nodes.some(hasCost) ? `≈ ${money(round2(monthlyTotal(m.nodes)))}${T('cost.mo')}` : '';
     const byId = id => m.nodes.find(n => n.id === id), insecure = m.edges.filter(e => isInsecure(e, byId)).length;
     const open = m.nodes.filter(n => n.review && n.review.status !== 'resolved'), overdue = open.filter(n => reviewState(n.review) === 'overdue').length;
+    const zc = m.zones.filter(z => z.severity === 'critical').length;
+    const zones = m.zones.length ? T('meta.zones', { n: m.zones.length, c: zc }) : '';
     const reviews = open.length ? T('meta.review', { n: open.length, o: overdue }) : '';
-    $('#stage-meta').textContent = [T('meta.nodes', m.nodes.length), T('meta.edges', m.edges.length), m.groups.length ? T('meta.groups', m.groups.length) : '', costs, insecure ? T('meta.insecure', insecure) : '', reviews].filter(Boolean).join(' · ');
+    $('#stage-meta').textContent = [T('meta.nodes', m.nodes.length), T('meta.edges', m.edges.length), m.groups.length ? T('meta.groups', m.groups.length) : '', costs, insecure ? T('meta.insecure', insecure) : '', zones, reviews].filter(Boolean).join(' · ');
     const t = $('#title');
     if (document.activeElement !== t) t.value = m.title;
     $('#empty').hidden = m.nodes.length > 0;
@@ -1116,12 +1228,12 @@
   }
 
   /* ---------- acciones ---------- */
-  // Selección: { kind: 'node' | 'edge' | 'group', id } o { kind: 'multi', ids: [nodos] }
+  // Selección: { kind: 'node' | 'edge' | 'group' | 'note' | 'zone', id } o { kind: 'multi', ids: [nodos] }
   function selTarget() {
     const s = S.sel;
     if (!s || !S.model) return null;
     if (s.kind === 'multi') { const ns = S.model.nodes.filter(n => s.ids.includes(n.id)); return ns.length ? ns : null; }
-    const list = s.kind === 'node' ? S.model.nodes : s.kind === 'edge' ? S.model.edges : S.model.groups;
+    const list = s.kind === 'node' ? S.model.nodes : s.kind === 'edge' ? S.model.edges : s.kind === 'note' ? S.model.notes : s.kind === 'zone' ? S.model.zones : S.model.groups;
     return list.find(x => x.id === s.id) || null;
   }
   // Una selección múltiple de 1 nodo pasa a ser simple; de 0, a ninguna
@@ -1204,7 +1316,10 @@
     if (!t) return;
     pushHistory();
     const m = S.model;
-    if (s.kind === 'node' || s.kind === 'multi') {
+    if (s.kind === 'note' || s.kind === 'zone') {
+      const k = s.kind === 'note' ? 'notes' : 'zones';
+      m[k] = m[k].filter(x => x.id !== s.id);
+    } else if (s.kind === 'node' || s.kind === 'multi') {
       const ids = new Set(selIds());
       m.nodes = m.nodes.filter(n => !ids.has(n.id));
       m.edges = m.edges.filter(e => !ids.has(e.from) && !ids.has(e.to));
@@ -1223,6 +1338,7 @@
 
   // Duplica los nodos elegidos y las conexiones entre ellos, debajo del original
   function duplicateSelection() {
+    if (itemSel()) return duplicateItem();
     const ns = selNodes();
     if (!ns.length) return;
     pushHistory();
@@ -1238,6 +1354,54 @@
     });
     changed(true);
     select({ kind: 'multi', ids: [...ids.values()] });
+  }
+
+  /* ---------- crear y editar notas y zonas ---------- */
+  const viewCenter = () => { const r = svg.getBoundingClientRect(); return toWorld(r.left + r.width / 2, r.top + r.height / 2); };
+  function addItem(kind, o) {
+    pushHistory();
+    const id = uniqueId(kind);
+    S.model[kind === 'note' ? 'notes' : 'zones'].push({ id, ...o });
+    changed(true);
+    select({ kind, id });
+    toast(T(kind === 'note' ? 'toast.noteAdded' : 'toast.zoneAdded'));
+  }
+  const addNote = () => { const c = viewCenter(); addItem('note', { x: snap(c.x - 90), y: snap(c.y - 55), w: 180, h: 110, text: '', color: 'limon' }); editItemText('note', S.sel.id); };
+  const addZone = () => { const c = viewCenter(); addItem('zone', { x: snap(c.x - 180), y: snap(c.y - 110), w: 360, h: 220, label: T('zone.new'), severity: 'medium' }); };
+  // Caja alrededor de los nodos elegidos, con margen
+  function markZone() {
+    const ns = selNodes();
+    if (!ns.length) return;
+    const pad = 36, x0 = Math.min(...ns.map(n => n.x)), y0 = Math.min(...ns.map(n => n.y)), x1 = Math.max(...ns.map(n => n.x + R.width.get(n.id))), y1 = Math.max(...ns.map(n => n.y + nodeBoxH(n)));
+    addItem('zone', { x: snap(x0 - pad), y: snap(y0 - pad - 20), w: snap(x1 - x0 + 2 * pad) + 20, h: snap(y1 - y0 + 2 * pad + 20) + 20, label: T('zone.new'), severity: 'high' });
+  }
+  function duplicateItem() {
+    const s = itemSel(), k = s.kind === 'note' ? 'notes' : 'zones', o = S.model[k].find(x => x.id === s.id);
+    if (!o) return;
+    pushHistory();
+    const copy = { ...clone(o), id: uniqueId(s.kind), x: snap(o.x + 32), y: snap(o.y + 32) };
+    S.model[k].push(copy);
+    changed(true);
+    select({ kind: s.kind, id: copy.id });
+  }
+  // Edición en el lugar: un cuadro de texto sobre la nota (texto) o sobre la etiqueta de la zona
+  function editItemText(kind, id) {
+    const o = S.model[kind === 'note' ? 'notes' : 'zones'].find(x => x.id === id), r = (kind === 'note' ? R.notes : R.zones).get(id);
+    if (!o || !r) return;
+    $('.item-edit')?.blur();
+    const key = kind === 'note' ? 'text' : 'label', area = kind === 'note';
+    const b = (area ? r.g : r.tag).getBoundingClientRect(), sr = stage.getBoundingClientRect();
+    const box = document.createElement(area ? 'textarea' : 'input');
+    box.className = 'item-edit';
+    box.value = o[key] || '';
+    box.setAttribute('aria-label', T(area ? 'note.text' : 'zone.label'));
+    Object.assign(box.style, { left: `${b.left - sr.left}px`, top: `${b.top - sr.top}px`, width: `${Math.max(b.width, area ? 0 : 200)}px`, ...(area ? { height: `${b.height}px` } : {}) });
+    stage.appendChild(box);
+    box.focus(); box.select();
+    beginEdit();
+    box.addEventListener('input', () => { markEdit(); o[key] = box.value; changed(true); });
+    box.addEventListener('keydown', ev => { if (ev.key === 'Enter' && (!area || ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); box.blur(); } });
+    box.addEventListener('blur', () => { box.remove(); endEdit(); if (S.sel?.id === id) renderInspector(); });
   }
 
   function renameNode(id) {
@@ -1406,7 +1570,7 @@
   const findVersion = id => S.model.versions.find(v => v.id === id);
   // Solo lo que se dibuja: sin versiones y con posiciones redondeadas
   const snapshotOf = m => {
-    const d = clone({ title: m.title, ...(m.direction ? { direction: m.direction } : {}), ...(m.routing ? { routing: m.routing } : {}), groups: m.groups, nodes: m.nodes, edges: m.edges });
+    const d = clone({ title: m.title, ...(m.direction ? { direction: m.direction } : {}), ...(m.routing ? { routing: m.routing } : {}), groups: m.groups, nodes: m.nodes, edges: m.edges, ...(m.notes?.length ? { notes: m.notes } : {}), ...(m.zones?.length ? { zones: m.zones } : {}) });
     d.nodes.forEach(n => { n.x = Math.round(n.x); n.y = Math.round(n.y); });
     return d;
   };
@@ -1884,6 +2048,7 @@
         ${priced.length ? `<p class="cost-sum">${T('insp.selCost')} <b>≈ ${money(round2(monthlyTotal(t)))}${T('cost.mo')}</b><span>${T('insp.withCost', { a: priced.length, b: t.length })}</span></p>` : ''}
         <p class="note">${T('insp.multiNote')}</p>
         <div class="insp-actions">
+          <button class="btn" data-act="mkzone">⚠ ${T('zone.mark')}</button>
           <button class="btn" data-act="dup">${T('insp.duplicate')}</button>
           <button class="btn danger" data-act="delete">${T('insp.deleteN', t.length)}</button>
         </div>`;
@@ -1934,6 +2099,23 @@
           <button class="btn" data-act="reverse">${ICON.swap}${T('insp.reverse')}</button>
           <button class="btn danger" data-act="delete">${T('insp.delete')}</button>
         </div>`;
+    } else if (kind === 'note') {
+      html = head(colorVar(t.color) || 'var(--p-limon)', '', T('insp.note'), T('note.title')) + `
+        <label>${T('note.text')}<textarea data-field="text" rows="5" placeholder="${esc(T('note.ph'))}">${esc(t.text || '')}</textarea></label>
+        <div class="field">${T('insp.color')}${swatches(t.color)}</div>
+        <div class="insp-actions">
+          <button class="btn" data-act="dup">${T('insp.duplicate')}</button>
+          <button class="btn danger" data-act="delete">${T('insp.delete')}</button>
+        </div>`;
+    } else if (kind === 'zone') {
+      html = head(`var(--sev-${t.severity})`, '', T('insp.zone'), t.label || T('zone.new')) + `
+        <label>${T('zone.label')}<input data-field="label" value="${esc(t.label || '')}" placeholder="${esc(T('zone.label.ph'))}"></label>
+        <div class="field">${T('zone.severity')}<div class="seg">${SEVERITY.map(k => `<button data-sev="${k}" class="sev-${k}${t.severity === k ? ' on' : ''}">${esc(sevLabel(k))}</button>`).join('')}</div></div>
+        <label>${T('insp.desc')}<textarea data-field="desc" rows="3" placeholder="${esc(T('zone.desc.ph'))}">${esc(t.desc || '')}</textarea></label>
+        <div class="insp-actions">
+          <button class="btn" data-act="dup">${T('insp.duplicate')}</button>
+          <button class="btn danger" data-act="delete">${T('insp.delete')}</button>
+        </div>`;
     } else {
       const blocked = new Set([t.id]);
       let grew = true;
@@ -1976,12 +2158,12 @@
       v = id;
     }
     list.forEach(x => {
-      if (v === '' && k !== 'label') delete x[k]; else x[k] = v;
+      if (v === '' && k !== 'label' && k !== 'text') delete x[k]; else x[k] = v;
       // Un icono oficial trae su tipo, que da el color pastel del borde
       if (k === 'icon' && iconInfo(v)) x.type = iconInfo(v).type;
       if (k === 'costPeriod' && v !== 'multi') delete x.costYears;
     });
-    changed(k !== 'desc');
+    changed(k !== 'desc' || S.sel.kind === 'zone');
     if (k.startsWith('cost') && !isSelect) $('#inspector .cost-hint').textContent = costHint(list[0]);
     if (isSelect) renderInspector();
     else if (k === 'label') $('#inspector .insp-title').textContent = S.sel.kind === 'edge' ? $('#inspector .insp-title').textContent : v;
@@ -2042,6 +2224,10 @@
       pushHistory();
       (Array.isArray(t) ? t : [t]).forEach(x => { if (b.dataset.color) x.color = b.dataset.color; else delete x.color; });
       changed(true); renderInspector();
+    } else if (b.dataset.sev && t && !Array.isArray(t)) {
+      pushHistory();
+      t.severity = b.dataset.sev;
+      changed(true); renderInspector();
     } else if (b.dataset.iconClear != null) {
       pickIcon(null);
     } else if (b.dataset.rev && t && !Array.isArray(t)) {
@@ -2075,6 +2261,7 @@
       case 'close': select(null); break;
       case 'connect': startConnect(t.id); break;
       case 'dup': duplicateSelection(); break;
+      case 'mkzone': markZone(); break;
       case 'delete': deleteSelection(); break;
       case 'reverse': pushHistory(); [t.from, t.to] = [t.to, t.from]; changed(true); renderInspector(); break;
     }
@@ -2270,6 +2457,8 @@
   const updateRouteButton = () => $('#btn-route').classList.toggle('on', S.model?.routing === 'elbow');
   $('#btn-route').addEventListener('click', toggleRouting);
   $('#btn-fit').addEventListener('click', () => fitView());
+  $('#btn-note').addEventListener('click', addNote);
+  $('#btn-zone').addEventListener('click', addZone);
   $('#btn-play').addEventListener('click', togglePlay);
   $('#btn-anim').addEventListener('click', () => {
     S.anim = !S.anim;
@@ -2443,6 +2632,18 @@
       const tw = dataTag(g, x, y - 8, t, 16);
       textRow(x + tw + 8, y, t.label);
     } })));
+    // Zonas de riesgo, de la más grave a la más leve
+    const zs = [...m.zones].sort((a, b) => SEVERITY.indexOf(b.severity) - SEVERITY.indexOf(a.severity)).slice(0, 8);
+    col(T('leg.zones'), zs.map(z => {
+      const txt = fitText(`${sevLabel(z.severity)}${z.label ? ` · ${z.label}` : ''}`, '400 12px', 260);
+      return { w: 30 + textW(txt, '400 12px'), draw: (x, y) => {
+        const zg = el('g', { class: `zone zone-${z.severity}` }, g);
+        el('rect', { class: 'zone-tint', x, y: y - 6, width: 20, height: 14, rx: 3 }, zg);
+        el('rect', { class: 'zone-hatch', x, y: y - 6, width: 20, height: 14, rx: 3, fill: `url(#hatch-${z.severity})` }, zg);
+        el('rect', { class: 'zone-line', x, y: y - 6, width: 20, height: 14, rx: 3, 'stroke-dasharray': '4 3' }, zg);
+        textRow(x + 30, y, txt);
+      } };
+    }));
     // Observaciones de revisión abiertas, con su fecha compromiso
     const findings = m.nodes.filter(n => n.review && n.review.status !== 'resolved')
       .sort((a, b) => (a.review.due || '9999').localeCompare(b.review.due || '9999')).slice(0, 8);
@@ -2672,16 +2873,32 @@
   }
 
   /* ---------- interacción con el lienzo ---------- */
+  // Nota o zona bajo el puntero: la nota entera, y de la zona solo su etiqueta y su borde
+  const itemOf = t => {
+    const h = t.closest('.resize-handle'), e = t.closest('.note, .zone');
+    if (!e || !(h || e.classList.contains('note') || t.closest('.zone-tag, .zone-hit'))) return null;
+    return { kind: e.classList.contains('note') ? 'note' : 'zone', id: e.dataset.id, resize: !!h };
+  };
   svg.addEventListener('pointerdown', ev => {
     if (ev.button !== 0 && ev.button !== 1) return;
     if (S.play) stopPlay();
     const nodeEl = ev.target.closest('.node'), tagEl = ev.target.closest('.group-tag'), edgeEl = ev.target.closest('.edge');
     const p = toWorld(ev.clientX, ev.clientY), now = performance.now();
-    const key = nodeEl ? 'n:' + nodeEl.dataset.id : tagEl ? 'g:' + tagEl.parentNode.dataset.id : edgeEl ? 'e:' + edgeEl.dataset.id : 'bg';
+    const item = !S.connecting && ev.button === 0 ? itemOf(ev.target) : null;
+    const key = item ? 'i:' + item.id : nodeEl ? 'n:' + nodeEl.dataset.id : tagEl ? 'g:' + tagEl.parentNode.dataset.id : edgeEl ? 'e:' + edgeEl.dataset.id : 'bg';
     const last = S.lastDown;
     const dbl = ev.button === 0 && last && last.key === key && now - last.t < 350 && Math.hypot(ev.clientX - last.x, ev.clientY - last.y) < 6;
     S.lastDown = dbl ? null : { key, t: now, x: ev.clientX, y: ev.clientY };
 
+    if (item) {
+      if (dbl && !item.resize) { select({ kind: item.kind, id: item.id }); editItemText(item.kind, item.id); return; }
+      const o = S.model[item.kind === 'note' ? 'notes' : 'zones'].find(x => x.id === item.id);
+      if (!o) return;
+      select({ kind: item.kind, id: item.id });
+      S.drag = { kind: item.resize ? 'resize' : 'item', o, start: p, ox: o.x, oy: o.y, ow: o.w, oh: o.h, moved: false };
+      svg.setPointerCapture(ev.pointerId);
+      return;
+    }
     const multiKey = ev.metaKey || ev.ctrlKey;
     if (ev.button === 1 || (!nodeEl && !tagEl && !edgeEl)) {
       if (dbl) { addNode(S.lastType, p.x, p.y, S.lastExtra); return; }
@@ -2738,6 +2955,8 @@
       pushHistory();
       svg.classList.add('dragging');
     }
+    if (d.kind === 'item') { d.o.x = snap(d.ox + dx); d.o.y = snap(d.oy + dy); updateItems(); return; }
+    if (d.kind === 'resize') { d.o.w = Math.max(60, snap(d.ow + dx)); d.o.h = Math.max(40, snap(d.oh + dy)); drawItems(); return; }
     // Guías: se pega a bordes y centros de otros nodos (Alt las desactiva)
     const g = d.orig.length && !ev.altKey ? guideSnap(d, dx, dy) : null;
     d.orig.forEach(o => {
@@ -2758,6 +2977,7 @@
       return;
     }
     if (d.kind === 'box') { d.rect.remove(); select(S.sel); return; }
+    if (d.kind === 'item' || d.kind === 'resize') { if (d.moved) { syncEditor(); save(); updateMeta(); } return; }
     drawGuides([]);
     if (d.moved) { syncEditor(); save(); }
     else {
