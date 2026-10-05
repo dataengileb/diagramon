@@ -182,6 +182,7 @@ Abre la pestaña **Versiones**.
 - **Ángulos** (o **`E`**) cambia las conexiones entre curvas y líneas en ángulo recto que esquivan los nodos.
   Para cambiar una sola conexión, selecciónala y elige su **Línea**.
 - **Exportar** › SVG, PNG o JSON. Guarda el JSON para volver a abrirlo más tarde con **Importar**.
+- **Exportar › Mermaid, PlantUML o draw.io** convierte el diagrama en código o en un archivo para otras herramientas: un flowchart de Mermaid (se ve en GitHub, GitLab y Notion), un diagrama de PlantUML sin inclusiones externas, o un `.drawio` que conserva la misma disposición, los grupos anidados y los iconos oficiales.
 - **Exportar › HTML cifrado** crea un único `.html` para compartir un diagrama en privado. Quien lo recibe le da doble clic, escribe la contraseña y ve el diagrama (oscuro o claro, con zoom). Sin la app, sin instalar ni descargar nada. Detalles más abajo.
 - El menú **Exportar** también tiene **Leyenda y cajetín** (activado por defecto), con los campos **Autor** y **Versión**.
   Los archivos SVG y PNG llevan entonces un panel abajo con solo lo que usa el diagrama (estilos de conexión, candados,
@@ -372,6 +373,7 @@ El lenguaje de texto está en `window.DiagramonText` (`parse` y `stringify`).
 | `app.js` | Motor del editor |
 | `text-lang.js` | Lenguaje de texto (diagrama como código) |
 | `examples.js` | Plantillas |
+| `export-mermaid.js`, `export-plantuml.js`, `export-drawio.js` | Exportadores a Mermaid, PlantUML y draw.io |
 | `share.js` | Visor HTML cifrado y autosuficiente para compartir |
 | `iac.js` | Importación de infraestructura como código (Terraform, CloudFormation, Kubernetes, Compose) |
 | `samples/` | Archivos de IaC de ejemplo para probar la importación |

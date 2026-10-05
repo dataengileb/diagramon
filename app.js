@@ -2285,7 +2285,8 @@
     const b = ev.target.closest('[data-export]');
     if (!b) return;
     exportMenu.open = false;
-    ({ svg: exportSVG, png: exportPNG, json: exportJSON, copy: copyJSON, share: shareEncrypted })[b.dataset.export]();
+    const f = { svg: exportSVG, png: exportPNG, json: exportJSON, copy: copyJSON, share: shareEncrypted }[b.dataset.export];
+    if (f) f(); else exportOther(b.dataset.export);
   });
 
   $('#zoom-in').addEventListener('click', () => animateView(zoomTarget(1.25), 220));
@@ -2497,6 +2498,38 @@
     document.addEventListener('keydown', key, true);
     document.body.appendChild(back);
     pw.focus();
+  }
+  /* ---------- exportar a otras herramientas (export-*.js) ----------
+     Cada exportador recibe una copia del diagrama y este contexto, y devuelve { text, ext, mime }. */
+  const hexOf = k => {
+    const pal = C.palettes[S.palette]?.light || {}, key = COLOR_ALIAS[k] || k;
+    return pal[key] || (/^#[0-9a-f]{3,8}$/i.test(k || '') ? k : null);
+  };
+  function exportCtx() {
+    const m = S.model, byId = new Map(m.nodes.map(n => [n.id, n]));
+    const nodeHex = n => hexOf(n?.color) || hexOf(typeOf(n || {}).color) || hexOf(C.palettes[S.palette]?.accent) || '#8573DB';
+    return {
+      title: m.title, lang: I.lang,
+      direction: (m.direction || C.layout.direction) === 'TB' ? 'TB' : 'LR',
+      routing: m.routing === 'elbow' ? 'elbow' : 'curved',
+      typeLabel,
+      edgeStyleLabel: st => loc((C.edgeStyles[st] || C.edgeStyles.sync).label),
+      color: x => (!x ? '#8573DB' : 'from' in x ? hexOf(x.color) || nodeHex(byId.get(x.from)) : 'type' in x ? nodeHex(x) : hexOf(x.color) || '#776F84'),
+      dataLabel: k => (DATA[k] ? { short: loc(DATA[k].short) || k.toUpperCase(), label: loc(DATA[k].label) || k, sensitive: !!DATA[k].sensitive } : { short: String(k).toUpperCase(), label: String(k), sensitive: false }),
+      icon: ref => { const i = iconInfo(ref); return i ? { src: i.src, label: i.label } : null; },
+      size: n => ({ w: R.width.get(n.id) || nodeWidth(n), h: H }),
+      groupBox: id => { const b = R.gbox.get(id); return b ? { x: b.x, y: b.y, w: b.w, h: b.h } : null; }
+    };
+  }
+  function exportOther(fmt) {
+    const fn = window.DiagramonExport?.[fmt];
+    if (!fn) return;
+    try {
+      const model = clone({ ...S.model, versions: undefined, active: undefined });
+      const out = fn(model, exportCtx());
+      download(out.text, fileName(out.ext), out.mime || 'text/plain');
+      toast(T('toast.exported', { name: T(`exp.${fmt}`) }));
+    } catch (e) { console.error(e); toast(T('toast.exportFail')); }
   }
   function exportJSON() { download(serialize(S.model, true), fileName('json'), 'application/json'); toast(T('toast.json')); }
   function copyJSON() {
@@ -2764,7 +2797,7 @@
     get lang() { return I.lang; },
     select: ids => select({ kind: 'multi', ids: [].concat(ids) }), align: alignNodes,
     saveVersion, openVersion, compareVersion, deleteVersion,
-    exportSVG, exportPNG, exportJSON, shareEncrypted, toggleRouting, importFiles, config: C, icons: ICONS
+    exportSVG, exportPNG, exportJSON, shareEncrypted, exportOther, exportCtx, toggleRouting, importFiles, config: C, icons: ICONS
   };
 
   init();

@@ -197,6 +197,7 @@ Open the **Versions** tab.
 - **Elbows** (or **`E`**) switches the connections between curves and right-angle lines that go around the nodes.
   To change only one connection, select it and pick its **Line**.
 - **Export** › SVG, PNG or JSON. Keep the JSON to open it again later with **Import**.
+- **Export › Mermaid, PlantUML or draw.io** turns the diagram into code or a file for other tools: a Mermaid flowchart (renders in GitHub, GitLab and Notion), a PlantUML diagram with no external includes, or a `.drawio` file that keeps the same layout, nested groups and official icons.
 - **Export › Encrypted HTML** creates one `.html` file to share a diagram privately. Whoever receives it double-clicks it, types the password and sees the diagram (dark or light, with zoom). No app, no install, no download. Details below.
 - The **Export** menu also has **Legend and title block** (on by default), with **Author** and **Version** fields.
   SVG and PNG files then get a panel at the bottom with only what the diagram uses (connection styles, padlocks,
@@ -386,6 +387,7 @@ The text language is in `window.DiagramonText` (`parse` and `stringify`). UI tra
 | `app.js` | Editor engine |
 | `text-lang.js` | Text language (diagram as code) |
 | `examples.js` | Templates |
+| `export-mermaid.js`, `export-plantuml.js`, `export-drawio.js` | Exporters to Mermaid, PlantUML and draw.io |
 | `share.js` | Encrypted, self-contained HTML viewer for sharing |
 | `iac.js` | Infrastructure-as-code import (Terraform, CloudFormation, Kubernetes, Compose) |
 | `samples/` | Sample IaC files to try the import |
