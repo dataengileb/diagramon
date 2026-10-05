@@ -114,6 +114,7 @@ Prefer Spanish? Click the 🌐 **EN** button in the top bar, or press **`L`**.
 2. Click **New** to start with an empty canvas.
 3. In **Components**, open the **Provider** list and pick **Generic**, **AWS**, **Azure**, **Google Cloud**, **SAP BTP** or **Microsoft Fabric**.
    Only that provider's components are shown. Use the search box: `lambda`, `s3`, `hana`…
+   It also matches synonyms and equivalents, in English and Spanish: `sql` finds RDS, Cloud SQL and Azure SQL; `k8s` finds EKS, AKS and GKE; `cola` finds SQS and Service Bus.
    For **SAP**, the **SAP systems** without an official icon (S/4HANA, ECC, TM, EWM…) appear at the top.
 4. **Click** a component to add it to the center, or **drag** it onto the canvas.
    Double-click an empty spot on the canvas to add another one like the last.

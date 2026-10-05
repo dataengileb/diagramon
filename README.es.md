@@ -99,6 +99,7 @@ de verdad. Ese tipo de información no debería viajar a un servicio de terceros
 2. Pulsa **Nuevo** para empezar con el lienzo vacío.
 3. En **Componentes**, abre la lista **Proveedor** y elige **Genéricos**, **AWS**, **Azure**, **Google Cloud**, **SAP BTP** o **Microsoft Fabric**.
    Solo verás los componentes de ese proveedor. Usa el buscador: `lambda`, `s3`, `hana`…
+   También entiende sinónimos y equivalentes, en español e inglés: `sql` encuentra RDS, Cloud SQL y Azure SQL; `k8s` encuentra EKS, AKS y GKE; `cola` encuentra SQS y Service Bus.
    En **SAP**, arriba salen los **sistemas SAP** sin icono oficial (S/4HANA, ECC, TM, EWM…).
 4. Haz **clic** en un componente para añadirlo al centro, o **arrástralo** al lienzo.
    Doble clic en un hueco del lienzo añade otro igual al último.

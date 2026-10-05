@@ -1684,13 +1684,14 @@
   let iconIndex = null;
   const allIcons = () => iconIndex || (iconIndex = Object.entries(ICONS).flatMap(([p, set]) => Object.entries(set.items).map(([k, it]) => ({
     ref: `${p}/${k}`, label: it.label, provider: set.label, category: it.category, src: set.files[it.file],
-    text: fold(`${it.label} ${k} ${set.label} ${set.short || ''} ${it.category}`), name: fold(it.label)
+    text: fold(`${it.label} ${k} ${set.label} ${set.short || ''} ${it.category} ${it.keywords || ''}`), name: fold(it.label)
   }))));
-  // Primero los que empiezan por lo escrito, luego los que tienen una palabra que empieza así, luego el resto
+  // Orden: etiqueta empieza por lo escrito, tiene una palabra que empieza así, la contiene, y al final solo por palabras clave
+  const iconRank = (name, w) => (name.startsWith(w) ? 0 : name.split(/[\s/()-]+/).some(x => x.startsWith(w)) ? 1 : name.includes(w) ? 2 : 3);
   function searchIcons(q, max = 40) {
     const words = fold(q).trim().split(/\s+/).filter(Boolean);
     if (!words.length) return allIcons().slice(0, max);
-    const rank = it => (it.name.startsWith(words[0]) ? 0 : it.name.split(/[\s/()-]+/).some(w => w.startsWith(words[0])) ? 1 : 2);
+    const rank = it => iconRank(it.name, words[0]);
     return allIcons().filter(it => words.every(w => it.text.includes(w)))
       .sort((a, b) => rank(a) - rank(b) || a.label.localeCompare(b.label)).slice(0, max);
   }
@@ -2035,8 +2036,13 @@
       const preItems = (pre?.items || []).map(p => ({ ...p, sub: loc(p.sub) })).filter(p => !q || fold(`${p.label} ${p.sub || ''} ${p.keywords || ''}`).includes(q));
       if (preItems.length) groups.set(loc(pre.title), preItems.map(p => [null, p]));
       Object.entries(set.items)
-        .filter(([k, it]) => !q || fold(`${it.label} ${k} ${it.category} ${I.category(it.category)}`).includes(q))
+        .filter(([k, it]) => !q || fold(`${it.label} ${k} ${it.category} ${I.category(it.category)} ${it.keywords || ''}`).includes(q))
         .forEach(([k, it]) => { if (!groups.has(it.category)) groups.set(it.category, []); groups.get(it.category).push([k, it]); });
+      // Con búsqueda, dentro de cada categoría primero las coincidencias por nombre y luego las de palabras clave
+      if (q) for (const items of groups.values()) {
+        const r = ([k, it]) => (k == null ? 0 : iconRank(fold(it.label), q.split(/\s+/)[0]));
+        items.sort((a, b) => r(a) - r(b));
+      }
       $('#palette-list').innerHTML = [...groups].map(([cat, items]) => `<div class="cat">${esc(I.category(cat))}</div><div class="chips">${items.map(([k, it]) => k == null
         ? chip(`data-type="${esc(it.type)}" data-label="${esc(it.label)}" data-sub="${esc(it.sub || '')}"`, colorVar(it.color || (C.types[it.type] || C.types.generic).color), typeIcon(it.type), it.label)
         : chip(`data-type="${it.type}" data-icon="${S.provider}/${k}" data-label="${esc(it.label)}"`, colorVar((C.types[it.type] || C.types.generic).color), `<img src="${set.files[it.file]}" alt="">`, it.label, true)).join('')}</div>`).join('')
