@@ -183,6 +183,7 @@ Open the **Versions** tab.
 - Each card shows its **status**: **Draft**, **In review**, **Approved** or **Rejected**, also shown above the title and in the exported title block.
 - **✎** edits the status, the **architecture author**, the **created** and **updated** dates and the note, with no need to delete and save again. The last author you typed is suggested for new versions.
 - Updating an environment that was **Approved** or **Rejected** puts it back **In review**, because its content changed.
+- Approving or rejecting records **who decided and when** (shown on the card and in the exported title block). A rejection asks for a **reason**, and every status change is kept in a **status history** you can read in the edit form.
 - Saving, opening, deleting and every edit can be undone with **`⌘Z`**.
 - Versions are stored inside the diagram, so **Export › JSON** carries them all.
 

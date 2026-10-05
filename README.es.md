@@ -168,6 +168,7 @@ Abre la pestaña **Versiones**.
 - Cada tarjeta muestra su **estado**: **Borrador**, **En revisión**, **Aprobado** o **Rechazado**, que también aparece sobre el título y en el cajetín exportado.
 - **✎** edita el estado, el **autor de la arquitectura**, las fechas de **creación** y **actualización** y la nota, sin tener que borrar y volver a guardar. El último autor que escribiste se propone en las versiones nuevas.
 - Al actualizar un ambiente **Aprobado** o **Rechazado**, vuelve a **En revisión**, porque su contenido cambió.
+- Aprobar o rechazar registra **quién decidió y cuándo** (se ve en la tarjeta y en el cajetín exportado). Un rechazo pide un **motivo**, y cada cambio de estado queda en un **historial de estados** que se lee en el formulario de edición.
 - Guardar, abrir, eliminar y cada edición se deshacen con **`⌘Z`**.
 - Las versiones se guardan dentro del diagrama, así que **Exportar › JSON** las lleva todas.
 

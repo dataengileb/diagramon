@@ -130,6 +130,8 @@ review db: "DB in a public subnet" by=Ana raised=2026-10-01 due=2026-11-15
       'ver.created': 'Created', 'ver.updatedOn': 'Updated', 'ver.edit': 'Edit status, author and dates', 'ver.editDone': 'Done',
       'ver.createdOn': ({ date }) => `Created ${date}`, 'ver.dates': ({ a, b }) => `Created ${a} · updated ${b}`,
       'ver.statusSet': ({ name, status }) => `${name}: ${status}`, 'leg.status': 'Status',
+      'ver.approvedBy': 'Approved by', 'ver.rejectedBy': 'Rejected by', 'ver.decidedOn': 'Date', 'ver.reason': 'Reason', 'ver.reason.ph': 'Why it was rejected',
+      'ver.reasonWarn': 'Add the reason for the rejection', 'ver.history': 'Status history',
       'ver.edge': 'connection', 'ver.group': 'group', 'field.title': 'Title', 'field.badge': 'Badge', 'field.position': 'position',
 
       'data.label': 'Data classification', 'data.edge': 'Data in transit', 'data.none': 'Tag the data it stores or handles.', 'data.noneEdge': 'Tag the data this connection carries.',
@@ -272,6 +274,8 @@ revisión db: "BD en subred pública" por=Ana levantada=2026-10-01 compromiso=20
       'ver.created': 'Creación', 'ver.updatedOn': 'Actualización', 'ver.edit': 'Editar estado, autor y fechas', 'ver.editDone': 'Listo',
       'ver.createdOn': ({ date }) => `Creado ${date}`, 'ver.dates': ({ a, b }) => `Creado ${a} · actualizado ${b}`,
       'ver.statusSet': ({ name, status }) => `${name}: ${status}`, 'leg.status': 'Estado',
+      'ver.approvedBy': 'Aprobado por', 'ver.rejectedBy': 'Rechazado por', 'ver.decidedOn': 'Fecha', 'ver.reason': 'Motivo', 'ver.reason.ph': 'Por qué se rechazó',
+      'ver.reasonWarn': 'Añade el motivo del rechazo', 'ver.history': 'Historial de estados',
       'ver.edge': 'conexión', 'ver.group': 'grupo', 'field.title': 'Título', 'field.badge': 'Insignia', 'field.position': 'posición',
 
       'data.label': 'Clasificación de datos', 'data.edge': 'Datos en tránsito', 'data.none': 'Marca los datos que guarda o maneja.', 'data.noneEdge': 'Marca los datos que viajan por esta conexión.',
