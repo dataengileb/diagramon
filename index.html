@@ -357,6 +357,13 @@
   .ver-form input, .ver-form select, .ver-form textarea { width: 100%; min-width: 0; box-sizing: border-box; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface2); color: var(--text); font: 12.5px var(--font); resize: vertical; }
   .ver-form input:focus, .ver-form select:focus, .ver-form textarea:focus { outline: none; border-color: var(--c); }
   .ver-dates { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .ver-warn { margin-top: 2px; font-size: 11px; font-weight: 650; color: var(--p-coral); }
+  .ver-warn[hidden] { display: none; }
+  .ver-hist { display: grid; gap: 4px; font-size: 11px; color: var(--muted); }
+  .ver-hist > span { font-weight: 650; }
+  .ver-hist ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 2px; }
+  .ver-hist li { overflow-wrap: anywhere; }
+  .ver-hist li b { color: var(--s); }
   .ver-note { margin-top: 4px; font-size: 12px; overflow-wrap: anywhere; }
   .ver-actions { display: flex; gap: 5px; margin-top: 8px; }
   .ver-actions .btn { flex: 1; padding: 0 6px; white-space: nowrap; }

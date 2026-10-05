@@ -136,6 +136,8 @@ review db: "DB in a public subnet" by=Ana raised=2026-10-01 due=2026-11-15
       'ver.cf.updTitle': ({ name }) => `Update ${name}?`, 'ver.cf.updText': 'It is approved. Updating it with the canvas changes its content, so it goes back to "In review".',
       'ver.cf.delTitle': ({ name }) => `Delete ${name}?`, 'ver.cf.delText': 'It is approved. You can undo the deletion with ⌘Z.',
       'ver.cf.apprTitle': n => `${n} open review ${n === 1 ? 'finding' : 'findings'} in this version. Approve anyway?`, 'ver.cf.apprText': 'These findings are still open in its snapshot:', 'ver.cf.apprOk': 'Approve anyway',
+      'ver.approvedBy': 'Approved by', 'ver.rejectedBy': 'Rejected by', 'ver.decidedOn': 'Date', 'ver.reason': 'Reason', 'ver.reason.ph': 'Why it was rejected',
+      'ver.reasonWarn': 'Add the reason for the rejection', 'ver.history': 'Status history',
       'ver.edge': 'connection', 'ver.group': 'group', 'field.title': 'Title', 'field.badge': 'Badge', 'field.position': 'position',
 
       'data.label': 'Data classification', 'data.edge': 'Data in transit', 'data.none': 'Tag the data it stores or handles.', 'data.noneEdge': 'Tag the data this connection carries.',
@@ -280,10 +282,12 @@ revisión db: "BD en subred pública" por=Ana levantada=2026-10-01 compromiso=20
       'ver.created': 'Creación', 'ver.updatedOn': 'Actualización', 'ver.edit': 'Editar estado, autor y fechas', 'ver.editDone': 'Listo',
       'ver.createdOn': ({ date }) => `Creado ${date}`, 'ver.dates': ({ a, b }) => `Creado ${a} · actualizado ${b}`,
       'ver.statusSet': ({ name, status }) => `${name}: ${status}`, 'leg.status': 'Estado',
-      'ver.cf.cancel': 'Cancelar', 'ver.openFindings': n => `${n} ${n === 1 ? 'hallazgo abierto' : 'hallazgos abiertos'}`,
+      'ver.cf.cancel': 'Cancelar', 'ver.openFindings': n => `${n} ${n === 1 ? 'observación abierta' : 'observaciones abiertas'}`,
       'ver.cf.updTitle': ({ name }) => `¿Actualizar ${name}?`, 'ver.cf.updText': 'Está aprobado. Al actualizarlo con el lienzo cambia su contenido, así que vuelve a "En revisión".',
       'ver.cf.delTitle': ({ name }) => `¿Eliminar ${name}?`, 'ver.cf.delText': 'Está aprobado. Puedes deshacer la eliminación con ⌘Z.',
-      'ver.cf.apprTitle': n => `${n} ${n === 1 ? 'hallazgo de revisión abierto' : 'hallazgos de revisión abiertos'} en esta versión. ¿Aprobar de todos modos?`, 'ver.cf.apprText': 'Estos hallazgos siguen abiertos en su foto:', 'ver.cf.apprOk': 'Aprobar igualmente',
+      'ver.cf.apprTitle': n => `${n} ${n === 1 ? 'observación de revisión abierta' : 'observaciones de revisión abiertas'} en esta versión. ¿Aprobar de todos modos?`, 'ver.cf.apprText': 'Estas observaciones siguen abiertas en su foto:', 'ver.cf.apprOk': 'Aprobar igualmente',
+      'ver.approvedBy': 'Aprobado por', 'ver.rejectedBy': 'Rechazado por', 'ver.decidedOn': 'Fecha', 'ver.reason': 'Motivo', 'ver.reason.ph': 'Por qué se rechazó',
+      'ver.reasonWarn': 'Añade el motivo del rechazo', 'ver.history': 'Historial de estados',
       'ver.edge': 'conexión', 'ver.group': 'grupo', 'field.title': 'Título', 'field.badge': 'Insignia', 'field.position': 'posición',
 
       'data.label': 'Clasificación de datos', 'data.edge': 'Datos en tránsito', 'data.none': 'Marca los datos que guarda o maneja.', 'data.noneEdge': 'Marca los datos que viajan por esta conexión.',

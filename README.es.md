@@ -170,7 +170,8 @@ Abre la pestaña **Versiones**.
 - **✎** edita el estado, el **autor de la arquitectura**, las fechas de **creación** y **actualización** y la nota, sin tener que borrar y volver a guardar. El último autor que escribiste se propone en las versiones nuevas.
 - Sobre la lista, las **fichas de estado** (*Todos*, *Borrador*, *En revisión*…) con su cuenta filtran versiones y ambientes; vuelve a pulsar la activa para verlo todo.
 - Al actualizar un ambiente **Aprobado** o **Rechazado**, vuelve a **En revisión**, porque su contenido cambió.
-- Actualizar o eliminar una versión o ambiente **Aprobado** pide confirmación antes. Aprobar uno que aún tiene **hallazgos de revisión abiertos** en su foto avisa, los lista y conserva el estado anterior si cancelas. Una tarjeta aprobada con hallazgos abiertos muestra una marca coral **⚑ hallazgos abiertos**.
+- Actualizar o eliminar una versión o ambiente **Aprobado** pide confirmación antes. Aprobar uno que aún tiene **observaciones de revisión abiertas** en su foto avisa, las lista y conserva el estado anterior si cancelas. Una tarjeta aprobada con observaciones abiertas muestra una marca coral **⚑ observaciones abiertas**.
+- Aprobar o rechazar registra **quién decidió y cuándo** (se ve en la tarjeta y en el cajetín exportado). Un rechazo pide un **motivo**, y cada cambio de estado queda en un **historial de estados** que se lee en el formulario de edición.
 - Guardar, abrir, eliminar y cada edición se deshacen con **`⌘Z`**.
 - Las versiones se guardan dentro del diagrama, así que **Exportar › JSON** las lleva todas.
 
