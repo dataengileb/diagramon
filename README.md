@@ -139,6 +139,7 @@ Prefer Spanish? Click the 🌐 **EN** button in the top bar, or press **`L`**.
 - **`⇧` + drag** on the background selects an area. **`⌘A`** selects everything.
 - With several nodes selected, the right panel can **align** them (left, center, right, top, middle, bottom)
   and **distribute** them with equal spacing, horizontally or vertically.
+- With exactly two nodes selected, the right panel shows **Show path A → B** (or press **`R`**): the shortest route follows the arrows, lights up every edge of any shortest route and numbers the steps. If no directed route exists it falls back to ignoring direction and says so. **`Esc`**, the × or any click clears it.
 - While dragging, pink **guides** snap the node to the edges and centers of the others. Hold **`Alt`** to turn them off.
 
 ### 5. Costs
@@ -171,6 +172,12 @@ The component gets a tag: **IN REVIEW** (orange), **OVERDUE** (red, once the due
 The panel shows how many days are left or how late it is, and the summary above the canvas counts open and overdue findings.
 Diagramon remembers the last reviewer name. Exports with the legend list the open findings with their due date.
 
+### Filters
+
+**Filter** (or **`G`**) opens a panel of chips: **Data** (each class in the diagram, plus *Unencrypted sensitive flows*), **Review**, **Provider**, **Category**, **Group** and **Cost**.
+Chips in the same section add up (OR); different sections combine (AND). What does not match fades out, including empty groups and connections whose ends do not both match, and selecting a component still works on top.
+A pill above the canvas shows the active filter (`Filter: PII · AWS · 7 of 20`) with an **×** to clear it. The filter is remembered per browser and never changes the exports. From the console: `Diagramon.setFilter({ data: ['pii'], provider: ['aws'] })` and `Diagramon.clearFilter()`.
+
 ### 8. Versions and environments
 
 Open the **Versions** tab.
@@ -191,9 +198,19 @@ Open the **Versions** tab.
 - Saving, opening, deleting and every edit can be undone with **`⌘Z`**.
 - Versions are stored inside the diagram, so **Export › JSON** carries them all.
 
-### 9. Present and export
+### 9. Sticky notes and risk zones
+
+Use the two buttons next to the zoom controls (bottom right of the canvas).
+- **Add a sticky note** puts a note in the middle of the view. Double-click it (or use the panel) to write.
+- **Add a risk zone** draws a hatched, dashed area under the groups, with a tag like `⚠ HIGH · Public subnet exposure`. Pick its **Severity** (*Low, Medium, High, Critical*) and an optional description in the panel.
+- Select several components and click **⚠ Mark as risk zone** to draw a zone around them.
+- Drag to move, drag the corner handle to resize (it snaps to the grid), **`⌘D`** duplicates and **Delete** removes. Everything can be undone.
+- The summary above the canvas counts the zones (*⚠ 2 risk zones (1 critical)*), exports with the legend list them by severity, and versions and JSON files keep notes and zones.
+
+### 10. Present and export
 
 - **Flow** (or **`P`**) lights up the diagram step by step, from clients to data.
+- **Present** (or **`V`**) goes full screen with no panels: an overview with the title, then one slide per group (in reading order, zooming in and dimming the rest) and a closing overview. Without groups it steps through the flow. **`→`**, **`Space`** or click go forward, **`←`** goes back, **`Home`/`End`** and number keys jump, **`P`** plays the flow, **`Esc`** exits and restores your view. Editing is off while presenting.
 - **Arrange** lays everything out automatically, following the flow. Each group is arranged inside its own box, so groups never overlap. **Fit** (or **`F`**) centers the diagram.
 - **Elbows** (or **`E`**) switches the connections between curves and right-angle lines that go around the nodes. Several elbow lines on the same side of a node leave from separate, evenly spaced points so they never overlap.
   To change only one connection, select it and pick its **Line**.
@@ -216,9 +233,12 @@ Open the **Versions** tab.
 | `C` | Connect |
 | `F` | Fit to view |
 | `P` | Play the flow |
+| `R` | Show the path between two selected nodes |
+| `V` | Present full screen (`→` `←` `Space` `Home` `End` `1`–`9`, `Esc` to exit) |
 | `T` | Cycle light → dark → high-contrast black mode |
 | `L` | Switch English / Spanish |
 | `E` | Switch curved / elbow connectors |
+| `G` | Open the filter panel (`Esc` closes it) |
 | `Esc` | Cancel or clear the selection |
 
 ---
