@@ -52,8 +52,8 @@ around 290 official cloud icons, and the browser itself blocks every network req
 
 **How it is enforced**
 
-- **One HTML page with plain JavaScript.** No third-party libraries, no CDN, no web fonts, no trackers.
-  The official icons are embedded in `icons/*.js`.
+- **One HTML page with plain JavaScript.** No third-party libraries, no CDN, no web fonts loaded from the internet, no trackers.
+  The official icons are embedded in `icons/*.js` and the three fonts in `fonts/fonts.js` (base64).
 - **The browser blocks the network.** `index.html` sets a Content Security Policy (`connect-src 'none'`).
   Even if someone added code that tried to send data, the browser would refuse it.
 - **Short, open code.** You can read every line. There are no calls to `fetch`, `XMLHttpRequest`, `WebSocket` or `sendBeacon`.
@@ -338,6 +338,7 @@ Everything you can customize is in **`config.js`**. Save and reload `index.html`
 - **Node size**: with `node.sameSize: true` (default) every node is `node.width` wide and long names wrap to 2 lines.
   With `false`, each node grows with its text.
 - **Shortcuts without an official icon**: `presets` adds items at the top of a provider's list (for example, SAP systems).
+- **Fonts**: pick Inter (default), IBM Plex Sans or Fira Code from the top bar; the choice is saved in your browser and embedded in SVG/PNG exports. They are bundled with the app (not loaded from the web). To add one, drop its `.woff2` files in `fonts/`, add an entry to `FONTS` in `tools/build-fonts.py` (see the header) and run `python3 tools/build-fonts.py`.
 - **Palettes**: add an entry to `palettes` with the same color keys (`rosa`, `coral`, …) for `dark` and `light`.
 - **New component type**: copy an entry in `types` and change `label`, `category`, `color`, `keywords` and `icon` (a 24×24 SVG).
 - **Connections**: `edgeStyles` sets dash, width and particle count.
@@ -393,6 +394,8 @@ The text language is in `window.DiagramonText` (`parse` and `stringify`). UI tra
 | `samples/` | Sample IaC files to try the import |
 | `icons/*.js` | Embedded official icons for AWS, Azure, Google Cloud, SAP BTP and Microsoft Fabric |
 | `tools/build-icons.py` | Builds `icons/*.js` from the official packs |
+| `fonts/` | Bundled fonts (`.woff2`, OFL licenses) and the generated `fonts.js` |
+| `tools/build-fonts.py` | Builds `fonts/fonts.js` from `fonts/*.woff2` |
 
 ---
 
@@ -403,7 +406,7 @@ Contributions are welcome! Open an *issue* with your idea or send a *pull reques
 To keep the spirit of the project:
 
 - **No external dependencies** and no build step: it must keep working with a double-click.
-- **No network connections**: no analytics, CDN, web fonts or APIs.
+- **No network connections**: no analytics, CDN, web fonts loaded from the web or APIs (the fonts are bundled).
 - Customizable things belong in `config.js`. New UI text goes in `i18n.js`, in both languages.
 
 ---
@@ -420,6 +423,9 @@ Thank you for the idea and the starting point. 💜
 
 Diagramon's code is **open source** under the [MIT license](LICENSE): use it, change it and share it freely,
 including in commercial projects.
+
+The bundled fonts are [Inter](https://github.com/rsms/inter), [IBM Plex Sans](https://github.com/IBM/plex) and [Fira Code](https://github.com/tonsky/FiraCode), under the SIL Open Font License 1.1
+(copies in [`fonts/OFL-Inter.txt`](fonts/OFL-Inter.txt), [`fonts/OFL-IBMPlexSans.txt`](fonts/OFL-IBMPlexSans.txt) and [`fonts/OFL-FiraCode.txt`](fonts/OFL-FiraCode.txt)).
 
 The **official icons** in `icons/` belong to Amazon Web Services, Microsoft, Google and SAP, and are **not** covered by the MIT license.
 AWS, Microsoft and Google allow their use in architecture diagrams under their own terms.

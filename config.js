@@ -15,9 +15,17 @@ window.DIAGRAMON_CONFIG = {
     storageKey: 'diagramon'          // prefijo para guardar en el navegador
   },
 
+  /* Tipografías. Las incluidas viven en fonts/ (fonts/fonts.js, ver tools/build-fonts.py);
+     aquí solo las alternativas. `system` funciona aunque falte fonts.js. */
   fonts: {
-    ui: 'ui-sans-serif, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
-    mono: 'ui-monospace, "SF Mono", Menlo, Consolas, monospace'
+    default: 'inter',            // clave de `families`
+    mono: 'ui-monospace, "SF Mono", Menlo, Consolas, monospace',
+    families: {
+      system: { label: { en: 'System', es: 'Sistema' }, css: 'ui-sans-serif, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif' },
+      inter: { label: 'Inter', css: '"Inter", ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif' },
+      plex: { label: 'IBM Plex Sans', css: '"IBM Plex Sans", ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif' },
+      fira: { label: 'Fira Code', css: '"Fira Code", ui-monospace, "SF Mono", Menlo, Consolas, monospace' }
+    }
   },
 
   /* Colores de interfaz. Cada clave se convierte en la variable CSS --clave. */
