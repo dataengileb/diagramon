@@ -60,6 +60,7 @@ de verdad. Ese tipo de información no debería viajar a un servicio de terceros
 - 🖱️ **Selección múltiple, alineación y guías**: alinea, reparte con el mismo espacio y pega nodos a bordes y centros.
 - 💵 **Costos a mano**: precio en USD por hora, mes, año o varios años, en un recuadro bajo cada servicio y con el total mensual.
 - ⌨️ **Diagrama como código**: escribe en texto y el lienzo se actualiza al momento. Texto, JSON y lienzo siempre sincronizados.
+- 🗂️ **Versiones y ambientes**: guarda el lienzo como *Versión 1, 2, 3…* o como *Desarrollo, Calidad, Producción*, ábrelos cuando quieras y compáralos con el lienzo: lo nuevo en verde, lo cambiado en amarillo y lo eliminado como fantasma rojo.
 - 🔦 **Resaltar el flujo** de un componente: vecinos, destinos, orígenes o todo.
 - 🌐 **Inglés o español**: la app abre en inglés; el botón 🌐 de la barra superior (o la tecla **`L`**) la pasa a español y recuerda tu elección.
 - 🌗 **Modo oscuro** por defecto, **modo claro** con una tecla y paletas pastel (Pastel, Sorbete, Nórdico).
@@ -129,7 +130,20 @@ Con varios servicios elegidos, el panel muestra el costo de la selección.
 
 > Diagramon no consulta precios en internet (por privacidad). Los costos los escribes tú.
 
-### 6. Presentar y exportar
+### 6. Versiones y ambientes
+
+Abre la pestaña **Versiones**.
+
+- **+ Versión N** guarda una foto fija del lienzo. Sirve como historial: *Versión 1*, *Versión 2*…
+- **DEV**, **QA** y **PROD** guardan el lienzo como ese ambiente. Cada ambiente tiene una sola copia; al guardar otra vez se actualiza.
+- Antes de guardar puedes escribir una **nota**, por ejemplo *antes de la migración*.
+- **Abrir** lo carga en el lienzo. Una etiqueta sobre el título muestra qué está abierto y avisa si hay cambios sin guardar.
+- **Comparar** marca las diferencias con el lienzo: **verde** es nuevo, **amarillo** cambiado y los fantasmas **rojos punteados** se eliminaron.
+  La tarjeta lista cada diferencia; haz clic en una para ir a ella. **Esc** o **Parar** terminan la comparación.
+- Guardar, abrir y eliminar se deshacen con **`⌘Z`**.
+- Las versiones se guardan dentro del diagrama, así que **Exportar › JSON** las lleva todas.
+
+### 7. Presentar y exportar
 
 - **Flujo** (o **`P`**) ilumina el diagrama paso a paso, de los clientes a los datos.
 - **Ordenar** recoloca todo automáticamente. **Ajustar** (o **`F`**) centra el diagrama.
@@ -204,6 +218,7 @@ El texto no guarda posiciones: los nodos que ya existían no se mueven y los nue
 
 - Solo `id` y `type` son necesarios en los nodos. Sin `x`/`y` se colocan solos.
 - `costPeriod`: `hour`, `year` o `multi` (con `costYears`). Sin `costPeriod` el costo es mensual.
+- El archivo exportado también lleva `versions` (cada una con `kind`: `version` o `env`, y su propio `diagram`) y `active`.
 - `color` acepta una clave de la paleta o cualquier color CSS.
 
 </details>
@@ -216,6 +231,7 @@ Todo lo personalizable está en **`config.js`**. Guarda y recarga `index.html`.
 
 - **Tema por defecto**: `app.defaultTheme: 'dark' | 'light'`.
 - **Idioma por defecto**: `app.defaultLang: 'en' | 'es'`. Los textos de la interfaz están en `i18n.js`; los de `config.js` y `examples.js` pueden ser `{ en: '…', es: '…' }`.
+- **Ambientes**: `environments` define los botones de la pestaña *Versiones* (nombre, texto corto y color). Añade o quita los que necesites.
 - **Tamaño de los nodos**: con `node.sameSize: true` (por defecto) todos miden `node.width` y los nombres largos usan 2 líneas.
   Con `false`, cada nodo crece con su texto.
 - **Atajos sin icono oficial**: `presets` añade elementos arriba de la lista de un proveedor (por ejemplo, los sistemas SAP).
@@ -251,7 +267,7 @@ Todo lo personalizable está en **`config.js`**. Guarda y recarga `index.html`.
 <summary><b>API para extensiones</b></summary>
 
 `window.Diagramon` expone `model`, `load()`, `addNode()`, `addEdge()`, `select()`, `align()`, `relayout()`,
-`fitView()`, `togglePlay()`, `toggleTheme()`, `toggleLang()`, `lang`, `exportSVG()`, `exportPNG()`, `exportJSON()`, `config` e `icons`.
+`fitView()`, `togglePlay()`, `toggleTheme()`, `toggleLang()`, `lang`, `saveVersion()`, `openVersion()`, `compareVersion()`, `deleteVersion()`, `exportSVG()`, `exportPNG()`, `exportJSON()`, `config` e `icons`.
 El lenguaje de texto está en `window.DiagramonText` (`parse` y `stringify`).
 
 </details>

@@ -98,7 +98,22 @@ cost=0.1/hour · 120/month · 1400/year · 5000/3years  (USD)
       'insp.edge': 'Connection', 'insp.label': 'Label', 'insp.label.ph': 'e.g. HTTPS, SQL, events', 'insp.style': 'Style',
       'insp.ends': 'Endpoints', 'insp.source': 'source', 'insp.target': 'target', 'insp.reverse': 'Reverse',
       'insp.groupNote': n => `${plural(n, 'component', 'components')} inside. Drag the group label to move it all.`,
-      'insp.parent': 'Inside of', 'insp.deleteGroup': 'Delete group'
+      'insp.parent': 'Inside of', 'insp.deleteGroup': 'Delete group',
+
+      'tab.versions': 'Versions',
+      'ver.saveAs': 'Save the canvas as', 'ver.versionN': n => `Version ${n}`,
+      'ver.saveEnv': ({ name }) => `Save as ${name}`, 'ver.updateEnv': ({ name }) => `Update ${name} with the canvas`,
+      'ver.note': 'Note', 'ver.note.ph': 'Note (optional): e.g. before the migration',
+      'ver.envs': 'Environments', 'ver.versions': 'Versions',
+      'ver.empty': 'Nothing saved yet. Save the canvas as a version (a frozen snapshot) or as an environment, then open or compare it any time.',
+      'ver.open': 'Open', 'ver.compare': 'Compare', 'ver.stop': 'Stop', 'ver.saveHere': 'Update', 'ver.delete': 'Delete',
+      'ver.openTip': 'Load it on the canvas', 'ver.compareTip': 'Compare it with the canvas', 'ver.saveHereTip': 'Replace it with the canvas',
+      'ver.current': 'on canvas', 'ver.dirty': 'unsaved changes',
+      'ver.saved': ({ name }) => `Saved as ${name}`, 'ver.updated': ({ name }) => `${name} updated`,
+      'ver.opened': ({ name }) => `${name} opened · ⌘Z to go back`, 'ver.deleted': ({ name }) => `${name} deleted · ⌘Z to undo`,
+      'ver.comparing': ({ name }) => `Comparing the canvas with <b>${name}</b>`, 'ver.exit': 'Exit the comparison (Esc)',
+      'ver.summary': ({ a, r, c }) => `+${a} new · −${r} removed · ~${c} changed`, 'ver.same': 'No differences',
+      'ver.edge': 'connection', 'ver.group': 'group', 'field.title': 'Title', 'field.badge': 'Badge', 'field.position': 'position'
     },
 
     es: {
@@ -184,7 +199,22 @@ costo=0.1/hora · 120/mes · 1400/año · 5000/3años  (USD)
       'insp.edge': 'Conexión', 'insp.label': 'Etiqueta', 'insp.label.ph': 'p. ej. HTTPS, SQL, eventos', 'insp.style': 'Estilo',
       'insp.ends': 'Extremos', 'insp.source': 'origen', 'insp.target': 'destino', 'insp.reverse': 'Invertir',
       'insp.groupNote': n => `${plural(n, 'componente', 'componentes')} dentro. Arrastra la etiqueta del grupo para moverlo entero.`,
-      'insp.parent': 'Dentro de', 'insp.deleteGroup': 'Eliminar grupo'
+      'insp.parent': 'Dentro de', 'insp.deleteGroup': 'Eliminar grupo',
+
+      'tab.versions': 'Versiones',
+      'ver.saveAs': 'Guardar el lienzo como', 'ver.versionN': n => `Versión ${n}`,
+      'ver.saveEnv': ({ name }) => `Guardar como ${name}`, 'ver.updateEnv': ({ name }) => `Actualizar ${name} con el lienzo`,
+      'ver.note': 'Nota', 'ver.note.ph': 'Nota (opcional): p. ej. antes de la migración',
+      'ver.envs': 'Ambientes', 'ver.versions': 'Versiones',
+      'ver.empty': 'Aún no hay nada guardado. Guarda el lienzo como versión (una foto fija) o como ambiente, y luego ábrelo o compáralo cuando quieras.',
+      'ver.open': 'Abrir', 'ver.compare': 'Comparar', 'ver.stop': 'Parar', 'ver.saveHere': 'Actualizar', 'ver.delete': 'Eliminar',
+      'ver.openTip': 'Cargarlo en el lienzo', 'ver.compareTip': 'Compararlo con el lienzo', 'ver.saveHereTip': 'Reemplazarlo por el lienzo',
+      'ver.current': 'en el lienzo', 'ver.dirty': 'cambios sin guardar',
+      'ver.saved': ({ name }) => `Guardado como ${name}`, 'ver.updated': ({ name }) => `${name} actualizado`,
+      'ver.opened': ({ name }) => `${name} abierto · ⌘Z para volver`, 'ver.deleted': ({ name }) => `${name} eliminado · ⌘Z para deshacer`,
+      'ver.comparing': ({ name }) => `Comparando el lienzo con <b>${name}</b>`, 'ver.exit': 'Salir de la comparación (Esc)',
+      'ver.summary': ({ a, r, c }) => `+${a} nuevos · −${r} eliminados · ~${c} cambiados`, 'ver.same': 'Sin diferencias',
+      'ver.edge': 'conexión', 'ver.group': 'grupo', 'field.title': 'Título', 'field.badge': 'Insignia', 'field.position': 'posición'
     }
   };
 

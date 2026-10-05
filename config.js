@@ -86,6 +86,14 @@ window.DIAGRAMON_CONFIG = {
     }
   },
 
+  /* Ambientes de la pestaña "Versiones". Cada uno guarda su propia copia del diagrama.
+     short: texto del botón · color: clave de la paleta. Añade o quita los que quieras. */
+  environments: {
+    dev:  { label: { en: 'Development', es: 'Desarrollo' }, short: 'DEV', color: 'cielo' },
+    qa:   { label: { en: 'Quality (QA)', es: 'Calidad (QA)' }, short: 'QA', color: 'limon' },
+    prod: { label: { en: 'Production', es: 'Producción' }, short: 'PROD', color: 'coral' }
+  },
+
   /* Costos escritos a mano en cada componente (recuadro bajo el nodo).
      hoursPerMonth: horas usadas para pasar un precio por hora a mensual.
      defaultYears: años por defecto del periodo "Multianual". */

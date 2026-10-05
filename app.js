@@ -45,13 +45,14 @@
     view: { x: 0, y: 0, k: 1 },
     sel: null, hover: null, connecting: null, drag: null, play: null, lastDown: null,
     history: [], future: [], lastType: 'compute', lastExtra: {},
-    provider: store.get('provider', 'generic')
+    provider: store.get('provider', 'generic'),
+    compare: null, verNote: ''
   };
   // Referencias a elementos SVG y medidas calculadas (nunca se guardan en el modelo)
   const R = { nodes: new Map(), edges: new Map(), groups: new Map(), width: new Map(), gbox: new Map() };
 
   const svg = $('#canvas'), viewport = $('#viewport'), stage = $('#stage');
-  const L = { groups: $('#l-groups'), edges: $('#l-edges'), nodes: $('#l-nodes'), guides: $('#l-guides') };
+  const L = { groups: $('#l-groups'), edges: $('#l-edges'), ghosts: $('#l-ghosts'), nodes: $('#l-nodes'), guides: $('#l-guides') };
 
   const ICON = {
     x: '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>',
@@ -199,7 +200,26 @@
       const from = String(e.from), to = String(e.to);
       if (nids.has(from) && nids.has(to)) m.edges.push({ ...e, id: take(e.id, 'e', i), from, to });
     });
+    m.versions = normVersions(raw.versions);
+    if (raw.active != null && m.versions.some(v => v.id === String(raw.active))) m.active = String(raw.active);
     return m;
+  }
+
+  // Versiones (fotos fijas) y ambientes (una copia por ambiente) guardados dentro del diagrama
+  function normVersions(list) {
+    const used = new Set();
+    return (Array.isArray(list) ? list : []).filter(v => v && typeof v === 'object' && v.diagram && typeof v.diagram === 'object').map((v, i) => {
+      const kind = v.kind === 'env' ? 'env' : 'version';
+      let id = v.id != null && v.id !== '' ? String(v.id) : `${kind === 'env' ? 'env-' : 'v'}${i + 1}`;
+      while (used.has(id)) id += '_';
+      used.add(id);
+      const o = { id, kind };
+      if (kind === 'env') o.env = String(v.env || 'env'); else o.n = Math.max(1, Math.round(+v.n) || i + 1);
+      if (v.note) o.note = String(v.note);
+      o.savedAt = String(v.savedAt || '');
+      o.diagram = v.diagram;
+      return o;
+    });
   }
 
   function ensurePositions(m) {
@@ -342,6 +362,7 @@
     m.edges.forEach((e, i) => buildEdge(e, animate ? base + i * 30 : -1));
     m.nodes.forEach((n, i) => buildNode(n, animate ? i * C.animation.enterStagger : -1));
     updateGeometry();
+    applyCompare();
     applyHighlight();
     updateMeta();
   }
@@ -480,6 +501,7 @@
       r.box.setAttribute('width', box.w); r.box.setAttribute('height', box.h);
       r.tag.setAttribute('transform', `translate(${box.x + 12} ${box.y + 10})`);
     });
+    if (S.compare?.diff) drawGhosts();
   }
 
   /* ---------- resaltado ---------- */
@@ -659,14 +681,15 @@
     $('#btn-redo').disabled = !S.future.length;
   }
 
-  const save = debounce(() => store.set('model', S.model), 250);
+  // Además de guardar, refresca el aviso de "cambios sin guardar" de la versión abierta
+  const save = debounce(() => { store.set('model', S.model); updateMeta(); renderVersions(); }, 250);
 
   const ORDER = {
     group: ['id', 'label', 'color', 'parent'],
     node: ['id', 'label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'x', 'y', 'cost', 'costPeriod', 'costYears', 'desc'],
     edge: ['id', 'from', 'to', 'label', 'style', 'color']
   };
-  function serialize(m) {
+  function serialize(m, full = false) {
     const ordered = (o, keys) => { const r = {}; keys.forEach(k => k in o && (r[k] = o[k])); Object.keys(o).forEach(k => k in r || (r[k] = o[k])); return r; };
     const line = o => '{ ' + Object.entries(o)
       .filter(([, v]) => v !== undefined && v !== null && v !== '')
@@ -677,7 +700,13 @@
       : `  "${name}": []`;
     const head = [`  "title": ${JSON.stringify(m.title)}`];
     if (m.direction) head.push(`  "direction": ${JSON.stringify(m.direction)}`);
-    return `{\n${[...head, arr('groups', m.groups, ORDER.group), arr('nodes', m.nodes, ORDER.node), arr('edges', m.edges, ORDER.edge)].join(',\n')}\n}\n`;
+    const body = [...head, arr('groups', m.groups, ORDER.group), arr('nodes', m.nodes, ORDER.node), arr('edges', m.edges, ORDER.edge)];
+    // El archivo exportado lleva también las versiones; el editor JSON no las muestra
+    if (full && m.versions?.length) {
+      if (m.active) body.push(`  "active": ${JSON.stringify(m.active)}`);
+      body.push(`  "versions": [\n${m.versions.map(v => '    ' + JSON.stringify(v)).join(',\n')}\n  ]`);
+    }
+    return `{\n${body.join(',\n')}\n}\n`;
   }
   /* ---------- editores de código: JSON y texto ---------- */
   function setStatus(sel, ok, msg) {
@@ -716,6 +745,8 @@
   function setModel(raw, opts = {}) {
     stopPlay();
     if (opts.history) pushHistory();
+    // El texto y el JSON del editor no incluyen las versiones: se conservan las que había
+    if (opts.fromEditor && S.model && raw && typeof raw === 'object' && !Array.isArray(raw.versions)) raw = { ...raw, versions: S.model.versions, active: S.model.active };
     S.model = normalize(raw);
     ensurePositions(S.model);
     S.sel = normSel(S.sel);
@@ -732,7 +763,7 @@
 
   // Tras cambiar el modelo desde el lienzo o el inspector
   function changed(structural = true) {
-    if (structural) render(false); else updateGeometry();
+    if (structural) render(false); else { updateGeometry(); applyCompare(); }
     syncEditor();
     save();
     updateUndoButtons();
@@ -746,6 +777,12 @@
     const t = $('#title');
     if (document.activeElement !== t) t.value = m.title;
     $('#empty').hidden = m.nodes.length > 0;
+    const v = activeVersion(), pill = $('#stage-ver');
+    pill.hidden = !v;
+    if (v) {
+      pill.style.setProperty('--c', verColor(v));
+      pill.innerHTML = `<span class="dot"></span>${esc(verLabel(v))}${isDirty(v) ? ` <small>· ${esc(T('ver.dirty'))}</small>` : ''}`;
+    }
     document.title = `${m.title} · ${C.app.name}`;
   }
 
@@ -1028,6 +1065,220 @@
     $$('.pulse, .pulse-node', svg).forEach(n => n.classList.remove('pulse', 'pulse-node'));
     applyHighlight();
   }
+
+  /* ---------- versiones y ambientes ---------- */
+  const verLabel = v => (v.kind === 'env' ? loc(C.environments?.[v.env]?.label) || v.env.toUpperCase() : T('ver.versionN', v.n));
+  const verColor = v => (v.kind === 'env' ? colorVar(C.environments?.[v.env]?.color) : null) || 'var(--accent)';
+  const activeVersion = () => S.model?.versions.find(v => v.id === S.model.active) || null;
+  const findVersion = id => S.model.versions.find(v => v.id === id);
+  // Solo lo que se dibuja: sin versiones y con posiciones redondeadas
+  const snapshotOf = m => {
+    const d = clone({ title: m.title, ...(m.direction ? { direction: m.direction } : {}), groups: m.groups, nodes: m.nodes, edges: m.edges });
+    d.nodes.forEach(n => { n.x = Math.round(n.x); n.y = Math.round(n.y); });
+    return d;
+  };
+  const prepared = v => { const d = normalize(clone(v.diagram)); ensurePositions(d); return d; };
+  const canon = v => JSON.stringify(v, (k, x) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map(j => [j, x[j]])) : x));
+  const isDirty = v => canon(snapshotOf(prepared(v))) !== canon(snapshotOf(S.model));
+  const fmtDate = iso => { const d = new Date(iso); return isNaN(d) ? '' : new Intl.DateTimeFormat(I.lang, { dateStyle: 'medium', timeStyle: 'short' }).format(d); };
+
+  // Los cambios en las versiones van al historial: ⌘Z deshace guardar, abrir o eliminar
+  function versionsChanged() {
+    save();
+    updateUndoButtons();
+    updateMeta();
+    renderVersions();
+  }
+  function saveVersion(kind = 'version', env) {
+    const vs = S.model.versions, note = S.verNote.trim();
+    if (kind === 'env' && !C.environments?.[env]) return;
+    pushHistory();
+    let v = kind === 'env' ? vs.find(x => x.kind === 'env' && x.env === env) : null;
+    const existed = !!v;
+    if (!v) {
+      const n = Math.max(0, ...vs.filter(x => x.kind === 'version').map(x => x.n)) + 1;
+      let id = kind === 'env' ? `env-${env}` : `v${n}`;
+      while (vs.some(x => x.id === id)) id += '_';
+      v = kind === 'env' ? { id, kind, env } : { id, kind, n };
+      vs.push(v);
+    }
+    if (note) v.note = note;
+    v.savedAt = new Date().toISOString();
+    v.diagram = snapshotOf(S.model);
+    S.model.active = v.id;
+    S.verNote = '';
+    versionsChanged();
+    if (S.compare) applyCompare();
+    toast(T(existed ? 'ver.updated' : 'ver.saved', { name: verLabel(v) }));
+  }
+  function openVersion(id) {
+    const v = findVersion(id);
+    if (!v) return;
+    S.sel = null;
+    setModel({ ...clone(v.diagram), versions: S.model.versions, active: v.id }, { history: true });
+    toast(T('ver.opened', { name: verLabel(v) }));
+  }
+  function deleteVersion(id) {
+    const v = findVersion(id);
+    if (!v) return;
+    pushHistory();
+    S.model.versions = S.model.versions.filter(x => x.id !== id);
+    if (S.model.active === id) delete S.model.active;
+    if (S.compare?.id === id) S.compare = null;
+    applyCompare();
+    versionsChanged();
+    toast(T('ver.deleted', { name: verLabel(v) }));
+  }
+  function compareVersion(id) {
+    S.compare = id && S.compare?.id !== id && findVersion(id) ? { id } : null;
+    applyCompare();
+    renderVersions();
+  }
+
+  // Diferencias entre lo guardado (a) y el lienzo (b). La posición no cuenta como cambio.
+  const DIFF_FIELDS = {
+    node: ['label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'cost', 'costPeriod', 'costYears', 'desc'],
+    edge: ['label', 'style', 'color'],
+    group: ['label', 'color', 'parent']
+  };
+  function diffModels(a, b) {
+    const val = (f, x) => (f === 'style' ? x || 'sync' : x == null ? '' : String(x));
+    const cmp = (A, B, key, fields) => {
+      const am = new Map(A.map(x => [key(x), x])), bm = new Map(B.map(x => [key(x), x]));
+      return {
+        added: B.filter(x => !am.has(key(x))),
+        removed: A.filter(x => !bm.has(key(x))),
+        changed: B.filter(x => am.has(key(x))).map(x => ({ item: x, fields: fields.filter(f => val(f, am.get(key(x))[f]) !== val(f, x[f])) })).filter(c => c.fields.length)
+      };
+    };
+    const d = {
+      nodes: cmp(a.nodes, b.nodes, n => n.id, DIFF_FIELDS.node),
+      edges: cmp(a.edges, b.edges, e => `${e.from}\0${e.to}`, DIFF_FIELDS.edge),
+      groups: cmp(a.groups, b.groups, g => g.id, DIFF_FIELDS.group),
+      title: a.title !== b.title ? { from: a.title, to: b.title } : null
+    };
+    const sum = k => d.nodes[k].length + d.edges[k].length + d.groups[k].length;
+    d.count = { a: sum('added'), r: sum('removed'), c: sum('changed') + (d.title ? 1 : 0) };
+    return d;
+  }
+
+  // Marca en el lienzo lo nuevo (verde) y lo cambiado (amarillo); lo eliminado se dibuja como fantasma
+  function applyCompare() {
+    $$('.diff-tag', L.nodes).forEach(x => x.remove());
+    [...R.nodes.values(), ...[...R.edges.values()].map(r => r.g), ...[...R.groups.values()].map(r => r.g)].forEach(g => g.classList.remove('diff-add', 'diff-chg'));
+    const v = S.compare && findVersion(S.compare.id);
+    if (S.compare && !v) S.compare = null;
+    svg.classList.toggle('comparing', !!v);
+    $('#compare-bar').hidden = !v;
+    if (!v) { L.ghosts.textContent = ''; return; }
+    const base = prepared(v), d = diffModels(base, S.model);
+    Object.assign(S.compare, { base, diff: d });
+    const tag = (g, ch, color) => {
+      const t = el('g', { class: 'diff-tag', style: `--dc:${color}` }, g);
+      el('circle', { cx: 4, cy: 4, r: 9 }, t);
+      el('text', { x: 4, y: 8, 'text-anchor': 'middle' }, t).textContent = ch;
+    };
+    d.nodes.added.forEach(n => { const g = R.nodes.get(n.id); if (g) { g.classList.add('diff-add'); tag(g, '+', 'var(--p-menta)'); } });
+    d.nodes.changed.forEach(c => { const g = R.nodes.get(c.item.id); if (g) { g.classList.add('diff-chg'); tag(g, '~', 'var(--p-limon)'); } });
+    d.edges.added.forEach(e => R.edges.get(e.id)?.g.classList.add('diff-add'));
+    d.edges.changed.forEach(c => R.edges.get(c.item.id)?.g.classList.add('diff-chg'));
+    d.groups.added.forEach(g => R.groups.get(g.id)?.g.classList.add('diff-add'));
+    d.groups.changed.forEach(c => R.groups.get(c.item.id)?.g.classList.add('diff-chg'));
+    drawGhosts();
+    const bar = $('#compare-bar');
+    bar.style.setProperty('--c', verColor(v));
+    $('#compare-text').innerHTML = `${T('ver.comparing', { name: esc(verLabel(v)) })} · ${d.count.a + d.count.r + d.count.c ? esc(T('ver.summary', d.count)) : esc(T('ver.same'))}`;
+  }
+  function drawGhosts() {
+    L.ghosts.textContent = '';
+    const { base, diff: d } = S.compare;
+    const cur = new Map(S.model.nodes.map(n => [n.id, n])), old = new Map(base.nodes.map(n => [n.id, n]));
+    const rect = id => { const n = cur.get(id) || old.get(id); return n && { x: n.x, y: n.y, w: R.width.get(id) || nodeWidth(n), h: H }; };
+    d.edges.removed.forEach(e => {
+      const a = rect(e.from), b = rect(e.to);
+      if (a && b && e.from !== e.to) el('path', { class: 'ghost-edge', d: curvePath(a, b, 0) }, L.ghosts);
+    });
+    d.nodes.removed.forEach(n => {
+      const w = nodeWidth(n), g = el('g', { class: 'ghost', transform: `translate(${n.x} ${n.y})` }, L.ghosts);
+      el('rect', { class: 'ghost-card', width: w, height: H, rx: C.node.radius }, g);
+      el('text', { x: 18, y: H / 2 + 5 }, g).textContent = fitText(`− ${n.label}`, FONT.label, w - 30);
+    });
+  }
+
+  function renderVersions() {
+    const box = $('#versions');
+    if (!box || !S.model) return;
+    const vs = S.model.versions, envs = Object.entries(C.environments || {});
+    const nextN = Math.max(0, ...vs.filter(v => v.kind === 'version').map(v => v.n)) + 1;
+    const focused = document.activeElement?.id === 'ver-note';
+    const card = v => {
+      const on = v.id === S.model.active, cmp = S.compare?.id === v.id, dirty = on && isDirty(v);
+      return `<div class="ver${on ? ' on' : ''}${cmp ? ' cmp' : ''}" data-id="${esc(v.id)}" style="--c:${verColor(v)}">
+        <div class="ver-head"><span class="dot"></span><b>${esc(verLabel(v))}</b>${on ? `<em${dirty ? ' class="dirty"' : ''}>${esc(T(dirty ? 'ver.dirty' : 'ver.current'))}</em>` : ''}</div>
+        <div class="ver-meta">${esc([fmtDate(v.savedAt), T('meta.nodes', v.diagram.nodes?.length || 0)].filter(Boolean).join(' · '))}</div>
+        ${v.note ? `<div class="ver-note">${esc(v.note)}</div>` : ''}
+        ${cmp && S.compare.diff ? diffList(S.compare.diff) : ''}
+        <div class="ver-actions">
+          <button class="btn small" data-ver="open" title="${esc(T('ver.openTip'))}">${T('ver.open')}</button>
+          <button class="btn small${cmp ? ' on' : ''}" data-ver="compare" title="${esc(T('ver.compareTip'))}">${T(cmp ? 'ver.stop' : 'ver.compare')}</button>
+          ${v.kind === 'env' ? `<button class="btn small" data-ver="update" title="${esc(T('ver.saveHereTip'))}">${T('ver.saveHere')}</button>` : ''}
+          <button class="btn small danger icon" data-ver="delete" title="${esc(T('ver.delete'))}" aria-label="${esc(T('ver.delete'))}">${ICON.x}</button>
+        </div>
+      </div>`;
+    };
+    const section = (title, list) => (list.length ? `<div class="cat">${esc(title)}</div>${list.map(card).join('')}` : '');
+    const envList = envs.flatMap(([k]) => vs.filter(v => v.kind === 'env' && v.env === k)).concat(vs.filter(v => v.kind === 'env' && !C.environments?.[v.env]));
+    box.innerHTML = `<div class="ver-save">
+        <div class="cat">${esc(T('ver.saveAs'))}</div>
+        <button class="btn" data-save="version">+ ${esc(T('ver.versionN', nextN))}</button>
+        ${envs.length ? `<div class="ver-envs">${envs.map(([k, e]) => {
+          const has = vs.some(v => v.kind === 'env' && v.env === k);
+          return `<button class="btn small env-btn" data-save="env" data-env="${esc(k)}" style="--c:${colorVar(e.color) || 'var(--accent)'}" title="${esc(T(has ? 'ver.updateEnv' : 'ver.saveEnv', { name: loc(e.label) || k }))}"><span class="dot"></span>${esc(loc(e.short) || k.toUpperCase())}</button>`;
+        }).join('')}</div>` : ''}
+        <input class="search" id="ver-note" style="padding-left:10px" value="${esc(S.verNote)}" placeholder="${esc(T('ver.note.ph'))}" aria-label="${esc(T('ver.note'))}" autocomplete="off">
+      </div>
+      <div class="ver-list">${section(T('ver.envs'), envList)}${section(T('ver.versions'), vs.filter(v => v.kind === 'version').sort((a, b) => b.n - a.n))}</div>
+      ${vs.length ? '' : `<p class="empty-list">${esc(T('ver.empty'))}</p>`}`;
+    if (focused) { const n = $('#ver-note'); n.focus(); n.setSelectionRange(n.value.length, n.value.length); }
+  }
+  function diffList(d) {
+    if (!(d.count.a + d.count.r + d.count.c)) return `<p class="ver-sum">${esc(T('ver.same'))}</p>`;
+    const FIELD = { label: 'insp.name', sub: 'insp.detail', type: 'insp.type', icon: 'insp.icon', group: 'insp.group', color: 'insp.color', badge: 'field.badge',
+      cost: 'cost.label', costPeriod: 'cost.period', costYears: 'cost.yearsAria', desc: 'insp.desc', style: 'insp.style', parent: 'insp.parent' };
+    const fields = (fs, kind) => fs.map(f => T(kind === 'edge' && f === 'label' ? 'insp.label' : FIELD[f] || f).toLowerCase()).join(', ');
+    const names = new Map([...S.compare.base.nodes, ...S.model.nodes].map(n => [n.id, n.label]));
+    const edgeName = e => `${names.get(e.from) || e.from} → ${names.get(e.to) || e.to}`;
+    const rows = [];
+    if (d.title) rows.push(['chg', T('field.title'), d.title.to]);
+    d.nodes.added.forEach(n => rows.push(['add', n.label, '', n.id]));
+    d.nodes.changed.forEach(c => rows.push(['chg', c.item.label, fields(c.fields), c.item.id]));
+    d.nodes.removed.forEach(n => rows.push(['del', n.label]));
+    d.groups.added.forEach(g => rows.push(['add', g.label, T('ver.group')]));
+    d.groups.changed.forEach(c => rows.push(['chg', c.item.label, `${T('ver.group')}: ${fields(c.fields)}`]));
+    d.groups.removed.forEach(g => rows.push(['del', g.label, T('ver.group')]));
+    d.edges.added.forEach(e => rows.push(['add', edgeName(e), T('ver.edge')]));
+    d.edges.changed.forEach(c => rows.push(['chg', edgeName(c.item), `${T('ver.edge')}: ${fields(c.fields, 'edge')}`]));
+    d.edges.removed.forEach(e => rows.push(['del', edgeName(e), T('ver.edge')]));
+    return `<p class="ver-sum">${esc(T('ver.summary', d.count))}</p><ul class="diff-list">${rows.map(([k, name, extra, id]) =>
+      `<li class="d-${k}"${id ? ` data-goto="${esc(id)}"` : ''}><i>${k === 'add' ? '+' : k === 'del' ? '−' : '~'}</i><span title="${esc(name)}">${esc(name)}</span>${extra ? `<em title="${esc(extra)}">${esc(extra)}</em>` : ''}</li>`).join('')}</ul>`;
+  }
+
+  const versionsBox = $('#versions');
+  versionsBox.addEventListener('input', ev => { if (ev.target.id === 'ver-note') S.verNote = ev.target.value; });
+  versionsBox.addEventListener('keydown', ev => { if (ev.target.id === 'ver-note' && ev.key === 'Enter') saveVersion('version'); });
+  versionsBox.addEventListener('click', ev => {
+    const goto = ev.target.closest('[data-goto]');
+    if (goto) return select({ kind: 'node', id: goto.dataset.goto }, { center: true });
+    const b = ev.target.closest('button');
+    if (!b) return;
+    if (b.dataset.save) return saveVersion(b.dataset.save, b.dataset.env);
+    const id = b.closest('.ver')?.dataset.id;
+    if (b.dataset.ver === 'open') openVersion(id);
+    else if (b.dataset.ver === 'compare') compareVersion(id);
+    else if (b.dataset.ver === 'update') { const v = findVersion(id); if (v) saveVersion('env', v.env); }
+    else if (b.dataset.ver === 'delete') deleteVersion(id);
+  });
+  $('#compare-exit').addEventListener('click', () => compareVersion(null));
 
   /* ---------- inspector ---------- */
   const swatches = cur => `<div class="swatches">
@@ -1425,6 +1676,8 @@
     renderExamples();
     if (!S.model) return;
     renderInspector();
+    renderVersions();
+    applyCompare();
     updateMeta();
     writeEditors(null, true);
   }
@@ -1503,7 +1756,8 @@
     out.insertBefore(style, out.firstChild);
     out.insertBefore(el('rect', { width: W, height: Ht, fill: t.bg }), style.nextSibling);
     const title = el('text', { x: pad, y: pad + 10, fill: t.text, 'font-size': 20, 'font-weight': 700, 'font-family': C.fonts.ui });
-    title.textContent = S.model.title;
+    const av = activeVersion();
+    title.textContent = av ? `${S.model.title}  ·  ${verLabel(av)}` : S.model.title;
     out.insertBefore(title, vp);
     return { str: '<?xml version="1.0" encoding="UTF-8"?>\n' + new XMLSerializer().serializeToString(out), W, H: Ht };
   }
@@ -1521,9 +1775,9 @@
     img.onerror = () => toast(T('toast.pngFail'));
     img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(str);
   }
-  function exportJSON() { download(serialize(S.model), fileName('json'), 'application/json'); toast(T('toast.json')); }
+  function exportJSON() { download(serialize(S.model, true), fileName('json'), 'application/json'); toast(T('toast.json')); }
   function copyJSON() {
-    const txt = serialize(S.model);
+    const txt = serialize(S.model, true);
     const fallback = () => {
       const ta = document.createElement('textarea');
       ta.value = txt; document.body.appendChild(ta); ta.select();
@@ -1695,7 +1949,7 @@
     else if (mod && k === 'a') { ev.preventDefault(); select({ kind: 'multi', ids: S.model.nodes.map(n => n.id) }); }
     else if (mod) return;
     else if (ev.key === 'Delete' || ev.key === 'Backspace') { if (S.sel) { ev.preventDefault(); deleteSelection(); } }
-    else if (ev.key === 'Escape') { if (S.play) stopPlay(); else if (S.connecting) cancelConnect(); else select(null); }
+    else if (ev.key === 'Escape') { if (S.play) stopPlay(); else if (S.connecting) cancelConnect(); else if (!S.sel && S.compare) compareVersion(null); else select(null); }
     else if (k === 'f') fitView();
     else if (k === 'p') togglePlay();
     else if (k === 't') toggleTheme();
@@ -1750,6 +2004,7 @@
     addNode, addEdge, relayout, fitView, togglePlay, toggleTheme, toggleLang,
     get lang() { return I.lang; },
     select: ids => select({ kind: 'multi', ids: [].concat(ids) }), align: alignNodes,
+    saveVersion, openVersion, compareVersion, deleteVersion,
     exportSVG, exportPNG, exportJSON, config: C, icons: ICONS
   };
 
