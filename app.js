@@ -1718,15 +1718,17 @@
   let iconIndex = null;
   const allIcons = () => iconIndex || (iconIndex = Object.entries(ICONS).flatMap(([p, set]) => Object.entries(set.items).map(([k, it]) => ({
     ref: `${p}/${k}`, label: it.label, provider: set.label, category: it.category, src: set.files[it.file],
-    text: fold(`${it.label} ${k} ${set.label} ${set.short || ''} ${it.category} ${it.keywords || ''}`), name: fold(it.label)
+    text: fold(`${it.label} ${k} ${set.label} ${set.short || ''} ${it.category}`), kw: it.keywords || '', name: fold(it.label)
   }))));
+  // Las palabras clave valen desde el inicio de una palabra: "sql" no debe encontrar "nosql"
+  const kwHit = (kw, q) => !!kw && ` ${fold(kw)}`.includes(` ${q}`);
   // Orden: etiqueta empieza por lo escrito, tiene una palabra que empieza así, la contiene, y al final solo por palabras clave
   const iconRank = (name, w) => (name.startsWith(w) ? 0 : name.split(/[\s/()-]+/).some(x => x.startsWith(w)) ? 1 : name.includes(w) ? 2 : 3);
   function searchIcons(q, max = 40) {
     const words = fold(q).trim().split(/\s+/).filter(Boolean);
     if (!words.length) return allIcons().slice(0, max);
     const rank = it => iconRank(it.name, words[0]);
-    return allIcons().filter(it => words.every(w => it.text.includes(w)))
+    return allIcons().filter(it => words.every(w => it.text.includes(w) || kwHit(it.kw, w)))
       .sort((a, b) => rank(a) - rank(b) || a.label.localeCompare(b.label)).slice(0, max);
   }
   const iconPicker = n => {
@@ -2070,7 +2072,7 @@
       const preItems = (pre?.items || []).map(p => ({ ...p, sub: loc(p.sub) })).filter(p => !q || fold(`${p.label} ${p.sub || ''} ${p.keywords || ''}`).includes(q));
       if (preItems.length) groups.set(loc(pre.title), preItems.map(p => [null, p]));
       Object.entries(set.items)
-        .filter(([k, it]) => !q || fold(`${it.label} ${k} ${it.category} ${I.category(it.category)} ${it.keywords || ''}`).includes(q))
+        .filter(([k, it]) => !q || fold(`${it.label} ${k} ${it.category} ${I.category(it.category)}`).includes(q) || kwHit(it.keywords, q))
         .forEach(([k, it]) => { if (!groups.has(it.category)) groups.set(it.category, []); groups.get(it.category).push([k, it]); });
       // Con búsqueda, dentro de cada categoría primero las coincidencias por nombre y luego las de palabras clave
       if (q) for (const items of groups.values()) {
