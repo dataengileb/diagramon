@@ -126,6 +126,7 @@ Prefer Spanish? Click the 🌐 **EN** button in the top bar, or press **`L`**.
 ### 3. Edit and group
 
 - **Click** a node: the right panel shows its name, detail, icon, color and description.
+- To change the icon, type part of its name in the **Icon** search (`lamb`, `sql`, `kafka`…) and pick a suggestion with the mouse or with ↑ ↓ and Enter. The × goes back to the generic icon.
 - **Double-click** a node, group or connection to rename it.
 - Use **Group › + New group…** to create a group. Drag its label to move the whole group.
 

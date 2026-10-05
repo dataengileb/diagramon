@@ -137,6 +137,7 @@ review db: "DB in a public subnet" by=Ana raised=2026-10-01 due=2026-11-15
       'rev.hint.overdue': n => `Overdue by ${n} ${n === 1 ? 'day' : 'days'}`, 'rev.hint.resolved': ({ date }) => `Resolved on ${date}`,
       'toast.revAdded': 'Review finding raised', 'toast.revResolved': 'Marked resolved', 'toast.revRemoved': 'Review finding removed',
       'leg.review': 'OPEN REVIEW FINDINGS',
+      'icon.ph': 'Search icon: lambda, sql, kafka…', 'icon.none': 'No icon matches. Try another name.',
 
       'top.route': 'Connector lines: curved or elbow (E)', 'top.route.lbl': 'Elbows',
       'toast.elbow': 'Elbow connectors', 'toast.curved': 'Curved connectors',
@@ -269,6 +270,7 @@ revisión db: "BD en subred pública" por=Ana levantada=2026-10-01 compromiso=20
       'rev.hint.overdue': n => `Vencida hace ${n} ${n === 1 ? 'día' : 'días'}`, 'rev.hint.resolved': ({ date }) => `Resuelta el ${date}`,
       'toast.revAdded': 'Observación levantada', 'toast.revResolved': 'Marcada como resuelta', 'toast.revRemoved': 'Observación quitada',
       'leg.review': 'OBSERVACIONES ABIERTAS',
+      'icon.ph': 'Buscar icono: lambda, sql, kafka…', 'icon.none': 'Ningún icono coincide. Prueba otro nombre.',
 
       'top.route': 'Líneas de conexión: curvas o en ángulo recto (E)', 'top.route.lbl': 'Ángulos',
       'toast.elbow': 'Conectores en ángulo recto', 'toast.curved': 'Conectores curvos',
