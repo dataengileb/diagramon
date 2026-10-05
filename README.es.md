@@ -112,6 +112,7 @@ de verdad. Ese tipo de información no debería viajar a un servicio de terceros
 ### 3. Editar y agrupar
 
 - Haz **clic** en un nodo: el panel derecho muestra nombre, detalle, icono, color y descripción.
+- Para cambiar el icono, escribe parte de su nombre en el buscador **Icono** (`lamb`, `sql`, `kafka`…) y elige una sugerencia con el ratón o con ↑ ↓ y Enter. La × vuelve al icono genérico.
 - **Doble clic** sobre un nodo, grupo o conexión lo renombra.
 - En **Grupo › + Nuevo grupo…** creas un grupo. Arrastra su etiqueta para mover el grupo entero.
 

@@ -1428,9 +1428,56 @@
     const ts = Object.entries(C.types).filter(([, t]) => (t.category || 'Otros') === cat);
     return ts.length ? `<optgroup label="${esc(I.category(cat))}">${ts.map(([k, t]) => `<option value="${k}"${k === cur ? ' selected' : ''}>${esc(loc(t.label))}</option>`).join('')}</optgroup>` : '';
   }).join('');
-  const iconOptions = cur => `<option value="">${esc(T('insp.ownIcon'))}</option>` + Object.entries(ICONS).map(([p, set]) =>
-    `<optgroup label="${esc(set.label)}">${Object.entries(set.items).sort((a, b) => a[1].label.localeCompare(b[1].label))
-      .map(([k, it]) => `<option value="${p}/${k}"${cur === `${p}/${k}` ? ' selected' : ''}>${esc(it.label)}</option>`).join('')}</optgroup>`).join('');
+  /* ---------- buscador de iconos con autocompletado ---------- */
+  // Todos los iconos oficiales en una lista plana, con el texto donde se busca ya preparado
+  let iconIndex = null;
+  const allIcons = () => iconIndex || (iconIndex = Object.entries(ICONS).flatMap(([p, set]) => Object.entries(set.items).map(([k, it]) => ({
+    ref: `${p}/${k}`, label: it.label, provider: set.label, category: it.category, src: set.files[it.file],
+    text: fold(`${it.label} ${k} ${set.label} ${set.short || ''} ${it.category}`), name: fold(it.label)
+  }))));
+  // Primero los que empiezan por lo escrito, luego los que tienen una palabra que empieza así, luego el resto
+  function searchIcons(q, max = 40) {
+    const words = fold(q).trim().split(/\s+/).filter(Boolean);
+    if (!words.length) return allIcons().slice(0, max);
+    const rank = it => (it.name.startsWith(words[0]) ? 0 : it.name.split(/[\s/()-]+/).some(w => w.startsWith(words[0])) ? 1 : 2);
+    return allIcons().filter(it => words.every(w => it.text.includes(w)))
+      .sort((a, b) => rank(a) - rank(b) || a.label.localeCompare(b.label)).slice(0, max);
+  }
+  const iconPicker = n => {
+    const cur = iconInfo(n.icon);
+    return `<div class="field">${T('insp.icon')}
+      <div class="ipick">
+        <span class="ipick-cur${cur ? ' logo' : ''}" style="--c:${nodeColor(n)}">${nodeIconHtml(n)}</span>
+        <input id="icon-q" class="ipick-in" value="${esc(cur ? `${cur.label} · ${cur.providerLabel}` : '')}" placeholder="${esc(T('icon.ph'))}" autocomplete="off" spellcheck="false"
+          role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="icon-list" aria-label="${esc(T('insp.icon'))}">
+        ${cur ? `<button class="ipick-clear" data-icon-clear title="${esc(T('insp.ownIcon'))}" aria-label="${esc(T('insp.ownIcon'))}">${ICON.x}</button>` : ''}
+      </div>
+      <div class="ipick-list" id="icon-list" role="listbox" hidden></div>
+    </div>`;
+  };
+  function showIconList(q) {
+    const list = $('#icon-list'), box = $('#icon-q');
+    if (!list) return;
+    const found = searchIcons(q);
+    list.innerHTML = found.map((it, i) => `<div class="ipick-opt${i ? '' : ' on'}" role="option" data-ref="${esc(it.ref)}"><i><img src="${it.src}" alt=""></i><span>${esc(it.label)}</span><em>${esc(it.provider)} · ${esc(I.category(it.category))}</em></div>`).join('')
+      || `<p class="ipick-none">${esc(T('icon.none'))}</p>`;
+    list.hidden = false;
+    list.scrollTop = 0;
+    box.setAttribute('aria-expanded', 'true');
+  }
+  function hideIconList() {
+    const list = $('#icon-list');
+    if (list) list.hidden = true;
+    $('#icon-q')?.setAttribute('aria-expanded', 'false');
+  }
+  function pickIcon(ref) {
+    const t = selTarget();
+    if (!t || Array.isArray(t)) return;
+    pushHistory();
+    if (ref && iconInfo(ref)) { t.icon = ref; t.type = iconInfo(ref).type; } else delete t.icon;
+    changed(true);
+    renderInspector();
+  }
   const head = (c, iconHtml, kicker, title, isLogo) => `<div class="insp-head" style="--c:${c}">
       ${iconHtml ? `<span class="insp-icon${isLogo ? ' logo' : ''}">${iconHtml}</span>` : ''}
       <div class="insp-hgroup"><div class="insp-kicker">${esc(kicker)}</div><div class="insp-title">${esc(title)}</div></div>
@@ -1527,7 +1574,7 @@
           <label>${T('insp.type')}<select data-field="type">${typeOptions(t.type)}</select></label>
           <label>${T('insp.group')}<select data-field="group"><option value="">${T('insp.none')}</option>${m.groups.map(g => `<option value="${esc(g.id)}"${g.id === t.group ? ' selected' : ''}>${esc(g.label)}</option>`).join('')}<option value="__new">${T('insp.newGroup')}</option></select></label>
         </div>
-        ${Object.keys(ICONS).length ? `<label>${T('insp.icon')}<select data-field="icon">${iconOptions(t.icon)}</select></label>` : ''}
+        ${Object.keys(ICONS).length ? iconPicker(t) : ''}
         <div class="field">${T('insp.color')}${swatches(t.color)}</div>
         ${costField(t)}
         ${dataField(t)}
@@ -1616,6 +1663,35 @@
 
   const inspector = $('#inspector');
   inspector.addEventListener('focusin', ev => { if (ev.target.matches('input[data-field], textarea[data-field], [data-rev-field]')) beginEdit(); });
+  // Buscador de iconos: escribir filtra, ↑ ↓ eligen, Enter aplica, Esc cierra
+  inspector.addEventListener('focusin', ev => { if (ev.target.id === 'icon-q') { ev.target.select(); showIconList(''); } });
+  // Al salir sin elegir, el campo vuelve a mostrar el icono actual
+  inspector.addEventListener('focusout', ev => {
+    if (ev.target.id !== 'icon-q') return;
+    hideIconList();
+    const t = selTarget(), cur = t && !Array.isArray(t) && iconInfo(t.icon);
+    ev.target.value = cur ? `${cur.label} · ${cur.providerLabel}` : '';
+  });
+  inspector.addEventListener('input', ev => { if (ev.target.id === 'icon-q') showIconList(ev.target.value); });
+  inspector.addEventListener('keydown', ev => {
+    if (ev.target.id !== 'icon-q') return;
+    const opts = $$('.ipick-opt', inspector), i = opts.findIndex(o => o.classList.contains('on'));
+    const move = d => {
+      if (!opts.length) return;
+      const j = (i + d + opts.length) % opts.length;
+      opts.forEach((o, k) => o.classList.toggle('on', k === j));
+      opts[j].scrollIntoView({ block: 'nearest' });
+    };
+    if (ev.key === 'ArrowDown') { ev.preventDefault(); if ($('#icon-list').hidden) showIconList(ev.target.value); else move(1); }
+    else if (ev.key === 'ArrowUp') { ev.preventDefault(); move(-1); }
+    else if (ev.key === 'Enter') { ev.preventDefault(); if (opts[i]) pickIcon(opts[i].dataset.ref); }
+    else if (ev.key === 'Escape') { hideIconList(); }
+  });
+  // mousedown y no click: así se elige antes de que el campo pierda el foco
+  inspector.addEventListener('mousedown', ev => {
+    const o = ev.target.closest('.ipick-opt');
+    if (o) { ev.preventDefault(); pickIcon(o.dataset.ref); }
+  });
   inspector.addEventListener('input', ev => {
     const f = ev.target, n = selTarget();
     if (!f.matches('[data-rev-field]') || !n?.review) return;
@@ -1640,6 +1716,8 @@
       pushHistory();
       (Array.isArray(t) ? t : [t]).forEach(x => { if (b.dataset.color) x.color = b.dataset.color; else delete x.color; });
       changed(true); renderInspector();
+    } else if (b.dataset.iconClear != null) {
+      pickIcon(null);
     } else if (b.dataset.rev && t && !Array.isArray(t)) {
       pushHistory();
       if (b.dataset.rev === 'add') {
