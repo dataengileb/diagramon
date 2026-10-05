@@ -165,7 +165,10 @@ Abre la pestaña **Versiones**.
 - **Abrir** lo carga en el lienzo. Una etiqueta sobre el título muestra qué está abierto y avisa si hay cambios sin guardar.
 - **Comparar** marca las diferencias con el lienzo: **verde** es nuevo, **amarillo** cambiado y los fantasmas **rojos punteados** se eliminaron.
   La tarjeta lista cada diferencia; haz clic en una para ir a ella. **Esc** o **Parar** terminan la comparación.
-- Guardar, abrir y eliminar se deshacen con **`⌘Z`**.
+- Cada tarjeta muestra su **estado**: **Borrador**, **En revisión**, **Aprobado** o **Rechazado**, que también aparece sobre el título y en el cajetín exportado.
+- **✎** edita el estado, el **autor de la arquitectura**, las fechas de **creación** y **actualización** y la nota, sin tener que borrar y volver a guardar. El último autor que escribiste se propone en las versiones nuevas.
+- Al actualizar un ambiente **Aprobado** o **Rechazado**, vuelve a **En revisión**, porque su contenido cambió.
+- Guardar, abrir, eliminar y cada edición se deshacen con **`⌘Z`**.
 - Las versiones se guardan dentro del diagrama, así que **Exportar › JSON** las lleva todas.
 
 ### 9. Presentar y exportar
