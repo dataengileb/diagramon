@@ -171,6 +171,12 @@ The component gets a tag: **IN REVIEW** (orange), **OVERDUE** (red, once the due
 The panel shows how many days are left or how late it is, and the summary above the canvas counts open and overdue findings.
 Diagramon remembers the last reviewer name. Exports with the legend list the open findings with their due date.
 
+### Filters
+
+**Filter** (or **`G`**) opens a panel of chips: **Data** (each class in the diagram, plus *Unencrypted sensitive flows*), **Review**, **Provider**, **Category**, **Group** and **Cost**.
+Chips in the same section add up (OR); different sections combine (AND). What does not match fades out, including empty groups and connections whose ends do not both match, and selecting a component still works on top.
+A pill above the canvas shows the active filter (`Filter: PII · AWS · 7 of 20`) with an **×** to clear it. The filter is remembered per browser and never changes the exports. From the console: `Diagramon.setFilter({ data: ['pii'], provider: ['aws'] })` and `Diagramon.clearFilter()`.
+
 ### 8. Versions and environments
 
 Open the **Versions** tab.
@@ -219,6 +225,7 @@ Open the **Versions** tab.
 | `T` | Cycle light → dark → high-contrast black mode |
 | `L` | Switch English / Spanish |
 | `E` | Switch curved / elbow connectors |
+| `G` | Open the filter panel (`Esc` closes it) |
 | `Esc` | Cancel or clear the selection |
 
 ---

@@ -156,6 +156,12 @@ El componente lleva una etiqueta: **EN REVISIÓN** (naranja), **VENCIDA** (roja,
 El panel dice cuántos días faltan o cuántos lleva vencida, y el resumen sobre el lienzo cuenta las abiertas y las vencidas.
 Diagramon recuerda el último nombre de revisor. Las exportaciones con leyenda listan las observaciones abiertas con su fecha compromiso.
 
+### Filtros
+
+**Filtrar** (o **`G`**) abre un panel de fichas: **Datos** (cada clase del diagrama, más *Flujos sensibles sin cifrar*), **Revisión**, **Proveedor**, **Categoría**, **Grupo** y **Costo**.
+Las fichas de una misma sección suman (O); las secciones distintas se combinan (Y). Lo que no coincide se atenúa, incluidos los grupos vacíos y las conexiones cuyos extremos no coinciden ambos; seleccionar un componente sigue funcionando encima.
+Una etiqueta sobre el lienzo muestra el filtro activo (`Filtro: PII · AWS · 7 de 20`) con una **×** para quitarlo. Se recuerda por navegador y nunca altera las exportaciones. Desde la consola: `Diagramon.setFilter({ data: ['pii'], provider: ['aws'] })` y `Diagramon.clearFilter()`.
+
 ### 8. Versiones y ambientes
 
 Abre la pestaña **Versiones**.
@@ -204,6 +210,7 @@ Abre la pestaña **Versiones**.
 | `T` | Alternar claro → oscuro → negro de alto contraste |
 | `L` | Cambiar entre inglés y español |
 | `E` | Cambiar entre conectores curvos y en ángulo recto |
+| `G` | Abrir el panel de filtros (`Esc` lo cierra) |
 | `Esc` | Cancelar o quitar la selección |
 
 ---

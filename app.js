@@ -573,6 +573,7 @@
     m.nodes.forEach((n, i) => buildNode(n, animate ? i * C.animation.enterStagger : -1));
     updateGeometry();
     applyCompare();
+    applyFilter();
     applyHighlight();
     updateMeta();
   }
@@ -1114,6 +1115,107 @@
     }
     document.title = `${m.title} · ${C.app.name}`;
   }
+
+  /* ---------- filtros ("lentes"): atenúan lo que no coincide ---------- */
+  // Filtro: { data: [clase | '@insecure'], review: ['open','overdue'], provider, category, group, cost: ['cost'] }
+  // Dentro de una sección las fichas suman (O); entre secciones se combinan (Y)
+  const FLT_SECTIONS = ['data', 'review', 'provider', 'category', 'group', 'cost'];
+  const providerOf = n => { const p = String(n.icon || '').split('/')[0]; return n.icon && ICONS[p] ? p : 'generic'; };
+  const topGroups = m => m.groups.filter(g => !g.parent || !m.groups.some(x => x.id === g.parent));
+  // Fichas disponibles en el diagrama actual: { sección: [{ k, label }] }
+  function filterOptions(m = S.model) {
+    const used = new Set([...m.nodes, ...m.edges].flatMap(x => x.data || []));
+    const provs = new Set(m.nodes.map(providerOf)), cats = new Set(m.nodes.map(n => typeOf(n).category || 'Otros'));
+    return {
+      data: [...Object.keys(DATA).filter(k => used.has(k)), ...[...used].filter(k => !DATA[k])].map(k => ({ k, label: loc(DATA[k]?.short) || k.toUpperCase() }))
+        .concat([{ k: '@insecure', label: T('flt.insecure') }]),
+      review: [{ k: 'open', label: T('flt.open') }, { k: 'overdue', label: T('flt.overdue') }],
+      provider: [...Object.keys(ICONS), 'generic'].filter(p => provs.has(p)).map(p => ({ k: p, label: p === 'generic' ? T('flt.generic') : ICONS[p].label })),
+      category: categories().filter(c => cats.has(c)).map(c => ({ k: c, label: I.category(c) })),
+      group: topGroups(m).map(g => ({ k: g.id, label: g.label })),
+      cost: [{ k: 'cost', label: T('flt.cost') }]
+    };
+  }
+  // Deja solo fichas que existen; `insecure: true` y `cost: true` son atajos para la API
+  function cleanFilter(raw, m = S.model) {
+    const opts = filterOptions(m), out = {};
+    raw = { ...raw };
+    if (raw.insecure) raw.data = [].concat(raw.data || [], '@insecure');
+    if (raw.cost === true) raw.cost = ['cost'];
+    for (const s of FLT_SECTIONS) {
+      const ok = new Set(opts[s].map(o => o.k)), list = [...new Set([].concat(raw[s] || []).map(String))].filter(k => ok.has(k));
+      if (list.length) out[s] = list;
+    }
+    return out;
+  }
+  // ¿El nodo cumple el filtro? `ends` = extremos de las conexiones que cumplen la sección de datos
+  function matches(n, f, ends = new Set()) {
+    return FLT_SECTIONS.every(s => {
+      const v = f[s];
+      if (!v?.length) return true;
+      if (s === 'data') return (n.data || []).some(k => v.includes(k)) || ends.has(n.id);
+      if (s === 'review') return v.some(k => n.review && (k === 'open' ? n.review.status !== 'resolved' : reviewState(n.review) === 'overdue'));
+      if (s === 'provider') return v.includes(providerOf(n));
+      if (s === 'category') return v.includes(typeOf(n).category || 'Otros');
+      if (s === 'group') return v.some(g => inGroup(n, g));
+      return hasCost(n);
+    });
+  }
+  // Lo que se queda normal: conjuntos de nodos, conexiones y grupos (null = sin filtro)
+  function filterResult(m = S.model, f = S.filter) {
+    if (!f || !Object.keys(f).length) return null;
+    const byId = id => m.nodes.find(n => n.id === id), ends = new Set();
+    if (f.data?.length) m.edges.forEach(e => {
+      if (f.data.some(k => k === '@insecure' ? isInsecure(e, byId) : (e.data || []).includes(k))) { ends.add(e.from); ends.add(e.to); }
+    });
+    const nodes = new Set(m.nodes.filter(n => matches(n, f, ends)).map(n => n.id));
+    return {
+      nodes,
+      edges: new Set(m.edges.filter(e => nodes.has(e.from) && nodes.has(e.to)).map(e => e.id)),
+      groups: new Set(m.groups.filter(g => m.nodes.some(n => nodes.has(n.id) && inGroup(n, g.id))).map(g => g.id))
+    };
+  }
+  S.filter = store.get('filter', {});
+  const filterMenu = $('#filter-menu'), fltPill = $('#stage-flt');
+  function applyFilter() {
+    S.filter = cleanFilter(S.filter);
+    store.set('filter', S.filter);
+    const r = filterResult();
+    svg.classList.toggle('filtering', !!r);
+    R.nodes.forEach((g, id) => g.classList.toggle('fdim', !!r && !r.nodes.has(id)));
+    R.edges.forEach((e, id) => e.g.classList.toggle('fdim', !!r && !r.edges.has(id)));
+    R.groups.forEach((e, id) => e.g.classList.toggle('fdim', !!r && !r.groups.has(id)));
+    $('#btn-filter').classList.toggle('has-dot', !!r);
+    fltPill.hidden = !r;
+    if (r) {
+      const opts = filterOptions(), names = FLT_SECTIONS.flatMap(s => (S.filter[s] || []).map(k => opts[s].find(o => o.k === k)?.label || k));
+      fltPill.innerHTML = `${esc(T('flt.pill'))}: ${esc(names.join(' · '))} · <b>${esc(T('flt.count', { n: r.nodes.size, t: S.model.nodes.length }))}</b><button class="icon-btn" data-flt="clear" title="${esc(T('flt.clear'))}" aria-label="${esc(T('flt.clear'))}"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>`;
+    }
+    if (filterMenu.open) renderFilterMenu();
+  }
+  function setFilter(f) { S.filter = f || {}; applyFilter(); }
+  const clearFilter = () => setFilter({});
+  function renderFilterMenu() {
+    const opts = filterOptions(), box = $('#filter-body');
+    box.innerHTML = FLT_SECTIONS.filter(s => opts[s].length).map(s => `<div class="flt-sec"><div class="cat">${esc(T(`flt.sec.${s}`))}</div><div class="flt-chips">${
+      opts[s].map(o => `<button class="flt-chip${(S.filter[s] || []).includes(o.k) ? ' on' : ''}" data-s="${s}" data-k="${esc(o.k)}" aria-pressed="${(S.filter[s] || []).includes(o.k)}">${esc(o.label)}</button>`).join('')}</div></div>`).join('');
+    $('#filter-clear').hidden = !Object.keys(S.filter).length;
+  }
+  function placeFilterMenu() {
+    const r = filterMenu.querySelector('summary').getBoundingClientRect(), pop = filterMenu.querySelector('.menu-pop');
+    pop.style.top = `${r.bottom}px`;
+    pop.style.right = `${Math.max(8, innerWidth - r.right)}px`;
+  }
+  filterMenu.addEventListener('toggle', () => { if (filterMenu.open) { renderFilterMenu(); placeFilterMenu(); } });
+  document.addEventListener('pointerdown', ev => { if (filterMenu.open && !filterMenu.contains(ev.target)) filterMenu.open = false; });
+  filterMenu.addEventListener('click', ev => {
+    if (ev.target.closest('#filter-clear')) return clearFilter();
+    const b = ev.target.closest('.flt-chip');
+    if (!b) return;
+    const { s, k } = b.dataset, cur = S.filter[s] || [];
+    setFilter({ ...S.filter, [s]: cur.includes(k) ? cur.filter(x => x !== k) : [...cur, k] });
+  });
+  fltPill.addEventListener('click', ev => { if (ev.target.closest('[data-flt="clear"]')) clearFilter(); });
 
   /* ---------- acciones ---------- */
   // Selección: { kind: 'node' | 'edge' | 'group', id } o { kind: 'multi', ids: [nodos] }
@@ -2502,9 +2604,9 @@
     out.setAttribute('width', W);
     out.setAttribute('height', Ht);
     out.setAttribute('viewBox', `0 0 ${W} ${Ht}`);
-    out.classList.remove('focusing', 'hovering', 'playing', 'dragging', 'panning', 'connecting');
+    out.classList.remove('focusing', 'hovering', 'playing', 'dragging', 'panning', 'connecting', 'filtering');
     out.querySelectorAll('.particle, .edge-hit, .node-halo, .guide, .marquee').forEach(n => n.remove());
-    out.querySelectorAll('.lit, .sel, .pulse, .pulse-node, .enter, .connect-src').forEach(n => n.classList.remove('lit', 'sel', 'pulse', 'pulse-node', 'enter', 'connect-src'));
+    out.querySelectorAll('.lit, .sel, .pulse, .pulse-node, .enter, .connect-src, .fdim').forEach(n => n.classList.remove('lit', 'sel', 'pulse', 'pulse-node', 'enter', 'connect-src', 'fdim'));
     const vp = out.querySelector('#viewport');
     vp.removeAttribute('id');
     vp.setAttribute('transform', `translate(${pad - b.x} ${pad + top - b.y})`);
@@ -2820,12 +2922,14 @@
     else if (mod && k === 'a') { ev.preventDefault(); select({ kind: 'multi', ids: S.model.nodes.map(n => n.id) }); }
     else if (mod) return;
     else if (ev.key === 'Delete' || ev.key === 'Backspace') { if (S.sel) { ev.preventDefault(); deleteSelection(); } }
+    else if (ev.key === 'Escape' && filterMenu.open) filterMenu.open = false;
     else if (ev.key === 'Escape') { if (S.play) stopPlay(); else if (S.connecting) cancelConnect(); else if (!S.sel && S.compare) compareVersion(null); else select(null); }
     else if (k === 'f') fitView();
     else if (k === 'p') togglePlay();
     else if (k === 't') toggleTheme();
     else if (k === 'l') toggleLang();
     else if (k === 'e') toggleRouting();
+    else if (k === 'g') filterMenu.open = !filterMenu.open;
     else if (k === 'c' && S.sel?.kind === 'node') startConnect(S.sel.id);
     else if (k === '+' || k === '=') animateView(zoomTarget(1.25), 200);
     else if (k === '-') animateView(zoomTarget(1 / 1.25), 200);
@@ -2902,6 +3006,7 @@
     get lang() { return I.lang; },
     select: ids => select({ kind: 'multi', ids: [].concat(ids) }), align: alignNodes,
     saveVersion, openVersion, compareVersion, deleteVersion,
+    setFilter, clearFilter, get filter() { return clone(S.filter); },
     exportSVG, exportPNG, exportJSON, shareEncrypted, exportOther, exportCtx, toggleRouting, importFiles, config: C, icons: ICONS
   };
 
