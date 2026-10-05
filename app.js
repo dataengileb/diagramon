@@ -2044,7 +2044,7 @@
   function pathField() {
     const [a, b] = S.sel.ids.map(id => S.model.nodes.find(n => n.id === id).label);
     return `<div class="field">${T('insp.path')}<div class="path-btns">
-      <button class="btn" data-path="fwd">${T('path.show', { a: esc(a), b: esc(b) })}</button>
+      <button class="btn" data-path="fwd" title="${esc(T('path.show', { a, b }))}">${T('path.show', { a: esc(a), b: esc(b) })}</button>
       <button class="btn tool" data-path="rev" title="${esc(T('path.swap', { a: b, b: a }))}" aria-label="${esc(T('path.swap', { a: b, b: a }))}">⇄</button></div></div>`;
   }
   function renderInspector() {
