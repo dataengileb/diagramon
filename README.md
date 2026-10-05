@@ -81,7 +81,7 @@ around 290 official cloud icons, and the browser itself blocks every network req
 - 🧾 **Legend and title block** in SVG and PNG exports: connection styles, component colors, data classes, author, version, date and estimated cost. Ready to hand in.
 - 🔦 **Flow highlighting** for any component: neighbors, targets, sources or everything.
 - 🌐 **English and Spanish UI**: the 🌐 button in the top bar (or the **`L`** key) switches the language and remembers your choice.
-- 🌗 **Dark mode** by default, **light mode** with one key, and pastel palettes (Pastel, Sherbet, Nordic).
+- 🌗 **Dark mode** by default, **light** and **high-contrast black** modes with one key, and two palettes (Pastel and Neon).
 - 📤 **Export** to SVG (animated), PNG or JSON. **Import** JSON by dropping it on the canvas.
 - ↩️ **Undo and redo**, autosave and automatic layout.
 
@@ -216,7 +216,7 @@ Open the **Versions** tab.
 | `C` | Connect |
 | `F` | Fit to view |
 | `P` | Play the flow |
-| `T` | Switch dark / light mode |
+| `T` | Cycle light → dark → high-contrast black mode |
 | `L` | Switch English / Spanish |
 | `E` | Switch curved / elbow connectors |
 | `Esc` | Cancel or clear the selection |
@@ -332,14 +332,14 @@ The text does not store positions: existing nodes stay where they are, and new n
 
 Everything you can customize is in **`config.js`**. Save and reload `index.html`.
 
-- **Default theme**: `app.defaultTheme: 'dark' | 'light'`.
+- **Default theme**: `app.defaultTheme: 'dark' | 'light' | 'black'`. The `T` key and the theme button cycle light → dark → black.
 - **Default language**: `app.defaultLang: 'en' | 'es'`. UI texts live in `i18n.js`; texts in `config.js` and `examples.js` can be `{ en: '…', es: '…' }`.
 - **Data classes**: `dataClasses` sets the tags (name, short label, color). `sensitive: true` turns on the red warning for unencrypted flows.
 - **Environments**: `environments` sets the buttons of the *Versions* tab (name, short label and color). Add or remove as many as you need.
 - **Node size**: with `node.sameSize: true` (default) every node is `node.width` wide and long names wrap to 2 lines.
   With `false`, each node grows with its text.
 - **Shortcuts without an official icon**: `presets` adds items at the top of a provider's list (for example, SAP systems).
-- **Palettes**: add an entry to `palettes` with the same color keys (`rosa`, `coral`, …) for `dark` and `light`.
+- **Palettes**: add an entry to `palettes` with the same color keys (`rosa`, `coral`, …) for `dark`, `light` and `black` (Pastel and Neon ship by default). A saved palette that no longer exists falls back to Pastel.
 - **New component type**: copy an entry in `types` and change `label`, `category`, `color`, `keywords` and `icon` (a 24×24 SVG).
 - **Connections**: `edgeStyles` sets dash, width and particle count.
 - **Animation**: speed, entrance and step duration in `animation`.

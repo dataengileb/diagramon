@@ -68,7 +68,7 @@ de verdad. Ese tipo de información no debería viajar a un servicio de terceros
 - 🧾 **Leyenda y cajetín** en las exportaciones SVG y PNG: estilos de conexión, colores de los componentes, clasificaciones de datos, autor, versión, fecha y costo estimado. Listo para entregar.
 - 🔦 **Resaltar el flujo** de un componente: vecinos, destinos, orígenes o todo.
 - 🌐 **Inglés o español**: la app abre en inglés; el botón 🌐 de la barra superior (o la tecla **`L`**) la pasa a español y recuerda tu elección.
-- 🌗 **Modo oscuro** por defecto, **modo claro** con una tecla y paletas pastel (Pastel, Sorbete, Nórdico).
+- 🌗 **Modo oscuro** por defecto, modos **claro** y **negro de alto contraste** con una tecla, y dos paletas (Pastel y Neón).
 - 📤 **Exporta** a SVG (animado), PNG o JSON. **Importa** un JSON arrastrándolo al lienzo.
 - ↩️ **Deshacer y rehacer**, guardado automático y orden automático del diagrama.
 
@@ -201,7 +201,7 @@ Abre la pestaña **Versiones**.
 | `C` | Conectar |
 | `F` | Ajustar a la vista |
 | `P` | Reproducir el flujo |
-| `T` | Cambiar entre modo oscuro y claro |
+| `T` | Alternar claro → oscuro → negro de alto contraste |
 | `L` | Cambiar entre inglés y español |
 | `E` | Cambiar entre conectores curvos y en ángulo recto |
 | `Esc` | Cancelar o quitar la selección |
@@ -318,14 +318,14 @@ El texto no guarda posiciones: los nodos que ya existían no se mueven y los nue
 
 Todo lo personalizable está en **`config.js`**. Guarda y recarga `index.html`.
 
-- **Tema por defecto**: `app.defaultTheme: 'dark' | 'light'`.
+- **Tema por defecto**: `app.defaultTheme: 'dark' | 'light' | 'black'`. La tecla `T` y el botón de tema alternan claro → oscuro → negro.
 - **Idioma por defecto**: `app.defaultLang: 'en' | 'es'`. Los textos de la interfaz están en `i18n.js`; los de `config.js` y `examples.js` pueden ser `{ en: '…', es: '…' }`.
 - **Clasificaciones de datos**: `dataClasses` define las etiquetas (nombre, texto corto y color). `sensitive: true` activa el aviso rojo en flujos sin cifrar.
 - **Ambientes**: `environments` define los botones de la pestaña *Versiones* (nombre, texto corto y color). Añade o quita los que necesites.
 - **Tamaño de los nodos**: con `node.sameSize: true` (por defecto) todos miden `node.width` y los nombres largos usan 2 líneas.
   Con `false`, cada nodo crece con su texto.
 - **Atajos sin icono oficial**: `presets` añade elementos arriba de la lista de un proveedor (por ejemplo, los sistemas SAP).
-- **Paletas**: añade una entrada en `palettes` con las mismas claves de color (`rosa`, `coral`, …) para `dark` y `light`.
+- **Paletas**: añade una entrada en `palettes` con las mismas claves de color (`rosa`, `coral`, …) para `dark`, `light` y `black` (por defecto vienen Pastel y Neón). Una paleta guardada que ya no existe vuelve a Pastel.
 - **Nuevo tipo de componente**: copia una entrada de `types` y cambia `label`, `category`, `color`, `keywords` e `icon` (SVG de 24×24).
 - **Conexiones**: `edgeStyles` define trazo, grosor y número de partículas.
 - **Animación**: velocidad, aparición y duración de los pasos en `animation`.

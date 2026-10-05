@@ -9,7 +9,7 @@ window.DIAGRAMON_CONFIG = {
 
   app: {
     name: 'Diagramon',
-    defaultTheme: 'dark',        // 'dark' | 'light'
+    defaultTheme: 'dark',        // 'dark' | 'light' | 'black'
     defaultLang: 'en',           // 'en' | 'es' (botón de idioma en la barra superior)
     defaultPalette: 'pastel',    // clave de `palettes`
     storageKey: 'diagramon'          // prefijo para guardar en el navegador
@@ -33,27 +33,30 @@ window.DIAGRAMON_CONFIG = {
       border: '#e5e0e8', text: '#28242f', muted: '#776f84', grid: '#dcd5e0',
       shadow: 'rgba(70, 50, 90, 0.12)',
       iconTile: '#FFFFFF'
+    },
+    black: {                       // alto contraste sobre negro puro
+      bg: '#000000', panel: '#0a0a0a', surface: '#111111', surface2: '#1c1c1c',
+      border: '#5c5c5c', text: '#ffffff', muted: '#a8a8a8', grid: '#383838',
+      shadow: 'rgba(0, 0, 0, 0.8)',
+      iconTile: '#F3F1F8'
     }
   },
 
   /* Paletas. Todas deben tener las mismas claves de color.
-     `dark` se usa en modo oscuro y `light` (tonos algo más intensos) en modo claro.
+     `dark` se usa en modo oscuro, `light` (tonos algo más intensos) en modo claro y `black` en alto contraste.
      Cada color se expone como variable CSS --p-<clave>. */
   palettes: {
     pastel: {
       label: 'Pastel', accent: 'lavanda',
       dark:  { rosa: '#F5A9C6', coral: '#F6B0A4', melocoton: '#F8C99E', limon: '#EFE0A0', menta: '#A6E3C8', cielo: '#A9D2F3', lavanda: '#C2B6F6', lila: '#E0B5EE' },
-      light: { rosa: '#E27AA3', coral: '#E2806F', melocoton: '#E0965A', limon: '#C4A63A', menta: '#3FAE85', cielo: '#4E9AD8', lavanda: '#8573DB', lila: '#B472CF' }
+      light: { rosa: '#E27AA3', coral: '#E2806F', melocoton: '#E0965A', limon: '#C4A63A', menta: '#3FAE85', cielo: '#4E9AD8', lavanda: '#8573DB', lila: '#B472CF' },
+      black: { rosa: '#FAB4CE', coral: '#FBBAB0', melocoton: '#FCD3AC', limon: '#F5E8AE', menta: '#B4EBD3', cielo: '#B8DBF7', lavanda: '#CEC4F9', lila: '#E8C4F3' }
     },
-    sorbete: {
-      label: { en: 'Sherbet', es: 'Sorbete' }, accent: 'rosa',
-      dark:  { rosa: '#FF9EC7', coral: '#FFAB98', melocoton: '#FFC48A', limon: '#FCEB8F', menta: '#8EEBC4', cielo: '#8FD3FF', lavanda: '#B9A6FF', lila: '#E6A3FF' },
-      light: { rosa: '#EC5F9C', coral: '#EE6E55', melocoton: '#EB8E3A', limon: '#C9A51E', menta: '#22B37F', cielo: '#2D93DB', lavanda: '#7A5CEB', lila: '#B455DB' }
-    },
-    nordico: {
-      label: { en: 'Nordic', es: 'Nórdico' }, accent: 'cielo',
-      dark:  { rosa: '#D8A7B1', coral: '#D9A89A', melocoton: '#DDBB98', limon: '#D9CF9E', menta: '#9FCBB8', cielo: '#9DBCD8', lavanda: '#AFA9D6', lila: '#C3A8CF' },
-      light: { rosa: '#B97585', coral: '#B9786A', melocoton: '#B98A5C', limon: '#A39340', menta: '#4F9478', cielo: '#4F82AE', lavanda: '#7268B0', lila: '#93699F' }
+    neon: {
+      label: { en: 'Neon', es: 'Neón' }, accent: 'lavanda',
+      dark:  { rosa: '#FF5FAE', coral: '#FF7563', melocoton: '#FFA63D', limon: '#F5FF55', menta: '#3DFFB5', cielo: '#44CBFF', lavanda: '#A898FF', lila: '#E673FF' },
+      light: { rosa: '#D6196E', coral: '#D03419', melocoton: '#B85F00', limon: '#867800', menta: '#00875A', cielo: '#0B74B8', lavanda: '#6247E0', lila: '#A21FCC' },
+      black: { rosa: '#FF4FA3', coral: '#FF6B57', melocoton: '#FF9F2E', limon: '#F2FF3D', menta: '#2BFFAE', cielo: '#33C4FF', lavanda: '#9E8CFF', lila: '#E361FF' }
     }
   },
 
