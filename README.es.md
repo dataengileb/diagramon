@@ -59,6 +59,7 @@ de verdad. Ese tipo de información no debería viajar a un servicio de terceros
 - 🧩 **Grupos anidados**: región › VPC › subred, clúster › namespace…
 - 🖱️ **Selección múltiple, alineación y guías**: alinea, reparte con el mismo espacio y pega nodos a bordes y centros.
 - 💵 **Costos a mano**: precio en USD por hora, mes, año o varios años, en un recuadro bajo cada servicio y con el total mensual.
+- 🏷️ **Clasificación de datos y cifrado en tránsito**: marca nodos y conexiones como *Público, Interno, Confidencial, PII, PCI* o *PHI*, indica si cada conexión va cifrada 🔒 o no, y recibe un aviso en rojo cuando datos sensibles viajan sin cifrar.
 - ⌨️ **Diagrama como código**: escribe en texto y el lienzo se actualiza al momento. Texto, JSON y lienzo siempre sincronizados.
 - 🗂️ **Versiones y ambientes**: guarda el lienzo como *Versión 1, 2, 3…* o como *Desarrollo, Calidad, Producción*, ábrelos cuando quieras y compáralos con el lienzo: lo nuevo en verde, lo cambiado en amarillo y lo eliminado como fantasma rojo.
 - 🔦 **Resaltar el flujo** de un componente: vecinos, destinos, orígenes o todo.
@@ -130,7 +131,16 @@ Con varios servicios elegidos, el panel muestra el costo de la selección.
 
 > Diagramon no consulta precios en internet (por privacidad). Los costos los escribes tú.
 
-### 6. Versiones y ambientes
+### 6. Clasificación de datos y cifrado
+
+1. Selecciona un componente. En **Clasificación de datos**, pulsa las etiquetas de los datos que guarda o maneja: **PUB**, **INT**, **CONF**, **PII**, **PCI**, **PHI**. Puedes elegir varias.
+2. Selecciona una conexión. En **Cifrado en tránsito** elige **Cifrado** o **Sin cifrar**, y marca los **Datos en tránsito**.
+
+Las etiquetas salen arriba de cada nodo y en la etiqueta de la conexión, junto a un candado: cerrado 🔒 si va cifrada, abierto si no.
+Si una conexión *Sin cifrar* lleva datos sensibles, o une un componente con datos sensibles, se pone roja y aparece un aviso arriba del lienzo.
+Con varios componentes elegidos, las etiquetas se aplican a todos.
+
+### 7. Versiones y ambientes
 
 Abre la pestaña **Versiones**.
 
@@ -143,7 +153,7 @@ Abre la pestaña **Versiones**.
 - Guardar, abrir y eliminar se deshacen con **`⌘Z`**.
 - Las versiones se guardan dentro del diagrama, así que **Exportar › JSON** las lleva todas.
 
-### 7. Presentar y exportar
+### 8. Presentar y exportar
 
 - **Flujo** (o **`P`**) ilumina el diagrama paso a paso, de los clientes a los datos.
 - **Ordenar** recoloca todo automáticamente. **Ajustar** (o **`F`**) centra el diagrama.
@@ -177,12 +187,12 @@ dirección: LR
 
 grupo aws "AWS" color=melocoton {
   api: API Gateway [aws/apigateway] "REST"
-  db: RDS Postgres [rds] "Multi-AZ" badge=x2 costo=350/mes
+  db: RDS Postgres [rds] "Multi-AZ" badge=x2 costo=350/mes datos=pii,pci
 }
 web: Clientes [user] desc="Navegador"
 
 web -> api : HTTPS
-api => db : SQL
+api => db : SQL cifrado=sí
 api ~> cola : eventos
 ```
 
@@ -191,6 +201,8 @@ api ~> cola : eventos
 | `id: Nombre [tipo] "detalle"` | Nodo. `[tipo]` es un tipo genérico (`db`, `user`…) o un icono oficial (`aws/lambda`, `rds`) |
 | `color=… badge=… desc="…"` | Opciones del nodo |
 | `costo=120/mes` · `0.1/hora` · `1400/año` · `5000/3años` | Costo en USD (sin periodo = mensual) |
+| `datos=pii,pci` | Clasificación de datos de un nodo o una conexión |
+| `a -> b : TLS cifrado=sí` | Cifrado en tránsito (`sí` o `no`) |
 | `grupo id "Nombre" color=… { … }` | Grupo; se pueden anidar |
 | `a -> b` · `a => b` · `a ~> b` · `a ..> b` | Petición · datos · evento · opcional |
 | `a -> b -> c : etiqueta` | Cadena; la etiqueta va en la última flecha |
@@ -218,6 +230,7 @@ El texto no guarda posiciones: los nodos que ya existían no se mueven y los nue
 
 - Solo `id` y `type` son necesarios en los nodos. Sin `x`/`y` se colocan solos.
 - `costPeriod`: `hour`, `year` o `multi` (con `costYears`). Sin `costPeriod` el costo es mensual.
+- `data` es la lista de clasificaciones (`["pii", "pci"]`) en nodos y conexiones. `encrypted` (`true` o `false`) es el cifrado en tránsito de una conexión.
 - El archivo exportado también lleva `versions` (cada una con `kind`: `version` o `env`, y su propio `diagram`) y `active`.
 - `color` acepta una clave de la paleta o cualquier color CSS.
 
@@ -231,6 +244,7 @@ Todo lo personalizable está en **`config.js`**. Guarda y recarga `index.html`.
 
 - **Tema por defecto**: `app.defaultTheme: 'dark' | 'light'`.
 - **Idioma por defecto**: `app.defaultLang: 'en' | 'es'`. Los textos de la interfaz están en `i18n.js`; los de `config.js` y `examples.js` pueden ser `{ en: '…', es: '…' }`.
+- **Clasificaciones de datos**: `dataClasses` define las etiquetas (nombre, texto corto y color). `sensitive: true` activa el aviso rojo en flujos sin cifrar.
 - **Ambientes**: `environments` define los botones de la pestaña *Versiones* (nombre, texto corto y color). Añade o quita los que necesites.
 - **Tamaño de los nodos**: con `node.sameSize: true` (por defecto) todos miden `node.width` y los nombres largos usan 2 líneas.
   Con `false`, cada nodo crece con su texto.

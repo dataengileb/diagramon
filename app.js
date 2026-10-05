@@ -108,6 +108,18 @@
   };
   const monthlyTotal = ns => ns.filter(hasCost).reduce((s, n) => s + perMonth(n), 0);
   const round2 = v => Math.round(v * 100) / 100;
+  /* ---------- clasificación de datos y cifrado en tránsito ---------- */
+  const DATA = C.dataClasses || {};
+  const dataTags = x => (x?.data || []).map(k => ({ k, short: loc(DATA[k]?.short) || k.toUpperCase(), label: loc(DATA[k]?.label) || k, color: colorVar(DATA[k]?.color) || 'var(--muted)' }));
+  const isSensitive = x => (x?.data || []).some(k => DATA[k]?.sensitive);
+  // Conexión marcada "sin cifrar" que lleva datos sensibles o une un nodo con datos sensibles
+  const isInsecure = (e, byId) => e.encrypted === false && (isSensitive(e) || isSensitive(byId(e.from)) || isSensitive(byId(e.to)));
+  const cleanData = v => {
+    const list = Array.isArray(v) ? v : typeof v === 'string' ? v.split(',') : [];
+    const set = new Set(list.map(k => String(k).trim().toLowerCase()).filter(Boolean));
+    return [...Object.keys(DATA).filter(k => set.has(k)), ...[...set].filter(k => !DATA[k])];
+  };
+
   // Alto ocupado por un nodo, contando el recuadro de costo de abajo
   const nodeBoxH = n => H + (hasCost(n) ? 26 : 0);
 
@@ -125,7 +137,7 @@
 
   /* ---------- medidas de texto ---------- */
   const mctx = document.createElement('canvas').getContext('2d');
-  const FONT = { label: '600 13.5px', sub: '400 11.5px', tag: '700 11px', edge: '500 11px', badge: '800 10.5px', cost: '700 10.5px' };
+  const FONT = { dtag: '800 9.5px', label: '600 13.5px', sub: '400 11.5px', tag: '700 11px', edge: '500 11px', badge: '800 10.5px', cost: '700 10.5px' };
   const textW = (t, f) => { mctx.font = `${f} ${C.fonts.ui}`; return mctx.measureText(String(t ?? '')).width; };
   const fitText = (t, f, max) => {
     t = String(t ?? '');
@@ -193,12 +205,18 @@
       if (hasCost(o) && +o.cost >= 0) o.cost = +o.cost; else delete o.cost;
       if (!PERIODS[o.costPeriod] || o.costPeriod === 'month') delete o.costPeriod;
       if (o.costPeriod === 'multi' && Math.round(+o.costYears) >= 1) o.costYears = Math.round(+o.costYears); else delete o.costYears;
+      if (cleanData(o.data).length) o.data = cleanData(o.data); else delete o.data;
       m.nodes.push(o);
     });
     const nids = new Set(m.nodes.map(n => n.id));
     list(raw.edges).forEach((e, i) => {
       const from = String(e.from), to = String(e.to);
-      if (nids.has(from) && nids.has(to)) m.edges.push({ ...e, id: take(e.id, 'e', i), from, to });
+      if (!nids.has(from) || !nids.has(to)) return;
+      const o = { ...e, id: take(e.id, 'e', i), from, to };
+      if (cleanData(o.data).length) o.data = cleanData(o.data); else delete o.data;
+      const enc = typeof o.encrypted === 'string' ? (/^(yes|true|si|sí)$/i.test(o.encrypted) ? true : /^(no|false)$/i.test(o.encrypted) ? false : null) : o.encrypted;
+      if (enc === true || enc === false) o.encrypted = enc; else delete o.encrypted;
+      m.edges.push(o);
     });
     m.versions = normVersions(raw.versions);
     if (raw.active != null && m.versions.some(v => v.id === String(raw.active))) m.active = String(raw.active);
@@ -367,6 +385,21 @@
     updateMeta();
   }
 
+  // Etiqueta de color con el texto corto de una clasificación (PII, PCI…)
+  function dataTag(parent, x, y, t, h) {
+    const w = Math.ceil(textW(t.short, FONT.dtag)) + 12;
+    const g = el('g', { class: 'data-tag', style: `--tc:${t.color}` }, parent);
+    el('rect', { x, y, width: w, height: h, rx: h / 2 }, g);
+    el('text', { x: x + w / 2, y: y + h / 2 + 3.4, 'text-anchor': 'middle' }, g).textContent = t.short;
+    return w;
+  }
+  // Candado cerrado (cifrado) o abierto (sin cifrar), de 10 px de ancho
+  function lockIcon(parent, x, on) {
+    const g = el('g', { class: `edge-lock ${on ? 'on' : 'off'}`, transform: `translate(${x} 0)` }, parent);
+    el('rect', { x: 0.5, y: -2, width: 9, height: 7, rx: 1.6 }, g);
+    el('path', { d: on ? 'M2.6 -2V-4.2a2.4 2.4 0 0 1 4.8 0V-2' : 'M2.6 -2V-4.9a2.4 2.4 0 0 1 4.8 0' }, g);
+  }
+
   function buildGroup(g, animate) {
     const root = el('g', { class: 'group' + (animate ? ' enter' : ''), 'data-id': g.id }, L.groups);
     root.style.setProperty('--c', colorVar(g.color) || 'var(--muted)');
@@ -395,12 +428,21 @@
     }
     const arrow = el('path', { class: 'edge-arrow' }, g);
     const parts = Array.from({ length: cfg.particles || 0 }, () => el('circle', { class: 'particle', r: st === 'data' ? 2.4 : 3, cx: -9999, cy: -9999 }, g));
+    // Etiqueta: candado de cifrado, texto y clasificaciones de los datos que viajan
     let label = null;
-    if (e.label) {
+    const tags = dataTags(e), lock = e.encrypted != null;
+    const byId = id => S.model.nodes.find(n => n.id === id);
+    if (isInsecure(e, byId)) g.classList.add('insecure');
+    if (e.label || tags.length || lock) {
       label = el('g', { class: 'edge-label' }, g);
-      const w = textW(e.label, FONT.edge) + 16;
+      const items = [];
+      if (lock) items.push({ w: 10, draw: x => lockIcon(label, x, e.encrypted) });
+      if (e.label) items.push({ w: textW(e.label, FONT.edge), draw: x => { el('text', { x, y: 4 }, label).textContent = e.label; } });
+      tags.forEach(t => items.push({ w: Math.ceil(textW(t.short, FONT.dtag)) + 12, draw: x => dataTag(label, x, -7, t, 14) }));
+      const gap = 5, w = items.reduce((sum, it) => sum + it.w, 0) + gap * (items.length - 1) + 16;
       el('rect', { x: -w / 2, y: -10, width: w, height: 20, rx: 10 }, label);
-      el('text', { 'text-anchor': 'middle', y: 4 }, label).textContent = e.label;
+      let x = -w / 2 + 8;
+      items.forEach(it => { it.draw(x); x += it.w + gap; });
     }
     R.edges.set(e.id, { g, e, hit, line, arrow, label, parts, len: 0, phase: Math.random() });
   }
@@ -427,7 +469,13 @@
     const top = (H - lines.length * 16 - (n.sub ? 15 : 0)) / 2;
     lines.forEach((l, i) => { el('text', { class: 'node-label', x: 64, y: top + 12 + i * 16 }, b).textContent = l; });
     if (n.sub) el('text', { class: 'node-sub', x: 64, y: top + lines.length * 16 + 12 }, b).textContent = fitText(n.sub, FONT.sub, max);
-    el('title', null, g).textContent = n.sub ? `${n.label} · ${n.sub}` : n.label;
+    const dt = dataTags(n);
+    el('title', null, g).textContent = [n.sub ? `${n.label} · ${n.sub}` : n.label, ...dt.map(t => t.label)].join('\n');
+    if (dt.length) {
+      const dg = el('g', { class: 'node-data' }, b);
+      let x = 14;
+      dt.forEach(t => { x += dataTag(dg, x, -8, t, 16) + 4; });
+    }
     if (n.badge != null && n.badge !== '') {
       const bw = Math.max(22, textW(n.badge, FONT.badge) + 12);
       const bg = el('g', { class: 'node-badge', transform: `translate(${w - 14} 0)` }, b);
@@ -686,8 +734,8 @@
 
   const ORDER = {
     group: ['id', 'label', 'color', 'parent'],
-    node: ['id', 'label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'x', 'y', 'cost', 'costPeriod', 'costYears', 'desc'],
-    edge: ['id', 'from', 'to', 'label', 'style', 'color']
+    node: ['id', 'label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'x', 'y', 'cost', 'costPeriod', 'costYears', 'data', 'desc'],
+    edge: ['id', 'from', 'to', 'label', 'style', 'color', 'data', 'encrypted']
   };
   function serialize(m, full = false) {
     const ordered = (o, keys) => { const r = {}; keys.forEach(k => k in o && (r[k] = o[k])); Object.keys(o).forEach(k => k in r || (r[k] = o[k])); return r; };
@@ -773,7 +821,8 @@
     const m = S.model;
     $('#stage-h1').textContent = m.title;
     const costs = m.nodes.some(hasCost) ? `≈ ${money(round2(monthlyTotal(m.nodes)))}${T('cost.mo')}` : '';
-    $('#stage-meta').textContent = [T('meta.nodes', m.nodes.length), T('meta.edges', m.edges.length), m.groups.length ? T('meta.groups', m.groups.length) : '', costs].filter(Boolean).join(' · ');
+    const byId = id => m.nodes.find(n => n.id === id), insecure = m.edges.filter(e => isInsecure(e, byId)).length;
+    $('#stage-meta').textContent = [T('meta.nodes', m.nodes.length), T('meta.edges', m.edges.length), m.groups.length ? T('meta.groups', m.groups.length) : '', costs, insecure ? T('meta.insecure', insecure) : ''].filter(Boolean).join(' · ');
     const t = $('#title');
     if (document.activeElement !== t) t.value = m.title;
     $('#empty').hidden = m.nodes.length > 0;
@@ -1137,8 +1186,8 @@
 
   // Diferencias entre lo guardado (a) y el lienzo (b). La posición no cuenta como cambio.
   const DIFF_FIELDS = {
-    node: ['label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'cost', 'costPeriod', 'costYears', 'desc'],
-    edge: ['label', 'style', 'color'],
+    node: ['label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'cost', 'costPeriod', 'costYears', 'data', 'desc'],
+    edge: ['label', 'style', 'color', 'data', 'encrypted'],
     group: ['label', 'color', 'parent']
   };
   function diffModels(a, b) {
@@ -1244,7 +1293,8 @@
   function diffList(d) {
     if (!(d.count.a + d.count.r + d.count.c)) return `<p class="ver-sum">${esc(T('ver.same'))}</p>`;
     const FIELD = { label: 'insp.name', sub: 'insp.detail', type: 'insp.type', icon: 'insp.icon', group: 'insp.group', color: 'insp.color', badge: 'field.badge',
-      cost: 'cost.label', costPeriod: 'cost.period', costYears: 'cost.yearsAria', desc: 'insp.desc', style: 'insp.style', parent: 'insp.parent' };
+      cost: 'cost.label', costPeriod: 'cost.period', costYears: 'cost.yearsAria', desc: 'insp.desc', style: 'insp.style', parent: 'insp.parent',
+      data: 'data.label', encrypted: 'enc.label' };
     const fields = (fs, kind) => fs.map(f => T(kind === 'edge' && f === 'label' ? 'insp.label' : FIELD[f] || f).toLowerCase()).join(', ');
     const names = new Map([...S.compare.base.nodes, ...S.model.nodes].map(n => [n.id, n.label]));
     const edgeName = e => `${names.get(e.from) || e.from} → ${names.get(e.to) || e.to}`;
@@ -1314,6 +1364,23 @@
     </div>`;
   };
 
+  // Chips de clasificación: encendido si todos los elegidos lo tienen; a medias si solo algunos
+  const dataField = (items, edge) => {
+    const cls = Object.entries(DATA), list = [].concat(items);
+    if (!cls.length) return '';
+    const on = cls.filter(([k]) => list.every(x => x.data?.includes(k)));
+    return `<div class="field">${T(edge ? 'data.edge' : 'data.label')}<div class="dchips">${cls.map(([k, c]) => {
+      const n = list.filter(x => x.data?.includes(k)).length;
+      return `<button class="dchip${n === list.length ? ' on' : n ? ' some' : ''}" data-dclass="${esc(k)}" style="--c:${colorVar(c.color) || 'var(--accent)'}" title="${esc(loc(c.label) || k)}">${esc(loc(c.short) || k.toUpperCase())}</button>`;
+    }).join('')}</div><span class="cost-hint">${esc(on.length ? on.map(([, c]) => loc(c.label)).join(' · ') : T(edge ? 'data.noneEdge' : 'data.none'))}</span></div>`;
+  };
+  const encField = e => {
+    const cur = e.encrypted === true ? 'yes' : e.encrypted === false ? 'no' : '';
+    const byId = id => S.model.nodes.find(n => n.id === id);
+    return `<div class="field">${T('enc.label')}<div class="seg">${[['', 'enc.unset'], ['yes', 'enc.yes'], ['no', 'enc.no']].map(([k, l]) =>
+      `<button data-enc="${k}" class="enc-${k || 'unset'}${cur === k ? ' on' : ''}">${T(l)}</button>`).join('')}</div>${isInsecure(e, byId) ? `<span class="enc-warn">⚠ ${T('enc.warn')}</span>` : ''}</div>`;
+  };
+
   function renderInspector() {
     const box = $('#inspector'), t = selTarget(), m = S.model;
     if (!t) { box.hidden = true; box.innerHTML = ''; return; }
@@ -1333,6 +1400,7 @@
         <div class="field">${T('insp.distribute')}<div class="tools two">${['hdist', 'vdist'].map(k => tool(k).replace('</svg>', `</svg>${T(k === 'hdist' ? 'insp.horizontal' : 'insp.vertical')}`)).join('')}</div></div>
         <label>${T('insp.group')}<select data-field="group">${g1 == null ? `<option value="__mixed" selected>${T('insp.mixed')}</option>` : ''}<option value=""${g1 === '' ? ' selected' : ''}>${T('insp.none')}</option>${m.groups.map(g => `<option value="${esc(g.id)}"${g.id === g1 ? ' selected' : ''}>${esc(g.label)}</option>`).join('')}<option value="__new">${T('insp.newGroup')}</option></select></label>
         <div class="field">${T('insp.color')}${swatches(colorsOf.size === 1 ? [...colorsOf][0] : '__mixed')}</div>
+        ${dataField(t)}
         ${priced.length ? `<p class="cost-sum">${T('insp.selCost')} <b>≈ ${money(round2(monthlyTotal(t)))}${T('cost.mo')}</b><span>${T('insp.withCost', { a: priced.length, b: t.length })}</span></p>` : ''}
         <p class="note">${T('insp.multiNote')}</p>
         <div class="insp-actions">
@@ -1355,6 +1423,7 @@
         ${Object.keys(ICONS).length ? `<label>${T('insp.icon')}<select data-field="icon">${iconOptions(t.icon)}</select></label>` : ''}
         <div class="field">${T('insp.color')}${swatches(t.color)}</div>
         ${costField(t)}
+        ${dataField(t)}
         <label>${T('insp.desc')}<textarea data-field="desc" rows="3" placeholder="${esc(T('insp.desc.ph'))}">${esc(t.desc || '')}</textarea></label>
         <div class="field">${T('insp.reach')}<div class="seg">${modes.map(([k, l]) => `<button data-reach="${k}" class="${S.reach === k ? 'on' : ''}">${l}</button>`).join('')}</div></div>
         ${ins.length || outs.length ? `<div class="conns">
@@ -1371,6 +1440,8 @@
       html = head(colorVar(t.color) || nodeColor(a), '', T('insp.edge'), `${a.label} → ${b.label}`) + `
         <label>${T('insp.label')}<input data-field="label" value="${esc(t.label || '')}" placeholder="${esc(T('insp.label.ph'))}"></label>
         <label>${T('insp.style')}<select data-field="style">${Object.entries(C.edgeStyles).map(([k, v]) => `<option value="${k}"${k === (C.edgeStyles[t.style] ? t.style : 'sync') ? ' selected' : ''}>${esc(loc(v.label))}</option>`).join('')}</select></label>
+        ${encField(t)}
+        ${dataField(t, true)}
         <div class="field">${T('insp.color')}${swatches(t.color)}</div>
         <div class="conns"><div class="conn-title">${T('insp.ends')}</div>
           <button class="conn" data-goto="${esc(a.id)}" style="--c:${nodeColor(a)}"><span class="dot"></span>${esc(a.label)}<em>${T('insp.source')}</em></button>
@@ -1445,6 +1516,15 @@
     if (b.dataset.color != null && t) {
       pushHistory();
       (Array.isArray(t) ? t : [t]).forEach(x => { if (b.dataset.color) x.color = b.dataset.color; else delete x.color; });
+      changed(true); renderInspector();
+    } else if (b.dataset.dclass && t) {
+      const list = [].concat(t), k = b.dataset.dclass, all = list.every(x => x.data?.includes(k));
+      pushHistory();
+      list.forEach(x => { const d = cleanData([...(x.data || []).filter(j => j !== k), ...(all ? [] : [k])]); if (d.length) x.data = d; else delete x.data; });
+      changed(true); renderInspector();
+    } else if (b.dataset.enc != null && t) {
+      pushHistory();
+      if (b.dataset.enc) t.encrypted = b.dataset.enc === 'yes'; else delete t.encrypted;
       changed(true); renderInspector();
     } else if (b.dataset.align) {
       alignNodes(b.dataset.align);
@@ -1576,6 +1656,7 @@
     icons: Object.fromEntries(Object.entries(ICONS).flatMap(([p, set]) => Object.entries(set.items).map(([k, it]) => [`${p}/${k}`, it]))),
     types: Object.fromEntries(Object.entries(C.types).map(([k, t]) => [k.toLowerCase(), { ...t, label: loc(t.label) }])),
     providers: Object.keys(ICONS),
+    dataClasses: Object.keys(DATA),
     lang: I.lang
   });
   codeBox($('#text-src'), box => {
