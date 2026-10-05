@@ -46,7 +46,7 @@
     sel: null, hover: null, connecting: null, drag: null, play: null, lastDown: null,
     history: [], future: [], lastType: 'compute', lastExtra: {},
     provider: store.get('provider', 'generic'),
-    compare: null, verNote: ''
+    compare: null, verNote: '', verEdit: null
   };
   // Referencias a elementos SVG y medidas calculadas (nunca se guardan en el modelo)
   const R = { nodes: new Map(), edges: new Map(), groups: new Map(), width: new Map(), gbox: new Map() };
@@ -57,7 +57,9 @@
   const ICON = {
     x: '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>',
     link: '<svg viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg>',
-    swap: '<svg viewBox="0 0 24 24"><path d="M7 4 3 8l4 4M3 8h14M17 20l4-4-4-4M21 16H7"/></svg>'
+    swap: '<svg viewBox="0 0 24 24"><path d="M7 4 3 8l4 4M3 8h14M17 20l4-4-4-4M21 16H7"/></svg>',
+    pencil: '<svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></svg>',
+    check: '<svg viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>'
   };
 
   /* ---------- colores ---------- */
@@ -137,6 +139,8 @@
     const n = dayDiff(today(), r.due);
     return st === 'overdue' ? T('rev.hint.overdue', -n) : T('rev.hint.dueIn', n);
   };
+  // Estado de aprobación de una versión o ambiente
+  const VSTATUS = { draft: 'var(--muted)', review: 'var(--p-limon)', approved: 'var(--p-menta)', rejected: 'var(--p-coral)' };
   const cleanReview = v => {
     if (!v || typeof v !== 'object') return null;
     const r = { status: v.status === 'resolved' ? 'resolved' : 'open' };
@@ -269,6 +273,12 @@
       if (kind === 'env') o.env = String(v.env || 'env'); else o.n = Math.max(1, Math.round(+v.n) || i + 1);
       if (v.note) o.note = String(v.note);
       o.savedAt = String(v.savedAt || '');
+      // Aprobación: estado, autor de la arquitectura y fechas AAAA-MM-DD (editables)
+      o.status = VSTATUS[v.status] ? v.status : 'draft';
+      if (v.author != null && String(v.author).trim()) o.author = String(v.author).trim();
+      const saved = String(o.savedAt).slice(0, 10);
+      o.created = isDay(v.created) ? v.created : isDay(saved) ? saved : today();
+      o.updated = isDay(v.updated) ? v.updated : isDay(saved) ? saved : o.created;
       o.diagram = v.diagram;
       return o;
     });
@@ -1014,7 +1024,7 @@
     pill.hidden = !v;
     if (v) {
       pill.style.setProperty('--c', verColor(v));
-      pill.innerHTML = `<span class="dot"></span>${esc(verLabel(v))}${isDirty(v) ? ` <small>· ${esc(T('ver.dirty'))}</small>` : ''}`;
+      pill.innerHTML = `<span class="dot"></span>${esc(verLabel(v))}${v.status !== 'draft' ? ` <b class="ver-status" style="--s:${VSTATUS[v.status]}">${esc(T(`ver.st.${v.status}`))}</b>` : ''}${isDirty(v) ? ` <small>· ${esc(T('ver.dirty'))}</small>` : ''}`;
     }
     document.title = `${m.title} · ${C.app.name}`;
   }
@@ -1313,6 +1323,7 @@
   const prepared = v => { const d = normalize(clone(v.diagram)); ensurePositions(d); return d; };
   const canon = v => JSON.stringify(v, (k, x) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map(j => [j, x[j]])) : x));
   const isDirty = v => canon(snapshotOf(prepared(v))) !== canon(snapshotOf(S.model));
+  const verMeta = v => [v.author, v.created === v.updated ? T('ver.createdOn', { date: fmtDay(v.created) }) : T('ver.dates', { a: fmtDay(v.created), b: fmtDay(v.updated) }), T('meta.nodes', v.diagram.nodes?.length || 0)].filter(Boolean).join(' · ');
   const fmtDate = iso => { const d = new Date(iso); return isNaN(d) ? '' : new Intl.DateTimeFormat(I.lang, { dateStyle: 'medium', timeStyle: 'short' }).format(d); };
 
   // Los cambios en las versiones van al historial: ⌘Z deshace guardar, abrir o eliminar
@@ -1333,16 +1344,24 @@
       let id = kind === 'env' ? `env-${env}` : `v${n}`;
       while (vs.some(x => x.id === id)) id += '_';
       v = kind === 'env' ? { id, kind, env } : { id, kind, n };
+      v.status = 'draft';
+      v.created = today();
+      const author = store.get('author', '') || S.model.meta?.author;
+      if (author) v.author = author;
       vs.push(v);
     }
+    // Si cambia el contenido de algo aprobado o rechazado, vuelve a revisión
+    const reset = existed && (v.status === 'approved' || v.status === 'rejected');
+    if (reset) v.status = 'review';
     if (note) v.note = note;
+    v.updated = today();
     v.savedAt = new Date().toISOString();
     v.diagram = snapshotOf(S.model);
     S.model.active = v.id;
     S.verNote = '';
     versionsChanged();
     if (S.compare) applyCompare();
-    toast(T(existed ? 'ver.updated' : 'ver.saved', { name: verLabel(v) }));
+    toast(T(reset ? 'ver.updatedReset' : existed ? 'ver.updated' : 'ver.saved', { name: verLabel(v) }), reset ? 3200 : 1800);
   }
   function openVersion(id) {
     const v = findVersion(id);
@@ -1443,19 +1462,34 @@
     if (!box || !S.model) return;
     const vs = S.model.versions, envs = Object.entries(C.environments || {});
     const nextN = Math.max(0, ...vs.filter(v => v.kind === 'version').map(v => v.n)) + 1;
-    const focused = document.activeElement?.id === 'ver-note';
+    // Conserva el foco (y el cursor) si se estaba escribiendo en un campo del panel
+    const act = document.activeElement, fkey = act?.id === 'ver-note' ? '#ver-note' : act?.dataset?.vfield ? `.ver[data-id="${CSS.escape(act.closest('.ver')?.dataset.id || '')}"] [data-vfield="${act.dataset.vfield}"]` : null;
+    const caret = fkey && 'selectionStart' in act && act.type !== 'date' ? [act.selectionStart, act.selectionEnd] : null;
     const card = v => {
-      const on = v.id === S.model.active, cmp = S.compare?.id === v.id, dirty = on && isDirty(v);
-      return `<div class="ver${on ? ' on' : ''}${cmp ? ' cmp' : ''}" data-id="${esc(v.id)}" style="--c:${verColor(v)}">
-        <div class="ver-head"><span class="dot"></span><b>${esc(verLabel(v))}</b>${on ? `<em${dirty ? ' class="dirty"' : ''}>${esc(T(dirty ? 'ver.dirty' : 'ver.current'))}</em>` : ''}</div>
-        <div class="ver-meta">${esc([fmtDate(v.savedAt), T('meta.nodes', v.diagram.nodes?.length || 0)].filter(Boolean).join(' · '))}</div>
-        ${v.note ? `<div class="ver-note">${esc(v.note)}</div>` : ''}
+      const on = v.id === S.model.active, cmp = S.compare?.id === v.id, dirty = on && isDirty(v), editing = S.verEdit === v.id;
+      return `<div class="ver${on ? ' on' : ''}${cmp ? ' cmp' : ''}" data-id="${esc(v.id)}" style="--c:${verColor(v)};--s:${VSTATUS[v.status]}">
+        <div class="ver-head"><span class="dot"></span><b>${esc(verLabel(v))}</b><span class="ver-status">${esc(T(`ver.st.${v.status}`))}</span>
+          <span class="ver-tools">
+            <button class="btn small icon${editing ? ' on' : ''}" data-ver="edit" title="${esc(T(editing ? 'ver.editDone' : 'ver.edit'))}" aria-label="${esc(T('ver.edit'))}">${editing ? ICON.check : ICON.pencil}</button>
+            <button class="btn small danger icon" data-ver="delete" title="${esc(T('ver.delete'))}" aria-label="${esc(T('ver.delete'))}">${ICON.x}</button>
+          </span></div>
+        ${on ? `<div class="ver-flag${dirty ? ' dirty' : ''}">${esc(T(dirty ? 'ver.dirty' : 'ver.current'))}</div>` : ''}
+        <div class="ver-meta">${esc(verMeta(v))}</div>
+        ${v.note && !editing ? `<div class="ver-note">${esc(v.note)}</div>` : ''}
+        ${editing ? `<div class="ver-form">
+          <label>${T('ver.status')}<select data-vfield="status">${Object.keys(VSTATUS).map(k => `<option value="${k}"${k === v.status ? ' selected' : ''}>${esc(T(`ver.st.${k}`))}</option>`).join('')}</select></label>
+          <label>${T('ver.author')}<input data-vfield="author" value="${esc(v.author || '')}" placeholder="${esc(T('ver.author.ph'))}" autocomplete="off"></label>
+          <div class="ver-dates">
+            <label>${T('ver.created')}<input type="date" data-vfield="created" value="${esc(v.created)}"></label>
+            <label>${T('ver.updatedOn')}<input type="date" data-vfield="updated" value="${esc(v.updated)}"></label>
+          </div>
+          <label>${T('ver.note')}<textarea data-vfield="note" rows="2" placeholder="${esc(T('ver.note.ph'))}">${esc(v.note || '')}</textarea></label>
+        </div>` : ''}
         ${cmp && S.compare.diff ? diffList(S.compare.diff) : ''}
         <div class="ver-actions">
           <button class="btn small" data-ver="open" title="${esc(T('ver.openTip'))}">${T('ver.open')}</button>
           <button class="btn small${cmp ? ' on' : ''}" data-ver="compare" title="${esc(T('ver.compareTip'))}">${T(cmp ? 'ver.stop' : 'ver.compare')}</button>
           ${v.kind === 'env' ? `<button class="btn small" data-ver="update" title="${esc(T('ver.saveHereTip'))}">${T('ver.saveHere')}</button>` : ''}
-          <button class="btn small danger icon" data-ver="delete" title="${esc(T('ver.delete'))}" aria-label="${esc(T('ver.delete'))}">${ICON.x}</button>
         </div>
       </div>`;
     };
@@ -1472,7 +1506,8 @@
       </div>
       <div class="ver-list">${section(T('ver.envs'), envList)}${section(T('ver.versions'), vs.filter(v => v.kind === 'version').sort((a, b) => b.n - a.n))}</div>
       ${vs.length ? '' : `<p class="empty-list">${esc(T('ver.empty'))}</p>`}`;
-    if (focused) { const n = $('#ver-note'); n.focus(); n.setSelectionRange(n.value.length, n.value.length); }
+    const back = fkey && box.querySelector(fkey);
+    if (back) { back.focus(); if (caret) back.setSelectionRange(...caret); }
   }
   function diffList(d) {
     if (!(d.count.a + d.count.r + d.count.c)) return `<p class="ver-sum">${esc(T('ver.same'))}</p>`;
@@ -1498,7 +1533,29 @@
   }
 
   const versionsBox = $('#versions');
-  versionsBox.addEventListener('input', ev => { if (ev.target.id === 'ver-note') S.verNote = ev.target.value; });
+  const onVerField = ev => {
+    const f = ev.target, k = f.dataset?.vfield, v = k && findVersion(f.closest('.ver')?.dataset.id);
+    if (!v) return;
+    const val = f.value.trim();
+    if (k === 'status') { if (!VSTATUS[val] || val === v.status) return; }
+    else if ((k === 'created' || k === 'updated') && !isDay(val)) return;
+    markEdit();
+    if (k === 'status' || k === 'created' || k === 'updated') v[k] = val;
+    else if (val) { v[k] = k === 'note' ? f.value : val; if (k === 'author') store.set('author', val); }
+    else delete v[k];
+    if (k === 'status') { endEdit(); toast(T('ver.statusSet', { name: verLabel(v), status: T(`ver.st.${val}`) })); }
+    // Pinta al momento el estado y la línea de datos; el resto se guarda en segundo plano
+    const c = f.closest('.ver');
+    c.style.setProperty('--s', VSTATUS[v.status]);
+    c.querySelector('.ver-status').textContent = T(`ver.st.${v.status}`);
+    c.querySelector('.ver-meta').textContent = verMeta(v);
+    store.set('model', S.model);
+    updateMeta();
+  };
+  versionsBox.addEventListener('input', ev => { if (ev.target.id === 'ver-note') S.verNote = ev.target.value; else onVerField(ev); });
+  versionsBox.addEventListener('change', onVerField);
+  versionsBox.addEventListener('focusin', ev => { if (ev.target.dataset?.vfield) beginEdit(); });
+  versionsBox.addEventListener('focusout', ev => { if (ev.target.dataset?.vfield) endEdit(); });
   versionsBox.addEventListener('keydown', ev => { if (ev.target.id === 'ver-note' && ev.key === 'Enter') saveVersion('version'); });
   versionsBox.addEventListener('click', ev => {
     const goto = ev.target.closest('[data-goto]');
@@ -1511,6 +1568,11 @@
     else if (b.dataset.ver === 'compare') compareVersion(id);
     else if (b.dataset.ver === 'update') { const v = findVersion(id); if (v) saveVersion('env', v.env); }
     else if (b.dataset.ver === 'delete') deleteVersion(id);
+    else if (b.dataset.ver === 'edit') {
+      S.verEdit = S.verEdit === id ? null : id;
+      renderVersions();
+      if (S.verEdit) versionsBox.querySelector(`.ver[data-id="${CSS.escape(id)}"] [data-vfield="author"]`)?.focus();
+    }
   });
   $('#compare-exit').addEventListener('click', () => compareVersion(null));
 
@@ -2199,8 +2261,9 @@
     }), 38);
     // Cajetín
     const av = activeVersion(), cost = m.nodes.some(hasCost) ? `≈ ${money(round2(monthlyTotal(m.nodes)))}${T('cost.mo')}` : '';
-    const info = [[T('leg.author'), m.meta?.author || '—'], [T('leg.version'), m.meta?.version || (av ? verLabel(av) : '—')],
-      [T('leg.date'), new Intl.DateTimeFormat(I.lang, { dateStyle: 'long' }).format(new Date())], ...(cost ? [[T('leg.cost'), cost]] : [])];
+    const info = [[T('leg.author'), m.meta?.author || av?.author || '—'], [T('leg.version'), m.meta?.version || (av ? verLabel(av) : '—')],
+      ...(av ? [[T('leg.status'), T(`ver.st.${av.status}`)], [T('ver.created'), fmtDay(av.created)], [T('ver.updatedOn'), fmtDay(av.updated)]] : [[T('leg.date'), new Intl.DateTimeFormat(I.lang, { dateStyle: 'long' }).format(new Date())]]),
+      ...(cost ? [[T('leg.cost'), cost]] : [])];
     const keyW = Math.max(...info.map(([k]) => textW(k, '400 11.5px'))) + 14;
     const infoW = Math.max(220, textW(m.title, '700 14px'), keyW + Math.max(...info.map(([, v]) => textW(v, '400 12px')))) + 4;
     const colW = c => Math.max(textW(c.head, '750 10.5px') + 10, ...c.rows.map(rw => rw.w));

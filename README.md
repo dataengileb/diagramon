@@ -180,7 +180,10 @@ Open the **Versions** tab.
 - **Open** loads it on the canvas. A pill above the title shows what is open and warns about unsaved changes.
 - **Compare** marks the differences with the canvas: **green** is new, **yellow** changed, and **red dashed** ghosts were removed.
   The card lists every difference; click one to jump to it. **Esc** or **Stop** ends the comparison.
-- Saving, opening and deleting can be undone with **`⌘Z`**.
+- Each card shows its **status**: **Draft**, **In review**, **Approved** or **Rejected**, also shown above the title and in the exported title block.
+- **✎** edits the status, the **architecture author**, the **created** and **updated** dates and the note, with no need to delete and save again. The last author you typed is suggested for new versions.
+- Updating an environment that was **Approved** or **Rejected** puts it back **In review**, because its content changed.
+- Saving, opening, deleting and every edit can be undone with **`⌘Z`**.
 - Versions are stored inside the diagram, so **Export › JSON** carries them all.
 
 ### 9. Present and export
