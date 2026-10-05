@@ -94,6 +94,17 @@ window.DIAGRAMON_CONFIG = {
     prod: { label: { en: 'Production', es: 'Producción' }, short: 'PROD', color: 'coral' }
   },
 
+  /* Clasificación de datos: etiquetas de color arriba de cada nodo y en las conexiones.
+     sensitive: true = si viaja por una conexión marcada "sin cifrar", se avisa en rojo. */
+  dataClasses: {
+    public:       { label: { en: 'Public', es: 'Público' }, short: 'PUB', color: 'menta' },
+    internal:     { label: { en: 'Internal', es: 'Interno' }, short: 'INT', color: 'cielo' },
+    confidential: { label: { en: 'Confidential', es: 'Confidencial' }, short: 'CONF', color: 'melocoton', sensitive: true },
+    pii:          { label: { en: 'Personal data (PII)', es: 'Datos personales (PII)' }, short: 'PII', color: 'rosa', sensitive: true },
+    pci:          { label: { en: 'Payment card data (PCI)', es: 'Datos de tarjetas (PCI)' }, short: 'PCI', color: 'coral', sensitive: true },
+    phi:          { label: { en: 'Health data (PHI)', es: 'Datos de salud (PHI)' }, short: 'PHI', color: 'lila', sensitive: true }
+  },
+
   /* Costos escritos a mano en cada componente (recuadro bajo el nodo).
      hoursPerMonth: horas usadas para pasar un precio por hora a mensual.
      defaultYears: años por defecto del periodo "Multianual". */

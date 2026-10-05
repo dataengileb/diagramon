@@ -260,6 +260,17 @@
   .guide { stroke: var(--p-rosa); stroke-width: 1.2; stroke-dasharray: 4 4; vector-effect: non-scaling-stroke; pointer-events: none; animation: fade-in .15s ease-out; }
   .marquee { fill: var(--accent); fill-opacity: .08; stroke: var(--accent); stroke-width: 1.2; stroke-dasharray: 5 4; vector-effect: non-scaling-stroke; pointer-events: none; }
 
+  /* Clasificación de datos y cifrado */
+  .dchips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+  .dchip { height: 26px; padding: 0 10px; border: 1px solid color-mix(in srgb, var(--c) 50%, var(--border)); border-radius: 999px; background: none; color: var(--c); font-size: 11px; font-weight: 750; letter-spacing: .03em; cursor: pointer; transition: background-color .2s, color .2s, transform .15s; }
+  .dchip:hover { background: color-mix(in srgb, var(--c) 15%, transparent); }
+  .dchip:active { transform: scale(.94); }
+  .dchip.some { background: color-mix(in srgb, var(--c) 30%, transparent); }
+  .dchip.on { background: var(--c); border-color: var(--c); color: var(--bg); }
+  .seg button.enc-yes.on { color: var(--p-menta); }
+  .seg button.enc-no.on { color: var(--p-coral); }
+  .enc-warn { display: block; margin-top: 5px; font-size: 11.5px; font-weight: 600; color: var(--p-coral); }
+
   /* Costo */
   .cost-row { display: flex; gap: 6px; margin-top: 4px; }
   .inspector .cost-row :is(input, select) { margin-top: 0; }
@@ -363,8 +374,14 @@
   .edge.pulse .edge-line { stroke-opacity: 1; stroke-width: calc(var(--w, 1.8px) + 1.6px); filter: drop-shadow(0 0 6px var(--c)); }
   .particle { fill: var(--c); pointer-events: none; filter: drop-shadow(0 0 3px var(--c)); }
   .edge-label { pointer-events: none; }
-  .edge-label rect { fill: var(--surface); stroke: var(--c); stroke-opacity: .35; transition: fill .4s, stroke .4s; }
-  .edge-label text { fill: var(--text); font-size: 11px; font-weight: 500; opacity: .85; }
+  .edge-label > rect { fill: var(--surface); stroke: var(--c); stroke-opacity: .35; transition: fill .4s, stroke .4s; }
+  .edge-label > text { fill: var(--text); font-size: 11px; font-weight: 500; opacity: .85; }
+  .edge.insecure .edge-label > rect { stroke: var(--p-coral); stroke-opacity: 1; stroke-width: 1.5; }
+  .edge-lock rect, .edge-lock path { fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+  .edge-lock.on rect, .edge-lock.on path { stroke: var(--p-menta); }
+  .edge-lock.off rect, .edge-lock.off path { stroke: var(--p-coral); }
+  .data-tag rect { fill: var(--tc); transition: fill .4s; }
+  .data-tag text { fill: var(--bg); font-size: 9.5px; font-weight: 800; letter-spacing: .03em; }
   .edge.enter, .group.enter { animation: fade-in .7s ease-out both; }
 
   .node { cursor: grab; }

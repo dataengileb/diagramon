@@ -71,6 +71,7 @@ around 290 official cloud icons, and the browser itself blocks every network req
 - 🧩 **Nested groups**: region › VPC › subnet, cluster › namespace, and more.
 - 🖱️ **Multi-select, alignment and smart guides**: align, distribute with equal spacing, and snap to edges and centers.
 - 💵 **Manual costs**: USD per hour, month, year or multi-year, shown under each service, with an approximate monthly total.
+- 🏷️ **Data classification and encryption in transit**: tag nodes and connections as *Public, Internal, Confidential, PII, PCI* or *PHI*, mark each connection as encrypted 🔒 or not, and get a red warning when sensitive data travels unencrypted.
 - ⌨️ **Diagram as code**: a small text language, with errors shown by line number.
 - 🗂️ **Versions and environments**: save the canvas as *Version 1, 2, 3…* or as *Development, QA, Production*, open any of them, and compare it with the canvas: new items in green, changed in yellow, removed as red ghosts.
 - 🔦 **Flow highlighting** for any component: neighbors, targets, sources or everything.
@@ -144,7 +145,16 @@ With several services selected, the panel shows the cost of the selection.
 
 > Diagramon never looks up prices online (privacy first). You type the costs yourself.
 
-### 6. Versions and environments
+### 6. Data classification and encryption
+
+1. Select a component. Under **Data classification**, click the tags for the data it stores or handles: **PUB**, **INT**, **CONF**, **PII**, **PCI**, **PHI**. You can pick several.
+2. Select a connection. Set **Encryption in transit** to **Encrypted** or **Not encrypted**, and tag the **Data in transit**.
+
+The tags appear on top of each node and on the connection's label, next to a padlock: closed 🔒 when encrypted, open when not.
+When a connection marked *Not encrypted* carries sensitive data, or links a component with sensitive data, it turns red and a warning appears above the canvas.
+With several components selected, the tags apply to all of them.
+
+### 7. Versions and environments
 
 Open the **Versions** tab.
 
@@ -157,7 +167,7 @@ Open the **Versions** tab.
 - Saving, opening and deleting can be undone with **`⌘Z`**.
 - Versions are stored inside the diagram, so **Export › JSON** carries them all.
 
-### 7. Present and export
+### 8. Present and export
 
 - **Flow** (or **`P`**) lights up the diagram step by step, from clients to data.
 - **Arrange** lays everything out automatically. **Fit** (or **`F`**) centers the diagram.
@@ -191,12 +201,12 @@ direction: LR
 
 group aws "AWS" color=peach {
   api: API Gateway [aws/apigateway] "REST"
-  db: RDS Postgres [rds] "Multi-AZ" badge=x2 cost=350/month
+  db: RDS Postgres [rds] "Multi-AZ" badge=x2 cost=350/month data=pii,pci
 }
 web: Customers [user] desc="Browser"
 
 web -> api : HTTPS
-api => db : SQL
+api => db : SQL encrypted=yes
 api ~> queue : events
 ```
 
@@ -205,6 +215,8 @@ api ~> queue : events
 | `id: Name [type] "detail"` | Node. `[type]` is a generic type (`db`, `user`…) or an official icon (`aws/lambda`, `rds`) |
 | `color=… badge=… desc="…"` | Node options |
 | `cost=120/month` · `0.1/hour` · `1400/year` · `5000/3years` | Cost in USD (no period = monthly) |
+| `data=pii,pci` | Data classification of a node or a connection |
+| `a -> b : TLS encrypted=yes` | Encryption in transit (`yes` or `no`) |
 | `group id "Name" color=… { … }` | Group; groups can be nested |
 | `a -> b` · `a => b` · `a ~> b` · `a ..> b` | Request · data · event · optional |
 | `a -> b -> c : label` | Chain; the label goes on the last arrow |
@@ -230,6 +242,7 @@ The text does not store positions: existing nodes stay where they are, and new n
 
 - Nodes only need `id` and `type`. Without `x`/`y` they are placed automatically.
 - `costPeriod`: `hour`, `year` or `multi` (with `costYears`). Without `costPeriod` the cost is monthly.
+- `data` is a list of data classes (`["pii", "pci"]`) on nodes and edges. `encrypted` (`true` or `false`) is the encryption in transit of an edge.
 - Exported files also carry `versions` (each with `kind`: `version` or `env`, and its own `diagram`) and `active`.
 - `color` takes a palette key (`rosa`, `coral`, `melocoton`, `limon`, `menta`, `cielo`, `lavanda`, `lila`),
   its English name (`pink`, `coral`, `peach`, `lemon`, `mint`, `sky`, `lavender`, `lilac`) or any CSS color.
@@ -244,6 +257,7 @@ Everything you can customize is in **`config.js`**. Save and reload `index.html`
 
 - **Default theme**: `app.defaultTheme: 'dark' | 'light'`.
 - **Default language**: `app.defaultLang: 'en' | 'es'`. UI texts live in `i18n.js`; texts in `config.js` and `examples.js` can be `{ en: '…', es: '…' }`.
+- **Data classes**: `dataClasses` sets the tags (name, short label, color). `sensitive: true` turns on the red warning for unencrypted flows.
 - **Environments**: `environments` sets the buttons of the *Versions* tab (name, short label and color). Add or remove as many as you need.
 - **Node size**: with `node.sameSize: true` (default) every node is `node.width` wide and long names wrap to 2 lines.
   With `false`, each node grows with its text.

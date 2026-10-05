@@ -20,6 +20,7 @@
              costo: número en USD + /hora, /mes, /año o /3años (sin periodo = mensual)
    Grupo:    grupo id "Nombre" color=… { … }   (se pueden anidar)
    Conexión: a -> b -> c : etiqueta color=…   (la etiqueta va en la última flecha)
+   Datos:    nodo … data=pii,pci · conexión a -> b : SQL data=pii encrypted=yes
    Comentario: líneas que empiezan por # o //
 
    Acepta las palabras clave en inglés y en español (title/título, group/grupo,
@@ -34,12 +35,17 @@
   const ARROW_SPLIT = /\s*(\.\.>|~>|=>|->)\s*/;
   const HAS_ARROW = /\.\.>|~>|=>|->/;
   const ID = /^[^\s:[\]"{}]+$/;
-  const NODE_KEYS = ['color', 'badge', 'desc', 'sub', 'x', 'y', 'costo', 'cost'];
+  const NODE_KEYS = ['color', 'badge', 'desc', 'sub', 'x', 'y', 'costo', 'cost', 'data', 'datos'];
+  // Opciones al final de una conexión: a -> b : etiqueta color=… data=pii encrypted=yes
+  const EDGE_OPT = /(?:^|\s)(color|data|datos|encrypted|cifrado)=(\S+)\s*$/i;
+  // data=pii,pci → ['pii', 'pci'] · encrypted=yes|no (también sí/no, true/false)
+  const parseData = v => [...new Set(String(v).split(',').map(s => s.trim().toLowerCase()).filter(Boolean))];
+  const parseBool = v => (/^(yes|y|true|si|sí|1|on)$/i.test(v) ? true : /^(no|n|false|0|off)$/i.test(v) ? false : null);
 
   // Palabras que escribe stringify y mensajes de error, por idioma
   const WORDS = {
-    en: { title: 'title', direction: 'direction', group: 'group', cost: 'cost', hour: 'hour', month: 'month', year: 'year', years: 'years' },
-    es: { title: 'título', direction: 'dirección', group: 'grupo', cost: 'costo', hour: 'hora', month: 'mes', year: 'año', years: 'años' }
+    en: { title: 'title', direction: 'direction', group: 'group', cost: 'cost', hour: 'hour', month: 'month', year: 'year', years: 'years', data: 'data', encrypted: 'encrypted', yes: 'yes', no: 'no' },
+    es: { title: 'título', direction: 'dirección', group: 'grupo', cost: 'costo', hour: 'hora', month: 'mes', year: 'año', years: 'años', data: 'datos', encrypted: 'cifrado', yes: 'sí', no: 'no' }
   };
   const MSG = {
     en: {
@@ -47,6 +53,7 @@
       brace: 'extra closing brace }', groupId: id => `invalid group id “${id}”`, groupDup: id => `group “${id}” already exists`,
       edge: 'incomplete connection', id: id => `invalid id “${id || '(empty)'}”`,
       cost: v => `invalid cost “${v}” (e.g. 120/month, 0.1/hour, 1400/year, 5000/3years)`,
+      data: v => `unknown data class “${v}” (e.g. pii, pci, confidential)`, enc: v => `invalid encrypted value “${v}” (use yes or no)`,
       line: 'cannot understand this line', open: n => `missing } to close ${n === 1 ? 'a group' : `${n} groups`}`
     },
     es: {
@@ -54,6 +61,7 @@
       brace: 'sobra una llave }', groupId: id => `id de grupo no válido «${id}»`, groupDup: id => `el grupo «${id}» ya existe`,
       edge: 'conexión incompleta', id: id => `id no válido «${id || '(vacío)'}»`,
       cost: v => `costo no válido «${v}» (ej.: 120/mes, 0.1/hora, 1400/año, 5000/3años)`,
+      data: v => `clasificación de datos desconocida «${v}» (ej.: pii, pci, confidential)`, enc: v => `valor de cifrado no válido «${v}» (usa sí o no)`,
       line: 'no se entiende esta línea', open: n => `falta cerrar ${n === 1 ? 'un grupo' : `${n} grupos`} con }`
     }
   };
@@ -110,6 +118,13 @@
     const errors = [];
     const nodes = new Map(), groups = new Set(), stack = [];
     const err = (line, msg) => errors.push({ line, msg });
+    // Clasificaciones: solo las de config.js (ctx.dataClasses), si se conocen
+    const checkData = (v, ln) => {
+      if (v == null) return null;
+      const d = parseData(v), bad = ctx.dataClasses ? d.filter(k => !ctx.dataClasses.includes(k)) : [];
+      if (bad.length) err(ln, msg.data(bad[0]));
+      return d.filter(k => !bad.includes(k));
+    };
 
     const nodeFor = id => {
       if (!nodes.has(id)) {
@@ -154,9 +169,12 @@
         const parts = left.split(ARROW_SPLIT).map(s => s.trim());
         if (parts.length < 3 || parts.length % 2 === 0) return err(ln, msg.edge);
         for (let k = 0; k < parts.length; k += 2) if (!ID.test(parts[k])) return err(ln, msg.id(parts[k]));
-        let label = right, color;
-        const cm = label.match(/(?:^|\s)color=(\S+)\s*$/);
-        if (cm) { color = cm[1]; label = label.slice(0, cm.index).trim(); }
+        let label = right, km;
+        const kv = {};
+        while ((km = label.match(EDGE_OPT))) { kv[km[1].toLowerCase()] = km[2]; label = label.slice(0, km.index).trim(); }
+        const color = kv.color, data = checkData(kv.data ?? kv.datos, ln), encV = kv.encrypted ?? kv.cifrado;
+        const enc = encV == null ? null : parseBool(encV);
+        if (encV != null && enc == null) err(ln, msg.enc(encV));
         if (/^".*"$/.test(label)) label = unquote(label);
         for (let k = 0; k + 2 < parts.length; k += 2) {
           nodeFor(parts[k]); nodeFor(parts[k + 2]);
@@ -165,6 +183,8 @@
           if (style !== 'sync') e.style = style;
           if (k + 3 === parts.length && label) e.label = label;
           if (color) e.color = color;
+          if (data?.length) e.data = data;
+          if (enc != null) e.encrypted = enc;
           model.edges.push(e);
         }
         return;
@@ -187,6 +207,8 @@
         ['x', 'y'].forEach(k => { if (tk.kv[k] != null && Number.isFinite(+tk.kv[k])) n[k] = +tk.kv[k]; });
         const cv = tk.kv.costo ?? tk.kv.cost;
         if (cv != null) { const c = parseCost(cv); if (c) Object.assign(n, c); else err(ln, msg.cost(cv)); }
+        const dv = tk.kv.data ?? tk.kv.datos;
+        if (dv != null) { const d = checkData(dv, ln); if (d.length) n.data = d; }
         if (stack.length) n.group = stack[stack.length - 1];
         return;
       }
@@ -209,6 +231,7 @@
       if (n.badge != null && n.badge !== '') p.push(`badge=${bare(n.badge)}`);
       if (n.color) p.push(`color=${bare(n.color)}`);
       if (n.cost != null && n.cost !== '' && Number.isFinite(+n.cost)) p.push(`${w.cost}=${costValue(n, w)}`);
+      if (n.data?.length) p.push(`${w.data}=${n.data.join(',')}`);
       if (n.desc) p.push(`desc=${quote(n.desc)}`);
       return p.join(' ');
     };
@@ -224,7 +247,8 @@
     if (m.edges.length) out.push('');
     m.edges.forEach(e => {
       const arrow = ARROW_OF[e.style] || '->';
-      const tail = [e.label ? (/(?:^|\s)color=\S+\s*$|^".*"$/.test(e.label) ? quote(e.label) : e.label) : '', e.color ? `color=${bare(e.color)}` : ''].filter(Boolean).join(' ');
+      const tail = [e.label ? (EDGE_OPT.test(e.label) || /^".*"$/.test(e.label) ? quote(e.label) : e.label) : '', e.color ? `color=${bare(e.color)}` : '',
+        e.data?.length ? `${w.data}=${e.data.join(',')}` : '', e.encrypted != null ? `${w.encrypted}=${e.encrypted ? w.yes : w.no}` : ''].filter(Boolean).join(' ');
       out.push(`${e.from} ${arrow} ${e.to}${tail ? ` : ${tail}` : ''}`);
     });
     return out.join('\n') + '\n';

@@ -40,12 +40,12 @@ direction: LR            (or TB)
 
 group aws "AWS" color=peach {
   api: API Gateway [aws/apigateway] "REST"
-  db: RDS Postgres [rds] "Multi-AZ" badge=x2 cost=350/month
+  db: RDS Postgres [rds] "Multi-AZ" badge=x2 cost=350/month data=pii,pci
 }
 web: Customers [user] desc="Browser"
 
 web -&gt; api : HTTPS       -&gt; request
-api =&gt; db : SQL          =&gt; data
+api =&gt; db : SQL encrypted=yes   =&gt; data
 api ~&gt; queue : events    ~&gt; event
 api ..&gt; cache            ..&gt; optional
 
@@ -53,6 +53,8 @@ api ..&gt; cache            ..&gt; optional
       or official icon (aws/lambda, rds…)
 " "   detail under the name
 cost=0.1/hour · 120/month · 1400/year · 5000/3years  (USD)
+data=pii,pci      public internal confidential pii pci phi
+encrypted=yes|no  encryption in transit (connections)
 #     comment`,
       'stage.empty': '<b>Empty canvas</b>Drag a component from the left<br>or double-click here.',
       'stage.banner': 'Pick the connection target · <kbd>Esc</kbd> cancels',
@@ -113,7 +115,12 @@ cost=0.1/hour · 120/month · 1400/year · 5000/3years  (USD)
       'ver.opened': ({ name }) => `${name} opened · ⌘Z to go back`, 'ver.deleted': ({ name }) => `${name} deleted · ⌘Z to undo`,
       'ver.comparing': ({ name }) => `Comparing the canvas with <b>${name}</b>`, 'ver.exit': 'Exit the comparison (Esc)',
       'ver.summary': ({ a, r, c }) => `+${a} new · −${r} removed · ~${c} changed`, 'ver.same': 'No differences',
-      'ver.edge': 'connection', 'ver.group': 'group', 'field.title': 'Title', 'field.badge': 'Badge', 'field.position': 'position'
+      'ver.edge': 'connection', 'ver.group': 'group', 'field.title': 'Title', 'field.badge': 'Badge', 'field.position': 'position',
+
+      'data.label': 'Data classification', 'data.edge': 'Data in transit', 'data.none': 'Tag the data it stores or handles.', 'data.noneEdge': 'Tag the data this connection carries.',
+      'enc.label': 'Encryption in transit', 'enc.unset': 'Not set', 'enc.yes': 'Encrypted', 'enc.no': 'Not encrypted',
+      'enc.warn': 'Sensitive data travels here without encryption.',
+      'meta.insecure': n => `⚠ ${n} unencrypted sensitive ${n === 1 ? 'flow' : 'flows'}`
     },
 
     es: {
@@ -141,12 +148,12 @@ dirección: LR            (o TB)
 
 grupo aws "AWS" color=melocoton {
   api: API Gateway [aws/apigateway] "REST"
-  db: RDS Postgres [rds] "Multi-AZ" badge=x2 costo=350/mes
+  db: RDS Postgres [rds] "Multi-AZ" badge=x2 costo=350/mes datos=pii,pci
 }
 web: Clientes [user] desc="Navegador"
 
 web -&gt; api : HTTPS       -&gt; petición
-api =&gt; db : SQL          =&gt; datos
+api =&gt; db : SQL cifrado=sí     =&gt; datos
 api ~&gt; cola : eventos    ~&gt; evento
 api ..&gt; cache            ..&gt; opcional
 
@@ -154,6 +161,8 @@ api ..&gt; cache            ..&gt; opcional
       o icono oficial (aws/lambda, rds…)
 " "   detalle debajo del nombre
 costo=0.1/hora · 120/mes · 1400/año · 5000/3años  (USD)
+datos=pii,pci     public internal confidential pii pci phi
+cifrado=sí|no     cifrado en tránsito (conexiones)
 #     comentario`,
       'stage.empty': '<b>Lienzo vacío</b>Arrastra un componente desde la izquierda<br>o haz doble clic aquí.',
       'stage.banner': 'Elige el destino de la conexión · <kbd>Esc</kbd> cancela',
@@ -214,7 +223,12 @@ costo=0.1/hora · 120/mes · 1400/año · 5000/3años  (USD)
       'ver.opened': ({ name }) => `${name} abierto · ⌘Z para volver`, 'ver.deleted': ({ name }) => `${name} eliminado · ⌘Z para deshacer`,
       'ver.comparing': ({ name }) => `Comparando el lienzo con <b>${name}</b>`, 'ver.exit': 'Salir de la comparación (Esc)',
       'ver.summary': ({ a, r, c }) => `+${a} nuevos · −${r} eliminados · ~${c} cambiados`, 'ver.same': 'Sin diferencias',
-      'ver.edge': 'conexión', 'ver.group': 'grupo', 'field.title': 'Título', 'field.badge': 'Insignia', 'field.position': 'posición'
+      'ver.edge': 'conexión', 'ver.group': 'grupo', 'field.title': 'Título', 'field.badge': 'Insignia', 'field.position': 'posición',
+
+      'data.label': 'Clasificación de datos', 'data.edge': 'Datos en tránsito', 'data.none': 'Marca los datos que guarda o maneja.', 'data.noneEdge': 'Marca los datos que viajan por esta conexión.',
+      'enc.label': 'Cifrado en tránsito', 'enc.unset': 'Sin indicar', 'enc.yes': 'Cifrado', 'enc.no': 'Sin cifrar',
+      'enc.warn': 'Por aquí viajan datos sensibles sin cifrar.',
+      'meta.insecure': n => `⚠ ${n} ${n === 1 ? 'flujo sensible' : 'flujos sensibles'} sin cifrar`
     }
   };
 
