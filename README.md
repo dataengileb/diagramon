@@ -74,6 +74,8 @@ around 290 official cloud icons, and the browser itself blocks every network req
 - 🏷️ **Data classification and encryption in transit**: tag nodes and connections as *Public, Internal, Confidential, PII, PCI* or *PHI*, mark each connection as encrypted 🔒 or not, and get a red warning when sensitive data travels unencrypted.
 - ⌨️ **Diagram as code**: a small text language, with errors shown by line number.
 - 🗂️ **Versions and environments**: save the canvas as *Version 1, 2, 3…* or as *Development, QA, Production*, open any of them, and compare it with the canvas: new items in green, changed in yellow, removed as red ghosts.
+- 📐 **Elbow connectors**: switch between curves and right-angle lines that route around the nodes, for the whole diagram or one connection.
+- 🧾 **Legend and title block** in SVG and PNG exports: connection styles, component colors, data classes, author, version, date and estimated cost. Ready to hand in.
 - 🔦 **Flow highlighting** for any component: neighbors, targets, sources or everything.
 - 🌐 **English and Spanish UI**: the 🌐 button in the top bar (or the **`L`** key) switches the language and remembers your choice.
 - 🌗 **Dark mode** by default, **light mode** with one key, and pastel palettes (Pastel, Sherbet, Nordic).
@@ -171,7 +173,12 @@ Open the **Versions** tab.
 
 - **Flow** (or **`P`**) lights up the diagram step by step, from clients to data.
 - **Arrange** lays everything out automatically. **Fit** (or **`F`**) centers the diagram.
+- **Elbows** (or **`E`**) switches the connections between curves and right-angle lines that go around the nodes.
+  To change only one connection, select it and pick its **Line**.
 - **Export** › SVG, PNG or JSON. Keep the JSON to open it again later with **Import**.
+- The **Export** menu also has **Legend and title block** (on by default), with **Author** and **Version** fields.
+  SVG and PNG files then get a panel at the bottom with only what the diagram uses (connection styles, padlocks,
+  component colors, data classes) and a title block with title, author, version, date and estimated cost.
 
 ### Keyboard shortcuts
 
@@ -187,6 +194,7 @@ Open the **Versions** tab.
 | `P` | Play the flow |
 | `T` | Switch dark / light mode |
 | `L` | Switch English / Spanish |
+| `E` | Switch curved / elbow connectors |
 | `Esc` | Cancel or clear the selection |
 
 ---
@@ -198,6 +206,9 @@ The fastest way to draw. Type, and the canvas updates by itself. Everything runs
 ```text
 title: Online store
 direction: LR
+lines: elbow
+author: Platform team
+version: 1.2
 
 group aws "AWS" color=peach {
   api: API Gateway [aws/apigateway] "REST"
@@ -220,6 +231,8 @@ api ~> queue : events
 | `group id "Name" color=… { … }` | Group; groups can be nested |
 | `a -> b` · `a => b` · `a ~> b` · `a ..> b` | Request · data · event · optional |
 | `a -> b -> c : label` | Chain; the label goes on the last arrow |
+| `lines: elbow` · `a -> b : x line=curved` | Elbow or curved lines, for the diagram or one connection |
+| `author: …` · `version: …` | Shown in the export's title block |
 | `# …` or `// …` | Comment |
 
 Keywords work in English and Spanish (`title`/`título`, `group`/`grupo`, `cost`/`costo`, `/month`/`/mes`…).
@@ -242,6 +255,7 @@ The text does not store positions: existing nodes stay where they are, and new n
 
 - Nodes only need `id` and `type`. Without `x`/`y` they are placed automatically.
 - `costPeriod`: `hour`, `year` or `multi` (with `costYears`). Without `costPeriod` the cost is monthly.
+- `routing: "elbow"` sets elbow lines for the diagram; `route` (`curved` or `elbow`) overrides it on one edge. `meta` holds `author` and `version`.
 - `data` is a list of data classes (`["pii", "pci"]`) on nodes and edges. `encrypted` (`true` or `false`) is the encryption in transit of an edge.
 - Exported files also carry `versions` (each with `kind`: `version` or `env`, and its own `diagram`) and `active`.
 - `color` takes a palette key (`rosa`, `coral`, `melocoton`, `limon`, `menta`, `cielo`, `lavanda`, `lila`),

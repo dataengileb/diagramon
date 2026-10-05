@@ -80,6 +80,14 @@
   .menu-pop button { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px; border: 0; border-radius: 8px; background: none; cursor: pointer; text-align: left; font-size: 13px; }
   .menu-pop button:hover { background: var(--surface2); }
   .menu-pop small { margin-left: auto; color: var(--muted); }
+  .menu-sep { height: 1px; margin: 6px 4px; background: var(--border); }
+  .menu-check { display: flex; align-items: center; gap: 9px; padding: 7px 10px; font-size: 13px; cursor: pointer; border-radius: 8px; }
+  .menu-check:hover { background: var(--surface2); }
+  .menu-check input { margin: 0; accent-color: var(--accent); }
+  .menu-field { display: block; padding: 3px 10px 5px; font-size: 11px; font-weight: 650; color: var(--muted); }
+  .menu-field input { display: block; width: 100%; margin-top: 3px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); font-size: 12.5px; font-weight: 400; color: var(--text); }
+  .menu-field input:focus { outline: none; border-color: var(--accent); }
+  .menu-note { margin: 2px 10px 6px; max-width: 220px; font-size: 11px; color: var(--muted); }
   @keyframes pop-in { from { opacity: 0; transform: translateY(-6px) scale(.98); } }
 
   /* Zona principal */
@@ -381,6 +389,12 @@
   .edge-lock.on rect, .edge-lock.on path { stroke: var(--p-menta); }
   .edge-lock.off rect, .edge-lock.off path { stroke: var(--p-coral); }
   .data-tag rect { fill: var(--tc); transition: fill .4s; }
+  .legend-panel { fill: var(--surface); stroke: var(--border); }
+  .legend-head { fill: var(--muted); font-size: 10.5px; font-weight: 750; letter-spacing: .08em; }
+  .legend-text { fill: var(--text); font-size: 12px; }
+  .legend-muted { fill: var(--muted); font-size: 11.5px; }
+  .legend-title { fill: var(--text); font-size: 14px; font-weight: 700; }
+  .legend .edge-line { stroke-opacity: .9; }
   .data-tag text { fill: var(--bg); font-size: 9.5px; font-weight: 800; letter-spacing: .03em; }
   .edge.enter, .group.enter { animation: fade-in .7s ease-out both; }
 
@@ -459,6 +473,7 @@
       <button class="tbtn" id="btn-redo" data-i18n-title="top.redo"><svg viewBox="0 0 24 24"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></svg></button>
       <span class="sep"></span>
       <button class="tbtn" id="btn-layout" data-i18n-title="top.layout"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/><path d="M10 6.5h4a3 3 0 0 1 3 3V14"/></svg><span class="lbl" data-i18n="top.layout.lbl"></span></button>
+      <button class="tbtn" id="btn-route" data-i18n-title="top.route"><svg viewBox="0 0 24 24"><circle cx="5" cy="6" r="2"/><circle cx="19" cy="18" r="2"/><path d="M7 6h4a1 1 0 0 1 1 1v10a1 1 0 0 0 1 1h4"/></svg><span class="lbl" data-i18n="top.route.lbl"></span></button>
       <button class="tbtn" id="btn-fit" data-i18n-title="top.fit"><svg viewBox="0 0 24 24"><path d="M4 9V5a1 1 0 0 1 1-1h4M15 4h4a1 1 0 0 1 1 1v4M20 15v4a1 1 0 0 1-1 1h-4M9 20H5a1 1 0 0 1-1-1v-4"/></svg><span class="lbl" data-i18n="top.fit.lbl"></span></button>
       <button class="tbtn" id="btn-anim" data-i18n-title="top.anim"><svg viewBox="0 0 24 24"><path d="M3 12c2.5-4 4.5-4 7 0s4.5 4 7 0c1-1.6 2-2 4-2"/><circle cx="7" cy="10" r="1"/><circle cx="17" cy="14" r="1"/></svg><span class="lbl" data-i18n="top.anim.lbl"></span></button>
       <button class="tbtn primary" id="btn-play" data-i18n-title="top.play"><svg viewBox="0 0 24 24"><path d="M7 4.5v15l12-7.5z"/></svg><span class="lbl" data-i18n="top.play.lbl"></span></button>
@@ -470,6 +485,11 @@
           <button data-export="png"><span data-i18n="exp.png"></span> <small>.png</small></button>
           <button data-export="json"><span data-i18n="exp.json"></span> <small>.json</small></button>
           <button data-export="copy"><span data-i18n="exp.copy"></span> <small data-i18n="exp.clip"></small></button>
+          <div class="menu-sep"></div>
+          <label class="menu-check"><input type="checkbox" id="exp-legend"><span data-i18n="exp.legend"></span></label>
+          <label class="menu-field"><span data-i18n="leg.author"></span><input id="exp-author" autocomplete="off" data-i18n-placeholder="exp.author.ph"></label>
+          <label class="menu-field"><span data-i18n="leg.version"></span><input id="exp-version" autocomplete="off"></label>
+          <p class="menu-note" data-i18n="exp.legend.note"></p>
         </div>
       </details>
       <button class="tbtn" id="btn-import" data-i18n-title="top.import"><svg viewBox="0 0 24 24"><path d="M12 15V3M7 8l5-5 5 5M5 21h14"/></svg><span class="lbl" data-i18n="top.import.lbl"></span></button>
