@@ -74,6 +74,7 @@ around 290 official cloud icons, and the browser itself blocks every network req
 - 🏷️ **Data classification and encryption in transit**: tag nodes and connections as *Public, Internal, Confidential, PII, PCI* or *PHI*, mark each connection as encrypted 🔒 or not, and get a red warning when sensitive data travels unencrypted.
 - ⌨️ **Diagram as code**: a small text language, with errors shown by line number.
 - 🗂️ **Versions and environments**: save the canvas as *Version 1, 2, 3…* or as *Development, QA, Production*, open any of them, and compare it with the canvas: new items in green, changed in yellow, removed as red ghosts.
+- ⚑ **Review findings**: raise a finding on any component by hand, with what must be fixed, who raised it, when, and the due date. Tags show *IN REVIEW*, *OVERDUE* or *RESOLVED*, and open findings are listed in the export.
 - 📐 **Elbow connectors**: switch between curves and right-angle lines that route around the nodes, for the whole diagram or one connection.
 - 🧾 **Legend and title block** in SVG and PNG exports: connection styles, component colors, data classes, author, version, date and estimated cost. Ready to hand in.
 - 🔦 **Flow highlighting** for any component: neighbors, targets, sources or everything.
@@ -156,7 +157,17 @@ The tags appear on top of each node and on the connection's label, next to a pad
 When a connection marked *Not encrypted* carries sensitive data, or links a component with sensitive data, it turns red and a warning appears above the canvas.
 With several components selected, the tags apply to all of them.
 
-### 7. Versions and environments
+### 7. Review findings
+
+1. Select a component and click **⚑ Raise a review finding**.
+2. Write the **Finding** (what must be fixed), **Raised by**, **Raised on** (today by default) and the **Due date**.
+3. When it is fixed, click **✓ Mark resolved**. **Reopen** brings it back; **Remove** deletes it.
+
+The component gets a tag: **IN REVIEW** (orange), **OVERDUE** (red, once the due date has passed) or **RESOLVED** (green).
+The panel shows how many days are left or how late it is, and the summary above the canvas counts open and overdue findings.
+Diagramon remembers the last reviewer name. Exports with the legend list the open findings with their due date.
+
+### 8. Versions and environments
 
 Open the **Versions** tab.
 
@@ -169,7 +180,7 @@ Open the **Versions** tab.
 - Saving, opening and deleting can be undone with **`⌘Z`**.
 - Versions are stored inside the diagram, so **Export › JSON** carries them all.
 
-### 8. Present and export
+### 9. Present and export
 
 - **Flow** (or **`P`**) lights up the diagram step by step, from clients to data.
 - **Arrange** lays everything out automatically. **Fit** (or **`F`**) centers the diagram.
@@ -233,6 +244,7 @@ api ~> queue : events
 | `a -> b -> c : label` | Chain; the label goes on the last arrow |
 | `lines: elbow` · `a -> b : x line=curved` | Elbow or curved lines, for the diagram or one connection |
 | `author: …` · `version: …` | Shown in the export's title block |
+| `review db: "DB in a public subnet" by=Ana raised=2026-10-01 due=2026-11-15` | Review finding (`status=resolved closed=…` when fixed) |
 | `# …` or `// …` | Comment |
 
 Keywords work in English and Spanish (`title`/`título`, `group`/`grupo`, `cost`/`costo`, `/month`/`/mes`…).
@@ -256,6 +268,7 @@ The text does not store positions: existing nodes stay where they are, and new n
 - Nodes only need `id` and `type`. Without `x`/`y` they are placed automatically.
 - `costPeriod`: `hour`, `year` or `multi` (with `costYears`). Without `costPeriod` the cost is monthly.
 - `routing: "elbow"` sets elbow lines for the diagram; `route` (`curved` or `elbow`) overrides it on one edge. `meta` holds `author` and `version`.
+- `review` on a node: `{ "status": "open" | "resolved", "note", "by", "raised", "due", "closed" }`, dates as `YYYY-MM-DD`.
 - `data` is a list of data classes (`["pii", "pci"]`) on nodes and edges. `encrypted` (`true` or `false`) is the encryption in transit of an edge.
 - Exported files also carry `versions` (each with `kind`: `version` or `env`, and its own `diagram`) and `active`.
 - `color` takes a palette key (`rosa`, `coral`, `melocoton`, `limon`, `menta`, `cielo`, `lavanda`, `lila`),

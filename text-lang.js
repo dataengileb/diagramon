@@ -36,6 +36,9 @@
   const HAS_ARROW = /\.\.>|~>|=>|->/;
   const ID = /^[^\s:[\]"{}]+$/;
   const NODE_KEYS = ['color', 'badge', 'desc', 'sub', 'x', 'y', 'costo', 'cost', 'data', 'datos'];
+  // review id: "observación" by=… raised=AAAA-MM-DD due=AAAA-MM-DD status=open|resolved closed=AAAA-MM-DD
+  const REVIEW_KEYS = { by: 'by', por: 'by', raised: 'raised', levantada: 'raised', due: 'due', compromiso: 'due', status: 'status', estado: 'status', closed: 'closed', cerrada: 'closed' };
+  const isDay = v => /^\d{4}-\d{2}-\d{2}$/.test(v) && !isNaN(new Date(`${v}T12:00Z`)) && new Date(`${v}T12:00Z`).toISOString().slice(0, 10) === v;
   // Opciones al final de una conexión: a -> b : etiqueta color=… data=pii encrypted=yes
   const EDGE_OPT = /(?:^|\s)(color|data|datos|encrypted|cifrado|line|linea|línea)=(\S+)\s*$/i;
   // curved | elbow (también curva/curvas, codo/codos, orthogonal)
@@ -46,8 +49,10 @@
 
   // Palabras que escribe stringify y mensajes de error, por idioma
   const WORDS = {
-    en: { title: 'title', direction: 'direction', group: 'group', cost: 'cost', hour: 'hour', month: 'month', year: 'year', years: 'years', data: 'data', encrypted: 'encrypted', yes: 'yes', no: 'no', lines: 'lines', line: 'line', elbow: 'elbow', curved: 'curved', elbowOne: 'elbow', curvedOne: 'curved', author: 'author', version: 'version' },
-    es: { title: 'título', direction: 'dirección', group: 'grupo', cost: 'costo', hour: 'hora', month: 'mes', year: 'año', years: 'años', data: 'datos', encrypted: 'cifrado', yes: 'sí', no: 'no', lines: 'líneas', line: 'línea', elbow: 'codos', curved: 'curvas', elbowOne: 'codo', curvedOne: 'curva', author: 'autor', version: 'versión' }
+    en: { title: 'title', direction: 'direction', group: 'group', cost: 'cost', hour: 'hour', month: 'month', year: 'year', years: 'years', data: 'data', encrypted: 'encrypted', yes: 'yes', no: 'no', lines: 'lines', line: 'line', elbow: 'elbow', curved: 'curved', elbowOne: 'elbow', curvedOne: 'curved', author: 'author', version: 'version',
+      review: 'review', by: 'by', raised: 'raised', due: 'due', status: 'status', closed: 'closed', resolved: 'resolved' },
+    es: { title: 'título', direction: 'dirección', group: 'grupo', cost: 'costo', hour: 'hora', month: 'mes', year: 'año', years: 'años', data: 'datos', encrypted: 'cifrado', yes: 'sí', no: 'no', lines: 'líneas', line: 'línea', elbow: 'codos', curved: 'curvas', elbowOne: 'codo', curvedOne: 'curva', author: 'autor', version: 'versión',
+      review: 'revisión', by: 'por', raised: 'levantada', due: 'compromiso', status: 'estado', closed: 'cerrada', resolved: 'resuelta' }
   };
   const MSG = {
     en: {
@@ -57,6 +62,7 @@
       cost: v => `invalid cost “${v}” (e.g. 120/month, 0.1/hour, 1400/year, 5000/3years)`,
       data: v => `unknown data class “${v}” (e.g. pii, pci, confidential)`, enc: v => `invalid encrypted value “${v}” (use yes or no)`,
       route: v => `invalid line style “${v}” (use curved or elbow)`,
+      day: v => `invalid date “${v}” (use YYYY-MM-DD)`, status: v => `invalid status “${v}” (use open or resolved)`,
       line: 'cannot understand this line', open: n => `missing } to close ${n === 1 ? 'a group' : `${n} groups`}`
     },
     es: {
@@ -66,6 +72,7 @@
       cost: v => `costo no válido «${v}» (ej.: 120/mes, 0.1/hora, 1400/año, 5000/3años)`,
       data: v => `clasificación de datos desconocida «${v}» (ej.: pii, pci, confidential)`, enc: v => `valor de cifrado no válido «${v}» (usa sí o no)`,
       route: v => `estilo de línea no válido «${v}» (usa curvas o codos)`,
+      day: v => `fecha no válida «${v}» (usa AAAA-MM-DD)`, status: v => `estado no válido «${v}» (usa abierta o resuelta)`,
       line: 'no se entiende esta línea', open: n => `falta cerrar ${n === 1 ? 'un grupo' : `${n} grupos`} con }`
     }
   };
@@ -157,6 +164,21 @@
       }
       if ((m = line.match(/^(autor|author)\s*:\s*(.*)$/i))) { if (m[2].trim()) (model.meta ||= {}).author = m[2].trim(); return; }
       if ((m = line.match(/^(versi[oó]n|version)\s*:\s*(.*)$/i))) { if (m[2].trim()) (model.meta ||= {}).version = m[2].trim(); return; }
+      if ((m = line.match(/^(review|revisi[oó]n)\s+([^\s:]+)\s*:\s*(.*)$/i))) {
+        if (!ID.test(m[2])) return err(ln, msg.id(m[2]));
+        const tk = tokens(m[3], Object.keys(REVIEW_KEYS)), r = { status: 'open' };
+        const note = tk.quotes[0] ?? tk.words.join(' ');
+        if (note) r.note = note;
+        for (const [key, v] of Object.entries(tk.kv)) {
+          const k = REVIEW_KEYS[key];
+          if (k === 'by') r.by = v;
+          else if (k === 'status') { if (/^(resolved|resuelta|closed|cerrada)$/i.test(v)) r.status = 'resolved'; else if (!/^(open|abierta)$/i.test(v)) err(ln, msg.status(v)); }
+          else if (isDay(v)) r[k] = v; else err(ln, msg.day(v));
+        }
+        if (r.status !== 'resolved') delete r.closed;
+        nodeFor(m[2]).review = r;
+        return;
+      }
       if (line === '}') { if (stack.length) stack.pop(); else err(ln, msg.brace); return; }
       if ((m = line.match(/^(grupo|group)\s+([^\s:{]+)\s*:?\s*(.*?)\s*\{\s*$/i))) {
         const id = m[2];
@@ -268,6 +290,16 @@
         e.data?.length ? `${w.data}=${e.data.join(',')}` : '', e.encrypted != null ? `${w.encrypted}=${e.encrypted ? w.yes : w.no}` : '',
         e.route ? `${w.line}=${e.route === 'elbow' ? w.elbowOne : w.curvedOne}` : ''].filter(Boolean).join(' ');
       out.push(`${e.from} ${arrow} ${e.to}${tail ? ` : ${tail}` : ''}`);
+    });
+    const reviewed = m.nodes.filter(n => n.review);
+    if (reviewed.length) out.push('');
+    reviewed.forEach(n => {
+      const r = n.review, p = [`${w.review} ${n.id}: ${quote(r.note || '')}`];
+      if (r.by) p.push(`${w.by}=${bare(r.by)}`);
+      if (r.raised) p.push(`${w.raised}=${r.raised}`);
+      if (r.due) p.push(`${w.due}=${r.due}`);
+      if (r.status === 'resolved') p.push(`${w.status}=${w.resolved}`, ...(r.closed ? [`${w.closed}=${r.closed}`] : []));
+      out.push(p.join(' '));
     });
     return out.join('\n') + '\n';
   }

@@ -59,6 +59,8 @@ cost=0.1/hour · 120/month · 1400/year · 5000/3years  (USD)
 data=pii,pci      public internal confidential pii pci phi
 encrypted=yes|no  encryption in transit (connections)
 line=elbow        one connection with elbows (or curved)
+review db: "DB in a public subnet" by=Ana raised=2026-10-01 due=2026-11-15
+                  review finding (status=resolved closed=… when fixed)
 #     comment`,
       'stage.empty': '<b>Empty canvas</b>Drag a component from the left<br>or double-click here.',
       'stage.banner': 'Pick the connection target · <kbd>Esc</kbd> cancels',
@@ -125,6 +127,16 @@ line=elbow        one connection with elbows (or curved)
       'enc.label': 'Encryption in transit', 'enc.unset': 'Not set', 'enc.yes': 'Encrypted', 'enc.no': 'Not encrypted',
       'enc.warn': 'Sensitive data travels here without encryption.',
       'meta.insecure': n => `⚠ ${n} unencrypted sensitive ${n === 1 ? 'flow' : 'flows'}`,
+      'meta.review': ({ n, o }) => `⚑ ${n} in review${o ? ` · ${o} overdue` : ''}`,
+      'rev.label': 'Review', 'rev.add': 'Raise a review finding',
+      'rev.tag.open': 'IN REVIEW', 'rev.tag.overdue': 'OVERDUE', 'rev.tag.resolved': 'RESOLVED',
+      'rev.note': 'Finding', 'rev.note.ph': 'What must be fixed? e.g. database in a public subnet',
+      'rev.by': 'Raised by', 'rev.by.ph': 'Reviewer name', 'rev.raised': 'Raised on', 'rev.due': 'Due date',
+      'rev.resolve': '✓ Mark resolved', 'rev.reopen': 'Reopen', 'rev.remove': 'Remove',
+      'rev.hint.noDue': 'No due date yet', 'rev.hint.dueIn': n => (n === 0 ? 'Due today' : `Due in ${n} ${n === 1 ? 'day' : 'days'}`),
+      'rev.hint.overdue': n => `Overdue by ${n} ${n === 1 ? 'day' : 'days'}`, 'rev.hint.resolved': ({ date }) => `Resolved on ${date}`,
+      'toast.revAdded': 'Review finding raised', 'toast.revResolved': 'Marked resolved', 'toast.revRemoved': 'Review finding removed',
+      'leg.review': 'OPEN REVIEW FINDINGS',
 
       'top.route': 'Connector lines: curved or elbow (E)', 'top.route.lbl': 'Elbows',
       'toast.elbow': 'Elbow connectors', 'toast.curved': 'Curved connectors',
@@ -179,6 +191,8 @@ costo=0.1/hora · 120/mes · 1400/año · 5000/3años  (USD)
 datos=pii,pci     public internal confidential pii pci phi
 cifrado=sí|no     cifrado en tránsito (conexiones)
 línea=codo        una conexión en ángulo recto (o curva)
+revisión db: "BD en subred pública" por=Ana levantada=2026-10-01 compromiso=2026-11-15
+                  observación (estado=resuelta cerrada=… al corregirla)
 #     comentario`,
       'stage.empty': '<b>Lienzo vacío</b>Arrastra un componente desde la izquierda<br>o haz doble clic aquí.',
       'stage.banner': 'Elige el destino de la conexión · <kbd>Esc</kbd> cancela',
@@ -245,6 +259,16 @@ línea=codo        una conexión en ángulo recto (o curva)
       'enc.label': 'Cifrado en tránsito', 'enc.unset': 'Sin indicar', 'enc.yes': 'Cifrado', 'enc.no': 'Sin cifrar',
       'enc.warn': 'Por aquí viajan datos sensibles sin cifrar.',
       'meta.insecure': n => `⚠ ${n} ${n === 1 ? 'flujo sensible' : 'flujos sensibles'} sin cifrar`,
+      'meta.review': ({ n, o }) => `⚑ ${n} en revisión${o ? ` · ${o} ${o === 1 ? 'vencida' : 'vencidas'}` : ''}`,
+      'rev.label': 'Revisión', 'rev.add': 'Levantar una observación',
+      'rev.tag.open': 'EN REVISIÓN', 'rev.tag.overdue': 'VENCIDA', 'rev.tag.resolved': 'RESUELTA',
+      'rev.note': 'Observación', 'rev.note.ph': '¿Qué hay que corregir? p. ej. base de datos en una subred pública',
+      'rev.by': 'Levantada por', 'rev.by.ph': 'Nombre de quien revisa', 'rev.raised': 'Fecha de levantamiento', 'rev.due': 'Fecha compromiso',
+      'rev.resolve': '✓ Marcar resuelta', 'rev.reopen': 'Reabrir', 'rev.remove': 'Quitar',
+      'rev.hint.noDue': 'Sin fecha compromiso', 'rev.hint.dueIn': n => (n === 0 ? 'Vence hoy' : `Vence en ${n} ${n === 1 ? 'día' : 'días'}`),
+      'rev.hint.overdue': n => `Vencida hace ${n} ${n === 1 ? 'día' : 'días'}`, 'rev.hint.resolved': ({ date }) => `Resuelta el ${date}`,
+      'toast.revAdded': 'Observación levantada', 'toast.revResolved': 'Marcada como resuelta', 'toast.revRemoved': 'Observación quitada',
+      'leg.review': 'OBSERVACIONES ABIERTAS',
 
       'top.route': 'Líneas de conexión: curvas o en ángulo recto (E)', 'top.route.lbl': 'Ángulos',
       'toast.elbow': 'Conectores en ángulo recto', 'toast.curved': 'Conectores curvos',

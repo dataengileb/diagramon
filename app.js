@@ -120,6 +120,32 @@
     return [...Object.keys(DATA).filter(k => set.has(k)), ...[...set].filter(k => !DATA[k])];
   };
 
+  /* ---------- observaciones de revisión (se levantan a mano en el inspector) ---------- */
+  // review: { status: 'open' | 'resolved', note, by, raised, due, closed } con fechas AAAA-MM-DD
+  // Fecha AAAA-MM-DD que existe en el calendario (2026-02-30 no vale)
+  const isDay = v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) && new Date(`${v}T12:00`).toISOString().slice(0, 10) === v;
+  const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+  const dayDiff = (a, b) => Math.round((new Date(`${b}T12:00`) - new Date(`${a}T12:00`)) / 864e5);
+  const fmtDay = v => (isDay(v) ? new Intl.DateTimeFormat(I.lang, { dateStyle: 'medium' }).format(new Date(`${v}T12:00`)) : '');
+  const reviewState = r => (r.status === 'resolved' ? 'resolved' : r.due && r.due < today() ? 'overdue' : 'open');
+  const REV_COLOR = { open: 'var(--p-melocoton)', overdue: 'var(--p-coral)', resolved: 'var(--p-menta)' };
+  const reviewTag = r => { const st = reviewState(r); return { short: T(`rev.tag.${st}`), label: r.note || T(`rev.tag.${st}`), color: REV_COLOR[st] }; };
+  const reviewHint = r => {
+    const st = reviewState(r);
+    if (st === 'resolved') return r.closed ? T('rev.hint.resolved', { date: fmtDay(r.closed) }) : '';
+    if (!r.due) return T('rev.hint.noDue');
+    const n = dayDiff(today(), r.due);
+    return st === 'overdue' ? T('rev.hint.overdue', -n) : T('rev.hint.dueIn', n);
+  };
+  const cleanReview = v => {
+    if (!v || typeof v !== 'object') return null;
+    const r = { status: v.status === 'resolved' ? 'resolved' : 'open' };
+    ['note', 'by'].forEach(k => { if (v[k] != null && String(v[k]).trim()) r[k] = String(v[k]); });
+    ['raised', 'due', 'closed'].forEach(k => { if (isDay(v[k])) r[k] = v[k]; });
+    if (r.status !== 'resolved') delete r.closed;
+    return r;
+  };
+
   // Alto ocupado por un nodo, contando el recuadro de costo de abajo
   const nodeBoxH = n => H + (hasCost(n) ? 26 : 0);
 
@@ -212,6 +238,7 @@
       if (!PERIODS[o.costPeriod] || o.costPeriod === 'month') delete o.costPeriod;
       if (o.costPeriod === 'multi' && Math.round(+o.costYears) >= 1) o.costYears = Math.round(+o.costYears); else delete o.costYears;
       if (cleanData(o.data).length) o.data = cleanData(o.data); else delete o.data;
+      if (cleanReview(o.review)) o.review = cleanReview(o.review); else delete o.review;
       m.nodes.push(o);
     });
     const nids = new Set(m.nodes.map(n => n.id));
@@ -476,7 +503,8 @@
     const top = (H - lines.length * 16 - (n.sub ? 15 : 0)) / 2;
     lines.forEach((l, i) => { el('text', { class: 'node-label', x: 64, y: top + 12 + i * 16 }, b).textContent = l; });
     if (n.sub) el('text', { class: 'node-sub', x: 64, y: top + lines.length * 16 + 12 }, b).textContent = fitText(n.sub, FONT.sub, max);
-    const dt = dataTags(n);
+    // Arriba a la izquierda: la observación de revisión (si hay) y las clasificaciones de datos
+    const dt = [...(n.review ? [reviewTag(n.review)] : []), ...dataTags(n)];
     el('title', null, g).textContent = [n.sub ? `${n.label} · ${n.sub}` : n.label, ...dt.map(t => t.label)].join('\n');
     if (dt.length) {
       const dg = el('g', { class: 'node-data' }, b);
@@ -790,7 +818,7 @@
 
   const ORDER = {
     group: ['id', 'label', 'color', 'parent'],
-    node: ['id', 'label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'x', 'y', 'cost', 'costPeriod', 'costYears', 'data', 'desc'],
+    node: ['id', 'label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'x', 'y', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc'],
     edge: ['id', 'from', 'to', 'label', 'style', 'route', 'color', 'data', 'encrypted']
   };
   function serialize(m, full = false) {
@@ -881,7 +909,9 @@
     $('#stage-h1').textContent = m.title;
     const costs = m.nodes.some(hasCost) ? `≈ ${money(round2(monthlyTotal(m.nodes)))}${T('cost.mo')}` : '';
     const byId = id => m.nodes.find(n => n.id === id), insecure = m.edges.filter(e => isInsecure(e, byId)).length;
-    $('#stage-meta').textContent = [T('meta.nodes', m.nodes.length), T('meta.edges', m.edges.length), m.groups.length ? T('meta.groups', m.groups.length) : '', costs, insecure ? T('meta.insecure', insecure) : ''].filter(Boolean).join(' · ');
+    const open = m.nodes.filter(n => n.review && n.review.status !== 'resolved'), overdue = open.filter(n => reviewState(n.review) === 'overdue').length;
+    const reviews = open.length ? T('meta.review', { n: open.length, o: overdue }) : '';
+    $('#stage-meta').textContent = [T('meta.nodes', m.nodes.length), T('meta.edges', m.edges.length), m.groups.length ? T('meta.groups', m.groups.length) : '', costs, insecure ? T('meta.insecure', insecure) : '', reviews].filter(Boolean).join(' · ');
     const t = $('#title');
     if (document.activeElement !== t) t.value = m.title;
     $('#empty').hidden = m.nodes.length > 0;
@@ -1245,12 +1275,12 @@
 
   // Diferencias entre lo guardado (a) y el lienzo (b). La posición no cuenta como cambio.
   const DIFF_FIELDS = {
-    node: ['label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'cost', 'costPeriod', 'costYears', 'data', 'desc'],
+    node: ['label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc'],
     edge: ['label', 'style', 'route', 'color', 'data', 'encrypted'],
     group: ['label', 'color', 'parent']
   };
   function diffModels(a, b) {
-    const val = (f, x) => (f === 'style' ? x || 'sync' : x == null ? '' : String(x));
+    const val = (f, x) => (f === 'style' ? x || 'sync' : x == null ? '' : typeof x === 'object' ? JSON.stringify(x) : String(x));
     const cmp = (A, B, key, fields) => {
       const am = new Map(A.map(x => [key(x), x])), bm = new Map(B.map(x => [key(x), x]));
       return {
@@ -1353,7 +1383,7 @@
     if (!(d.count.a + d.count.r + d.count.c)) return `<p class="ver-sum">${esc(T('ver.same'))}</p>`;
     const FIELD = { label: 'insp.name', sub: 'insp.detail', type: 'insp.type', icon: 'insp.icon', group: 'insp.group', color: 'insp.color', badge: 'field.badge',
       cost: 'cost.label', costPeriod: 'cost.period', costYears: 'cost.yearsAria', desc: 'insp.desc', style: 'insp.style', parent: 'insp.parent',
-      data: 'data.label', encrypted: 'enc.label', route: 'insp.route' };
+      data: 'data.label', encrypted: 'enc.label', route: 'insp.route', review: 'rev.label' };
     const fields = (fs, kind) => fs.map(f => T(kind === 'edge' && f === 'label' ? 'insp.label' : FIELD[f] || f).toLowerCase()).join(', ');
     const names = new Map([...S.compare.base.nodes, ...S.model.nodes].map(n => [n.id, n.label]));
     const edgeName = e => `${names.get(e.from) || e.from} → ${names.get(e.to) || e.to}`;
@@ -1440,6 +1470,24 @@
       `<button data-enc="${k}" class="enc-${k || 'unset'}${cur === k ? ' on' : ''}">${T(l)}</button>`).join('')}</div>${isInsecure(e, byId) ? `<span class="enc-warn">⚠ ${T('enc.warn')}</span>` : ''}</div>`;
   };
 
+  // Observación de revisión: la levanta a mano quien revisa (qué, quién, cuándo y para cuándo)
+  const reviewField = n => {
+    const r = n.review;
+    if (!r) return `<div class="field">${T('rev.label')}<button class="btn rev-add" data-rev="add">⚑ ${T('rev.add')}</button></div>`;
+    const st = reviewState(r);
+    return `<div class="field rev-box" style="--c:${REV_COLOR[st]}">${T('rev.label')}
+      <div class="rev-head"><span class="rev-pill">${esc(T(`rev.tag.${st}`))}</span><em>${esc(reviewHint(r))}</em></div>
+      <label>${T('rev.note')}<textarea data-rev-field="note" rows="2" placeholder="${esc(T('rev.note.ph'))}">${esc(r.note || '')}</textarea></label>
+      <label>${T('rev.by')}<input data-rev-field="by" value="${esc(r.by || '')}" placeholder="${esc(T('rev.by.ph'))}" autocomplete="off"></label>
+      <label>${T('rev.raised')}<input type="date" data-rev-field="raised" value="${esc(r.raised || '')}"></label>
+      <label>${T('rev.due')}<input type="date" data-rev-field="due" value="${esc(r.due || '')}"></label>
+      <div class="insp-actions">
+        <button class="btn small" data-rev="toggle">${T(r.status === 'resolved' ? 'rev.reopen' : 'rev.resolve')}</button>
+        <button class="btn small danger" data-rev="remove">${T('rev.remove')}</button>
+      </div>
+    </div>`;
+  };
+
   function renderInspector() {
     const box = $('#inspector'), t = selTarget(), m = S.model;
     if (!t) { box.hidden = true; box.innerHTML = ''; return; }
@@ -1483,6 +1531,7 @@
         <div class="field">${T('insp.color')}${swatches(t.color)}</div>
         ${costField(t)}
         ${dataField(t)}
+        ${reviewField(t)}
         <label>${T('insp.desc')}<textarea data-field="desc" rows="3" placeholder="${esc(T('insp.desc.ph'))}">${esc(t.desc || '')}</textarea></label>
         <div class="field">${T('insp.reach')}<div class="seg">${modes.map(([k, l]) => `<button data-reach="${k}" class="${S.reach === k ? 'on' : ''}">${l}</button>`).join('')}</div></div>
         ${ins.length || outs.length ? `<div class="conns">
@@ -1566,7 +1615,20 @@
   }
 
   const inspector = $('#inspector');
-  inspector.addEventListener('focusin', ev => { if (ev.target.matches('input[data-field], textarea[data-field]')) beginEdit(); });
+  inspector.addEventListener('focusin', ev => { if (ev.target.matches('input[data-field], textarea[data-field], [data-rev-field]')) beginEdit(); });
+  inspector.addEventListener('input', ev => {
+    const f = ev.target, n = selTarget();
+    if (!f.matches('[data-rev-field]') || !n?.review) return;
+    markEdit();
+    const k = f.dataset.revField, v = f.value.trim();
+    if (v && (k === 'note' || k === 'by' || isDay(v))) n.review[k] = k === 'note' ? f.value : v; else delete n.review[k];
+    if (k === 'by' && v) store.set('reviewer', v);
+    changed(true);
+    const st = reviewState(n.review), box = $('#inspector .rev-box');
+    box.style.setProperty('--c', REV_COLOR[st]);
+    box.querySelector('.rev-pill').textContent = T(`rev.tag.${st}`);
+    box.querySelector('.rev-head em').textContent = reviewHint(n.review);
+  });
   inspector.addEventListener('focusout', endEdit);
   inspector.addEventListener('input', ev => { if (ev.target.matches('input[data-field], textarea[data-field]')) onField(ev.target); });
   inspector.addEventListener('change', ev => { if (ev.target.matches('select[data-field]')) onField(ev.target); });
@@ -1578,6 +1640,16 @@
       pushHistory();
       (Array.isArray(t) ? t : [t]).forEach(x => { if (b.dataset.color) x.color = b.dataset.color; else delete x.color; });
       changed(true); renderInspector();
+    } else if (b.dataset.rev && t && !Array.isArray(t)) {
+      pushHistory();
+      if (b.dataset.rev === 'add') {
+        t.review = { status: 'open', raised: today(), ...(store.get('reviewer', '') ? { by: store.get('reviewer', '') } : {}) };
+        toast(T('toast.revAdded'));
+      } else if (b.dataset.rev === 'toggle') {
+        if (t.review.status === 'resolved') { t.review.status = 'open'; delete t.review.closed; } else { t.review.status = 'resolved'; t.review.closed = today(); toast(T('toast.revResolved')); }
+      } else if (b.dataset.rev === 'remove') { delete t.review; toast(T('toast.revRemoved')); }
+      changed(true); renderInspector();
+      if (b.dataset.rev === 'add') $('#inspector [data-rev-field="note"]')?.focus();
     } else if (b.dataset.dclass && t) {
       const list = [].concat(t), k = b.dataset.dclass, all = list.every(x => x.data?.includes(k));
       pushHistory();
@@ -1909,7 +1981,7 @@
     const m = S.model, g = document.createElementNS(NS, 'g');
     g.setAttribute('class', 'legend');
     const cols = [], RH = 22;
-    const col = (head, rows) => rows.length && cols.push({ head, rows });
+    const col = (head, rows, rh = RH) => rows.length && cols.push({ head, rows, rh });
     const textRow = (x, y, txt, cls = 'legend-text') => { const t = el('text', { class: cls, x, y: y + 4 }, g); t.textContent = txt; return textW(txt, '400 12px'); };
     // Conexiones
     const styles = [...new Set(m.edges.map(e => (C.edgeStyles[e.style] ? e.style : 'sync')))];
@@ -1940,6 +2012,18 @@
       const tw = dataTag(g, x, y - 8, t, 16);
       textRow(x + tw + 8, y, t.label);
     } })));
+    // Observaciones de revisión abiertas, con su fecha compromiso
+    const findings = m.nodes.filter(n => n.review && n.review.status !== 'resolved')
+      .sort((a, b) => (a.review.due || '9999').localeCompare(b.review.due || '9999')).slice(0, 8);
+    col(T('leg.review'), findings.map(n => {
+      const tg = reviewTag(n.review), txt = fitText([n.label, n.review.note].filter(Boolean).join(' — '), '400 12px', 260);
+      const meta = [n.review.due ? `${T('rev.due')}: ${fmtDay(n.review.due)}` : '', n.review.by || ''].filter(Boolean).join(' · ');
+      return { w: Math.ceil(textW(tg.short, FONT.dtag)) + 20 + Math.max(textW(txt, '400 12px'), textW(meta, '400 11.5px')), draw: (x, y) => {
+        const tw = dataTag(g, x, y - 8, tg, 16);
+        textRow(x + tw + 8, y - 5, txt);
+        if (meta) textRow(x + tw + 8, y + 9, meta, 'legend-muted');
+      } };
+    }), 38);
     // Cajetín
     const av = activeVersion(), cost = m.nodes.some(hasCost) ? `≈ ${money(round2(monthlyTotal(m.nodes)))}${T('cost.mo')}` : '';
     const info = [[T('leg.author'), m.meta?.author || '—'], [T('leg.version'), m.meta?.version || (av ? verLabel(av) : '—')],
@@ -1948,12 +2032,12 @@
     const infoW = Math.max(220, textW(m.title, '700 14px'), keyW + Math.max(...info.map(([, v]) => textW(v, '400 12px')))) + 4;
     const colW = c => Math.max(textW(c.head, '750 10.5px') + 10, ...c.rows.map(rw => rw.w));
     const P = 20, GAP = 34, HEAD = 26;
-    const rowsH = Math.max(0, ...cols.map(c => c.rows.length)) * RH;
+    const rowsH = Math.max(0, ...cols.map(c => c.rows.length * c.rh));
     const h = P * 2 + Math.max(HEAD + rowsH, 28 + info.length * 20 + 18);
     let x = P;
     cols.forEach(c => {
       if (c.head) { const t = el('text', { class: 'legend-head', x, y: P + 9 }, g); t.textContent = c.head; }
-      c.rows.forEach((rw, i) => rw.draw(x, P + HEAD + i * RH + RH / 2 - 4));
+      c.rows.forEach((rw, i) => rw.draw(x, P + HEAD + i * c.rh + c.rh / 2 - 4));
       x += colW(c) + GAP;
     });
     return { g, h, colsW: x - GAP + P, infoW, info, keyW, P };

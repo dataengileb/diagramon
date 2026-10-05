@@ -62,6 +62,7 @@ de verdad. Ese tipo de información no debería viajar a un servicio de terceros
 - 🏷️ **Clasificación de datos y cifrado en tránsito**: marca nodos y conexiones como *Público, Interno, Confidencial, PII, PCI* o *PHI*, indica si cada conexión va cifrada 🔒 o no, y recibe un aviso en rojo cuando datos sensibles viajan sin cifrar.
 - ⌨️ **Diagrama como código**: escribe en texto y el lienzo se actualiza al momento. Texto, JSON y lienzo siempre sincronizados.
 - 🗂️ **Versiones y ambientes**: guarda el lienzo como *Versión 1, 2, 3…* o como *Desarrollo, Calidad, Producción*, ábrelos cuando quieras y compáralos con el lienzo: lo nuevo en verde, lo cambiado en amarillo y lo eliminado como fantasma rojo.
+- ⚑ **Observaciones de revisión**: levanta a mano una observación en cualquier componente, con qué hay que corregir, quién la levantó, cuándo y la fecha compromiso. Las etiquetas muestran *EN REVISIÓN*, *VENCIDA* o *RESUELTA*, y las abiertas salen listadas en la exportación.
 - 📐 **Conectores en ángulo recto**: cambia entre curvas y líneas en ángulo recto que esquivan los nodos, para todo el diagrama o para una sola conexión.
 - 🧾 **Leyenda y cajetín** en las exportaciones SVG y PNG: estilos de conexión, colores de los componentes, clasificaciones de datos, autor, versión, fecha y costo estimado. Listo para entregar.
 - 🔦 **Resaltar el flujo** de un componente: vecinos, destinos, orígenes o todo.
@@ -142,7 +143,17 @@ Las etiquetas salen arriba de cada nodo y en la etiqueta de la conexión, junto 
 Si una conexión *Sin cifrar* lleva datos sensibles, o une un componente con datos sensibles, se pone roja y aparece un aviso arriba del lienzo.
 Con varios componentes elegidos, las etiquetas se aplican a todos.
 
-### 7. Versiones y ambientes
+### 7. Observaciones de revisión
+
+1. Selecciona un componente y pulsa **⚑ Levantar una observación**.
+2. Escribe la **Observación** (qué hay que corregir), **Levantada por**, la **Fecha de levantamiento** (hoy por defecto) y la **Fecha compromiso**.
+3. Cuando esté corregida, pulsa **✓ Marcar resuelta**. **Reabrir** la vuelve a abrir; **Quitar** la borra.
+
+El componente lleva una etiqueta: **EN REVISIÓN** (naranja), **VENCIDA** (roja, si pasó la fecha compromiso) o **RESUELTA** (verde).
+El panel dice cuántos días faltan o cuántos lleva vencida, y el resumen sobre el lienzo cuenta las abiertas y las vencidas.
+Diagramon recuerda el último nombre de revisor. Las exportaciones con leyenda listan las observaciones abiertas con su fecha compromiso.
+
+### 8. Versiones y ambientes
 
 Abre la pestaña **Versiones**.
 
@@ -155,7 +166,7 @@ Abre la pestaña **Versiones**.
 - Guardar, abrir y eliminar se deshacen con **`⌘Z`**.
 - Las versiones se guardan dentro del diagrama, así que **Exportar › JSON** las lleva todas.
 
-### 8. Presentar y exportar
+### 9. Presentar y exportar
 
 - **Flujo** (o **`P`**) ilumina el diagrama paso a paso, de los clientes a los datos.
 - **Ordenar** recoloca todo automáticamente. **Ajustar** (o **`F`**) centra el diagrama.
@@ -219,6 +230,7 @@ api ~> cola : eventos
 | `a -> b -> c : etiqueta` | Cadena; la etiqueta va en la última flecha |
 | `líneas: codos` · `a -> b : x línea=curva` | Líneas en ángulo recto o curvas, para el diagrama o una conexión |
 | `autor: …` · `versión: …` | Salen en el cajetín de la exportación |
+| `revisión db: "BD en subred pública" por=Ana levantada=2026-10-01 compromiso=2026-11-15` | Observación de revisión (`estado=resuelta cerrada=…` al corregirla) |
 | `# …` o `// …` | Comentario |
 
 Las palabras clave funcionan en los dos idiomas: `title`/`título`, `group`/`grupo`, `cost`/`costo`, `/month`/`/mes`, `/hour`/`/hora`, `/year`/`/año`, `/3years`/`/3años`.
@@ -244,6 +256,7 @@ El texto no guarda posiciones: los nodos que ya existían no se mueven y los nue
 - Solo `id` y `type` son necesarios en los nodos. Sin `x`/`y` se colocan solos.
 - `costPeriod`: `hour`, `year` o `multi` (con `costYears`). Sin `costPeriod` el costo es mensual.
 - `routing: "elbow"` pone líneas en ángulo recto en todo el diagrama; `route` (`curved` o `elbow`) lo cambia en una conexión. `meta` guarda `author` y `version`.
+- `review` en un nodo: `{ "status": "open" | "resolved", "note", "by", "raised", "due", "closed" }`, con fechas `AAAA-MM-DD`.
 - `data` es la lista de clasificaciones (`["pii", "pci"]`) en nodos y conexiones. `encrypted` (`true` o `false`) es el cifrado en tránsito de una conexión.
 - El archivo exportado también lleva `versions` (cada una con `kind`: `version` o `env`, y su propio `diagram`) y `active`.
 - `color` acepta una clave de la paleta o cualquier color CSS.
