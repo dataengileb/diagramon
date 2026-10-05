@@ -1,0 +1,186 @@
+# Small online shop on Kubernetes (sample for Diagramon's IaC import).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: shop
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: shop
+  namespace: shop
+spec:
+  rules:
+    - host: shop.acme.example
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service: { name: web, port: { number: 80 } }
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: orders-api
+                port:
+                  number: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  namespace: shop
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: web }
+  template:
+    metadata:
+      labels: { app: web }
+    spec:
+      containers:
+        - name: web
+          image: nginx:1.27-alpine
+          ports: [{ containerPort: 80 }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: web, namespace: shop }
+spec:
+  selector: { app: web }
+  ports: [{ port: 80 }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orders-api
+  namespace: shop
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: orders-api
+  template:
+    metadata:
+      labels:
+        app: orders-api
+        tier: backend
+    spec:
+      containers:
+        - name: api
+          image: ghcr.io/acme/orders-api:1.4.2
+          env:
+            - name: DATABASE_URL
+              value: postgres://orders@postgres:5432/orders
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: db-credentials, key: password }
+          envFrom:
+            - configMapRef: { name: orders-api-config }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: { name: orders-api-config, namespace: shop }
+data:
+  CACHE_HOST: redis
+  EVENTS_BROKER: "kafka.data.svc.cluster.local:9092"
+---
+apiVersion: v1
+kind: Service
+metadata: { name: orders-api, namespace: shop }
+spec:
+  selector: { app: orders-api }
+  ports: [{ port: 8080 }]
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata: { name: postgres, namespace: shop }
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector: { matchLabels: { app: postgres } }
+  template:
+    metadata: { labels: { app: postgres } }
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom: { secretKeyRef: { name: db-credentials, key: password } }
+  volumeClaimTemplates:
+    - metadata: { name: data }
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources: { requests: { storage: 20Gi } }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: postgres, namespace: shop }
+spec:
+  clusterIP: None
+  selector: { app: postgres }
+  ports: [{ port: 5432 }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: redis, namespace: shop }
+spec:
+  selector: { matchLabels: { app: redis } }
+  template:
+    metadata: { labels: { app: redis } }
+    spec:
+      containers: [{ name: redis, image: "redis:7-alpine" }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: redis, namespace: shop }
+spec:
+  selector: { app: redis }
+  ports: [{ port: 6379 }]
+---
+apiVersion: v1
+kind: Secret
+metadata: { name: db-credentials, namespace: shop }
+type: Opaque
+stringData:
+  password: change-me
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata: { name: nightly-report, namespace: shop }
+spec:
+  schedule: "0 3 * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: report
+              image: ghcr.io/acme/reports:2.0
+              args: ["--db", "postgres://reports@postgres:5432/orders", "--out", "s3://acme-reports/"]
+---
+apiVersion: v1
+kind: Namespace
+metadata: { name: data }
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata: { name: kafka, namespace: data }
+spec:
+  serviceName: kafka
+  replicas: 3
+  selector: { matchLabels: { app: kafka } }
+  template:
+    metadata: { labels: { app: kafka } }
+    spec:
+      containers: [{ name: kafka, image: "apache/kafka:3.8.0" }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: kafka, namespace: data }
+spec:
+  selector: { app: kafka }
+  ports: [{ port: 9092 }]

@@ -342,19 +342,114 @@
     const indeg = new Map(ids.map(id => [id, 0]));
     fwd.forEach(vs => vs.forEach(v => indeg.set(v, indeg.get(v) + 1)));
     const rank = new Map(ids.map(id => [id, 0]));
-    const q = ids.filter(id => indeg.get(id) === 0);
+    const sources = ids.filter(id => indeg.get(id) === 0);
+    const q = [...sources], topo = [];
     while (q.length) {
       const u = q.shift();
+      topo.push(u);
       for (const v of fwd.get(u)) {
         rank.set(v, Math.max(rank.get(v), rank.get(u) + 1));
         indeg.set(v, indeg.get(v) - 1);
         if (indeg.get(v) === 0) q.push(v);
       }
     }
+    // Un origen que solo consulta algo lejano (Athena → catálogo) se acerca a su destino:
+    // queda justo antes del primero de sus destinos que también recibe de otros.
+    const optional = new Set(m.edges.filter(e => e.style === 'optional').map(e => e.from + '\0' + e.to));
+    const preds = new Map(ids.map(id => [id, []]));
+    fwd.forEach((vs, u) => vs.forEach(v => preds.get(v).push(u)));
+    let moved = false;
+    sources.forEach(s => {
+      const shared = fwd.get(s).filter(v => !optional.has(s + '\0' + v) && preds.get(v).some(u => u !== s));
+      if (!shared.length) return;
+      const r = Math.max(0, Math.min(...shared.map(v => rank.get(v))) - 1);
+      if (r > rank.get(s)) { rank.set(s, r); moved = true; }
+    });
+    if (moved) topo.forEach(v => { if (preds.get(v).length) rank.set(v, Math.max(...preds.get(v).map(u => rank.get(u) + 1))); });
     return rank;
   }
 
   function autoLayout(m) {
+    if (m.nodes.some(n => n.group && m.groups.some(g => g.id === n.group))) return groupLayout(m);
+    flatLayout(m);
+  }
+
+  /* Orden con grupos: cada grupo se ordena dentro de su propia caja (por columnas según
+     el flujo) y la caja entera se coloca como un elemento más en su contenedor.
+     Así las cajas nunca se pisan, aunque haya grupos dentro de grupos. */
+  function groupLayout(m) {
+    const rank = computeRanks(m);
+    const TB = (m.direction || C.layout.direction) === 'TB';
+    const P = C.group.padding, LS = C.group.labelSpace;
+    const gids = new Set(m.groups.map(g => g.id));
+    const kids = new Map([[null, []]]);
+    m.groups.forEach(g => kids.set(g.id, []));
+    m.groups.forEach(g => kids.get(gids.has(g.parent) ? g.parent : null).push({ g }));
+    m.nodes.forEach(n => kids.get(gids.has(n.group) ? n.group : null).push({ n }));
+    // Contenedor de primer nivel de cada nodo dentro de un contenedor dado
+    const owner = new Map();
+    const fill = (cid, item, it) => {
+      if (it.n) owner.set(it.n.id + '\0' + cid, item);
+      else kids.get(it.g.id).forEach(k => fill(cid, item, k));
+    };
+    const preds = new Map(m.nodes.map(n => [n.id, []]));
+    m.edges.forEach(e => e.from !== e.to && preds.get(e.to)?.push(e.from));
+
+    // Devuelve el tamaño del contenido y deja en cada elemento su posición relativa
+    function box(cid) {
+      const items = kids.get(cid).filter(it => it.n || kids.get(it.g.id).length);
+      items.forEach(it => {
+        fill(cid, it, it);
+        if (it.n) { it.w = nodeWidth(it.n); it.h = nodeBoxH(it.n); it.r = rank.get(it.n.id); it.ids = [it.n.id]; }
+        else {
+          const inner = box(it.g.id);
+          it.inner = inner;
+          it.w = inner.w + 2 * P; it.h = inner.h + 2 * P + LS;
+          it.ids = inner.ids;
+          it.r = Math.min(...it.ids.map(id => rank.get(id)));
+        }
+      });
+      const ranks = [...new Set(items.map(it => it.r))].sort((a, b) => a - b);
+      const cols = ranks.map(r => items.filter(it => it.r === r));
+      const pos = new Map();
+      let main = 0, maxCross = 0;
+      const colSpans = cols.map(col => {
+        // Orden dentro de la columna: cerca de los elementos de los que recibe
+        const bary = it => {
+          const ys = it.ids.flatMap(id => preds.get(id)).map(p => owner.get(p + '\0' + cid)).filter(o => o && o !== it && pos.has(o)).map(o => pos.get(o));
+          return ys.length ? ys.reduce((a, b) => a + b, 0) / ys.length : Infinity;
+        };
+        col.forEach((it, i) => { it.b = bary(it); it.i = i; });
+        col.sort((a, b) => (a.b === b.b ? a.i - b.i : a.b - b.b) || (!!a.g - !!b.g));
+        let cross = 0;
+        col.forEach((it, i) => {
+          if (i) cross += (it.g || col[i - 1].g ? C.layout.groupGap * 0.6 : C.layout.rowGap) + (TB ? 20 : 0);
+          it.c = cross;
+          cross += TB ? it.w : it.h;
+        });
+        const span = Math.max(...col.map(it => (TB ? it.h : it.w)));
+        col.forEach(it => { it.m = main; });
+        main += span + (TB ? C.layout.rankGapTB : C.layout.colGap);
+        maxCross = Math.max(maxCross, cross);
+        return cross;
+      });
+      // Centra cada columna respecto de la más alta
+      cols.forEach((col, k) => col.forEach(it => {
+        it.c += (maxCross - colSpans[k]) / 2;
+        pos.set(it, it.c + (TB ? it.w : it.h) / 2);
+      }));
+      const w = Math.max(0, main - (TB ? C.layout.rankGapTB : C.layout.colGap));
+      return { items, w: TB ? maxCross : w, h: TB ? w : maxCross, ids: items.flatMap(it => it.ids) };
+    }
+    const place = (b, x0, y0) => b.items.forEach(it => {
+      const x = x0 + (TB ? it.c : it.m), y = y0 + (TB ? it.m : it.c);
+      if (it.n) { it.n.x = snap(x); it.n.y = snap(y); }
+      else place(it.inner, x + P, y + P + LS);
+    });
+    place(box(null), 0, 0);
+  }
+
+  function flatLayout(m) {
     const rank = computeRanks(m);
     const preds = new Map(m.nodes.map(n => [n.id, []]));
     m.edges.forEach(e => e.from !== e.to && preds.get(e.to).push(e.from));
@@ -1953,7 +2048,7 @@
     toast(T('toast.newCanvas'));
   });
   $('#btn-import').addEventListener('click', () => $('#file').click());
-  $('#file').addEventListener('change', ev => { const f = ev.target.files[0]; if (f) importFile(f); ev.target.value = ''; });
+  $('#file').addEventListener('change', ev => { const fs = [...ev.target.files]; ev.target.value = ''; if (fs.length) importFiles(fs); });
 
   function toggleTheme() {
     S.theme = S.theme === 'dark' ? 'light' : 'dark';
@@ -2196,17 +2291,28 @@
     if (navigator.clipboard?.writeText) navigator.clipboard.writeText(txt).then(() => toast(T('toast.copied')), fallback);
     else fallback();
   }
-  function importFile(f) {
-    const r = new FileReader();
-    r.onload = () => {
-      try {
-        const raw = JSON.parse(r.result);
+  // Importa un diagrama de Diagramon (JSON) o infraestructura como código (iac.js).
+  // Acepta File del navegador o { name, text }.
+  async function importFiles(list) {
+    const files = await Promise.all([...list].map(async f => ({ name: f.name || '', text: typeof f.text === 'string' ? f.text : await f.text() })));
+    if (!files.length) return;
+    if (files.length === 1) {
+      let raw = null;
+      try { raw = JSON.parse(files[0].text); } catch { /* puede ser YAML */ }
+      if (raw && typeof raw === 'object' && Array.isArray(raw.nodes)) {
         S.sel = null;
         setModel(raw, { history: true, animate: true, fit: true });
-        toast(T('toast.imported'));
-      } catch { toast(T('toast.badJson')); }
-    };
-    r.readAsText(f);
+        return toast(T('toast.imported'));
+      }
+    }
+    const IAC = window.DiagramonIaC;
+    let res;
+    try { res = IAC.convert(files); } catch { return toast(IAC ? T('toast.iacNone') : T('toast.badJson'), 3200); }
+    if (!res.nodes) return toast(T('toast.iacEmpty', { format: res.format }), 3200);
+    S.sel = null;
+    setModel(res.diagram, { history: true, animate: true, fit: true });
+    toast(T('toast.iac', res), 4200);
+    return res;
   }
 
   /* ---------- interacción con el lienzo ---------- */
@@ -2344,8 +2450,8 @@
       addNode(type, p.x, p.y, extra);
       return;
     }
-    const f = ev.dataTransfer.files[0];
-    if (f) importFile(f);
+    const fs = [...ev.dataTransfer.files];
+    if (fs.length) importFiles(fs);
   });
 
   document.addEventListener('keydown', ev => {
@@ -2383,12 +2489,12 @@
 
   /* ---------- avisos ---------- */
   let toastTimer;
-  function toast(msg) {
+  function toast(msg, ms = 1800) {
     const t = $('#toast');
     t.textContent = msg;
     t.classList.add('show');
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => t.classList.remove('show'), 1800);
+    toastTimer = setTimeout(() => t.classList.remove('show'), ms);
   }
 
   /* ---------- arranque ---------- */
@@ -2415,7 +2521,7 @@
     get lang() { return I.lang; },
     select: ids => select({ kind: 'multi', ids: [].concat(ids) }), align: alignNodes,
     saveVersion, openVersion, compareVersion, deleteVersion,
-    exportSVG, exportPNG, exportJSON, toggleRouting, config: C, icons: ICONS
+    exportSVG, exportPNG, exportJSON, toggleRouting, importFiles, config: C, icons: ICONS
   };
 
   init();

@@ -1,0 +1,275 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Simple data lake on AWS (sample for Diagramon's IaC import).
+  Same architecture as main.tf, written as a CloudFormation template.
+
+Parameters:
+  Prefix:
+    Type: String
+    Default: acme-datalake
+
+Resources:
+  # ---------- network ----------
+  Vpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.20.0.0/16
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${Prefix}-vpc
+
+  PrivateSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: 10.20.1.0/24
+      AvailabilityZone: !Select [0, !GetAZs '']
+      Tags: [{ Key: Name, Value: !Sub '${Prefix}-private-a' }]
+
+  PrivateSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: 10.20.2.0/24
+      AvailabilityZone: !Select [1, !GetAZs '']
+      Tags: [{ Key: Name, Value: !Sub '${Prefix}-private-b' }]
+
+  LambdaSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Orders extract Lambda
+      VpcId: !Ref Vpc
+
+  S3Endpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref Vpc
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.s3
+      VpcEndpointType: Gateway
+
+  # ---------- encryption ----------
+  DataLakeKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: Data lake encryption key
+      EnableKeyRotation: true
+
+  # ---------- storage ----------
+  RawBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub ${Prefix}-raw
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !GetAtt DataLakeKey.Arn
+      NotificationConfiguration:
+        LambdaConfigurations:
+          - Event: s3:ObjectCreated:*
+            Function: !GetAtt QualityCheckFunction.Arn
+      Tags:
+        - { Key: DataClassification, Value: pii }
+
+  CuratedBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub ${Prefix}-curated
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !GetAtt DataLakeKey.Arn
+      Tags:
+        - { Key: DataClassification, Value: confidential }
+
+  AthenaResultsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub ${Prefix}-athena-results
+
+  # ---------- streaming ingestion ----------
+  ClickstreamStream:
+    Type: AWS::Kinesis::Stream
+    Properties:
+      Name: !Sub ${Prefix}-clickstream
+      ShardCount: 2
+      StreamEncryption:
+        EncryptionType: KMS
+        KeyId: !Ref DataLakeKey
+
+  FirehoseRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal: { Service: firehose.amazonaws.com }
+            Action: sts:AssumeRole
+
+  ClickstreamToRaw:
+    Type: AWS::KinesisFirehose::DeliveryStream
+    Properties:
+      DeliveryStreamName: !Sub ${Prefix}-clickstream-to-raw
+      DeliveryStreamType: KinesisStreamAsSource
+      KinesisStreamSourceConfiguration:
+        KinesisStreamARN: !GetAtt ClickstreamStream.Arn
+        RoleARN: !GetAtt FirehoseRole.Arn
+      ExtendedS3DestinationConfiguration:
+        BucketARN: !GetAtt RawBucket.Arn
+        RoleARN: !GetAtt FirehoseRole.Arn
+        Prefix: clickstream/
+        CompressionFormat: GZIP
+
+  # ---------- batch ingestion ----------
+  OrdersSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Orders database
+      SubnetIds: [!Ref PrivateSubnetA, !Ref PrivateSubnetB]
+
+  OrdersDatabase:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBInstanceIdentifier: !Sub ${Prefix}-orders
+      Engine: postgres
+      EngineVersion: '16.3'
+      DBInstanceClass: db.t4g.medium
+      AllocatedStorage: '100'
+      DBSubnetGroupName: !Ref OrdersSubnetGroup
+      StorageEncrypted: true
+      KmsKeyId: !Ref DataLakeKey
+      ManageMasterUserPassword: true
+      MasterUsername: etl_reader
+      Tags:
+        - { Key: DataClassification, Value: pii }
+
+  OrdersExtractFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub ${Prefix}-orders-extract
+      Runtime: python3.12
+      Handler: extract.handler
+      Role: !GetAtt OrdersExtractRole.Arn
+      Code: { ZipFile: "def handler(event, context): pass" }
+      VpcConfig:
+        SubnetIds:
+          - !Ref PrivateSubnetA
+          - !Ref PrivateSubnetB
+        SecurityGroupIds: [!Ref LambdaSecurityGroup]
+      Environment:
+        Variables:
+          SOURCE_DB_HOST: !GetAtt OrdersDatabase.Endpoint.Address
+          OUTPUT_BUCKET: !Ref RawBucket
+
+  OrdersExtractRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+
+  NightlyExtractRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub ${Prefix}-nightly-extract
+      ScheduleExpression: cron(0 2 * * ? *)
+      Targets:
+        - Id: extract
+          Arn: !GetAtt OrdersExtractFunction.Arn
+
+  # ---------- quality checks ----------
+  AlertsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub ${Prefix}-alerts
+      KmsMasterKeyId: !Ref DataLakeKey
+
+  QualityCheckFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub ${Prefix}-quality-check
+      Runtime: python3.12
+      Handler: quality.handler
+      Role: !GetAtt OrdersExtractRole.Arn
+      Code: { ZipFile: "def handler(event, context): pass" }
+      Environment:
+        Variables:
+          ALERT_TOPIC_ARN: !Ref AlertsTopic
+
+  QualityCheckPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref QualityCheckFunction
+      Action: lambda:InvokeFunction
+      Principal: s3.amazonaws.com
+      SourceArn: !Sub arn:aws:s3:::${Prefix}-raw
+
+  # ---------- processing and catalog ----------
+  Catalog:
+    Type: AWS::Glue::Database
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseInput:
+        Name: acme_datalake
+
+  RawToCuratedJob:
+    Type: AWS::Glue::Job
+    Properties:
+      Name: !Sub ${Prefix}-raw-to-curated
+      Role: !GetAtt FirehoseRole.Arn
+      GlueVersion: '4.0'
+      Command:
+        Name: glueetl
+        ScriptLocation: !Sub s3://${Prefix}-glue-scripts/jobs/raw_to_curated.py
+      DefaultArguments:
+        --source_path: !Sub s3://${RawBucket}/
+        --target_path: !Sub s3://${CuratedBucket}/
+        --catalog_database: !Ref Catalog
+
+  CuratedCrawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: !Sub ${Prefix}-curated-crawler
+      Role: !GetAtt FirehoseRole.Arn
+      DatabaseName: !Ref Catalog
+      Targets:
+        S3Targets:
+          - Path: !Sub s3://${CuratedBucket}/
+
+  CuratedLakeLocation:
+    Type: AWS::LakeFormation::Resource
+    Properties:
+      ResourceArn: !GetAtt CuratedBucket.Arn
+      UseServiceLinkedRole: true
+
+  # ---------- query ----------
+  AnalystsWorkGroup:
+    Type: AWS::Athena::WorkGroup
+    Properties:
+      Name: !Sub ${Prefix}-analysts
+      WorkGroupConfiguration:
+        ResultConfiguration:
+          OutputLocation: !Sub s3://${AthenaResultsBucket}/
+          EncryptionConfiguration:
+            EncryptionOption: SSE_KMS
+            KmsKey: !GetAtt DataLakeKey.Arn
+
+  DailyOrdersQuery:
+    Type: AWS::Athena::NamedQuery
+    Properties:
+      WorkGroup: !Ref AnalystsWorkGroup
+      Database: !Ref Catalog
+      QueryString: |
+        SELECT order_date, count(*)
+        FROM orders
+        GROUP BY 1
+
+Outputs:
+  RawBucketName:
+    Value: !Ref RawBucket
