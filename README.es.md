@@ -179,6 +179,7 @@ Abre la pestaña **Versiones**.
 ### 9. Presentar y exportar
 
 - **Flujo** (o **`P`**) ilumina el diagrama paso a paso, de los clientes a los datos.
+- **Presentar** (o **`V`**) pasa a pantalla completa sin paneles: una vista general con el título, una diapositiva por grupo (en orden de lectura, acercando y atenuando el resto) y una vista general final. Sin grupos, recorre el flujo. **`→`**, **`Espacio`** o clic avanzan, **`←`** retrocede, **`Inicio`/`Fin`** y las teclas numéricas saltan, **`P`** reproduce el flujo y **`Esc`** sale y restaura tu vista. La edición se desactiva mientras presentas.
 - **Ordenar** recoloca todo automáticamente, siguiendo el flujo. Cada grupo se ordena dentro de su propia caja, así los grupos nunca se pisan. **Ajustar** (o **`F`**) centra el diagrama.
 - **Ángulos** (o **`E`**) cambia las conexiones entre curvas y líneas en ángulo recto que esquivan los nodos. Varias líneas en el mismo lado de un nodo salen de puntos separados y repartidos, para que no se solapen.
   Para cambiar una sola conexión, selecciónala y elige su **Línea**.
@@ -201,6 +202,7 @@ Abre la pestaña **Versiones**.
 | `C` | Conectar |
 | `F` | Ajustar a la vista |
 | `P` | Reproducir el flujo |
+| `V` | Presentar a pantalla completa (`→` `←` `Espacio` `Inicio` `Fin` `1`–`9`, `Esc` para salir) |
 | `T` | Alternar claro → oscuro → negro de alto contraste |
 | `L` | Cambiar entre inglés y español |
 | `E` | Cambiar entre conectores curvos y en ángulo recto |

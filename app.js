@@ -853,6 +853,7 @@
 
   function applyHighlight() {
     if (S.play) return;
+    if (P) { if (P.sl) presentDim(P.sl.lit, P.sl.gin); return; }
     const s = S.sel, m = S.model;
     let f = null, mode = '';
     if (s?.kind === 'node') { f = reach(s.id, S.reach); mode = 'focusing'; }
@@ -1394,6 +1395,146 @@
     $$('.pulse, .pulse-node', svg).forEach(n => n.classList.remove('pulse', 'pulse-node'));
     applyHighlight();
   }
+
+  /* ---------- modo presentación ---------- */
+  // P = null fuera de la presentación; si no: { slides, i, saved, fs, idle, sl }
+  let P = null;
+  function presentSlides() {
+    const m = S.model, TB = (m.direction || C.layout.direction) === 'TB';
+    const groups = m.groups.filter(g => R.gbox.has(g.id) && m.nodes.some(n => inGroup(n, g.id)));
+    const pos = g => { const b = R.gbox.get(g.id); return TB ? [b.y, b.x] : [b.x, b.y]; };
+    const ids = new Set(groups.map(g => g.id));
+    // Un grupo cuyo padre no se muestra cuenta como de primer nivel
+    const depth = g => { let d = 0, p = g.parent; while (p && ids.has(p) && d < 50) { d++; p = groupById(p)?.parent; } return d; };
+    groups.sort((a, b) => depth(a) - depth(b) || pos(a)[0] - pos(b)[0] || pos(a)[1] - pos(b)[1]);
+    const over = { kind: 'overview' };
+    if (groups.length) return [over, ...groups.map(g => ({ kind: 'group', g })), { kind: 'overview', end: true }];
+    const ranks = computeRanks(m), max = Math.max(0, ...ranks.values());
+    if (max < 1) return [over];
+    return [over, ...Array.from({ length: max + 1 }, (_, r) => ({ kind: 'step', r, ranks }))];
+  }
+  // Cámara que encuadra una caja con margen y deja sitio abajo para el pie
+  function presentView(b, maxK) {
+    const r = svg.getBoundingClientRect();
+    if (!b) return { k: 1, x: r.width / 2, y: r.height / 2 };
+    const mg = Math.round(Math.min(r.width, r.height) * 0.08), bot = Math.min(110, r.height * 0.18);
+    const aw = r.width - 2 * mg, ah = r.height - 2 * mg - bot;
+    const k = clamp(Math.min(aw / b.w, ah / b.h), C.view.minZoom, maxK);
+    return { k, x: mg + (aw - b.w * k) / 2 - b.x * k, y: mg + (ah - b.h * k) / 2 - b.y * k };
+  }
+  // Atenúa lo que no es de la diapositiva (lit: ids de nodos; gin: ids de grupos; null = nada)
+  function presentDim(lit, gin) {
+    svg.classList.toggle('focusing', !!lit);
+    R.nodes.forEach((g, id) => { g.classList.toggle('lit', !!lit && lit.has(id)); g.classList.remove('sel', 'connect-src'); g.classList.toggle('pout', !!lit && !lit.has(id)); });
+    R.edges.forEach(r => {
+      const on = !!lit && lit.has(r.e.from) && lit.has(r.e.to);
+      r.g.classList.toggle('lit', on); r.g.classList.remove('sel'); r.g.classList.toggle('pout', !!lit && !on);
+    });
+    R.groups.forEach((r, id) => { r.g.classList.remove('sel'); r.g.classList.toggle('pdim', !!gin && !gin.has(id)); });
+  }
+  function presentCaption(sl) {
+    const m = S.model;
+    let h = m.title, sub = '', desc = '', notes = [];
+    if (sl.kind === 'overview') {
+      sub = sl.end ? T('present.end') : T('present.counts', { n: m.nodes.length, g: m.groups.length });
+    } else if (sl.kind === 'group') {
+      const ns = m.nodes.filter(n => inGroup(n, sl.g.id));
+      h = loc(sl.g.label) || sl.g.id;
+      sub = T('present.n', ns.length);
+      desc = loc(sl.g.desc) || '';
+      notes = ns.filter(n => n.desc).slice(0, 4).map(n => `<span><b>${esc(loc(n.label))}</b> ${esc(loc(n.desc))}</span>`);
+    } else {
+      h = m.nodes.filter(n => sl.ranks.get(n.id) === sl.r).map(n => loc(n.label)).join(' · ');
+      sub = T('present.step', { i: sl.r + 1, n: P.slides.length - 1 });
+    }
+    $('#pb-h').textContent = h;
+    $('#pb-sub').textContent = sub;
+    $('#pb-desc').innerHTML = [desc ? esc(desc) : '', ...notes].filter(Boolean).join('<br>');
+    $('#pb-dots').innerHTML = P.slides.map((_, i) => `<button class="pb-dot${i === P.i ? ' on' : ''}" data-i="${i}" tabindex="-1" aria-label="${i + 1}"></button>`).join('');
+  }
+  function presentShow(i, instant = false) {
+    if (!P) return;
+    stopPlay();
+    P.i = clamp(i, 0, P.slides.length - 1);
+    const sl = P.slides[P.i], m = S.model;
+    let box = null, lit = null, gin = null;
+    if (sl.kind === 'group') {
+      box = R.gbox.get(sl.g.id);
+      lit = new Set(m.nodes.filter(n => inGroup(n, sl.g.id)).map(n => n.id));
+      // El grupo y sus descendientes se quedan a plena luz
+      gin = new Set(m.groups.filter(g => { let c = g, k = 0; while (c && k++ < 50) { if (c.id === sl.g.id) return true; c = groupById(c.parent); } return false; }).map(g => g.id));
+    } else if (sl.kind === 'step') {
+      lit = new Set(m.nodes.filter(n => sl.ranks.get(n.id) === sl.r).map(n => n.id));
+      m.edges.forEach(e => { if (lit.has(e.from)) lit.add(e.to); });
+    }
+    P.sl = { lit, gin };
+    presentDim(lit, gin);
+    animateView(presentView(box || contentBox(), sl.kind === 'group' ? 1.5 : 1.25), instant ? 0 : 700);
+    presentCaption(sl);
+  }
+  const presentGo = d => { if (P) presentShow(P.i + d); };
+  // Con el ratón quieto se ocultan las ayudas y el cursor
+  function presentWake() {
+    if (!P) return;
+    document.body.classList.remove('idle');
+    clearTimeout(P.idle);
+    P.idle = setTimeout(() => document.body.classList.add('idle'), 3000);
+  }
+  function present() {
+    if (P || !S.model.nodes.length) return;
+    cancelConnect();
+    stopPlay();
+    P = { slides: [], i: 0, saved: { view: { ...S.view }, sel: S.sel }, fs: false, idle: 0 };
+    document.body.classList.add('presenting');
+    svg.classList.add('presenting');
+    $('#present-bar').hidden = false;
+    $('#btn-present').classList.add('on');
+    try { document.documentElement.requestFullscreen?.()?.catch?.(() => {}); } catch { /* sin pantalla completa */ }
+    // Esperar a que el lienzo tome su nuevo tamaño
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      if (!P) return;
+      P.slides = presentSlides();
+      presentShow(0, true);
+    }));
+    presentWake();
+  }
+  function exitPresent() {
+    if (!P) return;
+    const { saved, idle } = P;
+    clearTimeout(idle);
+    stopPlay();
+    P = null;
+    document.body.classList.remove('presenting', 'idle');
+    svg.classList.remove('presenting');
+    $('#present-bar').hidden = true;
+    $('#btn-present').classList.remove('on');
+    $$('.pout, .pdim', svg).forEach(n => n.classList.remove('pout', 'pdim'));
+    if (document.fullscreenElement) document.exitFullscreen?.().catch?.(() => {});
+    select(saved.sel);
+    requestAnimationFrame(() => animateView(saved.view, 0));
+  }
+  function presentKey(ev) {
+    const k = ev.key, n = parseInt(k, 10);
+    if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
+    ev.preventDefault();
+    if (k === 'Escape' || k.toLowerCase() === 'v') return exitPresent();
+    if (k === 'ArrowRight' || k === 'ArrowDown' || k === ' ' || k === 'PageDown' || k === 'Enter') presentGo(1);
+    else if (k === 'ArrowLeft' || k === 'ArrowUp' || k === 'PageUp' || k === 'Backspace') presentGo(-1);
+    else if (k === 'Home') presentShow(0);
+    else if (k === 'End') presentShow(P.slides.length - 1);
+    else if (n >= 1 && n <= 9) presentShow(Math.min(n, P.slides.length) - 1);
+    else if (k.toLowerCase() === 'p') togglePlay();
+    presentWake();
+  }
+  $('#btn-present').addEventListener('click', present);
+  $('#pb-dots').addEventListener('click', ev => { const b = ev.target.closest('[data-i]'); if (b) presentShow(+b.dataset.i); });
+  document.addEventListener('fullscreenchange', () => {
+    if (!P) return;
+    if (document.fullscreenElement) P.fs = true;
+    else if (P.fs) exitPresent();
+  });
+  window.addEventListener('resize', () => { if (P?.slides.length) requestAnimationFrame(() => presentShow(P.i, true)); });
+  stage.addEventListener('pointermove', presentWake);
 
   /* ---------- versiones y ambientes ---------- */
   // Nombre libre: si parece número se muestra como "Versión 1.2"; si no, tal cual ("MVP")
@@ -2674,6 +2815,7 @@
   /* ---------- interacción con el lienzo ---------- */
   svg.addEventListener('pointerdown', ev => {
     if (ev.button !== 0 && ev.button !== 1) return;
+    if (P) { if (ev.button === 0) presentGo(1); return; }
     if (S.play) stopPlay();
     const nodeEl = ev.target.closest('.node'), tagEl = ev.target.closest('.group-tag'), edgeEl = ev.target.closest('.edge');
     const p = toWorld(ev.clientX, ev.clientY), now = performance.now();
@@ -2777,6 +2919,7 @@
 
   svg.addEventListener('wheel', ev => {
     ev.preventDefault();
+    if (P) return;
     const r = svg.getBoundingClientRect(), cx = ev.clientX - r.left, cy = ev.clientY - r.top;
     // Rueda de ratón o pellizco = zoom; desplazamiento de trackpad = mover
     const mouse = ev.deltaMode === 1 || (ev.deltaX === 0 && Math.abs(ev.deltaY) >= 40 && Number.isInteger(ev.deltaY));
@@ -2798,6 +2941,7 @@
   stage.addEventListener('drop', ev => {
     ev.preventDefault();
     stage.classList.remove('dropping');
+    if (P) return;
     const type = ev.dataTransfer.getData('text/diagramon-type');
     if (type) {
       const p = toWorld(ev.clientX, ev.clientY);
@@ -2814,6 +2958,7 @@
     const typing = ev.target.closest?.('input, textarea, select, [contenteditable="true"]');
     const mod = ev.metaKey || ev.ctrlKey, k = ev.key.toLowerCase();
     if (typing) { if (ev.key === 'Escape') ev.target.blur(); return; }
+    if (P) return presentKey(ev);
     if (mod && k === 'z') { ev.preventDefault(); ev.shiftKey ? redo() : undo(); }
     else if (mod && k === 'y') { ev.preventDefault(); redo(); }
     else if (mod && k === 'd') { ev.preventDefault(); duplicateSelection(); }
@@ -2823,6 +2968,7 @@
     else if (ev.key === 'Escape') { if (S.play) stopPlay(); else if (S.connecting) cancelConnect(); else if (!S.sel && S.compare) compareVersion(null); else select(null); }
     else if (k === 'f') fitView();
     else if (k === 'p') togglePlay();
+    else if (k === 'v') present();
     else if (k === 't') toggleTheme();
     else if (k === 'l') toggleLang();
     else if (k === 'e') toggleRouting();
@@ -2898,7 +3044,7 @@
   window.Diagramon = {
     get model() { return clone(S.model); },
     load: (raw, opts = {}) => setModel(raw, { history: true, animate: true, fit: true, ...opts }),
-    addNode, addEdge, relayout, fitView, togglePlay, toggleTheme, toggleLang,
+    addNode, addEdge, relayout, fitView, togglePlay, present, exitPresent, toggleTheme, toggleLang,
     get lang() { return I.lang; },
     select: ids => select({ kind: 'multi', ids: [].concat(ids) }), align: alignNodes,
     saveVersion, openVersion, compareVersion, deleteVersion,
