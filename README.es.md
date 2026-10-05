@@ -182,7 +182,16 @@ Abre la pestaña **Versiones**.
 - Guardar, abrir, eliminar y cada edición se deshacen con **`⌘Z`**.
 - Las versiones se guardan dentro del diagrama, así que **Exportar › JSON** las lleva todas.
 
-### 9. Presentar y exportar
+### 9. Notas adhesivas y zonas de riesgo
+
+Usa los dos botones junto al zoom (abajo a la derecha del lienzo).
+- **Añadir una nota adhesiva** pone una nota en el centro de la vista. Haz doble clic (o usa el panel) para escribir.
+- **Añadir una zona de riesgo** dibuja un área rayada y con borde discontinuo bajo los grupos, con una etiqueta como `⚠ ALTA · Subred pública expuesta`. Elige su **Severidad** (*Baja, Media, Alta, Crítica*) y una descripción opcional en el panel.
+- Selecciona varios componentes y pulsa **⚠ Marcar como zona de riesgo** para dibujar una zona alrededor.
+- Arrastra para mover, arrastra el tirador de la esquina para cambiar el tamaño (se ajusta a la cuadrícula), **`⌘D`** duplica y **Supr** elimina. Todo se puede deshacer.
+- El resumen sobre el lienzo cuenta las zonas (*⚠ 2 zonas de riesgo (1 crítica)*), las exportaciones con leyenda las listan por severidad, y las versiones y el JSON conservan notas y zonas.
+
+### 10. Presentar y exportar
 
 - **Flujo** (o **`P`**) ilumina el diagrama paso a paso, de los clientes a los datos.
 - **Presentar** (o **`V`**) pasa a pantalla completa sin paneles: una vista general con el título, una diapositiva por grupo (en orden de lectura, acercando y atenuando el resto) y una vista general final. Sin grupos, recorre el flujo. **`→`**, **`Espacio`** o clic avanzan, **`←`** retrocede, **`Inicio`/`Fin`** y las teclas numéricas saltan, **`P`** reproduce el flujo y **`Esc`** sale y restaura tu vista. La edición se desactiva mientras presentas.

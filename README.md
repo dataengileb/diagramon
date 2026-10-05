@@ -198,7 +198,16 @@ Open the **Versions** tab.
 - Saving, opening, deleting and every edit can be undone with **`⌘Z`**.
 - Versions are stored inside the diagram, so **Export › JSON** carries them all.
 
-### 9. Present and export
+### 9. Sticky notes and risk zones
+
+Use the two buttons next to the zoom controls (bottom right of the canvas).
+- **Add a sticky note** puts a note in the middle of the view. Double-click it (or use the panel) to write.
+- **Add a risk zone** draws a hatched, dashed area under the groups, with a tag like `⚠ HIGH · Public subnet exposure`. Pick its **Severity** (*Low, Medium, High, Critical*) and an optional description in the panel.
+- Select several components and click **⚠ Mark as risk zone** to draw a zone around them.
+- Drag to move, drag the corner handle to resize (it snaps to the grid), **`⌘D`** duplicates and **Delete** removes. Everything can be undone.
+- The summary above the canvas counts the zones (*⚠ 2 risk zones (1 critical)*), exports with the legend list them by severity, and versions and JSON files keep notes and zones.
+
+### 10. Present and export
 
 - **Flow** (or **`P`**) lights up the diagram step by step, from clients to data.
 - **Present** (or **`V`**) goes full screen with no panels: an overview with the title, then one slide per group (in reading order, zooming in and dimming the rest) and a closing overview. Without groups it steps through the flow. **`→`**, **`Space`** or click go forward, **`←`** goes back, **`Home`/`End`** and number keys jump, **`P`** plays the flow, **`Esc`** exits and restores your view. Editing is off while presenting.
