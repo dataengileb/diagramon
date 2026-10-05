@@ -56,6 +56,7 @@ de verdad. Ese tipo de información no debería viajar a un servicio de terceros
 
 - 🎞️ **Diagramas vivos**: partículas que recorren las conexiones, trazos que fluyen y un botón **Flujo** que reproduce el recorrido paso a paso.
 - ☁️ **Iconos oficiales** de **AWS, Azure, Google Cloud, SAP BTP y Microsoft Fabric** (unos 290 servicios), además de iconos genéricos.
+- 🏗️ **Importar infraestructura como código**: Terraform (estado, plan o `.tfstate`), CloudFormation/SAM, Kubernetes y Docker Compose, procesados en local.
 - 🧩 **Grupos anidados**: región › VPC › subred, clúster › namespace…
 - 🖱️ **Selección múltiple, alineación y guías**: alinea, reparte con el mismo espacio y pega nodos a bordes y centros.
 - 💵 **Costos a mano**: precio en USD por hora, mes, año o varios años, en un recuadro bajo cada servicio y con el total mensual.
@@ -170,7 +171,7 @@ Abre la pestaña **Versiones**.
 ### 9. Presentar y exportar
 
 - **Flujo** (o **`P`**) ilumina el diagrama paso a paso, de los clientes a los datos.
-- **Ordenar** recoloca todo automáticamente. **Ajustar** (o **`F`**) centra el diagrama.
+- **Ordenar** recoloca todo automáticamente, siguiendo el flujo. Cada grupo se ordena dentro de su propia caja, así los grupos nunca se pisan. **Ajustar** (o **`F`**) centra el diagrama.
 - **Ángulos** (o **`E`**) cambia las conexiones entre curvas y líneas en ángulo recto que esquivan los nodos.
   Para cambiar una sola conexión, selecciónala y elige su **Línea**.
 - **Exportar** › SVG, PNG o JSON. Guarda el JSON para volver a abrirlo más tarde con **Importar**.
@@ -194,6 +195,31 @@ Abre la pestaña **Versiones**.
 | `L` | Cambiar entre inglés y español |
 | `E` | Cambiar entre conectores curvos y en ángulo recto |
 | `Esc` | Cancelar o quitar la selección |
+
+---
+
+## 🏗️ De infraestructura como código a diagrama
+
+Arrastra tus archivos de IaC al lienzo, o usa **Importar**. Diagramon dibuja la arquitectura real en segundos, sin subir nada a ningún sitio: todo se procesa en tu navegador.
+
+| Origen | Cómo obtener el archivo |
+|---|---|
+| **Terraform** | `terraform show -json > infra.json` (estado), `terraform show -json plan.out` (plan) o el propio `.tfstate` |
+| **CloudFormation / SAM** | La plantilla, en YAML o JSON |
+| **Kubernetes** | Tus manifiestos (varios documentos por archivo, varios archivos a la vez), o `kubectl get all,ingress,pvc,secret -o yaml` |
+| **Docker Compose** | `docker-compose.yml` / `compose.yaml` |
+
+Qué obtienes:
+
+- **Grupos**: región de AWS › VPC › subredes (grupos de recursos y VNet de Azure, VPC de Google Cloud), namespaces de Kubernetes y redes de Compose.
+- **Conexiones** deducidas de las referencias: ARN, ids, nombres de buckets, rutas `s3://`, nombres de host en variables de entorno, selectores e Ingress de Kubernetes, `depends_on`. La dirección sigue a los datos: el stream *origen* de un Firehose apunta al Firehose, y una notificación de S3 apunta a la Lambda que dispara.
+- **Iconos oficiales** y detalles: runtime, motor, horario, réplicas.
+- **Clasificación de datos** desde etiquetas como `DataClassification = pii`.
+- **Menos ruido**: los recursos de apoyo (IAM, políticas, rutas, grupos de seguridad, asociaciones…) se ocultan, pero se usan para ubicar y conectar el resto.
+
+![Data lake de AWS importado desde terraform show -json](docs/iac-data-lake.png)
+
+Pruébalo con los archivos de [`samples/`](samples): un data lake simple en AWS (en Terraform y en CloudFormation), una tienda en Kubernetes y un stack de Docker Compose.
 
 ---
 
@@ -326,6 +352,8 @@ El lenguaje de texto está en `window.DiagramonText` (`parse` y `stringify`).
 | `app.js` | Motor del editor |
 | `text-lang.js` | Lenguaje de texto (diagrama como código) |
 | `examples.js` | Plantillas |
+| `iac.js` | Importación de infraestructura como código (Terraform, CloudFormation, Kubernetes, Compose) |
+| `samples/` | Archivos de IaC de ejemplo para probar la importación |
 | `icons/*.js` | Iconos oficiales de AWS, Azure, Google Cloud, SAP BTP y Microsoft Fabric, incrustados |
 | `tools/build-icons.py` | Genera `icons/*.js` desde los paquetes oficiales |
 

@@ -1,0 +1,64 @@
+# Local stack for a small web app (sample for Diagramon's IaC import).
+name: acme-shop
+
+x-app-env: &app-env
+  DATABASE_URL: postgres://app:app@db:5432/app
+  REDIS_URL: redis://cache:6379/0
+
+services:
+  proxy:
+    image: traefik:v3.1
+    ports: ["80:80", "443:443"]
+    depends_on: [web, api]
+    networks: [frontend]
+
+  web:
+    build: ./web
+    environment:
+      API_URL: http://api:8080
+    networks: [frontend]
+
+  api:
+    build:
+      context: ./api
+    environment:
+      <<: *app-env
+      QUEUE_URL: amqp://guest:guest@queue:5672/
+    depends_on:
+      db:
+        condition: service_healthy
+      cache:
+        condition: service_started
+    networks: [frontend, backend]
+    deploy:
+      replicas: 2
+
+  worker:
+    build: ./api
+    command: ["python", "-m", "worker"]
+    environment:
+      <<: *app-env
+      QUEUE_URL: amqp://guest:guest@queue:5672/
+    depends_on: [queue, db]
+    networks: [backend]
+
+  db:
+    image: postgres:16
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks: [backend]
+
+  cache:
+    image: redis:7-alpine
+    networks: [backend]
+
+  queue:
+    image: rabbitmq:3-management
+    networks: [backend]
+
+volumes:
+  pgdata:
+
+networks:
+  frontend:
+  backend:

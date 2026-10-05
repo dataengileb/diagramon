@@ -34,6 +34,7 @@ around 290 official cloud icons, and the browser itself blocks every network req
 - **Private by design.** Your diagrams stay in your browser and in the files you export.
 - **Zero setup.** Double-click `index.html`. No install, no build step, no sign-up.
 - **Built for real architectures.** Official AWS, Azure, Google Cloud, SAP BTP and Microsoft Fabric icons, nested groups, costs and flow playback.
+- **From your real infrastructure.** Drop a `terraform show -json`, a CloudFormation template, Kubernetes manifests or a `docker-compose.yml` and get the diagram, grouped by VPC, subnet or namespace.
 - **Diagrams as code.** Type a short text and the canvas updates live. Text, JSON and canvas always stay in sync.
 - **English or Spanish.** The app opens in English. One click switches it to Spanish.
 
@@ -68,6 +69,7 @@ around 290 official cloud icons, and the browser itself blocks every network req
 
 - 🎞️ **Living diagrams**: particles travel along connections, dashed lines flow, and **Flow** plays the path step by step.
 - ☁️ **Official icons** for **AWS, Azure, Google Cloud, SAP BTP and Microsoft Fabric** (about 290 services), plus generic icons.
+- 🏗️ **Import infrastructure as code**: Terraform (state, plan or `.tfstate`), CloudFormation/SAM, Kubernetes and Docker Compose, parsed locally.
 - 🧩 **Nested groups**: region › VPC › subnet, cluster › namespace, and more.
 - 🖱️ **Multi-select, alignment and smart guides**: align, distribute with equal spacing, and snap to edges and centers.
 - 💵 **Manual costs**: USD per hour, month, year or multi-year, shown under each service, with an approximate monthly total.
@@ -184,7 +186,7 @@ Open the **Versions** tab.
 ### 9. Present and export
 
 - **Flow** (or **`P`**) lights up the diagram step by step, from clients to data.
-- **Arrange** lays everything out automatically. **Fit** (or **`F`**) centers the diagram.
+- **Arrange** lays everything out automatically, following the flow. Each group is arranged inside its own box, so groups never overlap. **Fit** (or **`F`**) centers the diagram.
 - **Elbows** (or **`E`**) switches the connections between curves and right-angle lines that go around the nodes.
   To change only one connection, select it and pick its **Line**.
 - **Export** › SVG, PNG or JSON. Keep the JSON to open it again later with **Import**.
@@ -208,6 +210,31 @@ Open the **Versions** tab.
 | `L` | Switch English / Spanish |
 | `E` | Switch curved / elbow connectors |
 | `Esc` | Cancel or clear the selection |
+
+---
+
+## 🏗️ From infrastructure as code to diagram
+
+Drop your IaC files on the canvas, or use **Import**. Diagramon draws the real architecture in seconds, and nothing is uploaded anywhere: parsing runs in your browser.
+
+| Source | How to get the file |
+|---|---|
+| **Terraform** | `terraform show -json > infra.json` (state), `terraform show -json plan.out` (plan) or the `.tfstate` file itself |
+| **CloudFormation / SAM** | The template, in YAML or JSON |
+| **Kubernetes** | Your manifests (several documents per file, several files at once), or `kubectl get all,ingress,pvc,secret -o yaml` |
+| **Docker Compose** | `docker-compose.yml` / `compose.yaml` |
+
+What you get:
+
+- **Groups**: AWS region › VPC › subnets (Azure resource groups and VNets, Google Cloud VPCs), Kubernetes namespaces and Compose networks.
+- **Connections** deduced from references: ARNs, ids, bucket names, `s3://` paths, hostnames in environment variables, Kubernetes selectors and Ingress rules, `depends_on`. The direction follows the data: a Firehose *source* stream points to the Firehose, and an S3 notification points to the Lambda it triggers.
+- **Official icons** and details: runtime, engine, schedule, replicas.
+- **Data classification** from tags such as `DataClassification = pii`.
+- **Less noise**: supporting resources (IAM, policies, routes, security groups, attachments…) are hidden, but still used to place and connect the rest.
+
+![AWS data lake imported from terraform show -json](docs/iac-data-lake.png)
+
+Try it with the files in [`samples/`](samples): a simple AWS data lake (as Terraform and as CloudFormation), a Kubernetes shop and a Docker Compose stack.
 
 ---
 
@@ -339,6 +366,8 @@ The text language is in `window.DiagramonText` (`parse` and `stringify`). UI tra
 | `app.js` | Editor engine |
 | `text-lang.js` | Text language (diagram as code) |
 | `examples.js` | Templates |
+| `iac.js` | Infrastructure-as-code import (Terraform, CloudFormation, Kubernetes, Compose) |
+| `samples/` | Sample IaC files to try the import |
 | `icons/*.js` | Embedded official icons for AWS, Azure, Google Cloud, SAP BTP and Microsoft Fabric |
 | `tools/build-icons.py` | Builds `icons/*.js` from the official packs |
 
