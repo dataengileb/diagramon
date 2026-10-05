@@ -329,6 +329,11 @@
   .ver-save { display: grid; gap: 7px; margin-bottom: 6px; }
   .ver-save .cat, .ver-list .cat { margin: 4px 2px 0; }
   .ver-list .cat { margin: 14px 2px 7px; }
+  .ver-filter { display: flex; flex-wrap: wrap; gap: 5px; margin: 10px 0 0; }
+  .ver-filter .vchip { padding: 2px 9px; border-radius: 999px; font: inherit; font-size: 11.5px; cursor: pointer; color: var(--s, var(--text)); background: color-mix(in srgb, var(--s, var(--muted)) 10%, transparent); border: 1px solid color-mix(in srgb, var(--s, var(--muted)) 40%, transparent); }
+  .ver-filter .vchip:hover { background: color-mix(in srgb, var(--s, var(--muted)) 20%, transparent); }
+  .ver-filter .vchip.on { background: color-mix(in srgb, var(--s, var(--muted)) 28%, transparent); border-color: var(--s, var(--muted)); font-weight: 700; }
+  .ver-filter .vchip b { font-variant-numeric: tabular-nums; }
   .ver-envs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
   .env-btn .dot, .ver .dot, .ver-pill .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--c); flex: none; }
   .ver { position: relative; margin-bottom: 8px; padding: 10px 11px 9px 15px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); overflow: hidden; transition: border-color .2s, box-shadow .2s; }
@@ -345,12 +350,20 @@
   .ver-tools .btn.icon svg { width: 13px; height: 13px; }
   .ver-tools .btn.on { border-color: var(--c); color: var(--c); }
   .ver-flag { margin-top: 2px; font-size: 11px; font-weight: 650; color: var(--c); }
+  .ver-warn { margin-top: 2px; font-size: 11px; font-weight: 700; color: var(--p-coral); }
   .ver-flag.dirty { color: var(--p-melocoton); }
   .ver-form { display: grid; gap: 8px; margin-top: 9px; padding-top: 9px; border-top: 1px dashed var(--border); }
   .ver-form label { display: grid; gap: 4px; font-size: 11px; font-weight: 650; color: var(--muted); }
   .ver-form input, .ver-form select, .ver-form textarea { width: 100%; min-width: 0; box-sizing: border-box; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface2); color: var(--text); font: 12.5px var(--font); resize: vertical; }
   .ver-form input:focus, .ver-form select:focus, .ver-form textarea:focus { outline: none; border-color: var(--c); }
   .ver-dates { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .ver-warn { margin-top: 2px; font-size: 11px; font-weight: 650; color: var(--p-coral); }
+  .ver-warn[hidden] { display: none; }
+  .ver-hist { display: grid; gap: 4px; font-size: 11px; color: var(--muted); }
+  .ver-hist > span { font-weight: 650; }
+  .ver-hist ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 2px; }
+  .ver-hist li { overflow-wrap: anywhere; }
+  .ver-hist li b { color: var(--s); }
   .ver-note { margin-top: 4px; font-size: 12px; overflow-wrap: anywhere; }
   .ver-actions { display: flex; gap: 5px; margin-top: 8px; }
   .ver-actions .btn { flex: 1; padding: 0 6px; white-space: nowrap; }
@@ -380,6 +393,16 @@
   .compare-bar b { color: var(--c, var(--accent)); }
   .compare-bar .icon-btn { width: 26px; height: 26px; flex: none; }
 
+  .cf-back { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 16px; background: rgba(0,0,0,.45); }
+  .cf { width: min(400px, 100%); padding: 18px 18px 14px; border: 1px solid var(--border); border-radius: 16px; background: var(--panel); box-shadow: var(--shadow); }
+  .cf h3 { margin: 0 0 8px; font-size: 14.5px; }
+  .cf p { margin: 0 0 8px; font-size: 12.5px; color: var(--muted); line-height: 1.45; }
+  .cf ul { margin: 0 0 8px; padding: 0; list-style: none; display: grid; gap: 4px; }
+  .cf li { padding: 5px 9px; border-radius: 8px; background: color-mix(in srgb, var(--p-coral) 12%, transparent); font-size: 12px; overflow-wrap: anywhere; }
+  .cf-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+  .cf-actions .btn { flex: none; padding: 0 14px; }
+  .cf-actions .btn.primary { border-color: var(--accent); color: var(--accent); }
+  .cf-actions .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .toast {
     position: fixed; left: 50%; bottom: 26px; z-index: 50; padding: 9px 16px; pointer-events: none;
     background: var(--text); color: var(--bg); font-size: 13px; font-weight: 650; border-radius: 999px;

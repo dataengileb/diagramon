@@ -272,6 +272,8 @@
       const o = { id, kind };
       if (kind === 'env') o.env = String(v.env || 'env'); else o.n = Math.max(1, Math.round(+v.n) || i + 1);
       if (v.note) o.note = String(v.note);
+      const name = String(v.name ?? '').trim().slice(0, 40);
+      if (name) o.name = name;
       o.savedAt = String(v.savedAt || '');
       // Aprobación: estado, autor de la arquitectura y fechas AAAA-MM-DD (editables)
       o.status = VSTATUS[v.status] ? v.status : 'draft';
@@ -279,6 +281,18 @@
       const saved = String(o.savedAt).slice(0, 10);
       o.created = isDay(v.created) ? v.created : isDay(saved) ? saved : today();
       o.updated = isDay(v.updated) ? v.updated : isDay(saved) ? saved : o.created;
+      // Decisión (quién y cuándo), motivo del rechazo e historial de estados
+      const dec = o.status === 'approved' || o.status === 'rejected';
+      if (dec && v.decidedBy != null && String(v.decidedBy).trim()) o.decidedBy = String(v.decidedBy).trim();
+      if (dec && isDay(v.decidedOn)) o.decidedOn = v.decidedOn;
+      if (o.status === 'rejected' && v.reason != null && String(v.reason).trim()) o.reason = String(v.reason).trim();
+      const hist = (Array.isArray(v.history) ? v.history : []).filter(h => h && typeof h === 'object' && VSTATUS[h.status] && isDay(h.date)).slice(-100).map(h => {
+        const e = { status: h.status, date: h.date };
+        if (h.by != null && String(h.by).trim()) e.by = String(h.by).trim();
+        if (h.reason != null && String(h.reason).trim()) e.reason = String(h.reason).trim();
+        return e;
+      });
+      if (hist.length) o.history = hist;
       o.diagram = v.diagram;
       return o;
     });
@@ -1310,7 +1324,11 @@
   }
 
   /* ---------- versiones y ambientes ---------- */
-  const verLabel = v => (v.kind === 'env' ? loc(C.environments?.[v.env]?.label) || v.env.toUpperCase() : T('ver.versionN', v.n));
+  // Nombre libre: si parece número se muestra como "Versión 1.2"; si no, tal cual ("MVP")
+  const verLabel = v => {
+    if (v.kind === 'env') { const l = loc(C.environments?.[v.env]?.label) || v.env.toUpperCase(); return v.name ? `${l} · ${v.name}` : l; }
+    return v.name ? (/^v?\d/i.test(v.name) ? T('ver.versionN', v.name) : v.name) : T('ver.versionN', v.n);
+  };
   const verColor = v => (v.kind === 'env' ? colorVar(C.environments?.[v.env]?.color) : null) || 'var(--accent)';
   const activeVersion = () => S.model?.versions.find(v => v.id === S.model.active) || null;
   const findVersion = id => S.model.versions.find(v => v.id === id);
@@ -1323,7 +1341,27 @@
   const prepared = v => { const d = normalize(clone(v.diagram)); ensurePositions(d); return d; };
   const canon = v => JSON.stringify(v, (k, x) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map(j => [j, x[j]])) : x));
   const isDirty = v => canon(snapshotOf(prepared(v))) !== canon(snapshotOf(S.model));
-  const verMeta = v => [v.author, v.created === v.updated ? T('ver.createdOn', { date: fmtDay(v.created) }) : T('ver.dates', { a: fmtDay(v.created), b: fmtDay(v.updated) }), T('meta.nodes', v.diagram.nodes?.length || 0)].filter(Boolean).join(' · ');
+  // Cambia el estado: registra quién decidió y cuándo (aprobado/rechazado) y añade la entrada al historial
+  function setVerStatus(v, st) {
+    v.status = st;
+    const dec = st === 'approved' || st === 'rejected';
+    if (dec) { const by = store.get('approver', ''); if (by) v.decidedBy = by; else delete v.decidedBy; v.decidedOn = today(); } else { delete v.decidedBy; delete v.decidedOn; }
+    if (st !== 'rejected') delete v.reason;
+    const e = { status: st, date: today() };
+    if (v.decidedBy) e.by = v.decidedBy;
+    (v.history ||= []).push(e);
+  }
+  // Mantiene la última entrada del historial al día si se edita quién, cuándo o el motivo
+  function syncHist(v) {
+    const e = v.history?.[v.history.length - 1];
+    if (!e || e.status !== v.status) return;
+    if (v.decidedOn) e.date = v.decidedOn;
+    ['by', 'reason'].forEach(k => { const x = k === 'by' ? v.decidedBy : v.reason; if (x) e[k] = x; else delete e[k]; });
+  }
+  const decLabel = v => T(`ver.${v.status}By`);
+  const decided = v => (v.status === 'approved' || v.status === 'rejected') && (v.decidedBy || v.decidedOn);
+  const decText = v => [v.decidedBy ? `${decLabel(v)} ${v.decidedBy}` : T(`ver.st.${v.status}`), fmtDay(v.decidedOn)].filter(Boolean).join(' · ');
+  const verMeta = v => [decided(v) ? decText(v) : '', v.author, v.created === v.updated ? T('ver.createdOn', { date: fmtDay(v.created) }) : T('ver.dates', { a: fmtDay(v.created), b: fmtDay(v.updated) }), T('meta.nodes', v.diagram.nodes?.length || 0)].filter(Boolean).join(' · ');
   const fmtDate = iso => { const d = new Date(iso); return isNaN(d) ? '' : new Intl.DateTimeFormat(I.lang, { dateStyle: 'medium', timeStyle: 'short' }).format(d); };
 
   // Los cambios en las versiones van al historial: ⌘Z deshace guardar, abrir o eliminar
@@ -1333,11 +1371,15 @@
     updateMeta();
     renderVersions();
   }
-  function saveVersion(kind = 'version', env) {
+  // Hallazgos de revisión abiertos dentro de la foto de una versión
+  const openFindings = v => (v.diagram?.nodes || []).filter(n => n.review && n.review.status !== 'resolved');
+  async function saveVersion(kind = 'version', env, { force } = {}) {
     const vs = S.model.versions, note = S.verNote.trim();
     if (kind === 'env' && !C.environments?.[env]) return;
-    pushHistory();
     let v = kind === 'env' ? vs.find(x => x.kind === 'env' && x.env === env) : null;
+    // Actualizar algo aprobado lo devuelve a revisión: se pide confirmación
+    if (v?.status === 'approved' && !force && !(await confirmBox({ title: T('ver.cf.updTitle', { name: verLabel(v) }), text: T('ver.cf.updText'), ok: T('ver.saveHere'), cancel: T('ver.cf.cancel') }))) return;
+    pushHistory();
     const existed = !!v;
     if (!v) {
       const n = Math.max(0, ...vs.filter(x => x.kind === 'version').map(x => x.n)) + 1;
@@ -1346,13 +1388,14 @@
       v = kind === 'env' ? { id, kind, env } : { id, kind, n };
       v.status = 'draft';
       v.created = today();
+      v.history = [{ status: 'draft', date: v.created }];
       const author = store.get('author', '') || S.model.meta?.author;
       if (author) v.author = author;
       vs.push(v);
     }
     // Si cambia el contenido de algo aprobado o rechazado, vuelve a revisión
     const reset = existed && (v.status === 'approved' || v.status === 'rejected');
-    if (reset) v.status = 'review';
+    if (reset) setVerStatus(v, 'review');
     if (note) v.note = note;
     v.updated = today();
     v.savedAt = new Date().toISOString();
@@ -1370,9 +1413,10 @@
     setModel({ ...clone(v.diagram), versions: S.model.versions, active: v.id }, { history: true });
     toast(T('ver.opened', { name: verLabel(v) }));
   }
-  function deleteVersion(id) {
+  async function deleteVersion(id, { force } = {}) {
     const v = findVersion(id);
     if (!v) return;
+    if (v.status === 'approved' && !force && !(await confirmBox({ title: T('ver.cf.delTitle', { name: verLabel(v) }), text: T('ver.cf.delText'), ok: T('ver.delete'), cancel: T('ver.cf.cancel'), danger: true }))) return;
     pushHistory();
     S.model.versions = S.model.versions.filter(x => x.id !== id);
     if (S.model.active === id) delete S.model.active;
@@ -1473,17 +1517,26 @@
             <button class="btn small icon${editing ? ' on' : ''}" data-ver="edit" title="${esc(T(editing ? 'ver.editDone' : 'ver.edit'))}" aria-label="${esc(T('ver.edit'))}">${editing ? ICON.check : ICON.pencil}</button>
             <button class="btn small danger icon" data-ver="delete" title="${esc(T('ver.delete'))}" aria-label="${esc(T('ver.delete'))}">${ICON.x}</button>
           </span></div>
+        ${v.status === 'approved' && openFindings(v).length ? `<div class="ver-warn">⚑ ${esc(T('ver.openFindings', openFindings(v).length))}</div>` : ''}
         ${on ? `<div class="ver-flag${dirty ? ' dirty' : ''}">${esc(T(dirty ? 'ver.dirty' : 'ver.current'))}</div>` : ''}
         <div class="ver-meta">${esc(verMeta(v))}</div>
         ${v.note && !editing ? `<div class="ver-note">${esc(v.note)}</div>` : ''}
+        ${v.status === 'rejected' && !v.reason ? `<div class="ver-warn">${esc(T('ver.reasonWarn'))}</div>` : ''}
         ${editing ? `<div class="ver-form">
+          <label>${T('ver.name')}<input data-vfield="name" value="${esc(v.name || '')}" maxlength="40" placeholder="${esc(T('ver.name.ph'))}" autocomplete="off"></label>
           <label>${T('ver.status')}<select data-vfield="status">${Object.keys(VSTATUS).map(k => `<option value="${k}"${k === v.status ? ' selected' : ''}>${esc(T(`ver.st.${k}`))}</option>`).join('')}</select></label>
+          ${v.status === 'approved' || v.status === 'rejected' ? `<div class="ver-dates">
+            <label>${esc(decLabel(v))}<input data-vfield="decidedBy" value="${esc(v.decidedBy || '')}" placeholder="${esc(T('ver.author.ph'))}" autocomplete="off"></label>
+            <label>${T('ver.decidedOn')}<input type="date" data-vfield="decidedOn" value="${esc(v.decidedOn || '')}"></label>
+          </div>` : ''}
+          ${v.status === 'rejected' ? `<label>${T('ver.reason')}<textarea data-vfield="reason" rows="2" placeholder="${esc(T('ver.reason.ph'))}">${esc(v.reason || '')}</textarea></label>` : ''}
           <label>${T('ver.author')}<input data-vfield="author" value="${esc(v.author || '')}" placeholder="${esc(T('ver.author.ph'))}" autocomplete="off"></label>
           <div class="ver-dates">
             <label>${T('ver.created')}<input type="date" data-vfield="created" value="${esc(v.created)}"></label>
             <label>${T('ver.updatedOn')}<input type="date" data-vfield="updated" value="${esc(v.updated)}"></label>
           </div>
           <label>${T('ver.note')}<textarea data-vfield="note" rows="2" placeholder="${esc(T('ver.note.ph'))}">${esc(v.note || '')}</textarea></label>
+          ${v.history?.length ? `<div class="ver-hist"><span>${T('ver.history')}</span><ul>${v.history.map(h => `<li style="--s:${VSTATUS[h.status]}">${[fmtDay(h.date), T(`ver.st.${h.status}`), h.by, h.reason].filter(Boolean).map((x, i) => i === 1 ? `<b>${esc(x)}</b>` : esc(x)).join(' · ')}</li>`).join('')}</ul></div>` : ''}
         </div>` : ''}
         ${cmp && S.compare.diff ? diffList(S.compare.diff) : ''}
         <div class="ver-actions">
@@ -1493,7 +1546,14 @@
         </div>
       </div>`;
     };
-    const section = (title, list) => (list.length ? `<div class="cat">${esc(title)}</div>${list.map(card).join('')}` : '');
+    // Filtro por estado: si el guardado ya no tiene entradas, vuelve a Todos
+    const counts = Object.fromEntries(Object.keys(VSTATUS).map(k => [k, vs.filter(v => v.status === k).length]));
+    let fil = store.get('verFilter', 'all');
+    if (!counts[fil]) fil = 'all';
+    const shown = v => fil === 'all' || v.status === fil;
+    const chip = (k, n, label, color) => `<button class="vchip${fil === k ? ' on' : ''}" data-vfilter="${k}" aria-pressed="${fil === k}"${color ? ` style="--s:${color}"` : ''}>${esc(label)} <b>${n}</b></button>`;
+    const filterBar = vs.length < 2 ? '' : `<div class="ver-filter" role="group" aria-label="${esc(T('ver.filter'))}">${chip('all', vs.length, T('ver.f.all'))}${Object.keys(VSTATUS).filter(k => counts[k]).map(k => chip(k, counts[k], T(`ver.st.${k}`), VSTATUS[k])).join('')}</div>`;
+    const section = (title, list) => ((list = list.filter(shown)).length ? `<div class="cat">${esc(title)}</div>${list.map(card).join('')}` : '');
     const envList = envs.flatMap(([k]) => vs.filter(v => v.kind === 'env' && v.env === k)).concat(vs.filter(v => v.kind === 'env' && !C.environments?.[v.env]));
     box.innerHTML = `<div class="ver-save">
         <div class="cat">${esc(T('ver.saveAs'))}</div>
@@ -1504,7 +1564,9 @@
         }).join('')}</div>` : ''}
         <input class="search" id="ver-note" style="padding-left:10px" value="${esc(S.verNote)}" placeholder="${esc(T('ver.note.ph'))}" aria-label="${esc(T('ver.note'))}" autocomplete="off">
       </div>
+      ${filterBar}
       <div class="ver-list">${section(T('ver.envs'), envList)}${section(T('ver.versions'), vs.filter(v => v.kind === 'version').sort((a, b) => b.n - a.n))}</div>
+      ${vs.length && !vs.some(shown) ? `<p class="empty-list">${esc(T('ver.f.none'))} <button class="btn small" data-vfilter="all">${esc(T('ver.f.clear'))}</button></p>` : ''}
       ${vs.length ? '' : `<p class="empty-list">${esc(T('ver.empty'))}</p>`}`;
     const back = fkey && box.querySelector(fkey);
     if (back) { back.focus(); if (caret) back.setSelectionRange(...caret); }
@@ -1536,21 +1598,48 @@
   const onVerField = ev => {
     const f = ev.target, k = f.dataset?.vfield, v = k && findVersion(f.closest('.ver')?.dataset.id);
     if (!v) return;
-    const val = f.value.trim();
-    if (k === 'status') { if (!VSTATUS[val] || val === v.status) return; }
-    else if ((k === 'created' || k === 'updated') && !isDay(val)) return;
+    const val = k === 'name' ? f.value.trim().slice(0, 40) : f.value.trim();
+    if (k === 'status') {
+      if (!VSTATUS[val] || val === v.status) return;
+      const open = val === 'approved' ? openFindings(v) : [];
+      if (open.length) {
+        // Aprobar con hallazgos abiertos: se restaura el estado y se pregunta (select dispara input y change)
+        f.value = v.status;
+        if (S.verAsk) return;
+        S.verAsk = true;
+        const list = open.slice(0, 5).map(n => `${n.label}${n.review.note ? `: ${n.review.note}` : ''}`);
+        if (open.length > 5) list.push(`… +${open.length - 5}`);
+        confirmBox({ title: T('ver.cf.apprTitle', open.length), text: T('ver.cf.apprText'), list, ok: T('ver.cf.apprOk'), cancel: T('ver.cf.cancel') }).then(ok => {
+          S.verAsk = false;
+          if (!ok || !findVersion(v.id) || v.status === 'approved') return;
+          markEdit(); setVerStatus(v, 'approved'); endEdit();
+          store.set('model', S.model);
+          updateMeta();
+          renderVersions();
+          toast(T('ver.statusSet', { name: verLabel(v), status: T('ver.st.approved') }));
+        });
+        return;
+      }
+    }
+    else if ((k === 'created' || k === 'updated' || k === 'decidedOn') && !isDay(val)) return;
     markEdit();
-    if (k === 'status' || k === 'created' || k === 'updated') v[k] = val;
-    else if (val) { v[k] = k === 'note' ? f.value : val; if (k === 'author') store.set('author', val); }
+    if (k === 'status') setVerStatus(v, val);
+    else if (k === 'created' || k === 'updated' || k === 'decidedOn') v[k] = val;
+    else if (val) { v[k] = k === 'note' ? f.value : val; if (k === 'author') store.set('author', val); if (k === 'decidedBy') store.set('approver', val); }
     else delete v[k];
+    if (k === 'decidedBy' || k === 'decidedOn' || k === 'reason') syncHist(v);
     if (k === 'status') { endEdit(); toast(T('ver.statusSet', { name: verLabel(v), status: T(`ver.st.${val}`) })); }
     // Pinta al momento el estado y la línea de datos; el resto se guarda en segundo plano
     const c = f.closest('.ver');
     c.style.setProperty('--s', VSTATUS[v.status]);
     c.querySelector('.ver-status').textContent = T(`ver.st.${v.status}`);
     c.querySelector('.ver-meta').textContent = verMeta(v);
+    c.querySelector('.ver-head b').textContent = verLabel(v);
+    const warn = c.querySelector('.ver-warn');
+    if (warn) warn.hidden = !!v.reason;
     store.set('model', S.model);
     updateMeta();
+    if (k === 'status') renderVersions();
   };
   versionsBox.addEventListener('input', ev => { if (ev.target.id === 'ver-note') S.verNote = ev.target.value; else onVerField(ev); });
   versionsBox.addEventListener('change', onVerField);
@@ -1563,6 +1652,11 @@
     const b = ev.target.closest('button');
     if (!b) return;
     if (b.dataset.save) return saveVersion(b.dataset.save, b.dataset.env);
+    if (b.dataset.vfilter) {
+      store.set('verFilter', b.dataset.vfilter === store.get('verFilter', 'all') ? 'all' : b.dataset.vfilter);
+      renderVersions();
+      return versionsBox.querySelector('.ver-filter .on')?.focus();
+    }
     const id = b.closest('.ver')?.dataset.id;
     if (b.dataset.ver === 'open') openVersion(id);
     else if (b.dataset.ver === 'compare') compareVersion(id);
@@ -2261,8 +2355,8 @@
     }), 38);
     // Cajetín
     const av = activeVersion(), cost = m.nodes.some(hasCost) ? `≈ ${money(round2(monthlyTotal(m.nodes)))}${T('cost.mo')}` : '';
-    const info = [[T('leg.author'), m.meta?.author || av?.author || '—'], [T('leg.version'), m.meta?.version || (av ? verLabel(av) : '—')],
-      ...(av ? [[T('leg.status'), T(`ver.st.${av.status}`)], [T('ver.created'), fmtDay(av.created)], [T('ver.updatedOn'), fmtDay(av.updated)]] : [[T('leg.date'), new Intl.DateTimeFormat(I.lang, { dateStyle: 'long' }).format(new Date())]]),
+    const info = [[T('leg.author'), m.meta?.author || av?.author || '—'], [T('leg.version'), m.meta?.version || (av ? av.name || verLabel(av) : '—')],
+      ...(av ? [[T('leg.status'), T(`ver.st.${av.status}`)], ...(decided(av) ? [[decLabel(av), [av.decidedBy, fmtDay(av.decidedOn)].filter(Boolean).join(' · ')]] : []), [T('ver.created'), fmtDay(av.created)], [T('ver.updatedOn'), fmtDay(av.updated)]] : [[T('leg.date'), new Intl.DateTimeFormat(I.lang, { dateStyle: 'long' }).format(new Date())]]),
       ...(cost ? [[T('leg.cost'), cost]] : [])];
     const keyW = Math.max(...info.map(([k]) => textW(k, '400 11.5px'))) + 14;
     const infoW = Math.max(220, textW(m.title, '700 14px'), keyW + Math.max(...info.map(([, v]) => textW(v, '400 12px')))) + 4;
@@ -2552,6 +2646,30 @@
 
   /* ---------- avisos ---------- */
   let toastTimer;
+  // Diálogo de confirmación propio: Promise<boolean>; Esc cancela, Enter acepta, foco en lo seguro
+  function confirmBox({ title, text, list, ok = 'OK', cancel = 'Cancel', danger = false }) {
+    return new Promise(done => {
+      const prev = document.activeElement, id = `cf${Date.now()}`;
+      const back = document.createElement('div');
+      back.className = 'cf-back';
+      back.innerHTML = `<div class="cf" role="dialog" aria-modal="true" aria-labelledby="${id}t" aria-describedby="${id}d">
+        <h3 id="${id}t">${esc(title)}</h3>
+        <div id="${id}d">${text ? `<p>${esc(text)}</p>` : ''}${list?.length ? `<ul>${list.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}</div>
+        <div class="cf-actions"><button class="btn" data-cf="no">${esc(cancel)}</button><button class="btn${danger ? ' danger' : ' primary'}" data-cf="ok">${esc(ok)}</button></div></div>`;
+      const close = r => { document.removeEventListener('keydown', key, true); back.remove(); prev?.focus?.(); done(r); };
+      const key = ev => {
+        if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); close(false); }
+        else if (ev.key === 'Enter') { ev.preventDefault(); ev.stopPropagation(); close(document.activeElement?.dataset?.cf === 'ok'); }
+        else if (ev.key === 'Tab') { ev.preventDefault(); const b = [...back.querySelectorAll('button')]; b[(b.indexOf(document.activeElement) + (ev.shiftKey ? b.length - 1 : 1)) % b.length].focus(); }
+      };
+      back.addEventListener('mousedown', ev => { if (ev.target === back) close(false); });
+      back.addEventListener('click', ev => { const b = ev.target.closest('[data-cf]'); if (b) close(b.dataset.cf === 'ok'); });
+      document.addEventListener('keydown', key, true);
+      document.body.appendChild(back);
+      back.querySelector('[data-cf="no"]').focus();
+    });
+  }
+
   function toast(msg, ms = 1800) {
     const t = $('#toast');
     t.textContent = msg;
