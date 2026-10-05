@@ -64,7 +64,7 @@ window.DiagramonShare = (() => {
       pw: 'Password', open: 'Open', busy: 'Decrypting…', wrong: 'Wrong password, or the file is damaged.',
       insecure: 'Your browser blocks decryption here. Download the file and open it with a double click.',
       old: 'This browser is too old to open the file. Use a recent Chrome, Edge, Firefox or Safari.',
-      local: 'Decrypted on this device. Nothing is sent over the network.', fit: 'Fit', theme: 'Dark / light', lock: 'Lock',
+      local: 'Decrypted on this device. Nothing is sent over the network.', fit: 'Fit', theme: 'Theme', lock: 'Lock',
       zoomIn: 'Zoom in', zoomOut: 'Zoom out', made: 'Made with Diagramon', saved: 'Shared on'
     },
     es: {
@@ -72,7 +72,7 @@ window.DiagramonShare = (() => {
       pw: 'Contraseña', open: 'Abrir', busy: 'Descifrando…', wrong: 'Contraseña incorrecta, o el archivo está dañado.',
       insecure: 'Tu navegador no permite descifrar aquí. Descarga el archivo y ábrelo con doble clic.',
       old: 'Este navegador es demasiado antiguo para abrir el archivo. Usa un Chrome, Edge, Firefox o Safari reciente.',
-      local: 'Se descifra en este equipo. No se envía nada por la red.', fit: 'Ajustar', theme: 'Oscuro / claro', lock: 'Bloquear',
+      local: 'Se descifra en este equipo. No se envía nada por la red.', fit: 'Ajustar', theme: 'Tema', lock: 'Bloquear',
       zoomIn: 'Acercar', zoomOut: 'Alejar', made: 'Hecho con Diagramon', saved: 'Compartido el'
     }
   };
@@ -101,7 +101,10 @@ window.DiagramonShare = (() => {
     return JSON.parse(text);
   }
 
+  // Temas incluidos en el archivo (claro, oscuro y negro); empieza por el que usaba el autor
+  const ORDER = ['light', 'dark', 'black'];
   let doc = null, theme = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark', urls = [];
+  const themes = () => ORDER.filter(k => doc && doc[k]);
   const view = { x: 0, y: 0, k: 1 };
   const apply = () => { $('#pic').style.transform = 'translate(' + view.x + 'px,' + view.y + 'px) scale(' + view.k + ')'; };
   function fit() {
@@ -119,8 +122,9 @@ window.DiagramonShare = (() => {
     apply();
   }
   function show(first) {
-    const svg = doc[theme] || doc.dark || doc.light;
-    document.body.dataset.theme = doc[theme] ? theme : doc.dark ? 'dark' : 'light';
+    if (!doc[theme]) theme = themes()[0];
+    const svg = doc[theme];
+    document.body.dataset.theme = theme;
     const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
     urls.push(url);
     const img = $('#pic');
@@ -139,7 +143,8 @@ window.DiagramonShare = (() => {
       document.title = doc.title;
       $('#doc-title').textContent = doc.title;
       $('#doc-sub').textContent = [doc.version, doc.sharedAt ? t.saved + ' ' + new Date(doc.sharedAt).toLocaleDateString(lang, { dateStyle: 'medium' }) : ''].filter(Boolean).join(' · ');
-      $('#theme').hidden = !(doc.dark && doc.light);
+      if (doc[doc.theme]) theme = doc.theme;
+      $('#theme').hidden = themes().length < 2;
       $('#gate').hidden = true; $('#viewer').hidden = false;
       show(true);
     } catch (e) {
@@ -149,7 +154,7 @@ window.DiagramonShare = (() => {
   $('#fit').onclick = fit;
   $('#zin').onclick = () => zoom(1.25);
   $('#zout').onclick = () => zoom(0.8);
-  $('#theme').onclick = () => { theme = theme === 'dark' ? 'light' : 'dark'; show(false); };
+  $('#theme').onclick = () => { const ts = themes(); theme = ts[(ts.indexOf(theme) + 1) % ts.length]; show(false); };
   $('#lock').onclick = () => { urls.forEach(u => URL.revokeObjectURL(u)); location.reload(); };
   const stage = $('#stage');
   stage.addEventListener('wheel', ev => {
@@ -180,6 +185,7 @@ background:var(--bg);color:var(--text);font:14px/1.5 ui-sans-serif,-apple-system
 @media (prefers-color-scheme:light){body{--bg:#f6f4f1;--panel:#fdfcfa;--surface:#fff;--border:#e5e0e8;--text:#28242f;--muted:#776f84;--accent:#8573DB;--bad:#E2806F}}
 body[data-theme=dark]{--bg:#111219;--panel:#171822;--surface:#1c1e2a;--border:#2e3144;--text:#ecebf5;--muted:#9b9db4;--accent:#C2B6F6}
 body[data-theme=light]{--bg:#f6f4f1;--panel:#fdfcfa;--surface:#fff;--border:#e5e0e8;--text:#28242f;--muted:#776f84;--accent:#8573DB}
+body[data-theme=black]{--bg:#000;--panel:#0a0a0a;--surface:#111;--border:#5c5c5c;--text:#fff;--muted:#a8a8a8;--accent:#CEC4F9}
 [hidden]{display:none!important}
 #gate{min-height:100%;display:grid;place-items:center;padding:16px}
 .card{width:min(400px,100%);padding:26px 24px 20px;border:1px solid var(--border);border-radius:18px;background:var(--panel);box-shadow:0 18px 40px rgba(0,0,0,.25)}

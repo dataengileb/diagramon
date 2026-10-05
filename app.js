@@ -2588,7 +2588,7 @@
       form.querySelector('[type="submit"]').textContent = T('share.busy');
       try {
         const av = activeVersion();
-        const payload = { title: S.model.title, version: av ? verLabel(av) : S.model.meta?.version || '', sharedAt: new Date().toISOString(), dark: svgFor('dark'), light: svgFor('light') };
+        const payload = { title: S.model.title, version: av ? verLabel(av) : S.model.meta?.version || '', sharedAt: new Date().toISOString(), theme: S.theme, dark: svgFor('dark'), light: svgFor('light'), black: svgFor('black') };
         const env = await SH.encrypt(payload, pw.value);
         download(SH.viewer(env, I.lang), `diagramon-${today()}.html`, 'text/html');
         close();
