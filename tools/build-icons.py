@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Diagramon · empaqueta los iconos oficiales de AWS, Azure y Google Cloud.
+Diagramon · empaqueta los iconos oficiales de AWS, Azure, Google Cloud y SAP.
 
 Lee los paquetes oficiales ya descomprimidos y escribe icons/aws.js,
-icons/azure.js e icons/gcp.js. Esos archivos funcionan al abrir index.html
+icons/azure.js, icons/gcp.js e icons/sap.js. Esos archivos funcionan al abrir index.html
 con doble clic (sin servidor) y viajan dentro de las exportaciones SVG/PNG.
 
 Uso:
@@ -14,6 +14,10 @@ Uso:
     azure/     Azure_Public_Service_Icons_*.zip (learn.microsoft.com/azure/architecture/icons)
     gcp-core/  core-products-icons.zip          (cloud.google.com/icons)
     gcp-cat/   category-icons.zip               (cloud.google.com/icons)
+    sap/       assets/shape-libraries-and-editable-presets/svg
+               de github.com/SAP/btp-solution-diagrams
+
+Si falta la carpeta de una nube, esa nube se salta y su archivo no se toca.
 
 Para añadir un servicio, añade una línea a la lista de su nube y vuelve a
 ejecutar el script. Para incluir TODOS los iconos de una nube, pon
@@ -28,7 +32,7 @@ import re
 import sys
 
 ALL = False  # True = incluir todos los iconos, no solo la selección
-SHORT = {'gcp': 'GCP'}  # nombre corto para la pestaña del panel
+SHORT = {'gcp': 'GCP', 'sap': 'SAP'}  # nombre corto para la pestaña del panel
 
 # Cada entrada: (clave, archivo a buscar, nombre visible, tipo de Diagramon, categoría)
 # El tipo de Diagramon da el color pastel del borde; la categoría agrupa en el panel.
@@ -236,6 +240,69 @@ GCP_CATEGORY = [
     ('maps', 'Maps & Geospatial', 'Google Maps Platform', 'external', 'Otros'),
 ]
 
+# SAP BTP: iconos de github.com/SAP/btp-solution-diagrams (Apache-2.0),
+# carpeta assets/shape-libraries-and-editable-presets/svg.
+SAP = [
+    ('cloudfoundry', 'sap-btp_cloud-foundry-runtime', 'Cloud Foundry Runtime', 'container', 'Cómputo'),
+    ('kyma', 'sap-btp_kyma-runtime', 'Kyma Runtime', 'k8s', 'Cómputo'),
+    ('abap', 'sap-btp_abap-environment', 'ABAP Environment', 'compute', 'Cómputo'),
+    ('autoscaler', 'application-autoscaler', 'Application Autoscaler', 'compute', 'Cómputo'),
+    ('frontend', 'application-frontend-service', 'Application Frontend', 'web', 'Cómputo'),
+    ('html5repo', 'sap-html5-application-repository-service-for-sap-btp', 'HTML5 App Repository', 'storage', 'Cómputo'),
+    ('cap', 'sap-cloud-application-programming-model', 'CAP', 'function', 'Desarrollo'),
+    ('bas', 'sap-business-application-studio', 'Business Application Studio', 'cicd', 'Desarrollo'),
+    ('build', 'sap-build', 'SAP Build', 'web', 'Desarrollo'),
+    ('buildapps', 'sap-build-apps', 'SAP Build Apps', 'mobile', 'Desarrollo'),
+    ('buildcode', 'sap-build-code', 'SAP Build Code', 'cicd', 'Desarrollo'),
+    ('processautomation', 'sap-build-process-automation', 'Build Process Automation', 'events', 'Desarrollo'),
+    ('workzone', 'sap-build-work-zone', 'Build Work Zone', 'web', 'Desarrollo'),
+    ('mobileservices', 'sap-mobile-services', 'Mobile Services', 'mobile', 'Desarrollo'),
+    ('hanacloud', 'sap-hana-cloud', 'HANA Cloud', 'db', 'Bases de datos'),
+    ('objectstore', 'object-store-on-sap-btp', 'Object Store', 'storage', 'Bases de datos'),
+    ('documentmanagement', 'sap-document-management-service', 'Document Management', 'storage', 'Bases de datos'),
+    ('mdg', 'sap-master-data-governance', 'Master Data Governance', 'db', 'Bases de datos'),
+    ('mdi', 'sap-master-data-integration', 'Master Data Integration', 'db', 'Bases de datos'),
+    ('datasphere', 'sap-datasphere', 'Datasphere', 'analytics', 'Analítica'),
+    ('analyticscloud', 'sap-analytics-cloud', 'Analytics Cloud', 'analytics', 'Analítica'),
+    ('businessdatacloud', 'sap-business-data-cloud', 'Business Data Cloud', 'analytics', 'Analítica'),
+    ('integrationsuite', 'sap-integration-suite', 'Integration Suite', 'gateway', 'Integración'),
+    ('cloudintegration', 'sap-integration-suite_cloud-integration', 'Cloud Integration', 'events', 'Integración'),
+    ('apimanagement', 'sap-integration-suite_api-management', 'API Management', 'gateway', 'Integración'),
+    ('eventmesh', 'sap-integration-suite_event-mesh', 'Event Mesh', 'events', 'Integración'),
+    ('advancedeventmesh', 'sap-integration-suite_advanced-event-mesh', 'Advanced Event Mesh', 'stream', 'Integración'),
+    ('eventbroker', 'sap-event-broker-for-sap-cloud-applications', 'Event Broker', 'events', 'Integración'),
+    ('openconnectors', 'sap-integration-suite_open-connectors', 'Open Connectors', 'external', 'Integración'),
+    ('edgecell', 'edge-integration-cell', 'Edge Integration Cell', 'container', 'Integración'),
+    ('graph', 'sap-integration-suite_graph', 'Graph', 'gateway', 'Integración'),
+    ('jobscheduling', 'sap-job-scheduling-service', 'Job Scheduling', 'queue', 'Integración'),
+    ('alertnotification', 'sap-alert-notification-service-for-sap-btp', 'Alert Notification', 'email', 'Integración'),
+    ('connectivity', 'sap-connectivity-service', 'Connectivity Service', 'lb', 'Red'),
+    ('destination', 'sap-destination-service', 'Destination Service', 'gateway', 'Red'),
+    ('cloudconnector', 'cloud-connector', 'Cloud Connector', 'firewall', 'Red'),
+    ('privatelink', 'sap-private-link-service', 'Private Link', 'firewall', 'Red'),
+    ('customdomain', 'sap-custom-domain-service', 'Custom Domain', 'dns', 'Red'),
+    ('xsuaa', 'sap-authorization-and-trust-management-service', 'Authorization & Trust (XSUAA)', 'auth', 'Seguridad'),
+    ('identityservices', 'sap-cloud-identity-services', 'Cloud Identity Services', 'auth', 'Seguridad'),
+    ('ias', 'identity-authentication', 'Identity Authentication', 'auth', 'Seguridad'),
+    ('ips', 'identity-provisioning', 'Identity Provisioning', 'auth', 'Seguridad'),
+    ('credentialstore', 'sap-credential-store', 'Credential Store', 'secrets', 'Seguridad'),
+    ('keystore', 'sap-keystore-service', 'Keystore', 'secrets', 'Seguridad'),
+    ('auditlog', 'sap-audit-log-service', 'Audit Log', 'monitor', 'Seguridad'),
+    ('malwarescanning', 'sap-malware-scanning-service', 'Malware Scanning', 'firewall', 'Seguridad'),
+    ('aicore', 'sap-ai-core', 'AI Core', 'ai', 'IA'),
+    ('ailaunchpad', 'sap-ai-launchpad', 'AI Launchpad', 'ai', 'IA'),
+    ('joule', 'joule studio', 'Joule Studio', 'ai', 'IA'),
+    ('documentgrounding', 'document-grounding', 'Document Grounding', 'ai', 'IA'),
+    ('documentextraction', 'document-information-extraction', 'Document Information Extraction', 'ai', 'IA'),
+    ('cloudlogging', 'cloud-logging', 'Cloud Logging', 'monitor', 'Operaciones'),
+    ('applogging', 'sap-application-logging-service-for-sap-btp', 'Application Logging', 'monitor', 'Operaciones'),
+    ('cloudalm', 'sap-cloud-alm', 'Cloud ALM', 'monitor', 'Operaciones'),
+    ('cicd', 'sap-continuous-integration-and-delivery', 'Continuous Integration & Delivery', 'cicd', 'Operaciones'),
+    ('transportmanagement', 'sap-cloud-transport-management', 'Cloud Transport Management', 'cicd', 'Operaciones'),
+    ('automationpilot', 'sap-automation-pilot', 'Automation Pilot', 'cicd', 'Operaciones'),
+    ('btpservice', 'placeholder-icon-for-sap-btp-services', 'Servicio SAP BTP', 'generic', 'Otros'),
+]
+
 
 def clean_svg(text):
     """Quita prólogo, comentarios, metadatos y espacios sobrantes."""
@@ -316,6 +383,7 @@ def main():
             svgs = [f for f in sorted(files) if f.endswith('.svg')]
             if svgs and os.path.basename(dirpath) == 'SVG':
                 gcp_files.setdefault(os.path.basename(os.path.dirname(dirpath)), os.path.join(dirpath, svgs[0]))
+    sap_files = index_files(os.path.join(src, 'sap'), re.compile(r'^\d+-(.+?)(?:_sd)?\.svg$'))
 
     jobs = [
         ('aws', 'AWS', AWS, aws_files,
@@ -324,8 +392,14 @@ def main():
          'Azure icons: Microsoft permite usarlos en diagramas, formación y documentación; no recortar, girar ni deformar.'),
         ('gcp', 'Google Cloud', GCP_CORE + GCP_CATEGORY, gcp_files,
          'Google Cloud icons: iconos oficiales para diagramas y documentación técnica.'),
+        ('sap', 'SAP BTP', SAP, sap_files,
+         'SAP BTP service icons: (c) SAP SE or an SAP affiliate company and btp-solution-diagrams contributors. '
+         'Apache License 2.0 (icons/LICENSE-SAP.txt). Origen: github.com/SAP/btp-solution-diagrams.'),
     ]
     for provider, label, entries, files, licence in jobs:
+        if not files:
+            print(f'{provider}: carpeta no encontrada, se salta')
+            continue
         data, missing = build(provider, label, entries, files, licence)
         size = write(os.path.join(out_dir, f'{provider}.js'), provider, data)
         print(f'{provider}: {len(data["items"])} servicios, {len(data["files"])} iconos, {size / 1024:.0f} KB')
