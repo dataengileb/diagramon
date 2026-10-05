@@ -139,6 +139,7 @@ Prefer Spanish? Click the 🌐 **EN** button in the top bar, or press **`L`**.
 - **`⇧` + drag** on the background selects an area. **`⌘A`** selects everything.
 - With several nodes selected, the right panel can **align** them (left, center, right, top, middle, bottom)
   and **distribute** them with equal spacing, horizontally or vertically.
+- With exactly two nodes selected, the right panel shows **Show path A → B** (or press **`R`**): the shortest route follows the arrows, lights up every edge of any shortest route and numbers the steps. If no directed route exists it falls back to ignoring direction and says so. **`Esc`**, the × or any click clears it.
 - While dragging, pink **guides** snap the node to the edges and centers of the others. Hold **`Alt`** to turn them off.
 
 ### 5. Costs
@@ -216,6 +217,7 @@ Open the **Versions** tab.
 | `C` | Connect |
 | `F` | Fit to view |
 | `P` | Play the flow |
+| `R` | Show the path between two selected nodes |
 | `T` | Cycle light → dark → high-contrast black mode |
 | `L` | Switch English / Spanish |
 | `E` | Switch curved / elbow connectors |

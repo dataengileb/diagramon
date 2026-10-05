@@ -851,11 +851,85 @@
     return { nodes, edges };
   }
 
+  /* ---------- camino entre dos componentes ---------- */
+  // Caminos más cortos de a a b (BFS). Devuelve todos los nodos y aristas que están en ALGUNO de ellos.
+  function shortestPaths(model, a, b, directed = true) {
+    if (a === b || !model.nodes.some(n => n.id === a) || !model.nodes.some(n => n.id === b)) return null;
+    // Pasos posibles desde u: [arista, vecino]; hacia atrás si rev
+    const steps = (u, rev) => model.edges.flatMap(e =>
+      (rev ? e.to : e.from) === u ? [[e, rev ? e.from : e.to]] : !directed && (rev ? e.from : e.to) === u ? [[e, rev ? e.to : e.from]] : []);
+    const bfs = (src, rev) => {
+      const dist = new Map([[src, 0]]), cnt = new Map([[src, 1]]), q = [src];
+      while (q.length) {
+        const u = q.shift();
+        steps(u, rev).forEach(([, v]) => {
+          if (!dist.has(v)) { dist.set(v, dist.get(u) + 1); cnt.set(v, 0); q.push(v); }
+          if (dist.get(v) === dist.get(u) + 1) cnt.set(v, cnt.get(v) + cnt.get(u));
+        });
+      }
+      return { dist, cnt };
+    };
+    const f = bfs(a, false), r = bfs(b, true);
+    if (!f.dist.has(b)) return null;
+    const hops = f.dist.get(b), nodes = new Set(), edges = new Set(), dist = new Map();
+    f.dist.forEach((d, id) => { if (r.dist.has(id) && d + r.dist.get(id) === hops) { nodes.add(id); dist.set(id, d); } });
+    model.edges.forEach(e => {
+      const ok = (u, v) => nodes.has(u) && nodes.has(v) && dist.get(u) + 1 === dist.get(v);
+      if (ok(e.from, e.to) || (!directed && ok(e.to, e.from))) edges.add(e.id);
+    });
+    return { nodes, edges, hops, count: f.cnt.get(b), dist };
+  }
+
+  function showPath(a, b) {
+    const m = S.model;
+    if (!m.nodes.some(n => n.id === a) || !m.nodes.some(n => n.id === b) || a === b) return null;
+    let directed = true, res = shortestPaths(m, a, b, true);
+    if (!res) { directed = false; res = shortestPaths(m, a, b, false); }
+    clearPath();
+    S.path = { a, b, res, directed };
+    const lab = id => m.nodes.find(n => n.id === id).label;
+    const name = `${esc(lab(a))} → ${esc(lab(b))}`;
+    const txt = !res ? T('path.none', { name })
+      : (directed ? '' : T('path.undirected') + ' · ') + T('path.summary', { name, hops: res.hops, count: res.count });
+    const bar = $('#path-bar');
+    $('#path-text').innerHTML = txt;
+    bar.style.top = S.compare ? '54px' : '';
+    bar.hidden = false;
+    if (res) {
+      res.nodes.forEach(id => {
+        const n = m.nodes.find(x => x.id === id), g = el('g', { class: 'path-badge', transform: `translate(${n.x + 2} ${n.y + 2})` }, L.guides);
+        el('circle', { r: 9 }, g);
+        el('text', {}, g).textContent = res.dist.get(id) + 1;
+      });
+      fitNodes([...res.nodes]);
+    }
+    applyHighlight();
+    return res ? { hops: res.hops, count: res.count, directed } : null;
+  }
+  function clearPath() {
+    if (!S.path) return;
+    S.path = null;
+    $('#path-bar').hidden = true;
+    $$('.path-badge', L.guides).forEach(x => x.remove());
+    applyHighlight();
+  }
+  // Encuadra solo algunos nodos (suave); no aleja más de lo necesario
+  function fitNodes(ids) {
+    const ns = S.model.nodes.filter(n => ids.includes(n.id)), r = svg.getBoundingClientRect();
+    if (!ns.length || !r.width) return;
+    const x0 = Math.min(...ns.map(n => n.x)), y0 = Math.min(...ns.map(n => n.y));
+    const x1 = Math.max(...ns.map(n => n.x + R.width.get(n.id))), y1 = Math.max(...ns.map(n => n.y + nodeBoxH(n)));
+    const pad = 80, top = 90, shift = r.width > 900 ? 300 : 0, w = x1 - x0, h = y1 - y0;
+    const k = clamp(Math.min((r.width - shift - pad * 2) / w, (r.height - pad - top) / h), C.view.minZoom, Math.min(S.view.k, 1.25));
+    animateView({ k, x: (r.width - shift - w * k) / 2 - x0 * k, y: top + (r.height - top - pad - h * k) / 2 - y0 * k });
+  }
+
   function applyHighlight() {
     if (S.play) return;
     const s = S.sel, m = S.model;
     let f = null, mode = '';
-    if (s?.kind === 'node') { f = reach(s.id, S.reach); mode = 'focusing'; }
+    if (S.path?.res) { f = S.path.res; mode = 'focusing'; }
+    else if (s?.kind === 'node') { f = reach(s.id, S.reach); mode = 'focusing'; }
     else if (s?.kind === 'multi') {
       const ns = new Set(s.ids);
       f = { nodes: ns, edges: new Set(m.edges.filter(e => ns.has(e.from) && ns.has(e.to)).map(e => e.id)) };
@@ -1089,6 +1163,7 @@
 
   // Tras cambiar el modelo desde el lienzo o el inspector
   function changed(structural = true) {
+    if (S.path) clearPath();
     if (structural) render(false); else { updateGeometry(); applyCompare(); }
     syncEditor();
     save();
@@ -1139,6 +1214,7 @@
   function select(sel, opts = {}) {
     S.sel = normSel(sel);
     if (S.sel && !selTarget()) S.sel = null;
+    if (S.path) clearPath();
     applyHighlight();
     renderInspector();
     if (opts.center && S.sel?.kind === 'node') centerOn(S.sel.id);
@@ -1741,6 +1817,7 @@
     }
   });
   $('#compare-exit').addEventListener('click', () => compareVersion(null));
+  $('#path-exit').addEventListener('click', clearPath);
 
   /* ---------- inspector ---------- */
   const swatches = cur => `<div class="swatches">
@@ -1861,6 +1938,13 @@
     </div>`;
   };
 
+  // Sección "Camino" con exactamente dos nodos: el orden de selección define A y B
+  function pathField() {
+    const [a, b] = S.sel.ids.map(id => S.model.nodes.find(n => n.id === id).label);
+    return `<div class="field">${T('insp.path')}<div class="path-btns">
+      <button class="btn" data-path="fwd">${T('path.show', { a: esc(a), b: esc(b) })}</button>
+      <button class="btn tool" data-path="rev" title="${esc(T('path.swap', { a: b, b: a }))}" aria-label="${esc(T('path.swap', { a: b, b: a }))}">⇄</button></div></div>`;
+  }
   function renderInspector() {
     const box = $('#inspector'), t = selTarget(), m = S.model;
     if (!t) { box.hidden = true; box.innerHTML = ''; return; }
@@ -1880,6 +1964,7 @@
         <div class="field">${T('insp.distribute')}<div class="tools two">${['hdist', 'vdist'].map(k => tool(k).replace('</svg>', `</svg>${T(k === 'hdist' ? 'insp.horizontal' : 'insp.vertical')}`)).join('')}</div></div>
         <label>${T('insp.group')}<select data-field="group">${g1 == null ? `<option value="__mixed" selected>${T('insp.mixed')}</option>` : ''}<option value=""${g1 === '' ? ' selected' : ''}>${T('insp.none')}</option>${m.groups.map(g => `<option value="${esc(g.id)}"${g.id === g1 ? ' selected' : ''}>${esc(g.label)}</option>`).join('')}<option value="__new">${T('insp.newGroup')}</option></select></label>
         <div class="field">${T('insp.color')}${swatches(colorsOf.size === 1 ? [...colorsOf][0] : '__mixed')}</div>
+        ${t.length === 2 ? pathField() : ''}
         ${dataField(t)}
         ${priced.length ? `<p class="cost-sum">${T('insp.selCost')} <b>≈ ${money(round2(monthlyTotal(t)))}${T('cost.mo')}</b><span>${T('insp.withCost', { a: priced.length, b: t.length })}</span></p>` : ''}
         <p class="note">${T('insp.multiNote')}</p>
@@ -2063,6 +2148,9 @@
       pushHistory();
       if (b.dataset.enc) t.encrypted = b.dataset.enc === 'yes'; else delete t.encrypted;
       changed(true); renderInspector();
+    } else if (b.dataset.path && S.sel?.kind === 'multi' && S.sel.ids.length === 2) {
+      const [x, y] = S.sel.ids;
+      b.dataset.path === 'rev' ? showPath(y, x) : showPath(x, y);
     } else if (b.dataset.align) {
       alignNodes(b.dataset.align);
     } else if (b.dataset.reach) {
@@ -2503,7 +2591,7 @@
     out.setAttribute('height', Ht);
     out.setAttribute('viewBox', `0 0 ${W} ${Ht}`);
     out.classList.remove('focusing', 'hovering', 'playing', 'dragging', 'panning', 'connecting');
-    out.querySelectorAll('.particle, .edge-hit, .node-halo, .guide, .marquee').forEach(n => n.remove());
+    out.querySelectorAll('.particle, .edge-hit, .node-halo, .guide, .marquee, .path-badge').forEach(n => n.remove());
     out.querySelectorAll('.lit, .sel, .pulse, .pulse-node, .enter, .connect-src').forEach(n => n.classList.remove('lit', 'sel', 'pulse', 'pulse-node', 'enter', 'connect-src'));
     const vp = out.querySelector('#viewport');
     vp.removeAttribute('id');
@@ -2820,9 +2908,10 @@
     else if (mod && k === 'a') { ev.preventDefault(); select({ kind: 'multi', ids: S.model.nodes.map(n => n.id) }); }
     else if (mod) return;
     else if (ev.key === 'Delete' || ev.key === 'Backspace') { if (S.sel) { ev.preventDefault(); deleteSelection(); } }
-    else if (ev.key === 'Escape') { if (S.play) stopPlay(); else if (S.connecting) cancelConnect(); else if (!S.sel && S.compare) compareVersion(null); else select(null); }
+    else if (ev.key === 'Escape') { if (S.play) stopPlay(); else if (S.path) clearPath(); else if (S.connecting) cancelConnect(); else if (!S.sel && S.compare) compareVersion(null); else select(null); }
     else if (k === 'f') fitView();
     else if (k === 'p') togglePlay();
+    else if (k === 'r' && selIds().length === 2) showPath(...selIds());
     else if (k === 't') toggleTheme();
     else if (k === 'l') toggleLang();
     else if (k === 'e') toggleRouting();
@@ -2901,6 +2990,7 @@
     addNode, addEdge, relayout, fitView, togglePlay, toggleTheme, toggleLang,
     get lang() { return I.lang; },
     select: ids => select({ kind: 'multi', ids: [].concat(ids) }), align: alignNodes,
+    showPath, clearPath,
     saveVersion, openVersion, compareVersion, deleteVersion,
     exportSVG, exportPNG, exportJSON, shareEncrypted, exportOther, exportCtx, toggleRouting, importFiles, config: C, icons: ICONS
   };

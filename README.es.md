@@ -199,6 +199,7 @@ Abre la pestaña **Versiones**.
 | `Supr` | Borrar |
 | Flechas (`⇧` = más rápido) | Mover la selección |
 | `C` | Conectar |
+| `R` | Ver el camino entre dos nodos seleccionados |
 | `F` | Ajustar a la vista |
 | `P` | Reproducir el flujo |
 | `T` | Alternar claro → oscuro → negro de alto contraste |

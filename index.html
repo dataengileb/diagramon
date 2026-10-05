@@ -393,6 +393,13 @@
   .compare-bar span { overflow: hidden; text-overflow: ellipsis; }
   .compare-bar b { color: var(--c, var(--accent)); }
   .compare-bar .icon-btn { width: 26px; height: 26px; flex: none; }
+  .path-bar { --c: var(--p-melocoton); }
+  .path-btns { display: flex; gap: 6px; }
+  .path-btns .btn:first-child { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .path-btns .tool { flex: none; width: 36px; }
+  .path-badge { pointer-events: none; }
+  .path-badge circle { fill: var(--accent); stroke: var(--panel); stroke-width: 2; }
+  .path-badge text { fill: #fff; font: 700 10px var(--font, inherit); text-anchor: middle; dominant-baseline: central; }
 
   .cf-back { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 16px; background: rgba(0,0,0,.45); }
   .cf { width: min(400px, 100%); padding: 18px 18px 14px; border: 1px solid var(--border); border-radius: 16px; background: var(--panel); box-shadow: var(--shadow); }
@@ -651,6 +658,7 @@
       </svg>
       <div class="stage-title"><div class="ver-pill" id="stage-ver" hidden></div><h1 id="stage-h1"></h1><p id="stage-meta"></p></div>
       <div class="compare-bar" id="compare-bar" hidden><span id="compare-text"></span><button class="icon-btn" id="compare-exit" data-i18n-title="ver.exit" data-i18n-aria="ver.exit"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>
+      <div class="compare-bar path-bar" id="path-bar" hidden><span id="path-text"></span><button class="icon-btn" id="path-exit" data-i18n-title="path.exit" data-i18n-aria="path.exit"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>
       <div class="empty" id="empty" hidden><div data-i18n-html="stage.empty"></div></div>
       <div class="banner" id="banner" hidden data-i18n-html="stage.banner"></div>
       <div class="hint" data-i18n-html="stage.hint"></div>
