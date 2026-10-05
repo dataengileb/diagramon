@@ -39,7 +39,7 @@
   const S = {
     model: null,
     theme: C.themes[store.get('theme')] ? store.get('theme') : C.app.defaultTheme,
-    palette: C.palettes[store.get('palette')] ? store.get('palette') : C.app.defaultPalette,
+    palette: C.palettes[store.get('palette')] ? store.get('palette') : C.app.defaultPalette,  // paletas retiradas caen a la por defecto
     anim: store.get('anim', C.animation.enabled) && !reducedMotion,
     reach: store.get('reach', C.focus.defaultMode),
     view: { x: 0, y: 0, k: 1 },
@@ -153,6 +153,7 @@
   // Alto ocupado por un nodo, contando el recuadro de costo de abajo
   const nodeBoxH = n => H + (hasCost(n) ? 26 : 0);
 
+  const THEME_ORDER = ['light', 'dark', 'black'];
   function applyTheme() {
     const root = document.documentElement;
     root.dataset.theme = S.theme;
@@ -2207,12 +2208,19 @@
   $('#file').addEventListener('change', ev => { const fs = [...ev.target.files]; ev.target.value = ''; if (fs.length) importFiles(fs); });
 
   function toggleTheme() {
-    S.theme = S.theme === 'dark' ? 'light' : 'dark';
+    S.theme = THEME_ORDER[(THEME_ORDER.indexOf(S.theme) + 1) % THEME_ORDER.length];
     store.set('theme', S.theme);
     applyTheme();
     const b = $('#btn-theme');
     b.classList.remove('spin'); void b.offsetWidth; b.classList.add('spin');
-    toast(T(S.theme === 'dark' ? 'toast.dark' : 'toast.light'));
+    toast(T('toast.' + S.theme));
+    syncThemeTip();
+  }
+  // Tooltip del botón: indica el modo que viene a continuación
+  function syncThemeTip() {
+    const next = THEME_ORDER[(THEME_ORDER.indexOf(S.theme) + 1) % THEME_ORDER.length];
+    const b = $('#btn-theme'), tip = T('top.theme.' + next);
+    b.title = tip; b.setAttribute('aria-label', tip);
   }
   $('#btn-theme').addEventListener('click', toggleTheme);
 
@@ -2220,6 +2228,7 @@
   // Vuelve a pintar todo lo que tiene texto de la interfaz. El contenido del diagrama no se traduce.
   function applyLang() {
     I.apply();
+    syncThemeTip();
     $('#lang-code').textContent = I.lang.toUpperCase();
     [...paletteSel.options].forEach(o => { o.textContent = loc(C.palettes[o.value]?.label) || o.value; });
     wideLabels();
@@ -2394,6 +2403,7 @@
     const W = Math.ceil(Math.max(b.w + pad * 2, lg ? lg.colsW + lg.infoW + 40 + pad * 2 : 0));
     const Ht = Math.ceil(b.h + pad * 2 + top + (lg ? lg.h + 28 : 0));
     const out = svg.cloneNode(true);
+    out.setAttribute('data-theme', S.theme);
     out.removeAttribute('id');
     out.removeAttribute('style');
     out.setAttribute('xmlns', NS);
