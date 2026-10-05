@@ -535,6 +535,21 @@
   .focusing .node:not(.lit), .focusing .edge:not(.lit), .playing .node:not(.lit), .playing .edge:not(.lit) { opacity: .14; }
   .hovering .node:not(.lit), .hovering .edge:not(.lit) { opacity: .38; }
   .focusing .group:not(.sel), .playing .group { opacity: .55; }
+  /* Filtros: lo que no coincide se atenúa con fuerza (la selección y el foco se suman) */
+  .tbtn.has-dot { position: relative; color: var(--accent); }
+  .tbtn.has-dot::after { content: ''; position: absolute; top: 5px; right: 5px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--surface); }
+  .flt-pop { width: 290px; max-height: min(70vh, 520px); overflow: auto; }
+  .flt-pop .cat { margin: 8px 4px 5px; }
+  .flt-sec:first-child .cat { margin-top: 2px; }
+  .flt-chips { display: flex; flex-wrap: wrap; gap: 5px; padding: 0 2px; }
+  .menu-pop .flt-chip { display: inline-flex; width: auto; padding: 4px 10px; border: 1px solid var(--border); border-radius: 999px; font-size: 12px; font-weight: 600; color: var(--muted); }
+  .menu-pop .flt-chip.on { color: var(--accent); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+  .menu-pop .flt-clear { justify-content: center; color: var(--accent); font-weight: 650; }
+  .flt-pill { pointer-events: auto; margin-right: 6px; --c: var(--accent); }
+  .flt-pill .icon-btn { width: 18px; height: 18px; margin-right: -4px; }
+  .flt-pill .icon-btn svg { width: 12px; height: 12px; }
+  .diagramon-svg .node.fdim, .diagramon-svg .edge.fdim, .diagramon-svg .group.fdim { opacity: .12; }
+  .diagramon-svg .edge.fdim .particle { display: none; }
   .connecting .node { cursor: crosshair; }
   .dragging, .dragging .node, .dragging .group-tag { cursor: grabbing; }
   .dragging .node:hover .node-body { transform: none; }
@@ -576,6 +591,15 @@
       <button class="tbtn" id="btn-anim" data-i18n-title="top.anim"><svg viewBox="0 0 24 24"><path d="M3 12c2.5-4 4.5-4 7 0s4.5 4 7 0c1-1.6 2-2 4-2"/><circle cx="7" cy="10" r="1"/><circle cx="17" cy="14" r="1"/></svg><span class="lbl" data-i18n="top.anim.lbl"></span></button>
       <button class="tbtn primary" id="btn-play" data-i18n-title="top.play"><svg viewBox="0 0 24 24"><path d="M7 4.5v15l12-7.5z"/></svg><span class="lbl" data-i18n="top.play.lbl"></span></button>
       <span class="sep"></span>
+      <details class="menu" id="filter-menu">
+        <summary class="tbtn" id="btn-filter" data-i18n-title="top.filter"><svg viewBox="0 0 24 24"><path d="M3 5h18l-7 8.5V19l-4 2v-7.5z"/></svg><span class="lbl" data-i18n="top.filter.lbl"></span></summary>
+        <div class="menu-pop flt-pop">
+          <div id="filter-body"></div>
+          <div class="menu-sep"></div>
+          <button id="filter-clear" class="flt-clear" hidden><span data-i18n="flt.clear"></span></button>
+          <p class="menu-note" data-i18n="flt.note"></p>
+        </div>
+      </details>
       <details class="menu" id="export-menu">
         <summary class="tbtn" data-i18n-title="top.export"><svg viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg><span class="lbl" data-i18n="top.export"></span></summary>
         <div class="menu-pop">
@@ -656,7 +680,7 @@
       <svg id="canvas" class="diagramon-svg" xmlns="http://www.w3.org/2000/svg">
         <g id="viewport"><g id="l-groups"></g><g id="l-edges"></g><g id="l-ghosts"></g><g id="l-nodes"></g><g id="l-guides"></g></g>
       </svg>
-      <div class="stage-title"><div class="ver-pill" id="stage-ver" hidden></div><h1 id="stage-h1"></h1><p id="stage-meta"></p></div>
+      <div class="stage-title"><div class="ver-pill" id="stage-ver" hidden></div><div class="ver-pill flt-pill" id="stage-flt" hidden></div><h1 id="stage-h1"></h1><p id="stage-meta"></p></div>
       <div class="compare-bar" id="compare-bar" hidden><span id="compare-text"></span><button class="icon-btn" id="compare-exit" data-i18n-title="ver.exit" data-i18n-aria="ver.exit"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>
       <div class="compare-bar path-bar" id="path-bar" hidden><span id="path-text"></span><button class="icon-btn" id="path-exit" data-i18n-title="path.exit" data-i18n-aria="path.exit"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>
       <div class="empty" id="empty" hidden><div data-i18n-html="stage.empty"></div></div>
