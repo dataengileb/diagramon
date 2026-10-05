@@ -61,12 +61,38 @@ window.DIAGRAMON_CONFIG = {
      enabled: false = usar solo los iconos propios de abajo. */
   icons: { enabled: true },
 
+  /* Atajos sin icono oficial. Salen arriba de la pestaña de su nube.
+     SAP solo publica iconos para sus servicios BTP. Sus aplicaciones de negocio
+     (S/4HANA, ECC, TM, EWM…) se dibujan como cajas con nombre, sin icono propio. */
+  presets: {
+    sap: {
+      title: 'Sistemas SAP (sin icono oficial)',
+      items: [
+        { label: 'SAP S/4HANA', sub: 'ERP', type: 'erp', keywords: 's4 s4hana' },
+        { label: 'SAP S/4HANA Cloud', sub: 'ERP en la nube', type: 'erp', keywords: 's4 s4hana rise' },
+        { label: 'SAP ECC', sub: 'ERP · ECC 6.0', type: 'erp', keywords: 'r3 erp central component' },
+        { label: 'SAP TM', sub: 'Transportation Management', type: 'erp', keywords: 'transporte logistica' },
+        { label: 'SAP EWM', sub: 'Extended Warehouse Mgmt.', type: 'erp', keywords: 'almacen bodega warehouse' },
+        { label: 'SAP BW/4HANA', sub: 'Data warehouse', type: 'analytics', keywords: 'bw bi' },
+        { label: 'SAP PI/PO', sub: 'Integración on-premise', type: 'queue', keywords: 'pi po process integration orchestration' },
+        { label: 'SAP SuccessFactors', sub: 'RR. HH.', type: 'erp', keywords: 'hcm recursos humanos' },
+        { label: 'SAP Ariba', sub: 'Compras', type: 'erp', keywords: 'procurement compras' },
+        { label: 'SAP Concur', sub: 'Viajes y gastos', type: 'erp', keywords: 'gastos viajes' },
+        { label: 'SAP Commerce Cloud', sub: 'Comercio', type: 'web', keywords: 'hybris cx ecommerce' },
+        { label: 'SAP Business One', sub: 'ERP para pymes', type: 'erp', keywords: 'b1 pyme' },
+        { label: 'SAP GUI', sub: 'Cliente de escritorio', type: 'user', keywords: 'gui cliente' }
+      ]
+    }
+  },
+
   /* Costos escritos a mano en cada componente (recuadro bajo el nodo).
      hoursPerMonth: horas usadas para pasar un precio por hora a mensual.
      defaultYears: años por defecto del periodo "Multianual". */
   cost: { currency: 'USD', locale: 'en-US', hoursPerMonth: 730, defaultYears: 3 },
 
-  node:  { width: 176, maxWidth: 300, height: 64, radius: 14 },
+  /* Nodos. sameSize: true = todos miden `width` y los nombres largos usan 2 líneas.
+     sameSize: false = cada nodo crece con su texto, entre `width` y `maxWidth`. */
+  node:  { width: 232, sameSize: true, maxWidth: 300, height: 64, radius: 14 },
   grid:  { size: 24, snap: 8 },
   group: { padding: 24, labelSpace: 22, radius: 18 },
   view:  { minZoom: 0.2, maxZoom: 2.5 },
@@ -93,7 +119,7 @@ window.DIAGRAMON_CONFIG = {
     optional: { label: 'Opcional / respaldo', dash: '2 6', particles: 0, width: 1.5 }
   },
 
-  categories: ['Clientes', 'Red', 'Cómputo', 'Datos', 'Integración', 'Seguridad', 'Operaciones', 'IA', 'Otros'],
+  categories: ['Clientes', 'Red', 'Cómputo', 'Datos', 'Integración', 'Seguridad', 'Operaciones', 'IA', 'Empresa', 'Otros'],
 
   /* Tipos de componente. Para añadir uno nuevo copia una entrada:
      - color: clave de la paleta (o un color CSS como '#ffcc00')
@@ -159,6 +185,9 @@ window.DIAGRAMON_CONFIG = {
 
     ai:        { label: 'IA / ML', category: 'IA', color: 'rosa', keywords: 'bedrock vertex openai sagemaker llm modelo inteligencia',
                  icon: '<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/>' },
+
+    erp:       { label: 'ERP / Sistema de negocio', category: 'Empresa', color: 'cielo', keywords: 'sap s4hana s/4hana ecc erp tm ewm bw oracle dynamics negocio',
+                 icon: '<path d="M3 21h18M5 21V8l7-5 7 5v13"/><path d="M9 21v-5h6v5M9 11h.01M12 11h.01M15 11h.01"/>' },
 
     external:  { label: 'Servicio externo', category: 'Otros', color: 'coral', keywords: 'saas tercero api externa stripe',
                  icon: '<path d="M14 4h6v6M20 4l-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>' },

@@ -89,6 +89,7 @@ de verdad. Ese tipo de información no debería viajar a un servicio de terceros
 1. Abre la pestaña **Plantillas** y elige *Web app en AWS · 3 capas* para ver un ejemplo completo.
 2. Pulsa **Nuevo** para empezar con el lienzo vacío.
 3. En **Componentes**, elige **AWS**, **Azure**, **GCP**, **SAP** o **Genéricos**. Usa el buscador: `lambda`, `s3`, `hana`…
+   En **SAP**, arriba salen los **sistemas SAP** sin icono oficial (S/4HANA, ECC, TM, EWM…).
 4. Haz **clic** en un componente para añadirlo al centro, o **arrástralo** al lienzo.
    Doble clic en un hueco del lienzo añade otro igual al último.
 
@@ -206,6 +207,9 @@ El texto no guarda posiciones: los nodos que ya existían no se mueven y los nue
 Todo lo personalizable está en **`config.js`**. Guarda y recarga `index.html`.
 
 - **Tema por defecto**: `app.defaultTheme: 'dark' | 'light'`.
+- **Tamaño de los nodos**: con `node.sameSize: true` (por defecto) todos miden `node.width` y los nombres largos usan 2 líneas.
+  Con `false`, cada nodo crece con su texto.
+- **Atajos sin icono oficial**: `presets` añade elementos arriba de la pestaña de una nube (por ejemplo, los sistemas SAP).
 - **Paletas**: añade una entrada en `palettes` con las mismas claves de color (`rosa`, `coral`, …) para `dark` y `light`.
 - **Nuevo tipo de componente**: copia una entrada de `types` y cambia `label`, `category`, `color`, `keywords` e `icon` (SVG de 24×24).
 - **Conexiones**: `edgeStyles` define trazo, grosor y número de partículas.
@@ -279,6 +283,8 @@ Los **iconos oficiales** de `icons/` pertenecen a Amazon Web Services, Microsoft
 AWS, Microsoft y Google permiten usarlos en diagramas de arquitectura según sus propias condiciones.
 Los iconos de SAP BTP vienen de [SAP/btp-solution-diagrams](https://github.com/SAP/btp-solution-diagrams)
 bajo la licencia Apache 2.0 (copia en [`icons/LICENSE-SAP.txt`](icons/LICENSE-SAP.txt)).
+SAP solo publica iconos para sus servicios BTP. Sus aplicaciones de negocio (S/4HANA, ECC, TM, EWM…) no tienen icono oficial:
+la guía de SAP las dibuja como cajas con nombre, y Diagramon hace lo mismo con un icono genérico propio.
 Diagramon los muestra sin cambios: no los recortes, gires ni deformes, y no los uses para representar un producto propio.
 AWS, Azure, Google Cloud y SAP son marcas de sus respectivos dueños. Diagramon no está afiliado a ninguno de ellos.
 

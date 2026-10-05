@@ -127,9 +127,26 @@
     while (t.length > 1 && textW(t + '…', f) > max) t = t.slice(0, -1);
     return t + '…';
   };
+  // Con node.sameSize todos los nodos miden lo mismo; si no, crecen con el texto
   const nodeWidth = n => {
+    if (C.node.sameSize !== false) return C.node.width;
     const inner = Math.max(textW(n.label, FONT.label), n.sub ? textW(n.sub, FONT.sub) : 0);
     return Math.round(clamp(64 + inner + 22, C.node.width, C.node.maxWidth));
+  };
+  // Parte un nombre largo en 2 líneas como máximo, cortando entre palabras:
+  // elige el corte que mejor reparte el texto; si nada cabe, recorta con «…»
+  const wrapText = (t, f, max) => {
+    t = String(t ?? '');
+    if (textW(t, f) <= max) return [t];
+    const words = t.split(/\s+/);
+    let best = null;
+    for (let i = 1; i < words.length; i++) {
+      const a = words.slice(0, i).join(' '), b = words.slice(i).join(' ');
+      const wa = textW(a, f), wb = textW(b, f), over = Math.max(0, wa - max) + Math.max(0, wb - max);
+      const score = [over, Math.max(wa, wb)];
+      if (!best || score[0] < best.score[0] || (score[0] === best.score[0] && score[1] < best.score[1])) best = { a, b, score };
+    }
+    return best ? [fitText(best.a, f, max), fitText(best.b, f, max)] : [fitText(t, f, max)];
   };
 
   /* ---------- modelo ---------- */
@@ -379,8 +396,12 @@
       el('g', { class: 'node-icon', transform: `translate(20 ${(H - 24) / 2})` }, b).innerHTML = t.icon;
     }
     const max = w - 64 - 16;
-    el('text', { class: 'node-label', x: 64, y: n.sub ? H / 2 - 3 : H / 2 + 5 }, b).textContent = fitText(n.label, FONT.label, max);
-    if (n.sub) el('text', { class: 'node-sub', x: 64, y: H / 2 + 14 }, b).textContent = fitText(n.sub, FONT.sub, max);
+    // Nombre en 1 o 2 líneas y detalle debajo, todo centrado en vertical
+    const lines = C.node.sameSize !== false ? wrapText(n.label, FONT.label, max) : [fitText(n.label, FONT.label, max)];
+    const top = (H - lines.length * 16 - (n.sub ? 15 : 0)) / 2;
+    lines.forEach((l, i) => { el('text', { class: 'node-label', x: 64, y: top + 12 + i * 16 }, b).textContent = l; });
+    if (n.sub) el('text', { class: 'node-sub', x: 64, y: top + lines.length * 16 + 12 }, b).textContent = fitText(n.sub, FONT.sub, max);
+    el('title', null, g).textContent = n.sub ? `${n.label} · ${n.sub}` : n.label;
     if (n.badge != null && n.badge !== '') {
       const bw = Math.max(22, textW(n.badge, FONT.badge) + 12);
       const bg = el('g', { class: 'node-badge', transform: `translate(${w - 14} 0)` }, b);
@@ -765,6 +786,7 @@
     pushHistory();
     const n = { id: uniqueId(`${extra.icon ? extra.icon.split('/')[1] : S.lastType}-`), label: extra.label || t.label, type: S.lastType };
     if (extra.icon) n.icon = extra.icon;
+    if (extra.sub) n.sub = extra.sub;
     n.x = snap(wx - nodeWidth(n) / 2);
     n.y = snap(wy - H / 2);
     // Si cae dentro de un grupo, entra en el más profundo
@@ -1211,11 +1233,16 @@
     const set = ICONS[S.provider];
     if (set) {
       const groups = new Map();
+      // Atajos sin icono oficial (config.js › presets), arriba de todo
+      const pre = C.presets?.[S.provider];
+      const preItems = (pre?.items || []).filter(p => !q || fold(`${p.label} ${p.sub || ''} ${p.keywords || ''}`).includes(q));
+      if (preItems.length) groups.set(pre.title, preItems.map(p => [null, p]));
       Object.entries(set.items)
         .filter(([k, it]) => !q || fold(`${it.label} ${k} ${it.category}`).includes(q))
         .forEach(([k, it]) => { if (!groups.has(it.category)) groups.set(it.category, []); groups.get(it.category).push([k, it]); });
-      $('#palette-list').innerHTML = [...groups].map(([cat, items]) => `<div class="cat">${esc(cat)}</div><div class="chips">${items.map(([k, it]) =>
-        chip(`data-type="${it.type}" data-icon="${S.provider}/${k}" data-label="${esc(it.label)}"`, colorVar((C.types[it.type] || C.types.generic).color), `<img src="${set.files[it.file]}" alt="">`, it.label, true)).join('')}</div>`).join('')
+      $('#palette-list').innerHTML = [...groups].map(([cat, items]) => `<div class="cat">${esc(cat)}</div><div class="chips">${items.map(([k, it]) => k == null
+        ? chip(`data-type="${esc(it.type)}" data-label="${esc(it.label)}" data-sub="${esc(it.sub || '')}"`, colorVar(it.color || (C.types[it.type] || C.types.generic).color), typeIcon(it.type), it.label)
+        : chip(`data-type="${it.type}" data-icon="${S.provider}/${k}" data-label="${esc(it.label)}"`, colorVar((C.types[it.type] || C.types.generic).color), `<img src="${set.files[it.file]}" alt="">`, it.label, true)).join('')}</div>`).join('')
         || '<p class="empty-list">Sin resultados.</p>';
       return;
     }
@@ -1228,7 +1255,8 @@
     $('#palette-list').innerHTML = html || '<p class="empty-list">Sin resultados. Puedes añadir tipos en config.js.</p>';
   }
   $('#search').addEventListener('input', renderPalette);
-  const chipExtra = c => (c.dataset.icon ? { icon: c.dataset.icon, label: c.dataset.label } : {});
+  const chipExtra = c => (c.dataset.icon ? { icon: c.dataset.icon, label: c.dataset.label }
+    : c.dataset.label ? { label: c.dataset.label, sub: c.dataset.sub || undefined } : {});
   $('#palette-list').addEventListener('click', ev => { const c = ev.target.closest('.chip'); if (c) addNode(c.dataset.type, null, null, chipExtra(c)); });
   $('#palette-list').addEventListener('dragstart', ev => {
     const c = ev.target.closest('.chip');
