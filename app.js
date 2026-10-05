@@ -7,6 +7,7 @@
   'use strict';
 
   const C = window.DIAGRAMON_CONFIG;
+  const I = window.DiagramonI18n, T = I.T, loc = I.loc;
   const EXAMPLES = window.DIAGRAMON_EXAMPLES || [];
   const NS = 'http://www.w3.org/2000/svg';
   const H = C.node.height;
@@ -60,8 +61,11 @@
 
   /* ---------- colores ---------- */
   const paletteKeys = () => Object.keys((C.palettes[S.palette] || Object.values(C.palettes)[0]).dark);
-  const colorVar = k => !k ? null : paletteKeys().includes(k) ? `var(--p-${k})` : k;
+  // También acepta los nombres en inglés de los colores (peach, sky…)
+  const COLOR_ALIAS = Object.fromEntries(Object.entries(I.COLOR_NAMES.en).map(([k, v]) => [v, k]));
+  const colorVar = k => !k ? null : paletteKeys().includes(k) ? `var(--p-${k})` : COLOR_ALIAS[k] ? `var(--p-${COLOR_ALIAS[k]})` : k;
   const typeOf = n => C.types[n.type] || C.types.generic;
+  const typeLabel = type => loc((C.types[type] || C.types.generic).label);
   const nodeColor = n => colorVar(n && n.color) || colorVar(typeOf(n || {}).color) || 'var(--accent)';
   const categories = () => [...new Set([...C.categories, ...Object.values(C.types).map(t => t.category || 'Otros')])];
   const typeIcon = type => `<svg viewBox="0 0 24 24">${(C.types[type] || C.types.generic).icon}</svg>`;
@@ -77,11 +81,12 @@
 
   /* ---------- costos (se escriben a mano en el inspector) ---------- */
   const COST = { currency: 'USD', locale: 'en-US', hoursPerMonth: 730, defaultYears: 3, ...C.cost };
+  // Periodo → clave del nombre y del sufijo corto en i18n.js
   const PERIODS = {
-    hour:  { label: 'Por hora', short: '/h', word: 'hora' },
-    month: { label: 'Mensual', short: '/mes', word: 'mes' },
-    year:  { label: 'Anual', short: '/año', word: 'año' },
-    multi: { label: 'Multianual', short: '', word: 'años' }
+    hour:  { label: 'cost.hour', short: 'cost.h' },
+    month: { label: 'cost.month', short: 'cost.mo' },
+    year:  { label: 'cost.year', short: 'cost.yr' },
+    multi: { label: 'cost.multi', short: '' }
   };
   const hasCost = n => n.cost != null && n.cost !== '' && Number.isFinite(+n.cost);
   const periodOf = n => (PERIODS[n.costPeriod] ? n.costPeriod : 'month');
@@ -94,7 +99,7 @@
   };
   const costText = n => {
     const p = periodOf(n), y = yearsOf(n);
-    return money(n.cost) + (p === 'multi' ? `/${y} ${y === 1 ? 'año' : 'años'}` : PERIODS[p].short);
+    return money(n.cost) + (p === 'multi' ? `/${T('cost.years', y)}` : T(PERIODS[p].short));
   };
   const perMonth = n => {
     const c = +n.cost;
@@ -152,7 +157,7 @@
   /* ---------- modelo ---------- */
   function normalize(raw) {
     raw = raw && typeof raw === 'object' ? raw : {};
-    const m = { title: String(raw.title || 'Diagrama sin título'), groups: [], nodes: [], edges: [] };
+    const m = { title: String(raw.title || T('model.untitled')), groups: [], nodes: [], edges: [] };
     if (raw.direction === 'LR' || raw.direction === 'TB') m.direction = raw.direction;
     const used = new Set();
     const take = (id, prefix, i) => {
@@ -163,7 +168,7 @@
     };
     const list = a => (Array.isArray(a) ? a : []).filter(x => x && typeof x === 'object');
 
-    list(raw.groups).forEach((g, i) => m.groups.push({ ...g, id: take(g.id, 'g', i), label: String(g.label ?? g.id ?? 'Grupo') }));
+    list(raw.groups).forEach((g, i) => m.groups.push({ ...g, id: take(g.id, 'g', i), label: String(g.label ?? g.id ?? T('model.group')) }));
     const gids = new Set(m.groups.map(g => g.id));
     m.groups.forEach(g => {
       if (g.parent == null || g.parent === '') return void delete g.parent;
@@ -182,7 +187,7 @@
 
     list(raw.nodes).forEach((n, i) => {
       const type = C.types[n.type] ? n.type : 'generic';
-      const o = { ...n, id: take(n.id, 'n', i), type, label: String(n.label ?? C.types[type].label) };
+      const o = { ...n, id: take(n.id, 'n', i), type, label: String(n.label ?? typeLabel(type)) };
       if (o.group == null || o.group === '' || !gids.has(String(o.group))) delete o.group; else o.group = String(o.group);
       if (hasCost(o) && +o.cost >= 0) o.cost = +o.cost; else delete o.cost;
       if (!PERIODS[o.costPeriod] || o.costPeriod === 'month') delete o.costPeriod;
@@ -638,16 +643,16 @@
     updateUndoButtons();
   };
   function undo() {
-    if (!S.history.length) return toast('Nada que deshacer');
+    if (!S.history.length) return toast(T('toast.nothingUndo'));
     S.future.push(snapshot());
     setModel(JSON.parse(S.history.pop()));
-    toast('Deshecho');
+    toast(T('toast.undone'));
   }
   function redo() {
-    if (!S.future.length) return toast('Nada que rehacer');
+    if (!S.future.length) return toast(T('toast.nothingRedo'));
     S.history.push(snapshot());
     setModel(JSON.parse(S.future.pop()));
-    toast('Rehecho');
+    toast(T('toast.redone'));
   }
   function updateUndoButtons() {
     $('#btn-undo').disabled = !S.history.length;
@@ -689,8 +694,8 @@
     g.scrollTop = box.scrollTop;
   }
   const EDITORS = {
-    json: { sel: '#json', status: '#json-status', ok: 'JSON válido · se aplica al escribir', write: () => serialize(S.model) },
-    text: { sel: '#text-src', status: '#text-status', ok: 'Texto válido · se aplica al escribir', write: () => window.DiagramonText?.stringify(S.model) ?? '' }
+    json: { sel: '#json', status: '#json-status', ok: () => T('ed.json.ok'), write: () => serialize(S.model) },
+    text: { sel: '#text-src', status: '#text-status', ok: () => T('ed.text.ok'), write: () => window.DiagramonText?.stringify(S.model, I.lang) ?? '' }
   };
   // Escribe el modelo en los editores; se salta el que originó el cambio y el que tiene el foco
   function writeEditors(skip, force) {
@@ -700,7 +705,7 @@
       box.value = ed.write();
       box._errs = null;
       refreshGutter(box);
-      setStatus(ed.status, true, ed.ok);
+      setStatus(ed.status, true, ed.ok());
     }
   }
   const writeEditorsLater = debounce(() => writeEditors(null), 150);
@@ -736,9 +741,8 @@
   function updateMeta() {
     const m = S.model;
     $('#stage-h1').textContent = m.title;
-    const plural = (n, a, b) => `${n} ${n === 1 ? a : b}`;
-    const costs = m.nodes.some(hasCost) ? `≈ ${money(round2(monthlyTotal(m.nodes)))}/mes` : '';
-    $('#stage-meta').textContent = [plural(m.nodes.length, 'componente', 'componentes'), plural(m.edges.length, 'conexión', 'conexiones'), m.groups.length ? plural(m.groups.length, 'grupo', 'grupos') : '', costs].filter(Boolean).join(' · ');
+    const costs = m.nodes.some(hasCost) ? `≈ ${money(round2(monthlyTotal(m.nodes)))}${T('cost.mo')}` : '';
+    $('#stage-meta').textContent = [T('meta.nodes', m.nodes.length), T('meta.edges', m.edges.length), m.groups.length ? T('meta.groups', m.groups.length) : '', costs].filter(Boolean).join(' · ');
     const t = $('#title');
     if (document.activeElement !== t) t.value = m.title;
     $('#empty').hidden = m.nodes.length > 0;
@@ -775,7 +779,6 @@
   }
 
   function addNode(type, wx, wy, extra = {}) {
-    const t = C.types[type] || C.types.generic;
     S.lastType = C.types[type] ? type : 'generic';
     S.lastExtra = extra;
     if (wx == null) {
@@ -784,7 +787,7 @@
       wy = c.y + (Math.random() * 80 - 40);
     }
     pushHistory();
-    const n = { id: uniqueId(`${extra.icon ? extra.icon.split('/')[1] : S.lastType}-`), label: extra.label || t.label, type: S.lastType };
+    const n = { id: uniqueId(`${extra.icon ? extra.icon.split('/')[1] : S.lastType}-`), label: extra.label || typeLabel(type), type: S.lastType };
     if (extra.icon) n.icon = extra.icon;
     if (extra.sub) n.sub = extra.sub;
     n.x = snap(wx - nodeWidth(n) / 2);
@@ -803,19 +806,19 @@
     const body = R.nodes.get(n.id)?.firstChild;
     if (body) { body.classList.add('enter'); endEnter(body); }
     select({ kind: 'node', id: n.id });
-    toast(`${n.label} añadido`);
+    toast(T('toast.added', { name: n.label }));
   }
 
   function addEdge(from, to) {
     cancelConnect();
     if (from === to) return;
-    if (S.model.edges.some(e => e.from === from && e.to === to)) { toast('Esa conexión ya existe'); return; }
+    if (S.model.edges.some(e => e.from === from && e.to === to)) { toast(T('toast.edgeExists')); return; }
     pushHistory();
     const id = uniqueId('e');
     S.model.edges.push({ id, from, to });
     changed(true);
     select({ kind: 'edge', id });
-    toast('Conexión creada');
+    toast(T('toast.edgeMade'));
   }
 
   function startConnect(id) {
@@ -849,7 +852,7 @@
     S.sel = null; S.hover = null;
     changed(true);
     renderInspector();
-    toast('Eliminado');
+    toast(T('toast.deleted'));
   }
 
   // Duplica los nodos elegidos y las conexiones entre ellos, debajo del original
@@ -860,7 +863,7 @@
     const dy = Math.max(...ns.map(n => n.y + nodeBoxH(n))) - Math.min(...ns.map(n => n.y)) + 32;
     const ids = new Map();
     ns.forEach(n => {
-      const copy = { ...clone(n), id: uniqueId(`${n.type}-`), label: `${n.label} (copia)`, x: snap(n.x + 32), y: snap(n.y + dy) };
+      const copy = { ...clone(n), id: uniqueId(`${n.type}-`), label: `${n.label} (${T('copy.suffix')})`, x: snap(n.x + 32), y: snap(n.y + dy) };
       ids.set(n.id, copy.id);
       S.model.nodes.push(copy);
     });
@@ -873,19 +876,19 @@
 
   function renameNode(id) {
     const n = S.model.nodes.find(x => x.id === id);
-    const v = prompt('Nombre del componente', n.label);
+    const v = prompt(T('prompt.node'), n.label);
     if (v == null || !v.trim() || v.trim() === n.label) return;
     pushHistory(); n.label = v.trim(); changed(true); renderInspector();
   }
   function renameGroup(id) {
     const g = groupById(id);
-    const v = prompt('Nombre del grupo', g.label);
+    const v = prompt(T('prompt.group'), g.label);
     if (v == null || !v.trim() || v.trim() === g.label) return;
     pushHistory(); g.label = v.trim(); changed(true); renderInspector();
   }
   function renameEdge(id) {
     const e = S.model.edges.find(x => x.id === id);
-    const v = prompt('Etiqueta de la conexión (vacío para quitarla)', e.label || '');
+    const v = prompt(T('prompt.edge'), e.label || '');
     if (v == null || v.trim() === (e.label || '')) return;
     pushHistory();
     if (v.trim()) e.label = v.trim(); else delete e.label;
@@ -899,7 +902,7 @@
     const from = new Map(S.model.nodes.map(n => [n.id, { x: n.x, y: n.y }]));
     autoLayout(S.model);
     const to = new Map(S.model.nodes.map(n => [n.id, { x: n.x, y: n.y }]));
-    toast('Diagrama reordenado');
+    toast(T('toast.relayout'));
     tweenNodes(from, to, 700, () => fitView());
   }
 
@@ -923,19 +926,19 @@
 
   /* ---------- alinear y distribuir (selección múltiple) ---------- */
   const ALIGN = {
-    left:    { label: 'Izquierda', icon: '<path d="M4 3v18"/><rect x="7" y="6" width="12" height="4" rx="1"/><rect x="7" y="14" width="7" height="4" rx="1"/>' },
-    hcenter: { label: 'Centro horizontal', icon: '<path d="M12 3v18"/><rect x="5" y="6" width="14" height="4" rx="1"/><rect x="8" y="14" width="8" height="4" rx="1"/>' },
-    right:   { label: 'Derecha', icon: '<path d="M20 3v18"/><rect x="5" y="6" width="12" height="4" rx="1"/><rect x="10" y="14" width="7" height="4" rx="1"/>' },
-    top:     { label: 'Arriba', icon: '<path d="M3 4h18"/><rect x="6" y="7" width="4" height="12" rx="1"/><rect x="14" y="7" width="4" height="7" rx="1"/>' },
-    vcenter: { label: 'Centro vertical', icon: '<path d="M3 12h18"/><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="8" width="4" height="8" rx="1"/>' },
-    bottom:  { label: 'Abajo', icon: '<path d="M3 20h18"/><rect x="6" y="5" width="4" height="12" rx="1"/><rect x="14" y="10" width="4" height="7" rx="1"/>' },
-    hdist:   { label: 'Repartir en horizontal', icon: '<path d="M3 4v16M21 4v16"/><rect x="9" y="7" width="6" height="10" rx="1"/>' },
-    vdist:   { label: 'Repartir en vertical', icon: '<path d="M4 3h16M4 21h16"/><rect x="7" y="9" width="10" height="6" rx="1"/>' }
+    left:    { icon: '<path d="M4 3v18"/><rect x="7" y="6" width="12" height="4" rx="1"/><rect x="7" y="14" width="7" height="4" rx="1"/>' },
+    hcenter: { icon: '<path d="M12 3v18"/><rect x="5" y="6" width="14" height="4" rx="1"/><rect x="8" y="14" width="8" height="4" rx="1"/>' },
+    right:   { icon: '<path d="M20 3v18"/><rect x="5" y="6" width="12" height="4" rx="1"/><rect x="10" y="14" width="7" height="4" rx="1"/>' },
+    top:     { icon: '<path d="M3 4h18"/><rect x="6" y="7" width="4" height="12" rx="1"/><rect x="14" y="7" width="4" height="7" rx="1"/>' },
+    vcenter: { icon: '<path d="M3 12h18"/><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="8" width="4" height="8" rx="1"/>' },
+    bottom:  { icon: '<path d="M3 20h18"/><rect x="6" y="5" width="4" height="12" rx="1"/><rect x="14" y="10" width="4" height="7" rx="1"/>' },
+    hdist:   { icon: '<path d="M3 4v16M21 4v16"/><rect x="9" y="7" width="6" height="10" rx="1"/>' },
+    vdist:   { icon: '<path d="M4 3h16M4 21h16"/><rect x="7" y="9" width="10" height="6" rx="1"/>' }
   };
   function alignNodes(how) {
     const ns = selNodes();
     if (ns.length < 2) return;
-    if ((how === 'hdist' || how === 'vdist') && ns.length < 3) return toast('Elige 3 o más para repartir');
+    if ((how === 'hdist' || how === 'vdist') && ns.length < 3) return toast(T('toast.distMin'));
     const w = n => R.width.get(n.id);
     const x0 = Math.min(...ns.map(n => n.x)), x1 = Math.max(...ns.map(n => n.x + w(n)));
     const y0 = Math.min(...ns.map(n => n.y)), y1 = Math.max(...ns.map(n => n.y + H));
@@ -957,11 +960,11 @@
       if (how === 'bottom') set(n, 'y', y1 - H);
       if (how === 'vcenter') set(n, 'y', (y0 + y1) / 2 - H / 2);
     });
-    if (ns.every(n => to.get(n.id).x === n.x && to.get(n.id).y === n.y)) return toast('Ya están alineados');
+    if (ns.every(n => to.get(n.id).x === n.x && to.get(n.id).y === n.y)) return toast(T('toast.aligned'));
     stopPlay();
     pushHistory();
     tweenNodes(new Map(ns.map(n => [n.id, { x: n.x, y: n.y }])), to, 380);
-    toast(ALIGN[how].label);
+    toast(T(`align.${how}`));
   }
 
   /* ---------- guías al arrastrar ---------- */
@@ -1028,33 +1031,33 @@
 
   /* ---------- inspector ---------- */
   const swatches = cur => `<div class="swatches">
-      <button class="sw auto${!cur ? ' on' : ''}" data-color="" title="Automático"></button>
-      ${paletteKeys().map(k => `<button class="sw${cur === k ? ' on' : ''}" data-color="${k}" title="${k}" style="--c:var(--p-${k})"></button>`).join('')}
+      <button class="sw auto${!cur ? ' on' : ''}" data-color="" title="${esc(T('insp.auto'))}"></button>
+      ${paletteKeys().map(k => `<button class="sw${cur === k ? ' on' : ''}" data-color="${k}" title="${esc(I.colorName(k))}" style="--c:var(--p-${k})"></button>`).join('')}
     </div>`;
   const typeOptions = cur => categories().map(cat => {
     const ts = Object.entries(C.types).filter(([, t]) => (t.category || 'Otros') === cat);
-    return ts.length ? `<optgroup label="${esc(cat)}">${ts.map(([k, t]) => `<option value="${k}"${k === cur ? ' selected' : ''}>${esc(t.label)}</option>`).join('')}</optgroup>` : '';
+    return ts.length ? `<optgroup label="${esc(I.category(cat))}">${ts.map(([k, t]) => `<option value="${k}"${k === cur ? ' selected' : ''}>${esc(loc(t.label))}</option>`).join('')}</optgroup>` : '';
   }).join('');
-  const iconOptions = cur => `<option value="">Propio (según el tipo)</option>` + Object.entries(ICONS).map(([p, set]) =>
+  const iconOptions = cur => `<option value="">${esc(T('insp.ownIcon'))}</option>` + Object.entries(ICONS).map(([p, set]) =>
     `<optgroup label="${esc(set.label)}">${Object.entries(set.items).sort((a, b) => a[1].label.localeCompare(b[1].label))
       .map(([k, it]) => `<option value="${p}/${k}"${cur === `${p}/${k}` ? ' selected' : ''}>${esc(it.label)}</option>`).join('')}</optgroup>`).join('');
   const head = (c, iconHtml, kicker, title, isLogo) => `<div class="insp-head" style="--c:${c}">
       ${iconHtml ? `<span class="insp-icon${isLogo ? ' logo' : ''}">${iconHtml}</span>` : ''}
       <div class="insp-hgroup"><div class="insp-kicker">${esc(kicker)}</div><div class="insp-title">${esc(title)}</div></div>
-      <button class="icon-btn" data-act="close" aria-label="Cerrar">${ICON.x}</button></div>`;
+      <button class="icon-btn" data-act="close" aria-label="${esc(T('insp.close'))}">${ICON.x}</button></div>`;
 
   const costHint = n => {
-    if (!hasCost(n)) return 'Escribe el precio en dólares y elige el periodo.';
+    if (!hasCost(n)) return T('cost.hint');
     const mo = perMonth(n);
-    return `≈ ${money(round2(mo))}/mes · ${money(round2(mo * 12))}/año`;
+    return `≈ ${money(round2(mo))}${T('cost.mo')} · ${money(round2(mo * 12))}${T('cost.yr')}`;
   };
   const costField = n => {
     const p = n.costPeriod === 'multi' ? 'multi' : PERIODS[n.costPeriod] ? n.costPeriod : '';
-    return `<div class="field">Costo (${esc(COST.currency)})
+    return `<div class="field">${T('cost.label')} (${esc(COST.currency)})
       <div class="cost-row">
-        <span class="money"><input data-field="cost" type="number" min="0" step="any" inputmode="decimal" placeholder="0.00" value="${hasCost(n) ? esc(n.cost) : ''}" aria-label="Costo"></span>
-        <select data-field="costPeriod" aria-label="Periodo">${Object.entries(PERIODS).map(([k, v]) => `<option value="${k === 'month' ? '' : k}"${(k === 'month' ? '' : k) === p ? ' selected' : ''}>${v.label}</option>`).join('')}</select>
-        ${p === 'multi' ? `<span class="years"><input data-field="costYears" type="number" min="1" step="1" value="${yearsOf(n)}" aria-label="Años"></span>` : ''}
+        <span class="money"><input data-field="cost" type="number" min="0" step="any" inputmode="decimal" placeholder="0.00" value="${hasCost(n) ? esc(n.cost) : ''}" aria-label="${esc(T('cost.label'))}"></span>
+        <select data-field="costPeriod" aria-label="${esc(T('cost.period'))}">${Object.entries(PERIODS).map(([k, v]) => `<option value="${k === 'month' ? '' : k}"${(k === 'month' ? '' : k) === p ? ' selected' : ''}>${T(v.label)}</option>`).join('')}</select>
+        ${p === 'multi' ? `<span class="years" data-unit="${esc(T('cost.unit'))}"><input data-field="costYears" type="number" min="1" step="1" value="${yearsOf(n)}" aria-label="${esc(T('cost.yearsAria'))}"></span>` : ''}
       </div>
       <span class="cost-hint">${costHint(n)}</span>
     </div>`;
@@ -1069,74 +1072,74 @@
     let html = '';
 
     if (kind === 'multi') {
-      const tool = k => `<button class="tool" data-align="${k}" title="${esc(ALIGN[k].label)}" aria-label="${esc(ALIGN[k].label)}"><svg viewBox="0 0 24 24">${ALIGN[k].icon}</svg></button>`;
+      const tool = k => `<button class="tool" data-align="${k}" title="${esc(T(`align.${k}`))}" aria-label="${esc(T(`align.${k}`))}"><svg viewBox="0 0 24 24">${ALIGN[k].icon}</svg></button>`;
       const groupsOf = new Set(t.map(n => n.group || ''));
       const colorsOf = new Set(t.map(n => n.color || ''));
       const g1 = groupsOf.size === 1 ? [...groupsOf][0] : null;
       const priced = t.filter(hasCost);
-      html = head('var(--accent)', '', 'Selección', `${t.length} componentes`) + `
-        <div class="field">Alinear<div class="tools">${['left', 'hcenter', 'right', 'top', 'vcenter', 'bottom'].map(tool).join('')}</div></div>
-        <div class="field">Repartir con el mismo espacio<div class="tools two">${['hdist', 'vdist'].map(k => tool(k).replace('</svg>', `</svg>${k === 'hdist' ? 'Horizontal' : 'Vertical'}`)).join('')}</div></div>
-        <label>Grupo<select data-field="group">${g1 == null ? '<option value="__mixed" selected>Varios</option>' : ''}<option value=""${g1 === '' ? ' selected' : ''}>Ninguno</option>${m.groups.map(g => `<option value="${esc(g.id)}"${g.id === g1 ? ' selected' : ''}>${esc(g.label)}</option>`).join('')}<option value="__new">+ Nuevo grupo…</option></select></label>
-        <div class="field">Color${swatches(colorsOf.size === 1 ? [...colorsOf][0] : '__mixed')}</div>
-        ${priced.length ? `<p class="cost-sum">Costo de la selección <b>≈ ${money(round2(monthlyTotal(t)))}/mes</b><span>${priced.length} de ${t.length} con costo</span></p>` : ''}
-        <p class="note"><kbd>⌘</kbd>+clic añade o quita · <kbd>⇧</kbd>+arrastrar en el fondo selecciona un área · las flechas mueven todo.</p>
+      html = head('var(--accent)', '', T('insp.selection'), T('insp.count', t.length)) + `
+        <div class="field">${T('insp.align')}<div class="tools">${['left', 'hcenter', 'right', 'top', 'vcenter', 'bottom'].map(tool).join('')}</div></div>
+        <div class="field">${T('insp.distribute')}<div class="tools two">${['hdist', 'vdist'].map(k => tool(k).replace('</svg>', `</svg>${T(k === 'hdist' ? 'insp.horizontal' : 'insp.vertical')}`)).join('')}</div></div>
+        <label>${T('insp.group')}<select data-field="group">${g1 == null ? `<option value="__mixed" selected>${T('insp.mixed')}</option>` : ''}<option value=""${g1 === '' ? ' selected' : ''}>${T('insp.none')}</option>${m.groups.map(g => `<option value="${esc(g.id)}"${g.id === g1 ? ' selected' : ''}>${esc(g.label)}</option>`).join('')}<option value="__new">${T('insp.newGroup')}</option></select></label>
+        <div class="field">${T('insp.color')}${swatches(colorsOf.size === 1 ? [...colorsOf][0] : '__mixed')}</div>
+        ${priced.length ? `<p class="cost-sum">${T('insp.selCost')} <b>≈ ${money(round2(monthlyTotal(t)))}${T('cost.mo')}</b><span>${T('insp.withCost', { a: priced.length, b: t.length })}</span></p>` : ''}
+        <p class="note">${T('insp.multiNote')}</p>
         <div class="insp-actions">
-          <button class="btn" data-act="dup">Duplicar</button>
-          <button class="btn danger" data-act="delete">Eliminar ${t.length}</button>
+          <button class="btn" data-act="dup">${T('insp.duplicate')}</button>
+          <button class="btn danger" data-act="delete">${T('insp.deleteN', t.length)}</button>
         </div>`;
     } else if (kind === 'node') {
       const ty = typeOf(t);
       const outs = m.edges.filter(e => e.from === t.id), ins = m.edges.filter(e => e.to === t.id);
       const conn = (e, other) => { const o = nm(other); return `<button class="conn" data-goto="${esc(other)}" style="--c:${nodeColor(o)}"><span class="dot"></span>${esc(o.label)}${e.label ? `<em>${esc(e.label)}</em>` : ''}</button>`; };
-      const modes = [['direct', 'Vecinos'], ['down', 'Destinos'], ['up', 'Orígenes'], ['both', 'Todo']];
+      const modes = ['direct', 'down', 'up', 'both'].map(k => [k, T(`reach.${k}`)]);
       const off = iconInfo(t.icon);
-      html = head(nodeColor(t), nodeIconHtml(t), off ? `${off.providerLabel} · ${off.label}` : `${ty.category || 'Otros'} · ${ty.label}`, t.label, !!off) + `
-        <label>Nombre<input data-field="label" value="${esc(t.label)}"></label>
-        <label>Detalle<input data-field="sub" value="${esc(t.sub || '')}" placeholder="p. ej. t3.medium · Multi-AZ"></label>
+      html = head(nodeColor(t), nodeIconHtml(t), off ? `${off.providerLabel} · ${off.label}` : `${I.category(ty.category || 'Otros')} · ${loc(ty.label)}`, t.label, !!off) + `
+        <label>${T('insp.name')}<input data-field="label" value="${esc(t.label)}"></label>
+        <label>${T('insp.detail')}<input data-field="sub" value="${esc(t.sub || '')}" placeholder="${esc(T('insp.detail.ph'))}"></label>
         <div class="row2">
-          <label>Tipo<select data-field="type">${typeOptions(t.type)}</select></label>
-          <label>Grupo<select data-field="group"><option value="">Ninguno</option>${m.groups.map(g => `<option value="${esc(g.id)}"${g.id === t.group ? ' selected' : ''}>${esc(g.label)}</option>`).join('')}<option value="__new">+ Nuevo grupo…</option></select></label>
+          <label>${T('insp.type')}<select data-field="type">${typeOptions(t.type)}</select></label>
+          <label>${T('insp.group')}<select data-field="group"><option value="">${T('insp.none')}</option>${m.groups.map(g => `<option value="${esc(g.id)}"${g.id === t.group ? ' selected' : ''}>${esc(g.label)}</option>`).join('')}<option value="__new">${T('insp.newGroup')}</option></select></label>
         </div>
-        ${Object.keys(ICONS).length ? `<label>Icono<select data-field="icon">${iconOptions(t.icon)}</select></label>` : ''}
-        <div class="field">Color${swatches(t.color)}</div>
+        ${Object.keys(ICONS).length ? `<label>${T('insp.icon')}<select data-field="icon">${iconOptions(t.icon)}</select></label>` : ''}
+        <div class="field">${T('insp.color')}${swatches(t.color)}</div>
         ${costField(t)}
-        <label>Descripción<textarea data-field="desc" rows="3" placeholder="¿Qué hace este componente?">${esc(t.desc || '')}</textarea></label>
-        <div class="field">Resaltar flujo<div class="seg">${modes.map(([k, l]) => `<button data-reach="${k}" class="${S.reach === k ? 'on' : ''}">${l}</button>`).join('')}</div></div>
+        <label>${T('insp.desc')}<textarea data-field="desc" rows="3" placeholder="${esc(T('insp.desc.ph'))}">${esc(t.desc || '')}</textarea></label>
+        <div class="field">${T('insp.reach')}<div class="seg">${modes.map(([k, l]) => `<button data-reach="${k}" class="${S.reach === k ? 'on' : ''}">${l}</button>`).join('')}</div></div>
         ${ins.length || outs.length ? `<div class="conns">
-          ${ins.length ? `<div class="conn-title">Recibe de · ${ins.length}</div>${ins.map(e => conn(e, e.from)).join('')}` : ''}
-          ${outs.length ? `<div class="conn-title">Envía a · ${outs.length}</div>${outs.map(e => conn(e, e.to)).join('')}` : ''}
+          ${ins.length ? `<div class="conn-title">${T('insp.receives')} · ${ins.length}</div>${ins.map(e => conn(e, e.from)).join('')}` : ''}
+          ${outs.length ? `<div class="conn-title">${T('insp.sends')} · ${outs.length}</div>${outs.map(e => conn(e, e.to)).join('')}` : ''}
         </div>` : ''}
         <div class="insp-actions">
-          <button class="btn" data-act="connect">${ICON.link}Conectar</button>
-          <button class="btn" data-act="dup">Duplicar</button>
-          <button class="btn danger" data-act="delete">Eliminar</button>
+          <button class="btn" data-act="connect">${ICON.link}${T('insp.connect')}</button>
+          <button class="btn" data-act="dup">${T('insp.duplicate')}</button>
+          <button class="btn danger" data-act="delete">${T('insp.delete')}</button>
         </div>`;
     } else if (kind === 'edge') {
       const a = nm(t.from), b = nm(t.to);
-      html = head(colorVar(t.color) || nodeColor(a), '', 'Conexión', `${a.label} → ${b.label}`) + `
-        <label>Etiqueta<input data-field="label" value="${esc(t.label || '')}" placeholder="p. ej. HTTPS, SQL, eventos"></label>
-        <label>Estilo<select data-field="style">${Object.entries(C.edgeStyles).map(([k, v]) => `<option value="${k}"${k === (C.edgeStyles[t.style] ? t.style : 'sync') ? ' selected' : ''}>${esc(v.label)}</option>`).join('')}</select></label>
-        <div class="field">Color${swatches(t.color)}</div>
-        <div class="conns"><div class="conn-title">Extremos</div>
-          <button class="conn" data-goto="${esc(a.id)}" style="--c:${nodeColor(a)}"><span class="dot"></span>${esc(a.label)}<em>origen</em></button>
-          <button class="conn" data-goto="${esc(b.id)}" style="--c:${nodeColor(b)}"><span class="dot"></span>${esc(b.label)}<em>destino</em></button>
+      html = head(colorVar(t.color) || nodeColor(a), '', T('insp.edge'), `${a.label} → ${b.label}`) + `
+        <label>${T('insp.label')}<input data-field="label" value="${esc(t.label || '')}" placeholder="${esc(T('insp.label.ph'))}"></label>
+        <label>${T('insp.style')}<select data-field="style">${Object.entries(C.edgeStyles).map(([k, v]) => `<option value="${k}"${k === (C.edgeStyles[t.style] ? t.style : 'sync') ? ' selected' : ''}>${esc(loc(v.label))}</option>`).join('')}</select></label>
+        <div class="field">${T('insp.color')}${swatches(t.color)}</div>
+        <div class="conns"><div class="conn-title">${T('insp.ends')}</div>
+          <button class="conn" data-goto="${esc(a.id)}" style="--c:${nodeColor(a)}"><span class="dot"></span>${esc(a.label)}<em>${T('insp.source')}</em></button>
+          <button class="conn" data-goto="${esc(b.id)}" style="--c:${nodeColor(b)}"><span class="dot"></span>${esc(b.label)}<em>${T('insp.target')}</em></button>
         </div>
         <div class="insp-actions">
-          <button class="btn" data-act="reverse">${ICON.swap}Invertir</button>
-          <button class="btn danger" data-act="delete">Eliminar</button>
+          <button class="btn" data-act="reverse">${ICON.swap}${T('insp.reverse')}</button>
+          <button class="btn danger" data-act="delete">${T('insp.delete')}</button>
         </div>`;
     } else {
       const blocked = new Set([t.id]);
       let grew = true;
       while (grew) { grew = false; m.groups.forEach(g => { if (g.parent && blocked.has(g.parent) && !blocked.has(g.id)) { blocked.add(g.id); grew = true; } }); }
       const count = m.nodes.filter(n => inGroup(n, t.id)).length;
-      html = head(colorVar(t.color) || 'var(--muted)', '', 'Grupo', t.label) + `
-        <p class="note">${count} componente${count === 1 ? '' : 's'} dentro. Arrastra la etiqueta del grupo para moverlo entero.</p>
-        <label>Nombre<input data-field="label" value="${esc(t.label)}"></label>
-        <label>Dentro de<select data-field="parent"><option value="">Ninguno</option>${m.groups.filter(g => !blocked.has(g.id)).map(g => `<option value="${esc(g.id)}"${g.id === t.parent ? ' selected' : ''}>${esc(g.label)}</option>`).join('')}</select></label>
-        <div class="field">Color${swatches(t.color)}</div>
-        <div class="insp-actions"><button class="btn danger" data-act="delete">Eliminar grupo</button></div>`;
+      html = head(colorVar(t.color) || 'var(--muted)', '', T('insp.group'), t.label) + `
+        <p class="note">${T('insp.groupNote', count)}</p>
+        <label>${T('insp.name')}<input data-field="label" value="${esc(t.label)}"></label>
+        <label>${T('insp.parent')}<select data-field="parent"><option value="">${T('insp.none')}</option>${m.groups.filter(g => !blocked.has(g.id)).map(g => `<option value="${esc(g.id)}"${g.id === t.parent ? ' selected' : ''}>${esc(g.label)}</option>`).join('')}</select></label>
+        <div class="field">${T('insp.color')}${swatches(t.color)}</div>
+        <div class="insp-actions"><button class="btn danger" data-act="delete">${T('insp.deleteGroup')}</button></div>`;
     }
 
     box.innerHTML = html;
@@ -1159,7 +1162,7 @@
     }
     if (isSelect) pushHistory(); else markEdit();
     if (k === 'group' && v === '__new') {
-      const name = prompt('Nombre del nuevo grupo', 'Nuevo grupo');
+      const name = prompt(T('prompt.newGroup'), T('prompt.newGroup.def'));
       const parents = new Set(list.map(n => n.group || ''));
       if (!name || !name.trim()) { S.history.pop(); updateUndoButtons(); renderInspector(); return; }
       const id = uniqueId('grupo-'), parent = parents.size === 1 ? [...parents][0] : '';
@@ -1216,7 +1219,7 @@
   // Lista desplegable de proveedores: el panel solo muestra los componentes del elegido
   function renderProviders() {
     const sel = $('#provider');
-    const list = [['generic', `Genéricos (${Object.keys(C.types).length})`],
+    const list = [['generic', T('side.generic', Object.keys(C.types).length)],
       ...Object.entries(ICONS).map(([k, s]) => [k, `${s.label} (${Object.keys(s.items).length + (C.presets?.[k]?.items.length || 0)})`])];
     if (!ICONS[S.provider]) S.provider = 'generic';
     $('#provider-wrap').hidden = list.length < 2;
@@ -1236,24 +1239,24 @@
       const groups = new Map();
       // Atajos sin icono oficial (config.js › presets), arriba de todo
       const pre = C.presets?.[S.provider];
-      const preItems = (pre?.items || []).filter(p => !q || fold(`${p.label} ${p.sub || ''} ${p.keywords || ''}`).includes(q));
-      if (preItems.length) groups.set(pre.title, preItems.map(p => [null, p]));
+      const preItems = (pre?.items || []).map(p => ({ ...p, sub: loc(p.sub) })).filter(p => !q || fold(`${p.label} ${p.sub || ''} ${p.keywords || ''}`).includes(q));
+      if (preItems.length) groups.set(loc(pre.title), preItems.map(p => [null, p]));
       Object.entries(set.items)
-        .filter(([k, it]) => !q || fold(`${it.label} ${k} ${it.category}`).includes(q))
+        .filter(([k, it]) => !q || fold(`${it.label} ${k} ${it.category} ${I.category(it.category)}`).includes(q))
         .forEach(([k, it]) => { if (!groups.has(it.category)) groups.set(it.category, []); groups.get(it.category).push([k, it]); });
-      $('#palette-list').innerHTML = [...groups].map(([cat, items]) => `<div class="cat">${esc(cat)}</div><div class="chips">${items.map(([k, it]) => k == null
+      $('#palette-list').innerHTML = [...groups].map(([cat, items]) => `<div class="cat">${esc(I.category(cat))}</div><div class="chips">${items.map(([k, it]) => k == null
         ? chip(`data-type="${esc(it.type)}" data-label="${esc(it.label)}" data-sub="${esc(it.sub || '')}"`, colorVar(it.color || (C.types[it.type] || C.types.generic).color), typeIcon(it.type), it.label)
         : chip(`data-type="${it.type}" data-icon="${S.provider}/${k}" data-label="${esc(it.label)}"`, colorVar((C.types[it.type] || C.types.generic).color), `<img src="${set.files[it.file]}" alt="">`, it.label, true)).join('')}</div>`).join('')
-        || '<p class="empty-list">Sin resultados.</p>';
+        || `<p class="empty-list">${T('side.none')}</p>`;
       return;
     }
     const html = categories().map(cat => {
-      const items = Object.entries(C.types).filter(([k, t]) => (t.category || 'Otros') === cat && (!q || fold(`${t.label} ${k} ${t.keywords || ''} ${cat}`).includes(q)));
+      const items = Object.entries(C.types).filter(([k, t]) => (t.category || 'Otros') === cat && (!q || fold(`${typeof t.label === 'object' ? Object.values(t.label).join(' ') : t.label} ${k} ${t.keywords || ''} ${cat} ${I.category(cat)}`).includes(q)));
       if (!items.length) return '';
-      return `<div class="cat">${esc(cat)}</div><div class="chips">${items.map(([k, t]) =>
-        chip(`data-type="${k}"`, colorVar(t.color), typeIcon(k), t.label)).join('')}</div>`;
+      return `<div class="cat">${esc(I.category(cat))}</div><div class="chips">${items.map(([k, t]) =>
+        chip(`data-type="${k}"`, colorVar(t.color), typeIcon(k), loc(t.label))).join('')}</div>`;
     }).join('');
-    $('#palette-list').innerHTML = html || '<p class="empty-list">Sin resultados. Puedes añadir tipos en config.js.</p>';
+    $('#palette-list').innerHTML = html || `<p class="empty-list">${T('side.none.types')}</p>`;
   }
   $('#search').addEventListener('input', renderPalette);
   const chipExtra = c => (c.dataset.icon ? { icon: c.dataset.icon, label: c.dataset.label }
@@ -1268,15 +1271,15 @@
   });
 
   function renderExamples() {
-    $('#examples').innerHTML = EXAMPLES.map((x, i) => `<button class="ex" data-ex="${i}"><b>${esc(x.name)}</b><span>${esc(x.desc || '')}</span></button>`).join('')
-      || '<p class="empty-list">No hay plantillas. Añádelas en examples.js.</p>';
+    $('#examples').innerHTML = EXAMPLES.map((x, i) => `<button class="ex" data-ex="${i}"><b>${esc(loc(x.name))}</b><span>${esc(loc(x.desc) || '')}</span></button>`).join('')
+      || `<p class="empty-list">${T('side.noTemplates')}</p>`;
   }
   $('#examples').addEventListener('click', ev => {
     const b = ev.target.closest('.ex');
     if (!b) return;
     S.sel = null;
-    setModel(clone(EXAMPLES[+b.dataset.ex].diagram), { history: true, animate: true, fit: true });
-    toast(`Plantilla: ${EXAMPLES[+b.dataset.ex].name}`);
+    setModel(I.deep(EXAMPLES[+b.dataset.ex].diagram), { history: true, animate: true, fit: true });
+    toast(T('toast.template', { name: loc(EXAMPLES[+b.dataset.ex].name) }));
     if (matchMedia('(max-width: 760px)').matches) $('#main').classList.remove('open');
   });
 
@@ -1301,9 +1304,8 @@
   const showErrors = (box, ed, errors) => {
     box._errs = new Set(errors.map(e => e.line));
     refreshGutter(box, box._errs);
-    if (!errors.length) return setStatus(ed.status, true, ed.ok);
-    const more = errors.length > 1 ? ` (y ${errors.length - 1} más)` : '';
-    setStatus(ed.status, false, `Línea ${errors[0].line}: ${errors[0].msg}${more}`);
+    if (!errors.length) return setStatus(ed.status, true, ed.ok());
+    setStatus(ed.status, false, T('ed.line', { line: errors[0].line, msg: errors[0].msg, more: errors.length - 1 }));
   };
 
   codeBox($('#json'), box => {
@@ -1321,8 +1323,9 @@
   let textCtx = null;
   const getTextCtx = () => textCtx || (textCtx = {
     icons: Object.fromEntries(Object.entries(ICONS).flatMap(([p, set]) => Object.entries(set.items).map(([k, it]) => [`${p}/${k}`, it]))),
-    types: Object.fromEntries(Object.entries(C.types).map(([k, t]) => [k.toLowerCase(), t])),
-    providers: Object.keys(ICONS)
+    types: Object.fromEntries(Object.entries(C.types).map(([k, t]) => [k.toLowerCase(), { ...t, label: loc(t.label) }])),
+    providers: Object.keys(ICONS),
+    lang: I.lang
   });
   codeBox($('#text-src'), box => {
     if (!window.DiagramonText) return;
@@ -1332,7 +1335,7 @@
     setModel(model, { fromEditor: 'text' });
     showErrors(box, EDITORS.text, errors);
   });
-  $('#btn-format').addEventListener('click', () => { syncEditor(true); toast('JSON formateado'); });
+  $('#btn-format').addEventListener('click', () => { syncEditor(true); toast(T('toast.formatted')); });
 
   /* ---------- ancho del panel lateral ---------- */
   const mainEl = $('#main');
@@ -1341,8 +1344,9 @@
     const w = Math.round(clamp(px, 240, innerWidth * 0.8));
     mainEl.style.setProperty('--side', `${w}px`);
     if (keep) store.set('side', w);
-    $$('[data-wide]').forEach(b => { b.textContent = w >= 520 ? 'Reducir' : 'Ampliar'; });
+    wideLabels(w);
   }
+  const wideLabels = (w = sideWidth()) => $$('[data-wide]').forEach(b => { b.textContent = T(w >= 520 ? 'side.narrow' : 'side.wide'); });
   if (store.get('side', null)) setSide(store.get('side'), false);
   $$('[data-wide]').forEach(b => b.addEventListener('click', () => setSide(sideWidth() >= 520 ? 296 : Math.min(860, innerWidth * 0.6))));
   $('#resizer').addEventListener('pointerdown', ev => {
@@ -1388,12 +1392,12 @@
     store.set('anim', S.anim);
     svg.classList.toggle('anim-off', !S.anim);
     $('#btn-anim').classList.toggle('on', S.anim);
-    toast(S.anim ? 'Animación activada' : 'Animación en pausa');
+    toast(T(S.anim ? 'toast.animOn' : 'toast.animOff'));
   });
   $('#btn-new').addEventListener('click', () => {
     S.sel = null;
-    setModel({ title: 'Nuevo diagrama' }, { history: true, fit: true });
-    toast('Lienzo nuevo · ⌘Z para deshacer');
+    setModel({ title: T('model.new') }, { history: true, fit: true });
+    toast(T('toast.newCanvas'));
   });
   $('#btn-import').addEventListener('click', () => $('#file').click());
   $('#file').addEventListener('change', ev => { const f = ev.target.files[0]; if (f) importFile(f); ev.target.value = ''; });
@@ -1404,12 +1408,37 @@
     applyTheme();
     const b = $('#btn-theme');
     b.classList.remove('spin'); void b.offsetWidth; b.classList.add('spin');
-    toast(S.theme === 'dark' ? 'Modo oscuro' : 'Modo claro');
+    toast(T(S.theme === 'dark' ? 'toast.dark' : 'toast.light'));
   }
   $('#btn-theme').addEventListener('click', toggleTheme);
 
+  /* ---------- idioma (inglés por defecto, ver i18n.js) ---------- */
+  // Vuelve a pintar todo lo que tiene texto de la interfaz. El contenido del diagrama no se traduce.
+  function applyLang() {
+    I.apply();
+    $('#lang-code').textContent = I.lang.toUpperCase();
+    [...paletteSel.options].forEach(o => { o.textContent = loc(C.palettes[o.value]?.label) || o.value; });
+    wideLabels();
+    textCtx = null;
+    renderProviders();
+    renderPalette();
+    renderExamples();
+    if (!S.model) return;
+    renderInspector();
+    updateMeta();
+    writeEditors(null, true);
+  }
+  function toggleLang() {
+    I.set(I.langs[(I.langs.indexOf(I.lang) + 1) % I.langs.length]);
+    applyLang();
+    const b = $('#btn-lang');
+    b.classList.remove('spin'); void b.offsetWidth; b.classList.add('spin');
+    toast(T('lang.toast'));
+  }
+  $('#btn-lang').addEventListener('click', toggleLang);
+
   const paletteSel = $('#palette');
-  paletteSel.innerHTML = Object.entries(C.palettes).map(([k, p]) => `<option value="${k}">${esc(p.label || k)}</option>`).join('');
+  paletteSel.innerHTML = Object.entries(C.palettes).map(([k, p]) => `<option value="${k}">${esc(loc(p.label) || k)}</option>`).join('');
   paletteSel.value = S.palette;
   paletteSel.addEventListener('change', () => {
     S.palette = paletteSel.value;
@@ -1439,7 +1468,7 @@
   $('#zoomv').addEventListener('click', () => animateView(zoomTarget(1 / S.view.k), 260));
 
   /* ---------- exportar / importar ---------- */
-  const fileName = ext => (fold(S.model.title).replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'diagrama') + '.' + ext;
+  const fileName = ext => (fold(S.model.title).replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'diagram') + '.' + ext;
   function download(data, name, type) {
     const blob = data instanceof Blob ? data : new Blob([data], { type });
     const a = document.createElement('a');
@@ -1478,7 +1507,7 @@
     out.insertBefore(title, vp);
     return { str: '<?xml version="1.0" encoding="UTF-8"?>\n' + new XMLSerializer().serializeToString(out), W, H: Ht };
   }
-  function exportSVG() { download(buildSVG().str, fileName('svg'), 'image/svg+xml'); toast('SVG exportado'); }
+  function exportSVG() { download(buildSVG().str, fileName('svg'), 'image/svg+xml'); toast(T('toast.svg')); }
   function exportPNG() {
     const { str, W, H: h } = buildSVG(), img = new Image(), scale = 2;
     img.onload = () => {
@@ -1487,21 +1516,21 @@
       const ctx = c.getContext('2d');
       ctx.scale(scale, scale);
       ctx.drawImage(img, 0, 0, W, h);
-      c.toBlob(blob => { if (blob) { download(blob, fileName('png')); toast('PNG exportado'); } else toast('No se pudo crear el PNG'); }, 'image/png');
+      c.toBlob(blob => { if (blob) { download(blob, fileName('png')); toast(T('toast.png')); } else toast(T('toast.pngFail')); }, 'image/png');
     };
-    img.onerror = () => toast('No se pudo crear el PNG');
+    img.onerror = () => toast(T('toast.pngFail'));
     img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(str);
   }
-  function exportJSON() { download(serialize(S.model), fileName('json'), 'application/json'); toast('JSON exportado'); }
+  function exportJSON() { download(serialize(S.model), fileName('json'), 'application/json'); toast(T('toast.json')); }
   function copyJSON() {
     const txt = serialize(S.model);
     const fallback = () => {
       const ta = document.createElement('textarea');
       ta.value = txt; document.body.appendChild(ta); ta.select();
-      try { document.execCommand('copy'); toast('JSON copiado'); } catch { toast('No se pudo copiar'); }
+      try { document.execCommand('copy'); toast(T('toast.copied')); } catch { toast(T('toast.copyFail')); }
       ta.remove();
     };
-    if (navigator.clipboard?.writeText) navigator.clipboard.writeText(txt).then(() => toast('JSON copiado'), fallback);
+    if (navigator.clipboard?.writeText) navigator.clipboard.writeText(txt).then(() => toast(T('toast.copied')), fallback);
     else fallback();
   }
   function importFile(f) {
@@ -1511,8 +1540,8 @@
         const raw = JSON.parse(r.result);
         S.sel = null;
         setModel(raw, { history: true, animate: true, fit: true });
-        toast('Diagrama importado');
-      } catch { toast('El archivo no es un JSON válido'); }
+        toast(T('toast.imported'));
+      } catch { toast(T('toast.badJson')); }
     };
     r.readAsText(f);
   }
@@ -1670,6 +1699,7 @@
     else if (k === 'f') fitView();
     else if (k === 'p') togglePlay();
     else if (k === 't') toggleTheme();
+    else if (k === 'l') toggleLang();
     else if (k === 'c' && S.sel?.kind === 'node') startConnect(S.sel.id);
     else if (k === '+' || k === '=') animateView(zoomTarget(1.25), 200);
     else if (k === '-') animateView(zoomTarget(1 / 1.25), 200);
@@ -1700,17 +1730,15 @@
   /* ---------- arranque ---------- */
   function init() {
     applyTheme();
+    applyLang();
     $('#app-name').textContent = C.app.name;
     if (store.get('collapsed', false) && !matchMedia('(max-width: 760px)').matches) $('#main').classList.add('collapsed');
     const tab = store.get('tab', 'components');
     $(`.tab[data-tab="${tab}"]`)?.click();
-    renderProviders();
-    renderPalette();
-    renderExamples();
     svg.classList.toggle('anim-off', !S.anim);
     $('#btn-anim').classList.toggle('on', S.anim);
     const saved = store.get('model', null);
-    setModel(saved && Array.isArray(saved.nodes) ? saved : clone(EXAMPLES[0]?.diagram || { title: 'Nuevo diagrama' }), { animate: true });
+    setModel(saved && Array.isArray(saved.nodes) ? saved : I.deep(EXAMPLES[0]?.diagram || { title: T('model.new') }), { animate: true });
     fitView(false);
     requestAnimationFrame(tick);
   }
@@ -1719,7 +1747,8 @@
   window.Diagramon = {
     get model() { return clone(S.model); },
     load: (raw, opts = {}) => setModel(raw, { history: true, animate: true, fit: true, ...opts }),
-    addNode, addEdge, relayout, fitView, togglePlay, toggleTheme,
+    addNode, addEdge, relayout, fitView, togglePlay, toggleTheme, toggleLang,
+    get lang() { return I.lang; },
     select: ids => select({ kind: 'multi', ids: [].concat(ids) }), align: alignNodes,
     exportSVG, exportPNG, exportJSON, config: C, icons: ICONS
   };

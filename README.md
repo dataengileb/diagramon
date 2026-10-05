@@ -1,192 +1,211 @@
 <div align="center">
 
-<img src="docs/logo.svg" width="112" alt="Diagramon, una nube con antenas">
+**English** · [Español](README.es.md)
+
+<img src="docs/logo.svg" width="112" alt="Diagramon, a cloud with antennas">
 
 # Diagramon
 
-**Diagramas de arquitectura cloud animados, que viven 100 % en tu computadora.**
+**Animated cloud architecture diagrams that live 100% on your computer.**
 
-Sin servidor. Sin cuenta. Sin internet. Sin enviar ni un byte de los datos de tus clientes.
+No server. No account. No internet. Not a single byte of your customers' data leaves your machine.
 
 ![Open source](https://img.shields.io/badge/open%20source-MIT-C2B6F6?style=flat-square)
-![Privacidad](https://img.shields.io/badge/privacidad-100%25%20local-A6E3C8?style=flat-square)
-![Sin instalar](https://img.shields.io/badge/instalaci%C3%B3n-ninguna-F8C99E?style=flat-square)
-![Sin dependencias](https://img.shields.io/badge/dependencias-0-F5A9C6?style=flat-square)
-![Funciona offline](https://img.shields.io/badge/funciona-offline-A9D2F3?style=flat-square)
+![Privacy](https://img.shields.io/badge/privacy-100%25%20local-A6E3C8?style=flat-square)
+![No install](https://img.shields.io/badge/install-none-F8C99E?style=flat-square)
+![Zero dependencies](https://img.shields.io/badge/dependencies-0-F5A9C6?style=flat-square)
+![Works offline](https://img.shields.io/badge/works-offline-A9D2F3?style=flat-square)
+![English and Spanish](https://img.shields.io/badge/UI-EN%20%7C%20ES-E0B5EE?style=flat-square)
 
-<img src="docs/diagram-dark.png" alt="Diagrama de una web app en AWS hecho con Diagramon, en modo oscuro, con costos bajo cada servicio">
+<img src="docs/diagram-dark.png" alt="A 3-tier AWS web app drawn with Diagramon in dark mode, with a cost tag under each service">
 
 </div>
 
 ---
 
-## 🔒 Tus datos no salen de tu equipo
+## Why Diagramon?
 
-Diagramon nació para dibujar arquitecturas **reales**, con nombres de clientes, IPs, cuentas y costos
-de verdad. Ese tipo de información no debería viajar a un servicio de terceros solo para hacer un dibujo.
+Architecture diagrams often hold the most sensitive facts a team has: customer names, account IDs, IP ranges, network layout
+and real costs. Most diagram tools ask you to upload all of that to someone else's cloud just to draw boxes and arrows.
 
-| | Diagramon | Herramientas de diagramas en la nube |
-|---|---|---|
-| ¿Dónde vive tu diagrama? | En tu navegador y en los archivos que tú exportas | En los servidores del proveedor |
-| ¿Necesita cuenta? | No | Normalmente sí |
-| ¿Necesita internet? | No, ni para los iconos | Sí |
-| ¿Hay analítica o telemetría? | No, cero | A menudo |
-| ¿Usa IA en la nube para "texto a diagrama"? | No: el lenguaje de texto se procesa en local | A veces |
+**Diagramon does not.** It is a single HTML page that you open from your disk. It draws polished, animated diagrams with
+around 290 official cloud icons, and the browser itself blocks every network request.
 
-**Cómo lo garantiza**
-
-- **Es un solo HTML con JavaScript propio.** Sin librerías externas, sin CDN, sin fuentes web, sin trackers.
-  Los iconos oficiales van incrustados en los archivos `icons/*.js`.
-- **El navegador bloquea la red.** `index.html` declara una política de seguridad
-  (`Content-Security-Policy: connect-src 'none'`). Aunque alguien añadiera código que intente enviar datos,
-  el navegador lo rechaza.
-- **El código es abierto y corto.** Puedes leer cada línea y comprobarlo tú mismo: no hay ninguna llamada a `fetch`,
-  `XMLHttpRequest`, `WebSocket` ni `sendBeacon`.
-- **El guardado automático es local.** Se usa el `localStorage` de tu navegador, en tu equipo.
-  Las exportaciones (SVG, PNG, JSON) son archivos que solo tú decides dónde guardar.
-
-> **Consejos para datos sensibles:** en un equipo compartido, usa una ventana privada o borra los datos del sitio al terminar.
-> Revisa también las extensiones del navegador: tienen acceso a las páginas que abres, incluida esta.
+- **Private by design.** Your diagrams stay in your browser and in the files you export.
+- **Zero setup.** Double-click `index.html`. No install, no build step, no sign-up.
+- **Built for real architectures.** Official AWS, Azure, Google Cloud, SAP BTP and Microsoft Fabric icons, nested groups, costs and flow playback.
+- **Diagrams as code.** Type a short text and the canvas updates live. Text, JSON and canvas always stay in sync.
+- **English or Spanish.** The app opens in English. One click switches it to Spanish.
 
 ---
 
-## ✨ Qué puedes hacer
+## 🔒 Your data never leaves your machine
 
-- 🎞️ **Diagramas vivos**: partículas que recorren las conexiones, trazos que fluyen y un botón **Flujo** que reproduce el recorrido paso a paso.
-- ☁️ **Iconos oficiales** de **AWS, Azure, Google Cloud, SAP BTP y Microsoft Fabric** (unos 290 servicios), además de iconos genéricos.
-- 🧩 **Grupos anidados**: región › VPC › subred, clúster › namespace…
-- 🖱️ **Selección múltiple, alineación y guías**: alinea, reparte con el mismo espacio y pega nodos a bordes y centros.
-- 💵 **Costos a mano**: precio en USD por hora, mes, año o varios años, en un recuadro bajo cada servicio y con el total mensual.
-- ⌨️ **Diagrama como código**: escribe en texto y el lienzo se actualiza al momento. Texto, JSON y lienzo siempre sincronizados.
-- 🔦 **Resaltar el flujo** de un componente: vecinos, destinos, orígenes o todo.
-- 🌗 **Modo oscuro** por defecto, **modo claro** con una tecla y paletas pastel (Pastel, Sorbete, Nórdico).
-- 📤 **Exporta** a SVG (animado), PNG o JSON. **Importa** un JSON arrastrándolo al lienzo.
-- ↩️ **Deshacer y rehacer**, guardado automático y orden automático del diagrama.
+| | Diagramon | Typical cloud diagram tools |
+|---|---|---|
+| Where does your diagram live? | In your browser and in the files you export | On the vendor's servers |
+| Account required? | No | Usually |
+| Internet required? | No, not even for icons | Yes |
+| Analytics or telemetry? | None | Often |
+| Cloud AI for "text to diagram"? | No: the text language runs locally | Sometimes |
+
+**How it is enforced**
+
+- **One HTML page with plain JavaScript.** No third-party libraries, no CDN, no web fonts, no trackers.
+  The official icons are embedded in `icons/*.js`.
+- **The browser blocks the network.** `index.html` sets a Content Security Policy (`connect-src 'none'`).
+  Even if someone added code that tried to send data, the browser would refuse it.
+- **Short, open code.** You can read every line. There are no calls to `fetch`, `XMLHttpRequest`, `WebSocket` or `sendBeacon`.
+- **Local autosave.** Work is saved in your browser's `localStorage`, on your machine.
+  Exports (SVG, PNG, JSON) are files that you decide where to keep.
+
+> **Tips for sensitive data:** on a shared computer, use a private window or clear the site data when you finish.
+> Also review your browser extensions: they can read the pages you open, this one included.
+
+---
+
+## ✨ Features
+
+- 🎞️ **Living diagrams**: particles travel along connections, dashed lines flow, and **Flow** plays the path step by step.
+- ☁️ **Official icons** for **AWS, Azure, Google Cloud, SAP BTP and Microsoft Fabric** (about 290 services), plus generic icons.
+- 🧩 **Nested groups**: region › VPC › subnet, cluster › namespace, and more.
+- 🖱️ **Multi-select, alignment and smart guides**: align, distribute with equal spacing, and snap to edges and centers.
+- 💵 **Manual costs**: USD per hour, month, year or multi-year, shown under each service, with an approximate monthly total.
+- ⌨️ **Diagram as code**: a small text language, with errors shown by line number.
+- 🔦 **Flow highlighting** for any component: neighbors, targets, sources or everything.
+- 🌐 **English and Spanish UI**: the 🌐 button in the top bar (or the **`L`** key) switches the language and remembers your choice.
+- 🌗 **Dark mode** by default, **light mode** with one key, and pastel palettes (Pastel, Sherbet, Nordic).
+- 📤 **Export** to SVG (animated), PNG or JSON. **Import** JSON by dropping it on the canvas.
+- ↩️ **Undo and redo**, autosave and automatic layout.
 
 <div align="center">
-<img src="docs/diagram-light.png" alt="Diagrama de microservicios en Google Kubernetes Engine, en modo claro">
+<img src="docs/diagram-light.png" alt="Microservices on Google Kubernetes Engine drawn with Diagramon in light mode">
 </div>
 
 ---
 
-## 🚀 Empezar en 30 segundos
+## 🚀 Get started in 30 seconds
 
-1. **Descarga** el proyecto: botón verde **Code › Download ZIP**, o con git:
+1. **Download** the project: green **Code › Download ZIP** button, or with git:
 
    ```bash
    git clone https://github.com/dataengileb/diagramon.git
    ```
 
-2. **Abre** `index.html` con doble clic en cualquier navegador moderno.
-3. Listo. No hay paso 3. 🎉
+2. **Open** `index.html` with a double-click in any modern browser.
+3. That's it. There is no step 3. 🎉
+
+Prefer Spanish? Click the 🌐 **EN** button in the top bar, or press **`L`**.
 
 ---
 
 ## 📘 Tutorial
 
-### 1. Tu primer diagrama
+### 1. Your first diagram
 
-1. Abre la pestaña **Plantillas** y elige *Web app en AWS · 3 capas* para ver un ejemplo completo.
-2. Pulsa **Nuevo** para empezar con el lienzo vacío.
-3. En **Componentes**, abre la lista **Proveedor** y elige **Genéricos**, **AWS**, **Azure**, **Google Cloud**, **SAP BTP** o **Microsoft Fabric**.
-   Solo verás los componentes de ese proveedor. Usa el buscador: `lambda`, `s3`, `hana`…
-   En **SAP**, arriba salen los **sistemas SAP** sin icono oficial (S/4HANA, ECC, TM, EWM…).
-4. Haz **clic** en un componente para añadirlo al centro, o **arrástralo** al lienzo.
-   Doble clic en un hueco del lienzo añade otro igual al último.
+1. Open the **Templates** tab and pick *Web app on AWS (3 tiers)* to see a complete example.
+2. Click **New** to start with an empty canvas.
+3. In **Components**, open the **Provider** list and pick **Generic**, **AWS**, **Azure**, **Google Cloud**, **SAP BTP** or **Microsoft Fabric**.
+   Only that provider's components are shown. Use the search box: `lambda`, `s3`, `hana`…
+   For **SAP**, the **SAP systems** without an official icon (S/4HANA, ECC, TM, EWM…) appear at the top.
+4. **Click** a component to add it to the center, or **drag** it onto the canvas.
+   Double-click an empty spot on the canvas to add another one like the last.
 
-### 2. Conectar
+### 2. Connect
 
-- Selecciona un nodo y pulsa **`C`**, luego haz clic en el destino.
-- O selecciona un nodo y haz **`⇧` + clic** en el destino.
-- Haz clic en una conexión para cambiar su etiqueta y su estilo:
-  **síncrona** (petición), **asíncrona** (evento), **flujo de datos** u **opcional**.
+- Select a node, press **`C`**, then click the target.
+- Or select a node and **`⇧` + click** the target.
+- Click a connection to change its label and style:
+  **synchronous** (request), **asynchronous** (event), **data flow** or **optional**.
 
-### 3. Editar y agrupar
+### 3. Edit and group
 
-- Haz **clic** en un nodo: el panel derecho muestra nombre, detalle, icono, color y descripción.
-- **Doble clic** sobre un nodo, grupo o conexión lo renombra.
-- En **Grupo › + Nuevo grupo…** creas un grupo. Arrastra su etiqueta para mover el grupo entero.
+- **Click** a node: the right panel shows its name, detail, icon, color and description.
+- **Double-click** a node, group or connection to rename it.
+- Use **Group › + New group…** to create a group. Drag its label to move the whole group.
 
-### 4. Varios a la vez y alineación
+### 4. Many at once and alignment
 
-- **`⌘` + clic** (o **`Ctrl` + clic**) añade o quita nodos de la selección.
-- **`⇧` + arrastrar** en el fondo selecciona un área. **`⌘A`** selecciona todo.
-- Con varios elegidos, el panel derecho los **alinea** (izquierda, centro, derecha, arriba, medio, abajo)
-  y los **reparte** con el mismo espacio en horizontal o vertical.
-- Al arrastrar aparecen **guías** rosas que pegan el nodo a los bordes y centros de los demás. **`Alt`** las desactiva.
+- **`⌘` + click** (or **`Ctrl` + click**) adds or removes nodes from the selection.
+- **`⇧` + drag** on the background selects an area. **`⌘A`** selects everything.
+- With several nodes selected, the right panel can **align** them (left, center, right, top, middle, bottom)
+  and **distribute** them with equal spacing, horizontally or vertically.
+- While dragging, pink **guides** snap the node to the edges and centers of the others. Hold **`Alt`** to turn them off.
 
-### 5. Costos
+### 5. Costs
 
-1. Selecciona un servicio.
-2. En **Costo (USD)** escribe el precio.
-3. Elige el periodo: **Por hora**, **Mensual**, **Anual** o **Multianual** (con número de años).
+1. Select a service.
+2. Type the price in **Cost (USD)**.
+3. Pick the period: **Hourly**, **Monthly**, **Yearly** or **Multi-year** (with a number of years).
 
-El precio aparece en un recuadro bajo el servicio. Arriba del lienzo ves el **total aproximado al mes**.
-Con varios servicios elegidos, el panel muestra el costo de la selección.
+The price appears in a tag under the service. The **approximate monthly total** is shown above the canvas.
+With several services selected, the panel shows the cost of the selection.
 
-> Diagramon no consulta precios en internet (por privacidad). Los costos los escribes tú.
+> Diagramon never looks up prices online (privacy first). You type the costs yourself.
 
-### 6. Presentar y exportar
+### 6. Present and export
 
-- **Flujo** (o **`P`**) ilumina el diagrama paso a paso, de los clientes a los datos.
-- **Ordenar** recoloca todo automáticamente. **Ajustar** (o **`F`**) centra el diagrama.
-- **Exportar** › SVG, PNG o JSON. Guarda el JSON para volver a abrirlo más tarde con **Importar**.
+- **Flow** (or **`P`**) lights up the diagram step by step, from clients to data.
+- **Arrange** lays everything out automatically. **Fit** (or **`F`**) centers the diagram.
+- **Export** › SVG, PNG or JSON. Keep the JSON to open it again later with **Import**.
 
-### Atajos de teclado
+### Keyboard shortcuts
 
-| Tecla | Acción |
+| Key | Action |
 |---|---|
-| `⌘Z` / `⇧⌘Z` | Deshacer / rehacer |
-| `⌘D` | Duplicar |
-| `⌘A` | Seleccionar todo |
-| `Supr` | Borrar |
-| Flechas (`⇧` = más rápido) | Mover la selección |
-| `C` | Conectar |
-| `F` | Ajustar a la vista |
-| `P` | Reproducir el flujo |
-| `T` | Cambiar entre modo oscuro y claro |
-| `Esc` | Cancelar o quitar la selección |
+| `⌘Z` / `⇧⌘Z` | Undo / redo |
+| `⌘D` | Duplicate |
+| `⌘A` | Select all |
+| `Delete` | Delete |
+| Arrows (`⇧` = faster) | Move the selection |
+| `C` | Connect |
+| `F` | Fit to view |
+| `P` | Play the flow |
+| `T` | Switch dark / light mode |
+| `L` | Switch English / Spanish |
+| `Esc` | Cancel or clear the selection |
 
 ---
 
-## ⌨️ Diagrama como código (pestaña *Texto*)
+## ⌨️ Diagram as code (*Text* tab)
 
-La forma más rápida de dibujar. Escribe y el lienzo se actualiza solo. Todo se procesa en local, sin IA.
+The fastest way to draw. Type, and the canvas updates by itself. Everything runs locally, with no AI.
 
 ```text
-título: Tienda online
-dirección: LR
+title: Online store
+direction: LR
 
-grupo aws "AWS" color=melocoton {
+group aws "AWS" color=peach {
   api: API Gateway [aws/apigateway] "REST"
-  db: RDS Postgres [rds] "Multi-AZ" badge=x2 costo=350/mes
+  db: RDS Postgres [rds] "Multi-AZ" badge=x2 cost=350/month
 }
-web: Clientes [user] desc="Navegador"
+web: Customers [user] desc="Browser"
 
 web -> api : HTTPS
 api => db : SQL
-api ~> cola : eventos
+api ~> queue : events
 ```
 
-| Escribe | Significa |
+| Write | Meaning |
 |---|---|
-| `id: Nombre [tipo] "detalle"` | Nodo. `[tipo]` es un tipo genérico (`db`, `user`…) o un icono oficial (`aws/lambda`, `rds`) |
-| `color=… badge=… desc="…"` | Opciones del nodo |
-| `costo=120/mes` · `0.1/hora` · `1400/año` · `5000/3años` | Costo en USD (sin periodo = mensual) |
-| `grupo id "Nombre" color=… { … }` | Grupo; se pueden anidar |
-| `a -> b` · `a => b` · `a ~> b` · `a ..> b` | Petición · datos · evento · opcional |
-| `a -> b -> c : etiqueta` | Cadena; la etiqueta va en la última flecha |
-| `# …` o `// …` | Comentario |
+| `id: Name [type] "detail"` | Node. `[type]` is a generic type (`db`, `user`…) or an official icon (`aws/lambda`, `rds`) |
+| `color=… badge=… desc="…"` | Node options |
+| `cost=120/month` · `0.1/hour` · `1400/year` · `5000/3years` | Cost in USD (no period = monthly) |
+| `group id "Name" color=… { … }` | Group; groups can be nested |
+| `a -> b` · `a => b` · `a ~> b` · `a ..> b` | Request · data · event · optional |
+| `a -> b -> c : label` | Chain; the label goes on the last arrow |
+| `# …` or `// …` | Comment |
 
-Un nodo que solo aparece en una conexión se crea solo. Los errores salen en rojo con su número de línea.
-El texto no guarda posiciones: los nodos que ya existían no se mueven y los nuevos se colocan junto a sus vecinos.
+Keywords work in English and Spanish (`title`/`título`, `group`/`grupo`, `cost`/`costo`, `/month`/`/mes`…).
+A node that only appears in a connection is created for you. Errors are shown in red with their line number.
+The text does not store positions: existing nodes stay where they are, and new nodes are placed next to their neighbors.
 
 <details>
-<summary><b>Formato JSON</b></summary>
+<summary><b>JSON format</b></summary>
 
 ```json
 {
-  "title": "Mi arquitectura",
+  "title": "My architecture",
   "direction": "LR",
   "groups": [ { "id": "vpc", "label": "VPC", "color": "cielo", "parent": "aws" } ],
   "nodes":  [ { "id": "api", "label": "API", "type": "gateway", "icon": "aws/apigateway", "sub": "REST", "badge": "x2",
@@ -195,103 +214,114 @@ El texto no guarda posiciones: los nodos que ya existían no se mueven y los nue
 }
 ```
 
-- Solo `id` y `type` son necesarios en los nodos. Sin `x`/`y` se colocan solos.
-- `costPeriod`: `hour`, `year` o `multi` (con `costYears`). Sin `costPeriod` el costo es mensual.
-- `color` acepta una clave de la paleta o cualquier color CSS.
+- Nodes only need `id` and `type`. Without `x`/`y` they are placed automatically.
+- `costPeriod`: `hour`, `year` or `multi` (with `costYears`). Without `costPeriod` the cost is monthly.
+- `color` takes a palette key (`rosa`, `coral`, `melocoton`, `limon`, `menta`, `cielo`, `lavanda`, `lila`),
+  its English name (`pink`, `coral`, `peach`, `lemon`, `mint`, `sky`, `lavender`, `lilac`) or any CSS color.
 
 </details>
 
 ---
 
-## 🎨 Personalizar
+## 🎨 Customize
 
-Todo lo personalizable está en **`config.js`**. Guarda y recarga `index.html`.
+Everything you can customize is in **`config.js`**. Save and reload `index.html`.
 
-- **Tema por defecto**: `app.defaultTheme: 'dark' | 'light'`.
-- **Tamaño de los nodos**: con `node.sameSize: true` (por defecto) todos miden `node.width` y los nombres largos usan 2 líneas.
-  Con `false`, cada nodo crece con su texto.
-- **Atajos sin icono oficial**: `presets` añade elementos arriba de la lista de un proveedor (por ejemplo, los sistemas SAP).
-- **Paletas**: añade una entrada en `palettes` con las mismas claves de color (`rosa`, `coral`, …) para `dark` y `light`.
-- **Nuevo tipo de componente**: copia una entrada de `types` y cambia `label`, `category`, `color`, `keywords` e `icon` (SVG de 24×24).
-- **Conexiones**: `edgeStyles` define trazo, grosor y número de partículas.
-- **Animación**: velocidad, aparición y duración de los pasos en `animation`.
-- **Costos**: `cost.currency`, `cost.hoursPerMonth` (730 = horas de un mes) y `cost.defaultYears`.
-- **Plantillas**: añade las tuyas en `examples.js`.
+- **Default theme**: `app.defaultTheme: 'dark' | 'light'`.
+- **Default language**: `app.defaultLang: 'en' | 'es'`. UI texts live in `i18n.js`; texts in `config.js` and `examples.js` can be `{ en: '…', es: '…' }`.
+- **Node size**: with `node.sameSize: true` (default) every node is `node.width` wide and long names wrap to 2 lines.
+  With `false`, each node grows with its text.
+- **Shortcuts without an official icon**: `presets` adds items at the top of a provider's list (for example, SAP systems).
+- **Palettes**: add an entry to `palettes` with the same color keys (`rosa`, `coral`, …) for `dark` and `light`.
+- **New component type**: copy an entry in `types` and change `label`, `category`, `color`, `keywords` and `icon` (a 24×24 SVG).
+- **Connections**: `edgeStyles` sets dash, width and particle count.
+- **Animation**: speed, entrance and step duration in `animation`.
+- **Costs**: `cost.currency`, `cost.hoursPerMonth` (730 = hours in a month) and `cost.defaultYears`.
+- **Templates**: add your own in `examples.js`.
 
 <details>
-<summary><b>Actualizar o añadir iconos oficiales</b></summary>
+<summary><b>Update or add official icons</b></summary>
 
-1. Descarga los paquetes oficiales: [AWS](https://aws.amazon.com/architecture/icons/),
+1. Download the official packs: [AWS](https://aws.amazon.com/architecture/icons/),
    [Azure](https://learn.microsoft.com/azure/architecture/icons/), [Google Cloud](https://cloud.google.com/icons)
-   (core products y category icons) y [SAP BTP](https://github.com/SAP/btp-solution-diagrams)
-   (carpeta `assets/shape-libraries-and-editable-presets/svg`) y [Microsoft Fabric](https://learn.microsoft.com/fabric/fundamentals/icons)
-   (`Icons.zip`, carpeta `package/dist/svg`).
-2. Descomprímelos en una carpeta con `aws/`, `azure/`, `gcp-core/`, `gcp-cat/`, `sap/` y `fabric/`.
-   Si falta una carpeta, esa nube se salta y su archivo no se toca.
-3. Añade servicios a las listas de `tools/build-icons.py` (o pon `ALL = True` para incluirlos todos).
-4. Ejecuta:
+   (core products and category icons), [SAP BTP](https://github.com/SAP/btp-solution-diagrams)
+   (folder `assets/shape-libraries-and-editable-presets/svg`) and [Microsoft Fabric](https://learn.microsoft.com/fabric/fundamentals/icons)
+   (`Icons.zip`, folder `package/dist/svg`).
+2. Unzip them into one folder with `aws/`, `azure/`, `gcp-core/`, `gcp-cat/`, `sap/` and `fabric/`.
+   If a folder is missing, that cloud is skipped and its file is left untouched.
+3. Add services to the lists in `tools/build-icons.py` (or set `ALL = True` to include them all).
+4. Run:
 
    ```bash
-   python3 tools/build-icons.py <carpeta>
+   python3 tools/build-icons.py <folder>
    ```
 
-`"icons": { "enabled": false }` en `config.js` los desactiva.
+Set `"icons": { "enabled": false }` in `config.js` to turn them off.
 
 </details>
 
 <details>
-<summary><b>API para extensiones</b></summary>
+<summary><b>Extension API</b></summary>
 
-`window.Diagramon` expone `model`, `load()`, `addNode()`, `addEdge()`, `select()`, `align()`, `relayout()`,
-`fitView()`, `togglePlay()`, `toggleTheme()`, `exportSVG()`, `exportPNG()`, `exportJSON()`, `config` e `icons`.
-El lenguaje de texto está en `window.DiagramonText` (`parse` y `stringify`).
+`window.Diagramon` exposes `model`, `load()`, `addNode()`, `addEdge()`, `select()`, `align()`, `relayout()`,
+`fitView()`, `togglePlay()`, `toggleTheme()`, `toggleLang()`, `lang`, `exportSVG()`, `exportPNG()`, `exportJSON()`, `config` and `icons`.
+The text language is in `window.DiagramonText` (`parse` and `stringify`). UI translations are in `window.DiagramonI18n`.
 
 </details>
 
 ---
 
-## 🗂️ Estructura
+## 🗂️ Project structure
 
-| Archivo | Para qué |
+| File | Purpose |
 |---|---|
-| `index.html` | Interfaz y estilos. `#diagram-css` son los estilos que también van en la exportación |
-| `config.js` | **Todo lo personalizable**: temas, paletas, tipos, conexiones, animación y costos |
-| `app.js` | Motor del editor |
-| `text-lang.js` | Lenguaje de texto (diagrama como código) |
-| `examples.js` | Plantillas |
-| `icons/*.js` | Iconos oficiales de AWS, Azure, Google Cloud, SAP BTP y Microsoft Fabric, incrustados |
-| `tools/build-icons.py` | Genera `icons/*.js` desde los paquetes oficiales |
+| `index.html` | UI and styles. `#diagram-css` holds the styles that are also embedded in exports |
+| `config.js` | **Everything you can customize**: themes, palettes, types, connections, animation and costs |
+| `i18n.js` | UI texts in English and Spanish |
+| `app.js` | Editor engine |
+| `text-lang.js` | Text language (diagram as code) |
+| `examples.js` | Templates |
+| `icons/*.js` | Embedded official icons for AWS, Azure, Google Cloud, SAP BTP and Microsoft Fabric |
+| `tools/build-icons.py` | Builds `icons/*.js` from the official packs |
 
 ---
 
-## 🤝 Contribuir
+## 🤝 Contributing
 
-¡Las contribuciones son bienvenidas! Abre un *issue* con tu idea o envía un *pull request*.
+Contributions are welcome! Open an *issue* with your idea or send a *pull request*.
 
-Para mantener el espíritu del proyecto:
+To keep the spirit of the project:
 
-- **Sin dependencias externas** ni pasos de compilación: tiene que seguir funcionando con doble clic.
-- **Sin conexiones de red**: nada de analítica, CDN, fuentes web ni APIs.
-- Lo personalizable va en `config.js`.
+- **No external dependencies** and no build step: it must keep working with a double-click.
+- **No network connections**: no analytics, CDN, web fonts or APIs.
+- Customizable things belong in `config.js`. New UI text goes in `i18n.js`, in both languages.
 
 ---
 
-## 📄 Licencia
+## 🙏 Credits
 
-El código de Diagramon es **open source** bajo la [licencia MIT](LICENSE): úsalo, modifícalo y compártelo libremente,
-también en proyectos comerciales.
+Diagramon is based on [**archify**](https://github.com/tt-a1i/archify) by [@tt-a1i](https://github.com/tt-a1i),
+an agent skill that turns ideas, plans and codebases into interactive diagrams (MIT license).
+Thank you for the idea and the starting point. 💜
 
-Los **iconos oficiales** de `icons/` pertenecen a Amazon Web Services, Microsoft, Google y SAP, y **no** están cubiertos por la licencia MIT.
-AWS, Microsoft y Google permiten usarlos en diagramas de arquitectura según sus propias condiciones.
-Los iconos de SAP BTP vienen de [SAP/btp-solution-diagrams](https://github.com/SAP/btp-solution-diagrams)
-bajo la licencia Apache 2.0 (copia en [`icons/LICENSE-SAP.txt`](icons/LICENSE-SAP.txt)).
-Los iconos de Microsoft Fabric vienen del paquete oficial `@fabric-msft/svg-icons` de Microsoft, con licencia MIT
-(copia en [`icons/LICENSE-FABRIC.txt`](icons/LICENSE-FABRIC.txt)), y siguen las mismas reglas de uso que los de Azure.
-SAP solo publica iconos para sus servicios BTP. Sus aplicaciones de negocio (S/4HANA, ECC, TM, EWM…) no tienen icono oficial:
-la guía de SAP las dibuja como cajas con nombre, y Diagramon hace lo mismo con un icono genérico propio.
-Diagramon los muestra sin cambios: no los recortes, gires ni deformes, y no los uses para representar un producto propio.
-AWS, Azure, Microsoft Fabric, Google Cloud y SAP son marcas de sus respectivos dueños. Diagramon no está afiliado a ninguno de ellos.
+---
+
+## 📄 License
+
+Diagramon's code is **open source** under the [MIT license](LICENSE): use it, change it and share it freely,
+including in commercial projects.
+
+The **official icons** in `icons/` belong to Amazon Web Services, Microsoft, Google and SAP, and are **not** covered by the MIT license.
+AWS, Microsoft and Google allow their use in architecture diagrams under their own terms.
+SAP BTP icons come from [SAP/btp-solution-diagrams](https://github.com/SAP/btp-solution-diagrams)
+under the Apache 2.0 license (copy in [`icons/LICENSE-SAP.txt`](icons/LICENSE-SAP.txt)).
+Microsoft Fabric icons come from Microsoft's official `@fabric-msft/svg-icons` package, under the MIT license
+(copy in [`icons/LICENSE-FABRIC.txt`](icons/LICENSE-FABRIC.txt)), and follow the same usage rules as Azure icons.
+SAP only publishes icons for its BTP services. Its business applications (S/4HANA, ECC, TM, EWM…) have no official icon:
+SAP's guidelines draw them as named boxes, and Diagramon does the same with its own generic icon.
+Diagramon shows the icons unchanged: do not crop, rotate or distort them, and do not use them to represent your own product.
+AWS, Azure, Microsoft Fabric, Google Cloud and SAP are trademarks of their respective owners. Diagramon is not affiliated with any of them.
 
 <div align="center">
-<sub>Hecho con 💜 y colores pastel. Tus diagramas, en tu equipo.</sub>
+<sub>Made with 💜 and pastel colors. Your diagrams, on your machine.</sub>
 </div>
