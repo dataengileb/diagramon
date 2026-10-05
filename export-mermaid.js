@@ -1,0 +1,136 @@
+/* ==========================================================================
+   Diagramon · exportar a Mermaid (.mmd)
+   --------------------------------------------------------------------------
+   Convierte el diagrama en un flowchart de Mermaid (>= 10) que se ve en
+   GitHub, GitLab, Notion y mermaid.live, sin dependencias.
+   - Los grupos son subgraph anidados (según `parent`) con borde discontinuo.
+   - Formas por tipo: db/nosql/storage cilindro [( )], user estadio ([ ]),
+     function subrutina [[ ]], queue paralelogramo [/ /], stream asimétrica
+     > ], events hexágono {{ }}, generic/external rectángulo [ ], el resto
+     redondeado ( ).
+   - Flechas por estilo: sync -->, async -.->, data ==> (gruesa), optional
+     -.-> más fina y punteada (linkStyle).
+   - Los ids se transforman a [A-Za-z0-9_] con prefijo (n_ / g_) para no chocar
+     con palabras reservadas; los textos van entre comillas con #quot; etc.
+   - El front matter (---) va primero: Mermaid lo exige al inicio del texto.
+   API: window.DiagramonExport.mermaid(model, ctx) -> { text, ext, mime }.
+   ========================================================================== */
+(() => {
+  'use strict';
+
+  // Escapa un texto para ir entre comillas dobles en Mermaid
+  const esc = s => String(s == null ? '' : s)
+    .replace(/#/g, '#35;')
+    .replace(/"/g, '#quot;')
+    .replace(/</g, '#lt;')
+    .replace(/>/g, '#gt;')
+    .replace(/&/g, '#amp;')
+    .replace(/`/g, "'")
+    .replace(/[\r\n]+/g, ' ')
+    .trim();
+
+  // Id seguro y único: prefijo + caracteres válidos
+  const makeIds = (items, prefix) => {
+    const map = {}, used = new Set();
+    items.forEach(it => {
+      const base = prefix + String(it.id).replace(/[^A-Za-z0-9_]/g, '_');
+      let id = base, n = 2;
+      while (used.has(id)) id = base + '_' + n++;
+      used.add(id);
+      map[it.id] = id;
+    });
+    return map;
+  };
+
+  // Mezcla un color #RRGGBB con blanco (t = proporción de blanco, 0..1)
+  const mix = (hex, t) => {
+    const v = parseInt(hex.slice(1), 16);
+    const c = [v >> 16, (v >> 8) & 255, v & 255].map(x => Math.round(x + (255 - x) * t));
+    return '#' + c.map(x => x.toString(16).padStart(2, '0')).join('');
+  };
+  const norm = hex => (/^#?[0-9a-f]{6}$/i.test(hex || '') ? '#' + String(hex).replace('#', '').toLowerCase() : '#cbd5e1');
+
+  // Forma de cada tipo: [abre, cierra]
+  const SHAPES = {
+    db: ['[(', ')]'], nosql: ['[(', ')]'], storage: ['[(', ')]'],
+    user: ['([', '])'], function: ['[[', ']]'],
+    queue: ['[/', '/]'], stream: ['>', ']'], events: ['{{', '}}'],
+    generic: ['[', ']'], external: ['[', ']']
+  };
+
+  function mermaid(model, ctx) {
+    const title = String(ctx.title || model.title || 'Diagram').replace(/[\r\n]+/g, ' ').trim();
+    const groups = model.groups || [], nodes = model.nodes || [], edges = model.edges || [];
+    const gid = makeIds(groups, 'g_'), nid = makeIds(nodes, 'n_');
+    const groupIds = new Set(groups.map(g => g.id));
+    const byGroup = {}, byParent = {}, roots = [], rootNodes = [];
+    groups.forEach(g => {
+      const p = g.parent && groupIds.has(g.parent) && g.parent !== g.id ? g.parent : null;
+      if (p) (byParent[p] = byParent[p] || []).push(g); else roots.push(g);
+    });
+    nodes.forEach(n => {
+      if (n.group && groupIds.has(n.group)) (byGroup[n.group] = byGroup[n.group] || []).push(n);
+      else rootNodes.push(n);
+    });
+    const shorts = keys => (keys || []).map(k => (ctx.dataLabel(k) || {}).short || k).filter(Boolean);
+
+    const classes = {};  // clase -> { color, ids }
+    const nodeLine = n => {
+      const tags = shorts(n.data);
+      if (n.badge) tags.push(n.badge);
+      const open = n.review && n.review.status === 'open' ? ' ⚑' : '';
+      const lines = [esc(n.label || n.id) + open];
+      if (n.sub) lines.push('<small>' + esc(n.sub) + '</small>');
+      if (tags.length) lines.push('<small>' + esc(tags.join(' · ')) + '</small>');
+      const [a, b] = SHAPES[n.type] || ['(', ')'];
+      const color = norm(ctx.color(n));
+      const cls = 'c_' + color.slice(1);
+      (classes[cls] = classes[cls] || { color, ids: [] }).ids.push(nid[n.id]);
+      return `${nid[n.id]}${a}"${lines.join('<br/>')}"${b}`;
+    };
+
+    const out = [], groupStyles = [];
+    const emitGroup = (g, depth, seen) => {
+      const pad = '    '.repeat(depth);
+      out.push(`${pad}subgraph ${gid[g.id]}["${esc(g.label || g.id)}"]`);
+      const color = norm(ctx.color(g));
+      groupStyles.push(`    style ${gid[g.id]} fill:${mix(color, 0.8)},stroke:${color},stroke-dasharray: 5 5,color:#334155`);
+      (byGroup[g.id] || []).forEach(n => out.push(pad + '    ' + nodeLine(n)));
+      (byParent[g.id] || []).forEach(c => { if (!seen.has(c.id)) emitGroup(c, depth + 1, new Set([...seen, c.id])); });
+      out.push(`${pad}end`);
+    };
+
+    out.push('---', `title: "${title.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`, '---');
+    out.push(`%% Generated by Diagramon — ${title}`);
+    out.push(`flowchart ${ctx.direction === 'TB' ? 'TB' : 'LR'}`);
+    roots.forEach(g => emitGroup(g, 1, new Set([g.id])));
+    rootNodes.forEach(n => out.push('    ' + nodeLine(n)));
+
+    // Aristas: el índice de linkStyle sigue el orden de emisión
+    const links = [];
+    let idx = 0;
+    edges.forEach(e => {
+      if (!nid[e.from] || !nid[e.to]) return;
+      const style = e.style || 'sync';
+      const arrow = style === 'data' ? '==>' : style === 'async' || style === 'optional' ? '-.->' : '-->';
+      const lock = e.encrypted === true ? '🔒' : e.encrypted === false ? '🔓' : '';
+      const text = [e.label, shorts(e.data).join(' · '), lock].filter(Boolean).join(' ');
+      out.push(`    ${nid[e.from]} ${arrow}${text ? `|"${esc(text)}"|` : ''} ${nid[e.to]}`);
+      if (style === 'data') links.push(`    linkStyle ${idx} stroke-width:3px`);
+      else if (style === 'optional') links.push(`    linkStyle ${idx} stroke-width:1px,stroke-dasharray: 2 4`);
+      idx++;
+    });
+    out.push(...links);
+
+    // Estilos de nodos y grupos
+    const names = Object.keys(classes).sort();
+    names.forEach(cls => out.push(`    classDef ${cls} fill:${mix(classes[cls].color, 0.35)},stroke:${classes[cls].color},color:#1f2937`));
+    names.forEach(cls => out.push(`    class ${classes[cls].ids.join(',')} ${cls}`));
+    out.push(...groupStyles);
+
+    return { text: out.join('\n') + '\n', ext: 'mmd', mime: 'text/plain' };
+  }
+
+  window.DiagramonExport = window.DiagramonExport || {};
+  window.DiagramonExport.mermaid = mermaid;
+})();
