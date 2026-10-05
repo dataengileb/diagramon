@@ -35,11 +35,20 @@
     }
   } catch { /* sin almacenamiento disponible */ }
 
+  /* ---------- tipografías (las incluidas vienen de fonts/fonts.js, en base64) ---------- */
+  // Familias disponibles: `system` siempre; el resto solo si tienen archivos empaquetados
+  const FONTS = {};
+  for (const [k, f] of Object.entries(C.fonts.families)) if (k === 'system' || window.DIAGRAMON_FONTS?.[k]) FONTS[k] = { ...f };
+  for (const [k, f] of Object.entries(window.DIAGRAMON_FONTS || {})) FONTS[k] = { label: f.label, ...FONTS[k], css: f.css };
+  for (const [k, f] of Object.entries(FONTS)) { f.faces = window.DIAGRAMON_FONTS?.[k]?.faces || []; f.family = window.DIAGRAMON_FONTS?.[k]?.family; }
+  const fontKey = k => FONTS[k] ? k : FONTS[C.fonts.default] ? C.fonts.default : 'system';
+
   /* ---------- estado ---------- */
   const S = {
     model: null,
     theme: C.themes[store.get('theme')] ? store.get('theme') : C.app.defaultTheme,
     palette: C.palettes[store.get('palette')] ? store.get('palette') : C.app.defaultPalette,  // paletas retiradas caen a la por defecto
+    font: fontKey(store.get('font')),
     anim: store.get('anim', C.animation.enabled) && !reducedMotion,
     reach: store.get('reach', C.focus.defaultMode),
     view: { x: 0, y: 0, k: 1 },
@@ -154,6 +163,35 @@
   const nodeBoxH = n => H + (hasCost(n) ? 26 : 0);
 
   const THEME_ORDER = ['light', 'dark', 'black'];
+  const fontCss = () => FONTS[S.font].css;
+  // Reglas @font-face de una familia (solo las caras que cubren `text`, si se da)
+  const fontFaces = (key, text) => {
+    const f = FONTS[key];
+    const inRange = rng => {
+      if (text == null) return true;
+      const rs = rng.split(',').map(s => s.trim().slice(2).split('-').map(h => parseInt(h, 16)));
+      return [...text].some(ch => { const c = ch.codePointAt(0); return rs.some(([a, b]) => c >= a && c <= (b ?? a)); });
+    };
+    return f.faces.filter(x => inRange(x.unicodeRange)).map(x => `@font-face{font-family:"${f.family}";font-style:${x.style};font-weight:${x.weight};font-display:swap;src:url(${x.src}) format("woff2");unicode-range:${x.unicodeRange}}`).join('\n');
+  };
+  // Inyecta las tipografías en la página y vuelve a medir y pintar cuando terminan de cargar
+  function loadFonts() {
+    const st = document.createElement('style');
+    st.id = 'font-faces';
+    st.textContent = Object.keys(FONTS).map(k => fontFaces(k)).join('\n');
+    document.head.appendChild(st);
+    refreshFont();
+  }
+  function refreshFont() {
+    const f = FONTS[S.font], key = S.font;
+    if (!f.family) return;
+    Promise.all(['400', '500', '600', '700', '800'].map(w => document.fonts.load(`${w} 13px "${f.family}"`, 'AÁñŁ'))).catch(() => {}).then(() => {
+      if (key !== S.font || !S.model) return;
+      render(false);
+      renderInspector();
+    });
+  }
+
   function applyTheme() {
     const root = document.documentElement;
     root.dataset.theme = S.theme;
@@ -162,14 +200,14 @@
     const p = C.palettes[S.palette] || Object.values(C.palettes)[0];
     for (const [k, v] of Object.entries(p[S.theme] || p.dark)) root.style.setProperty(`--p-${k}`, v);
     root.style.setProperty('--accent', `var(--p-${p.accent || 'lavanda'})`);
-    root.style.setProperty('--font', C.fonts.ui);
+    root.style.setProperty('--font', fontCss());
     root.style.setProperty('--mono', C.fonts.mono);
   }
 
   /* ---------- medidas de texto ---------- */
   const mctx = document.createElement('canvas').getContext('2d');
   const FONT = { dtag: '800 9.5px', label: '600 13.5px', sub: '400 11.5px', tag: '700 11px', edge: '500 11px', badge: '800 10.5px', cost: '700 10.5px' };
-  const textW = (t, f) => { mctx.font = `${f} ${C.fonts.ui}`; return mctx.measureText(String(t ?? '')).width; };
+  const textW = (t, f) => { mctx.font = `${f} ${fontCss()}`; return mctx.measureText(String(t ?? '')).width; };
   const fitText = (t, f, max) => {
     t = String(t ?? '');
     if (textW(t, f) <= max) return t;
@@ -2272,6 +2310,7 @@
     syncThemeTip();
     $('#lang-code').textContent = I.lang.toUpperCase();
     [...paletteSel.options].forEach(o => { o.textContent = loc(C.palettes[o.value]?.label) || o.value; });
+    [...fontSel.options].forEach(o => { o.textContent = loc(FONTS[o.value]?.label) || o.value; });
     wideLabels();
     textCtx = null;
     renderProviders();
@@ -2302,6 +2341,18 @@
     applyTheme();
     render(false);
     renderInspector();
+  });
+
+  const fontSel = $('#font');
+  fontSel.innerHTML = Object.entries(FONTS).map(([k, f]) => `<option value="${k}">${esc(loc(f.label) || k)}</option>`).join('');
+  fontSel.value = S.font;
+  fontSel.addEventListener('change', () => {
+    S.font = fontSel.value;
+    store.set('font', S.font);
+    applyTheme();
+    render(false);
+    renderInspector();
+    refreshFont();
   });
 
   const exportMenu = $('#export-menu');
@@ -2458,12 +2509,12 @@
     vp.removeAttribute('id');
     vp.setAttribute('transform', `translate(${pad - b.x} ${pad + top - b.y})`);
     const t = C.themes[S.theme], p = C.palettes[S.palette];
-    const vars = [...Object.entries(t).map(([k, v]) => `--${k}:${v}`), ...Object.entries(p[S.theme] || p.dark).map(([k, v]) => `--p-${k}:${v}`), `--font:${C.fonts.ui}`].join(';');
+    const vars = [...Object.entries(t).map(([k, v]) => `--${k}:${v}`), ...Object.entries(p[S.theme] || p.dark).map(([k, v]) => `--p-${k}:${v}`), `--font:${fontCss()}`].join(';');
     const style = document.createElementNS(NS, 'style');
     style.textContent = `svg{${vars}}\n${$('#diagram-css').textContent}`;
     out.insertBefore(style, out.firstChild);
     out.insertBefore(el('rect', { width: W, height: Ht, fill: t.bg }), style.nextSibling);
-    const title = el('text', { x: pad, y: pad + 10, fill: t.text, 'font-size': 20, 'font-weight': 700, 'font-family': C.fonts.ui });
+    const title = el('text', { x: pad, y: pad + 10, fill: t.text, 'font-size': 20, 'font-weight': 700, 'font-family': fontCss() });
     const av = activeVersion();
     title.textContent = av ? `${S.model.title}  ·  ${verLabel(av)}` : S.model.title;
     out.insertBefore(title, vp);
@@ -2472,6 +2523,8 @@
       lg.g.setAttribute('transform', `translate(${pad} ${Ht - pad - lg.h})`);
       out.appendChild(lg.g);
     }
+    // Incrusta solo las caras de la tipografía elegida que cubren el texto usado: el archivo se ve igual en cualquier lado
+    style.textContent += '\n' + fontFaces(S.font, out.textContent);
     return { str: '<?xml version="1.0" encoding="UTF-8"?>\n' + new XMLSerializer().serializeToString(out), W, H: Ht };
   }
   function exportSVG() { download(buildSVG().str, fileName('svg'), 'image/svg+xml'); toast(T('toast.svg')); }
@@ -2826,6 +2879,7 @@
 
   /* ---------- arranque ---------- */
   function init() {
+    loadFonts();
     applyTheme();
     applyLang();
     $('#app-name').textContent = C.app.name;

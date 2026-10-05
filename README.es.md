@@ -37,8 +37,8 @@ de verdad. Ese tipo de información no debería viajar a un servicio de terceros
 
 **Cómo lo garantiza**
 
-- **Es un solo HTML con JavaScript propio.** Sin librerías externas, sin CDN, sin fuentes web, sin trackers.
-  Los iconos oficiales van incrustados en los archivos `icons/*.js`.
+- **Es un solo HTML con JavaScript propio.** Sin librerías externas, sin CDN, sin fuentes web cargadas de internet, sin trackers.
+  Los iconos oficiales van incrustados en los archivos `icons/*.js` y las tres tipografías en `fonts/fonts.js` (base64).
 - **El navegador bloquea la red.** `index.html` declara una política de seguridad
   (`Content-Security-Policy: connect-src 'none'`). Aunque alguien añadiera código que intente enviar datos,
   el navegador lo rechaza.
@@ -325,6 +325,7 @@ Todo lo personalizable está en **`config.js`**. Guarda y recarga `index.html`.
 - **Tamaño de los nodos**: con `node.sameSize: true` (por defecto) todos miden `node.width` y los nombres largos usan 2 líneas.
   Con `false`, cada nodo crece con su texto.
 - **Atajos sin icono oficial**: `presets` añade elementos arriba de la lista de un proveedor (por ejemplo, los sistemas SAP).
+- **Tipografías**: elige Inter (por defecto), IBM Plex Sans o Fira Code en la barra superior; la elección se guarda en tu navegador y se incrusta en las exportaciones SVG/PNG. Vienen incluidas en la app (no se cargan de la web). Para añadir una, deja sus archivos `.woff2` en `fonts/`, añade una entrada a `FONTS` en `tools/build-fonts.py` (mira su cabecera) y ejecuta `python3 tools/build-fonts.py`.
 - **Paletas**: añade una entrada en `palettes` con las mismas claves de color (`rosa`, `coral`, …) para `dark`, `light` y `black` (por defecto vienen Pastel y Neón). Una paleta guardada que ya no existe vuelve a Pastel.
 - **Nuevo tipo de componente**: copia una entrada de `types` y cambia `label`, `category`, `color`, `keywords` e `icon` (SVG de 24×24).
 - **Conexiones**: `edgeStyles` define trazo, grosor y número de partículas.
@@ -380,6 +381,8 @@ El lenguaje de texto está en `window.DiagramonText` (`parse` y `stringify`).
 | `samples/` | Archivos de IaC de ejemplo para probar la importación |
 | `icons/*.js` | Iconos oficiales de AWS, Azure, Google Cloud, SAP BTP y Microsoft Fabric, incrustados |
 | `tools/build-icons.py` | Genera `icons/*.js` desde los paquetes oficiales |
+| `fonts/` | Tipografías incluidas (`.woff2`, licencias OFL) y el `fonts.js` generado |
+| `tools/build-fonts.py` | Genera `fonts/fonts.js` desde `fonts/*.woff2` |
 
 ---
 
@@ -390,7 +393,7 @@ El lenguaje de texto está en `window.DiagramonText` (`parse` y `stringify`).
 Para mantener el espíritu del proyecto:
 
 - **Sin dependencias externas** ni pasos de compilación: tiene que seguir funcionando con doble clic.
-- **Sin conexiones de red**: nada de analítica, CDN, fuentes web ni APIs.
+- **Sin conexiones de red**: nada de analítica, CDN, fuentes web cargadas de internet ni APIs (las tipografías van incluidas).
 - Lo personalizable va en `config.js`.
 
 ---
@@ -407,6 +410,9 @@ Gracias por la idea y el punto de partida. 💜
 
 El código de Diagramon es **open source** bajo la [licencia MIT](LICENSE): úsalo, modifícalo y compártelo libremente,
 también en proyectos comerciales.
+
+Las tipografías incluidas son [Inter](https://github.com/rsms/inter), [IBM Plex Sans](https://github.com/IBM/plex) y [Fira Code](https://github.com/tonsky/FiraCode), con la licencia SIL Open Font License 1.1
+(copias en [`fonts/OFL-Inter.txt`](fonts/OFL-Inter.txt), [`fonts/OFL-IBMPlexSans.txt`](fonts/OFL-IBMPlexSans.txt) y [`fonts/OFL-FiraCode.txt`](fonts/OFL-FiraCode.txt)).
 
 Los **iconos oficiales** de `icons/` pertenecen a Amazon Web Services, Microsoft, Google y SAP, y **no** están cubiertos por la licencia MIT.
 AWS, Microsoft y Google permiten usarlos en diagramas de arquitectura según sus propias condiciones.
