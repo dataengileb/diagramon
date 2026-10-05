@@ -72,6 +72,7 @@ around 290 official cloud icons, and the browser itself blocks every network req
 - 🖱️ **Multi-select, alignment and smart guides**: align, distribute with equal spacing, and snap to edges and centers.
 - 💵 **Manual costs**: USD per hour, month, year or multi-year, shown under each service, with an approximate monthly total.
 - ⌨️ **Diagram as code**: a small text language, with errors shown by line number.
+- 🗂️ **Versions and environments**: save the canvas as *Version 1, 2, 3…* or as *Development, QA, Production*, open any of them, and compare it with the canvas: new items in green, changed in yellow, removed as red ghosts.
 - 🔦 **Flow highlighting** for any component: neighbors, targets, sources or everything.
 - 🌐 **English and Spanish UI**: the 🌐 button in the top bar (or the **`L`** key) switches the language and remembers your choice.
 - 🌗 **Dark mode** by default, **light mode** with one key, and pastel palettes (Pastel, Sherbet, Nordic).
@@ -143,7 +144,20 @@ With several services selected, the panel shows the cost of the selection.
 
 > Diagramon never looks up prices online (privacy first). You type the costs yourself.
 
-### 6. Present and export
+### 6. Versions and environments
+
+Open the **Versions** tab.
+
+- **+ Version N** saves a frozen snapshot of the canvas. Use it as your history: *Version 1*, *Version 2*…
+- **DEV**, **QA** and **PROD** save the canvas as that environment. Each environment keeps one copy; saving again updates it.
+- Add an optional **note** before saving, for example *before the migration*.
+- **Open** loads it on the canvas. A pill above the title shows what is open and warns about unsaved changes.
+- **Compare** marks the differences with the canvas: **green** is new, **yellow** changed, and **red dashed** ghosts were removed.
+  The card lists every difference; click one to jump to it. **Esc** or **Stop** ends the comparison.
+- Saving, opening and deleting can be undone with **`⌘Z`**.
+- Versions are stored inside the diagram, so **Export › JSON** carries them all.
+
+### 7. Present and export
 
 - **Flow** (or **`P`**) lights up the diagram step by step, from clients to data.
 - **Arrange** lays everything out automatically. **Fit** (or **`F`**) centers the diagram.
@@ -216,6 +230,7 @@ The text does not store positions: existing nodes stay where they are, and new n
 
 - Nodes only need `id` and `type`. Without `x`/`y` they are placed automatically.
 - `costPeriod`: `hour`, `year` or `multi` (with `costYears`). Without `costPeriod` the cost is monthly.
+- Exported files also carry `versions` (each with `kind`: `version` or `env`, and its own `diagram`) and `active`.
 - `color` takes a palette key (`rosa`, `coral`, `melocoton`, `limon`, `menta`, `cielo`, `lavanda`, `lila`),
   its English name (`pink`, `coral`, `peach`, `lemon`, `mint`, `sky`, `lavender`, `lilac`) or any CSS color.
 
@@ -229,6 +244,7 @@ Everything you can customize is in **`config.js`**. Save and reload `index.html`
 
 - **Default theme**: `app.defaultTheme: 'dark' | 'light'`.
 - **Default language**: `app.defaultLang: 'en' | 'es'`. UI texts live in `i18n.js`; texts in `config.js` and `examples.js` can be `{ en: '…', es: '…' }`.
+- **Environments**: `environments` sets the buttons of the *Versions* tab (name, short label and color). Add or remove as many as you need.
 - **Node size**: with `node.sameSize: true` (default) every node is `node.width` wide and long names wrap to 2 lines.
   With `false`, each node grows with its text.
 - **Shortcuts without an official icon**: `presets` adds items at the top of a provider's list (for example, SAP systems).
@@ -264,7 +280,7 @@ Set `"icons": { "enabled": false }` in `config.js` to turn them off.
 <summary><b>Extension API</b></summary>
 
 `window.Diagramon` exposes `model`, `load()`, `addNode()`, `addEdge()`, `select()`, `align()`, `relayout()`,
-`fitView()`, `togglePlay()`, `toggleTheme()`, `toggleLang()`, `lang`, `exportSVG()`, `exportPNG()`, `exportJSON()`, `config` and `icons`.
+`fitView()`, `togglePlay()`, `toggleTheme()`, `toggleLang()`, `lang`, `saveVersion()`, `openVersion()`, `compareVersion()`, `deleteVersion()`, `exportSVG()`, `exportPNG()`, `exportJSON()`, `config` and `icons`.
 The text language is in `window.DiagramonText` (`parse` and `stringify`). UI translations are in `window.DiagramonI18n`.
 
 </details>
