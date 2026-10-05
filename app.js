@@ -2285,7 +2285,7 @@
     const b = ev.target.closest('[data-export]');
     if (!b) return;
     exportMenu.open = false;
-    ({ svg: exportSVG, png: exportPNG, json: exportJSON, copy: copyJSON })[b.dataset.export]();
+    ({ svg: exportSVG, png: exportPNG, json: exportJSON, copy: copyJSON, share: shareEncrypted })[b.dataset.export]();
   });
 
   $('#zoom-in').addEventListener('click', () => animateView(zoomTarget(1.25), 220));
@@ -2435,6 +2435,68 @@
     };
     img.onerror = () => toast(T('toast.pngFail'));
     img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(str);
+  }
+  /* ---------- compartir cifrado: un HTML que se abre solo, con contraseña ---------- */
+  // El diagrama se guarda como imagen en los dos temas: el visor no necesita la app
+  const svgFor = theme => { const old = S.theme; S.theme = theme; try { return buildSVG().str; } finally { S.theme = old; } };
+  function shareEncrypted() {
+    const SH = window.DiagramonShare;
+    if (!SH || !window.crypto?.subtle || typeof CompressionStream === 'undefined') return toast(T('share.unsupported'), 3200);
+    const prev = document.activeElement, id = `sh${Date.now()}`;
+    const back = document.createElement('div');
+    back.className = 'cf-back';
+    back.innerHTML = `<form class="cf share" role="dialog" aria-modal="true" aria-labelledby="${id}t" aria-describedby="${id}d" autocomplete="off">
+      <h3 id="${id}t">${esc(T('share.title'))}</h3>
+      <p id="${id}d">${esc(T('share.lead'))}</p>
+      <label>${esc(T('share.pw'))}<span class="sh-row"><input type="password" name="pw" autocomplete="new-password" minlength="12" required><button type="button" class="btn small" data-sh="show">${esc(T('share.show'))}</button></span></label>
+      <div class="sh-meter" data-level="-1"><i></i><i></i><i></i><i></i><span></span></div>
+      <label>${esc(T('share.pw2'))}<input type="password" name="pw2" autocomplete="new-password" required></label>
+      <ul class="sh-notes"><li>${esc(T('share.note1'))}</li><li>${esc(T('share.note2'))}</li></ul>
+      <p class="sh-err" role="alert"></p>
+      <div class="cf-actions"><button type="button" class="btn" data-sh="no">${esc(T('ver.cf.cancel'))}</button><button type="submit" class="btn primary">${esc(T('share.create'))}</button></div>
+    </form>`;
+    const form = back.querySelector('form'), pw = form.elements.pw, pw2 = form.elements.pw2, meter = form.querySelector('.sh-meter'), err = form.querySelector('.sh-err');
+    const close = () => { document.removeEventListener('keydown', key, true); back.remove(); prev?.focus?.(); };
+    const key = ev => { if (ev.key === 'Escape' && !form.classList.contains('busy')) { ev.preventDefault(); ev.stopPropagation(); close(); } };
+    const rate = () => {
+      const s = SH.strength(pw.value), lvl = pw.value ? s.level : -1;
+      meter.dataset.level = lvl;
+      meter.querySelector('span').textContent = pw.value ? T(`share.lvl${lvl}`) + (pw.value.length < 12 ? ` · ${T('share.min')}` : '') : '';
+      err.textContent = '';
+    };
+    pw.addEventListener('input', rate);
+    pw2.addEventListener('input', () => { err.textContent = ''; });
+    back.addEventListener('mousedown', ev => { if (ev.target === back && !form.classList.contains('busy')) close(); });
+    form.addEventListener('click', ev => {
+      const b = ev.target.closest('[data-sh]');
+      if (!b) return;
+      if (b.dataset.sh === 'no') close();
+      else { const show = pw.type === 'password'; pw.type = pw2.type = show ? 'text' : 'password'; b.textContent = T(show ? 'share.hide' : 'share.show'); }
+    });
+    form.addEventListener('submit', async ev => {
+      ev.preventDefault();
+      if (form.classList.contains('busy')) return;
+      if (pw.value.length < 12) { err.textContent = T('share.min'); return pw.focus(); }
+      if (SH.strength(pw.value).level < 1) { err.textContent = T('share.weak'); return pw.focus(); }
+      if (pw.value !== pw2.value) { err.textContent = T('share.mismatch'); return pw2.focus(); }
+      form.classList.add('busy');
+      form.querySelector('[type="submit"]').textContent = T('share.busy');
+      try {
+        const av = activeVersion();
+        const payload = { title: S.model.title, version: av ? verLabel(av) : S.model.meta?.version || '', sharedAt: new Date().toISOString(), dark: svgFor('dark'), light: svgFor('light') };
+        const env = await SH.encrypt(payload, pw.value);
+        download(SH.viewer(env, I.lang), `diagramon-${today()}.html`, 'text/html');
+        close();
+        toast(T('share.done'), 4200);
+      } catch {
+        form.classList.remove('busy');
+        form.querySelector('[type="submit"]').textContent = T('share.create');
+        err.textContent = T('share.fail');
+      }
+    });
+    document.addEventListener('keydown', key, true);
+    document.body.appendChild(back);
+    pw.focus();
   }
   function exportJSON() { download(serialize(S.model, true), fileName('json'), 'application/json'); toast(T('toast.json')); }
   function copyJSON() {
@@ -2702,7 +2764,7 @@
     get lang() { return I.lang; },
     select: ids => select({ kind: 'multi', ids: [].concat(ids) }), align: alignNodes,
     saveVersion, openVersion, compareVersion, deleteVersion,
-    exportSVG, exportPNG, exportJSON, toggleRouting, importFiles, config: C, icons: ICONS
+    exportSVG, exportPNG, exportJSON, shareEncrypted, toggleRouting, importFiles, config: C, icons: ICONS
   };
 
   init();
