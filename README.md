@@ -197,6 +197,7 @@ Open the **Versions** tab.
 - **Elbows** (or **`E`**) switches the connections between curves and right-angle lines that go around the nodes.
   To change only one connection, select it and pick its **Line**.
 - **Export** › SVG, PNG or JSON. Keep the JSON to open it again later with **Import**.
+- **Export › Encrypted HTML** creates one `.html` file to share a diagram privately. Whoever receives it double-clicks it, types the password and sees the diagram (dark or light, with zoom). No app, no install, no download. Details below.
 - The **Export** menu also has **Legend and title block** (on by default), with **Author** and **Version** fields.
   SVG and PNG files then get a panel at the bottom with only what the diagram uses (connection styles, padlocks,
   component colors, data classes) and a title block with title, author, version, date and estimated cost.
@@ -242,6 +243,18 @@ What you get:
 ![AWS data lake imported from terraform show -json](docs/iac-data-lake.png)
 
 Try it with the files in [`samples/`](samples): a simple AWS data lake (as Terraform and as CloudFormation), a Kubernetes shop and a Docker Compose stack.
+
+---
+
+## 🔐 Share an encrypted diagram
+
+**Export › Encrypted HTML** asks for a password (12 characters or more, with a strength meter) and saves a single `.html` file.
+
+- **Self-contained and view only.** The file carries its own small viewer. It opens in any recent browser with a double click, offline, with no Diagramon, no install and no download.
+- **Everything is encrypted**, the title too. In clear there are only the encryption parameters.
+- **Strong, standard crypto** from the browser (Web Crypto): the key comes from the password with PBKDF2-SHA-256 and 600,000 iterations and a random 16-byte salt; the diagram is compressed and encrypted with AES-256-GCM (random 12-byte IV), which also detects any tampering.
+- **The viewer cannot leak or run anything.** It blocks the network with its own Content Security Policy and shows the diagram as an image.
+- Send the password through a **different channel** than the file. A lost password cannot be recovered.
 
 ---
 
@@ -373,6 +386,7 @@ The text language is in `window.DiagramonText` (`parse` and `stringify`). UI tra
 | `app.js` | Editor engine |
 | `text-lang.js` | Text language (diagram as code) |
 | `examples.js` | Templates |
+| `share.js` | Encrypted, self-contained HTML viewer for sharing |
 | `iac.js` | Infrastructure-as-code import (Terraform, CloudFormation, Kubernetes, Compose) |
 | `samples/` | Sample IaC files to try the import |
 | `icons/*.js` | Embedded official icons for AWS, Azure, Google Cloud, SAP BTP and Microsoft Fabric |
