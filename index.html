@@ -198,6 +198,31 @@
     background: var(--panel); border: 1px solid var(--border); border-radius: 11px; box-shadow: 0 8px 24px var(--shadow);
   }
   .zoombar .tbtn { height: 28px; padding: 0 8px; font-size: 15px; }
+
+  /* Modo presentación */
+  .present-bar { position: absolute; left: 0; right: 0; bottom: 0; padding: 18px 28px 16px; display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; pointer-events: none; z-index: 8; background: linear-gradient(transparent, color-mix(in srgb, var(--bg) 88%, transparent) 55%); }
+  .pb-cap h2 { margin: 0; font-size: 24px; font-weight: 750; letter-spacing: -.02em; }
+  .pb-sub { margin-top: 2px; font-size: 13px; color: var(--muted); }
+  .pb-cap p { margin: 6px auto 0; max-width: 760px; font-size: 14px; color: var(--text); opacity: .85; }
+  .pb-cap p:empty { display: none; }
+  .pb-foot { display: flex; align-items: center; gap: 18px; transition: opacity .6s; }
+  .pb-dots { display: flex; gap: 7px; pointer-events: auto; }
+  .pb-dot { width: 9px; height: 9px; padding: 0; border: 0; border-radius: 50%; background: var(--border); cursor: pointer; transition: background-color .2s, transform .2s; }
+  .pb-dot:hover { background: var(--muted); }
+  .pb-dot.on { background: var(--accent); transform: scale(1.35); }
+  .pb-hint { font-size: 11.5px; color: var(--muted); }
+  body.presenting .topbar, body.presenting .sidebar, body.presenting .resizer, body.presenting .hint, body.presenting .zoombar,
+  body.presenting .inspector, body.presenting .stage-title, body.presenting .compare-bar, body.presenting .banner, body.presenting .empty { display: none !important; }
+  body.presenting .app { grid-template-rows: 1fr; }
+  body.presenting .main { display: flex; }
+  body.presenting .stage { flex: 1; cursor: pointer; }
+  body.presenting .node, body.presenting .group-tag, body.presenting .edge { cursor: inherit; }
+  body.presenting.idle, body.presenting.idle * { cursor: none !important; }
+  body.presenting.idle .pb-foot { opacity: 0; }
+  svg.presenting.focusing .group { opacity: 1; }
+  svg.presenting.focusing .group.pdim { opacity: .18; }
+  svg.presenting .node.pout, svg.presenting .edge.pout { opacity: .14 !important; }
+  @media (prefers-reduced-motion: reduce) { .pb-foot, .pb-dot { transition: none; } }
   #zoomv { min-width: 46px; text-align: center; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; cursor: pointer; }
   .banner {
     position: absolute; top: 14px; left: 50%; transform: translateX(-50%); padding: 8px 16px; z-index: 5;
@@ -590,6 +615,7 @@
       <button class="tbtn" id="btn-fit" data-i18n-title="top.fit"><svg viewBox="0 0 24 24"><path d="M4 9V5a1 1 0 0 1 1-1h4M15 4h4a1 1 0 0 1 1 1v4M20 15v4a1 1 0 0 1-1 1h-4M9 20H5a1 1 0 0 1-1-1v-4"/></svg><span class="lbl" data-i18n="top.fit.lbl"></span></button>
       <button class="tbtn" id="btn-anim" data-i18n-title="top.anim"><svg viewBox="0 0 24 24"><path d="M3 12c2.5-4 4.5-4 7 0s4.5 4 7 0c1-1.6 2-2 4-2"/><circle cx="7" cy="10" r="1"/><circle cx="17" cy="14" r="1"/></svg><span class="lbl" data-i18n="top.anim.lbl"></span></button>
       <button class="tbtn primary" id="btn-play" data-i18n-title="top.play"><svg viewBox="0 0 24 24"><path d="M7 4.5v15l12-7.5z"/></svg><span class="lbl" data-i18n="top.play.lbl"></span></button>
+      <button class="tbtn" id="btn-present" data-i18n-title="top.present"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M12 16v4M8 20h8"/></svg><span class="lbl" data-i18n="top.present.lbl"></span></button>
       <span class="sep"></span>
       <details class="menu" id="filter-menu">
         <summary class="tbtn" id="btn-filter" data-i18n-title="top.filter"><svg viewBox="0 0 24 24"><path d="M3 5h18l-7 8.5V19l-4 2v-7.5z"/></svg><span class="lbl" data-i18n="top.filter.lbl"></span></summary>
@@ -692,6 +718,10 @@
         <button class="tbtn" id="zoom-in" data-i18n-title="zoom.in">+</button>
       </div>
       <aside class="inspector" id="inspector" hidden></aside>
+      <div class="present-bar" id="present-bar" hidden>
+        <div class="pb-cap"><h2 id="pb-h"></h2><div class="pb-sub" id="pb-sub"></div><p id="pb-desc"></p></div>
+        <div class="pb-foot"><div class="pb-dots" id="pb-dots"></div><div class="pb-hint" data-i18n="present.hint"></div></div>
+      </div>
     </section>
   </div>
 </div>

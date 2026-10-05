@@ -201,6 +201,7 @@ Open the **Versions** tab.
 ### 9. Present and export
 
 - **Flow** (or **`P`**) lights up the diagram step by step, from clients to data.
+- **Present** (or **`V`**) goes full screen with no panels: an overview with the title, then one slide per group (in reading order, zooming in and dimming the rest) and a closing overview. Without groups it steps through the flow. **`→`**, **`Space`** or click go forward, **`←`** goes back, **`Home`/`End`** and number keys jump, **`P`** plays the flow, **`Esc`** exits and restores your view. Editing is off while presenting.
 - **Arrange** lays everything out automatically, following the flow. Each group is arranged inside its own box, so groups never overlap. **Fit** (or **`F`**) centers the diagram.
 - **Elbows** (or **`E`**) switches the connections between curves and right-angle lines that go around the nodes. Several elbow lines on the same side of a node leave from separate, evenly spaced points so they never overlap.
   To change only one connection, select it and pick its **Line**.
@@ -224,6 +225,7 @@ Open the **Versions** tab.
 | `F` | Fit to view |
 | `P` | Play the flow |
 | `R` | Show the path between two selected nodes |
+| `V` | Present full screen (`→` `←` `Space` `Home` `End` `1`–`9`, `Esc` to exit) |
 | `T` | Cycle light → dark → high-contrast black mode |
 | `L` | Switch English / Spanish |
 | `E` | Switch curved / elbow connectors |
