@@ -844,6 +844,45 @@
   .docbar-leg li[data-gov] { cursor: pointer; } .docbar-leg li[data-gov]:hover { color: var(--text); } .docbar-leg li small { color: var(--muted); }
   .gov-box { margin-bottom: 11px; } .gov-box summary { cursor: pointer; font-size: 11.5px; font-weight: 650; color: var(--muted); margin-bottom: 8px; } .gov-box label { margin-bottom: 8px; }
   .gov-box .cost-hint { margin-top: 3px; font-size: 10.5px; }
+  /* Cumplimiento: sección del inspector y matriz (CSS de la interfaz; no va en el SVG exportado) */
+  .cmp-box .cmp-row { margin-bottom: 8px; padding: 7px 8px 8px; border-radius: 10px; background: var(--surface2); }
+  .cmp-box .cmp-row.inh { box-shadow: inset 2px 0 0 var(--border); }
+  .cmp-top { display: flex; align-items: baseline; gap: 6px; min-width: 0; font-size: 11.5px; }
+  .cmp-fw { flex: none; font-size: 10px; font-weight: 750; letter-spacing: .03em; color: var(--muted); }
+  .cmp-id { flex: none; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .cmp-t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+  .cmp-x { flex: none; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 6px; background: none; color: var(--muted); font-size: 15px; line-height: 1; cursor: pointer; }
+  .cmp-x:hover { background: var(--surface); color: var(--text); }
+  .cmp-seg { margin-top: 6px; padding: 2px; } .cmp-seg button { padding: 4px 1px; font-size: 10.5px; }
+  .cmp-seg button.on { color: var(--cc); }
+  .cmp-sug { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin-bottom: 8px; }
+  .cmp-sug .cost-hint { margin: 0 2px 0 0; }
+  .cmp-chip { padding: 3px 8px; border: 1px dashed var(--border); border-radius: 999px; background: none; color: var(--muted); font-size: 10.5px; font-weight: 650; cursor: pointer; }
+  .cmp-chip:hover { border-color: var(--accent); color: var(--text); }
+  .cmp-open { width: 100%; }
+  .cf.cm { width: min(1100px, 100%); max-height: calc(100vh - 32px); display: flex; flex-direction: column; }
+  .cm-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-bottom: 8px; } .cm-head h3 { margin: 0; flex: 1 1 auto; }
+  .cm-fw { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--muted); }
+  .cm-fw select { height: 28px; padding: 0 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface2); color: var(--text); font: 12px var(--font); }
+  .cm-btns { display: flex; gap: 6px; }
+  .cm-sum { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+  .cm-card { display: flex; align-items: center; gap: 8px; padding: 5px 10px; border-radius: 9px; background: var(--surface2); font-size: 11.5px; }
+  .cm-n { display: inline-flex; align-items: center; gap: 3px; font-variant-numeric: tabular-nums; color: var(--muted); } .cm-n i { font-style: normal; font-weight: 800; color: var(--cc); }
+  .cm-scroll { flex: 1; min-height: 120px; overflow: auto; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); }
+  .cm-table { border-collapse: separate; border-spacing: 0; font-size: 11.5px; }
+  .cm-table th, .cm-table td { border-bottom: 1px solid var(--border); border-right: 1px solid var(--border); background: var(--panel); }
+  .cm-table thead th { position: sticky; z-index: 3; text-align: center; font-weight: 700; }
+  .cm-table thead tr:first-child th { top: 0; height: 26px; padding: 0 8px; color: var(--muted); font-size: 10.5px; letter-spacing: .04em; text-transform: uppercase; }
+  .cm-table thead tr:nth-child(2) th { top: 26px; min-width: 76px; max-width: 96px; padding: 5px 6px; vertical-align: top; }
+  .cm-ch b { display: block; font-variant-numeric: tabular-nums; }
+  .cm-ch span { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; margin-top: 2px; font-size: 10px; font-weight: 500; line-height: 1.25; color: var(--muted); }
+  .cm-table .cm-rh { position: sticky; left: 0; z-index: 2; min-width: 150px; max-width: 220px; padding: 5px 10px; text-align: left; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cm-table .cm-rh small { display: block; font-size: 10px; font-weight: 500; color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+  .cm-table thead .cm-corner { z-index: 4; vertical-align: bottom; }
+  .cm-c { height: 30px; text-align: center; font-size: 14px; font-weight: 800; color: var(--cc); background-image: linear-gradient(color-mix(in srgb, var(--cc, transparent) 14%, transparent), color-mix(in srgb, var(--cc, transparent) 14%, transparent)); }
+  .cm-table tfoot th, .cm-table tfoot td { position: sticky; bottom: 0; z-index: 2; border-top: 1px solid var(--border); font-weight: 700; text-align: center; font-variant-numeric: tabular-nums; }
+  .cm-table tfoot th { z-index: 4; text-align: left; }
+  .cm-note { margin: 8px 0 0; font-size: 11px; } .cm-empty { margin: 0; padding: 22px; text-align: center; font-size: 12.5px; }
   .docbar-leg .heat { width: 70px; height: 8px; border-radius: 4px; border-radius: 4px; }
   .docbar-leg li.sw i { width: 16px; height: 3px; border-radius: 2px; }
   /* Capas del data lake (bronze / silver / gold). Colores por tema; config.js › dataLayers los usa con var(--layer-<clave>) y se pueden cambiar aquí */
@@ -941,6 +980,7 @@
           <button data-export="drawio"><span data-i18n="exp.drawio"></span> <small>.drawio</small></button>
           <button data-export="stride"><span data-i18n="exp.stride"></span> <small>.csv</small></button>
           <button data-export="share"><span data-i18n="exp.share"></span> <small data-i18n="exp.share.ext"></small></button>
+          <button data-export="compliance"><span data-i18n="exp.compliance"></span> <small data-i18n="exp.compliance.ext"></small></button>
           <div class="menu-sep"></div>
           <label class="menu-check"><input type="checkbox" id="exp-legend"><span data-i18n="exp.legend"></span></label>
           <label class="menu-field"><span data-i18n="leg.author"></span><input id="exp-author" autocomplete="off" data-i18n-placeholder="exp.author.ph"></label>
