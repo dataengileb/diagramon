@@ -580,6 +580,16 @@
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
   }
+  /* STRIDE: amenazas sugeridas en el inspector de la conexión */
+  .th-row { margin-top: 8px; padding: 8px; border-radius: 10px; background: var(--surface2); border-left: 3px solid var(--sv, var(--muted)); }
+  .th-head { display: flex; align-items: flex-start; gap: 7px; }
+  .th-badge { flex: none; width: 20px; height: 20px; border-radius: 6px; display: inline-grid; place-items: center; background: var(--surface); color: var(--text); font-size: 11px; font-weight: 800; }
+  .th-title { flex: 1; font-size: 12px; font-weight: 600; line-height: 1.3; }
+  .th-sev { flex: none; padding: 1px 7px; border-radius: 9px; border: 1px solid var(--sv, var(--muted)); color: var(--sv, var(--muted)); font-size: 10px; font-weight: 700; }
+  .th-seg button { font-size: 10.5px; }
+  .th-note { width: 100%; margin-top: 6px; }
+  .th-row .cost-hint { display: block; margin-top: 5px; }
+  .th-ro { display: flex; gap: 7px; align-items: center; margin-top: 6px; font-size: 12px; }
 </style>
 
 <!-- Estilos del diagrama. También se incrustan al exportar SVG/PNG. -->
@@ -614,6 +624,20 @@
   .zone-tag rect { fill: var(--surface); stroke: var(--sev); stroke-width: 1.3; }
   .zone-tag text { fill: var(--text); font-size: 11px; font-weight: 700; letter-spacing: .04em; }
   .zone-tag .zone-sev { fill: var(--sev); }
+  /* Fronteras de confianza (STRIDE): línea discontinua gruesa de otro color, sin trama ni severidad, con escudo en la etiqueta */
+  :root, .diagramon-svg[data-theme] { --trust: var(--p-cielo); }
+  .zone-trust { --sev: var(--trust); }
+  .zone-trust .zone-tint { fill-opacity: .035; }
+  .zone-trust .zone-line { stroke-width: 2.6; stroke-dasharray: 14 7; stroke-opacity: 1; }
+  .zone-trust.sel .zone-line { stroke-width: 3.4; }
+  .zone-tag .trust-g { fill: none; stroke: var(--sev); stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+  /* Marcador «STRIDE n» de las conexiones que cruzan una frontera (solo en la vista Seguridad) */
+  .edge-stride { display: none; pointer-events: none; }
+  .vw-security .edge-stride:not(.off) { display: inline; }
+  .edge-stride rect { fill: var(--surface); stroke: var(--sv, var(--muted)); stroke-width: 1.4; }
+  .edge-stride text { fill: var(--sv, var(--muted)); font-size: 9.5px; font-weight: 750; letter-spacing: .04em; }
+  .edge-stride.sev-low { --sv: var(--sev-low); } .edge-stride.sev-medium { --sv: var(--sev-medium); }
+  .edge-stride.sev-high { --sv: var(--sev-high); } .edge-stride.sev-critical { --sv: var(--sev-critical); }
   [data-theme="black"] .hatch line { stroke-opacity: .5; }
   [data-theme="black"] .zone-line { stroke-opacity: 1; }
   .note { cursor: grab; }
@@ -879,6 +903,7 @@
           <button data-export="mermaid"><span data-i18n="exp.mermaid"></span> <small>.mmd</small></button>
           <button data-export="plantuml"><span data-i18n="exp.plantuml"></span> <small>.puml</small></button>
           <button data-export="drawio"><span data-i18n="exp.drawio"></span> <small>.drawio</small></button>
+          <button data-export="stride"><span data-i18n="exp.stride"></span> <small>.csv</small></button>
           <button data-export="share"><span data-i18n="exp.share"></span> <small data-i18n="exp.share.ext"></small></button>
           <div class="menu-sep"></div>
           <label class="menu-check"><input type="checkbox" id="exp-legend"><span data-i18n="exp.legend"></span></label>

@@ -202,6 +202,42 @@ window.DIAGRAMON_CONFIG = {
     physicalGroupName: /vpc|vnet|subnet|subred|regi[oó]n|region|\baz\b|availability zone|zona de disponibilidad|account|cuenta|subscription|suscripci[oó]n|resource group|grupo de recursos|tenant|datacenter|centro de datos/i
   },
 
+  /* Modelado de amenazas STRIDE: cada conexión que cruza una frontera de confianza (zona `kind: 'trust'`) recibe amenazas sugeridas.
+     Reglas (app.js › strideFor), por conexión que cruza:
+       S Suplantación: siempre; severidad inboundSeverity si es «entrante» (el origen no está en la zona de destino), si no medium
+       T Manipulación: sin cifrar → high (false) o medium (sin dato); cifrada → low
+       I Divulgación: datos sensibles y sin cifrar → high (critical si encrypted=false y datos de criticalClasses); cifrada → low (sin datos sensibles no aplica)
+       R Repudio: medium si viajan datos sensibles, si no low
+       D Denegación: entrante y de estilo síncrono → medium, si no low
+       E Elevación: entrante hacia un almacén de datos / secretos / identidad (storeTypes, storeIconCategories) → high; otra entrante → medium; saliente → se omite
+     categories: etiqueta, descripción y mitigación sugerida por categoría (editables). */
+  stride: {
+    inboundSeverity: 'high',
+    criticalClasses: ['pii', 'pci', 'phi'],
+    storeTypes: ['db', 'nosql', 'storage', 'analytics', 'secrets', 'auth'],
+    storeIconCategories: ['Bases de datos', 'Almacenamiento', 'Analítica', 'Seguridad'],
+    categories: {
+      S: { label: { en: 'Spoofing', es: 'Suplantación' },
+           desc: { en: 'The caller could pretend to be someone else when crossing the boundary.', es: 'Quien llama podría hacerse pasar por otro al cruzar la frontera.' },
+           mitigation: { en: 'Authenticate every caller at the boundary (mutual TLS, signed tokens, workload identity).', es: 'Autenticar a cada llamante en la frontera (TLS mutuo, tokens firmados, identidad de carga de trabajo).' } },
+      T: { label: { en: 'Tampering', es: 'Manipulación' },
+           desc: { en: 'Data could be altered in transit between the two zones.', es: 'Los datos podrían alterarse en tránsito entre las dos zonas.' },
+           mitigation: { en: 'Encrypt the channel (TLS) and validate integrity (signatures, checksums) and input.', es: 'Cifrar el canal (TLS) y validar integridad (firmas, sumas de control) y entradas.' } },
+      R: { label: { en: 'Repudiation', es: 'Repudio' },
+           desc: { en: 'Without a trail, a party could deny having sent or done something across the boundary.', es: 'Sin rastro, una parte podría negar haber enviado o hecho algo a través de la frontera.' },
+           mitigation: { en: 'Log and audit every crossing with caller identity and timestamps, in tamper-evident storage.', es: 'Registrar y auditar cada cruce con identidad y hora, en un almacén a prueba de alteraciones.' } },
+      I: { label: { en: 'Information disclosure', es: 'Divulgación de información' },
+           desc: { en: 'Sensitive data could be read by someone who should not see it.', es: 'Datos sensibles podrían ser leídos por quien no debería verlos.' },
+           mitigation: { en: 'Encrypt in transit, minimise the data sent and mask or tokenise sensitive fields.', es: 'Cifrar en tránsito, enviar solo lo necesario y enmascarar o tokenizar los campos sensibles.' } },
+      D: { label: { en: 'Denial of service', es: 'Denegación de servicio' },
+           desc: { en: 'The entry point could be flooded or exhausted from the less trusted side.', es: 'El punto de entrada podría saturarse o agotarse desde el lado menos confiable.' },
+           mitigation: { en: 'Apply rate limits, quotas, timeouts and a WAF or load shedding in front of the boundary.', es: 'Aplicar límites de tasa, cuotas, tiempos de espera y un WAF o descarte de carga antes de la frontera.' } },
+      E: { label: { en: 'Elevation of privilege', es: 'Elevación de privilegios' },
+           desc: { en: 'A caller could gain access or rights beyond what it was granted in the inner zone.', es: 'Quien llama podría obtener accesos o permisos más allá de los concedidos en la zona interior.' },
+           mitigation: { en: 'Enforce least privilege and authorise each request server-side; separate duties and scope credentials.', es: 'Aplicar mínimo privilegio y autorizar cada petición en el servidor; separar funciones y acotar credenciales.' } }
+    }
+  },
+
   /* Orden automático. direction: 'LR' (izquierda→derecha) o 'TB' (arriba→abajo). */
   layout: { direction: 'LR', colGap: 110, rowGap: 40, groupGap: 70, rankGapTB: 90 },
 
