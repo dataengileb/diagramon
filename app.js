@@ -2163,7 +2163,10 @@
   function presentCaption(sl) {
     const m = S.model;
     let h = m.title, sub = '', desc = '', notes = [];
-    if (sl.kind === 'overview') {
+    if (sl.kind === 'view') {
+      sub = viewLabel(sl.key);
+      desc = T('present.counts', { n: m.nodes.length, g: m.groups.length });
+    } else if (sl.kind === 'overview') {
       sub = sl.end ? T('present.end') : T('present.counts', { n: m.nodes.length, g: m.groups.length });
     } else if (sl.kind === 'group') {
       const ns = m.nodes.filter(n => inGroup(n, sl.g.id));
@@ -2186,6 +2189,7 @@
     P.i = clamp(i, 0, P.slides.length - 1);
     const sl = P.slides[P.i], m = S.model;
     let box = null, lit = null, gin = null;
+    if (sl.kind === 'view' && sl.key !== S.viewKey) setView(sl.key, { toast: false });  // recalcula el estado derivado de la vista
     if (sl.kind === 'group') {
       box = R.gbox.get(sl.g.id);
       lit = new Set(m.nodes.filter(n => inGroup(n, sl.g.id)).map(n => n.id));
@@ -2208,11 +2212,14 @@
     clearTimeout(P.idle);
     P.idle = setTimeout(() => document.body.classList.add('idle'), 3000);
   }
-  function present() {
-    if (P || !S.model.nodes.length) return;
+  // "Presentar vistas" (⇧V): una diapositiva por vista que aporta algo, aparte de la presentación por grupos
+  // (esa recorre UNA vista; mezclarlas haría una secuencia sin hilo). Mismo encuadre, atajos y barra.
+  const presentViewSlides = () => worthViews().map(key => ({ kind: 'view', key }));
+  function present(opts = {}) {
+    if (P || viewBusy || !S.model.nodes.length) return;
     cancelConnect();
     stopPlay();
-    P = { slides: [], i: 0, saved: { view: { ...S.view }, sel: S.sel }, fs: false, idle: 0 };
+    P = { slides: [], i: 0, views: !!opts.views, saved: { view: { ...S.view }, sel: S.sel, key: S.viewKey, flow: S.flow, chosen: S.viewChosen, stored: store.get('view') }, fs: false, idle: 0 };
     document.body.classList.add('presenting');
     svg.classList.add('presenting');
     $('#present-bar').hidden = false;
@@ -2221,7 +2228,7 @@
     // Esperar a que el lienzo tome su nuevo tamaño
     requestAnimationFrame(() => requestAnimationFrame(() => {
       if (!P) return;
-      P.slides = presentSlides();
+      P.slides = P.views ? presentViewSlides() : presentSlides();
       presentShow(0, true);
     }));
     presentWake();
@@ -2237,6 +2244,11 @@
     $('#present-bar').hidden = true;
     $('#btn-present').classList.remove('on');
     $$('.pout, .pdim', svg).forEach(n => n.classList.remove('pout', 'pdim'));
+    if (saved.key !== S.viewKey) {  // se recorrieron vistas: vuelve a la anterior y deshace lo que setView recuerda
+      setView(saved.key, { toast: false });
+      S.flow = saved.flow; S.viewChosen = saved.chosen;
+      if (saved.stored == null) { try { localStorage.removeItem(`${C.app.storageKey}.view`); } catch { /* sin almacenamiento */ } } else store.set('view', saved.stored);
+    }
     if (document.fullscreenElement) document.exitFullscreen?.().catch?.(() => {});
     select(saved.sel);
     requestAnimationFrame(() => animateView(saved.view, 0));
@@ -2254,7 +2266,7 @@
     else if (k.toLowerCase() === 'p') togglePlay();
     presentWake();
   }
-  $('#btn-present').addEventListener('click', present);
+  $('#btn-present').addEventListener('click', ev => present({ views: ev.shiftKey }));  // ⇧clic = presentar vistas
   $('#pb-dots').addEventListener('click', ev => { const b = ev.target.closest('[data-i]'); if (b) presentShow(+b.dataset.i); });
   document.addEventListener('fullscreenchange', () => {
     if (!P) return;
@@ -3483,7 +3495,7 @@
     const b = ev.target.closest('[data-export]');
     if (!b) return;
     exportMenu.open = false;
-    const f = { svg: exportSVG, png: exportPNG, json: exportJSON, copy: copyJSON, share: shareEncrypted }[b.dataset.export];
+    const f = { svg: exportSVG, png: exportPNG, 'svg-all': () => exportViews('svg'), 'png-all': () => exportViews('png'), json: exportJSON, copy: copyJSON, share: shareEncrypted }[b.dataset.export];
     if (f) f(); else exportOther(b.dataset.export);
   });
 
@@ -3492,7 +3504,7 @@
   $('#zoomv').addEventListener('click', () => animateView(zoomTarget(1 / S.view.k), 260));
 
   /* ---------- exportar / importar ---------- */
-  const fileName = ext => (fold(S.model.title).replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'diagram') + '.' + ext;
+  const fileName = (ext, suffix) => (fold(S.model.title).replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'diagram') + (suffix ? '-' + suffix : '') + '.' + ext;
   function download(data, name, type) {
     const blob = data instanceof Blob ? data : new Blob([data], { type });
     const a = document.createElement('a');
@@ -3661,18 +3673,79 @@
     return { str: '<?xml version="1.0" encoding="UTF-8"?>\n' + new XMLSerializer().serializeToString(out), W, H: Ht };
   }
   function exportSVG() { download(buildSVG().str, fileName('svg'), 'image/svg+xml'); toast(T('toast.svg')); }
-  function exportPNG() {
-    const { str, W, H: h } = buildSVG(), img = new Image(), scale = 2;
+  // PNG a 2x desde el SVG: promesa con el Blob (null si el navegador no pudo rasterizarlo)
+  const pngBlob = ({ str, W, H: h }) => new Promise(res => {
+    const img = new Image(), scale = 2;
     img.onload = () => {
       const c = document.createElement('canvas');
       c.width = W * scale; c.height = h * scale;
       const ctx = c.getContext('2d');
       ctx.scale(scale, scale);
       ctx.drawImage(img, 0, 0, W, h);
-      c.toBlob(blob => { if (blob) { download(blob, fileName('png')); toast(T('toast.png')); } else toast(T('toast.pngFail')); }, 'image/png');
+      try { c.toBlob(b => res(b), 'image/png'); } catch { res(null); }
     };
-    img.onerror = () => toast(T('toast.pngFail'));
+    img.onerror = () => res(null);
     img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(str);
+  });
+  function exportPNG() {
+    pngBlob(buildSVG()).then(blob => { if (blob) { download(blob, fileName('png')); toast(T('toast.png')); } else toast(T('toast.pngFail')); });
+  }
+
+  /* ---------- varias vistas a la vez (exportar, presentar, compartir) ---------- */
+  // ¿Aporta algo esta vista con este diagrama? Una vista de énfasis sin nada que resaltar sale igual que la Completa.
+  const viewWorth = key => {
+    const m = S.model, em = VIEWS[key]?.emphasis;
+    if (key === 'context') return m.groups.length > 0;
+    if (em === 'cost') return m.nodes.some(hasCost);
+    if (em === 'security') return m.nodes.some(n => n.data?.length) || m.edges.some(e => e.data?.length || e.encrypted != null);
+    if (em === 'data') return m.nodes.some(n => n.data?.length || VR.dataTypes.includes(n.type) || VR.dataIconCategories.includes(iconInfo(n.icon)?.category)) || m.edges.some(e => e.style === 'data' || e.data?.length);
+    return true;
+  };
+  const worthViews = () => VIEW_KEYS.filter(viewWorth);
+  const skippedLabel = keys => VIEW_KEYS.filter(k => !keys.includes(k)).map(viewLabel).join(', ');
+  // Ejecuta fn(clave, i) con cada vista activa SIN guardar la elección ni tocar el modelo; al final restaura vista, selección y conexión elegida
+  let viewBusy = false;
+  async function eachView(keys, fn) {
+    // Siempre con setView (recalcula VW.* y la leyenda); luego se deshace lo que setView recuerda (elección guardada y "elegida")
+    const saved = { key: S.viewKey, sel: S.sel, flow: S.flow, chosen: S.viewChosen, stored: store.get('view') };
+    viewBusy = true;
+    stopPlay(); clearPath();
+    try {
+      for (let i = 0; i < keys.length; i++) {
+        setView(keys[i], { toast: false });
+        await fn(keys[i], i);
+      }
+    } finally {
+      viewBusy = false;
+      setView(saved.key, { toast: false });
+      S.flow = saved.flow; S.viewChosen = saved.chosen;
+      if (saved.stored == null) { try { localStorage.removeItem(`${C.app.storageKey}.view`); } catch { /* sin almacenamiento */ } } else store.set('view', saved.stored);
+      select(saved.sel);
+    }
+  }
+  // Un archivo por vista (<título>-<clave>.png|svg), uno tras otro: cada PNG termina antes de empezar el siguiente.
+  // La clave (full, context…) va en el nombre y no el rótulo traducido: es estable en cualquier idioma y no lleva tildes.
+  async function exportViews(format = 'png') {
+    format = format === 'svg' ? 'svg' : 'png';
+    if (viewBusy || P || !S.model.nodes.length) return false;
+    const keys = worthViews(), skipped = skippedLabel(keys);
+    let done = 0;
+    try {
+      await eachView(keys, async (key, i) => {
+        toast(T('views.progress', { i: i + 1, n: keys.length, name: viewLabel(key) }), 60000);
+        const out = buildSVG();
+        if (format === 'svg') download(out.str, fileName('svg', key), 'image/svg+xml');
+        else {
+          const blob = await pngBlob(out);
+          if (!blob) throw new Error('png');
+          download(blob, fileName('png', key));
+        }
+        done++;
+        await new Promise(r => setTimeout(r, 350));  // respiro entre descargas (el navegador puede pedir permiso para varias)
+      });
+    } catch { toast(T('toast.pngFail'), 3200); return done; }
+    toast(T('views.done', done) + (skipped ? ' · ' + T('views.skipped', { names: skipped }) : ''), 4800);
+    return done;
   }
   /* ---------- compartir cifrado: un HTML que se abre solo, con contraseña ---------- */
   // El diagrama se guarda como imagen en los dos temas: el visor no necesita la app
@@ -3680,12 +3753,18 @@
   function shareEncrypted() {
     const SH = window.DiagramonShare;
     if (!SH || !window.crypto?.subtle || typeof CompressionStream === 'undefined') return toast(T('share.unsupported'), 3200);
+    if (viewBusy || P) return;
     const prev = document.activeElement, id = `sh${Date.now()}`;
+    // Solo se ofrecen las vistas que aportan algo; por defecto Completa, Contexto y Seguridad
+    const offered = worthViews(), preset = ['full', 'context', 'security'].filter(k => offered.includes(k));
+    // Cada vista va en dos temas (el activo y su contrario claro/oscuro): el negro solo si es el activo
+    const shTheme = () => [S.theme, S.theme === 'light' ? 'dark' : 'light'];
     const back = document.createElement('div');
     back.className = 'cf-back';
     back.innerHTML = `<form class="cf share" role="dialog" aria-modal="true" aria-labelledby="${id}t" aria-describedby="${id}d" autocomplete="off">
       <h3 id="${id}t">${esc(T('share.title'))}</h3>
       <p id="${id}d">${esc(T('share.lead'))}</p>
+      <fieldset class="sh-views"><legend>${esc(T('share.views'))}</legend>${offered.map(k => `<label class="sh-chk"><input type="checkbox" name="views" value="${esc(k)}"${preset.includes(k) ? ' checked' : ''}>${esc(viewLabel(k))}</label>`).join('')}<small class="sh-size"></small></fieldset>
       <label>${esc(T('share.pw'))}<span class="sh-row"><input type="password" name="pw" autocomplete="new-password" minlength="12" required><button type="button" class="btn small" data-sh="show">${esc(T('share.show'))}</button></span></label>
       <div class="sh-meter" data-level="-1"><i></i><i></i><i></i><i></i><span></span></div>
       <label>${esc(T('share.pw2'))}<input type="password" name="pw2" autocomplete="new-password" required></label>
@@ -3702,6 +3781,15 @@
       meter.querySelector('span').textContent = pw.value ? T(`share.lvl${lvl}`) + (pw.value.length < 12 ? ` · ${T('share.min')}` : '') : '';
       err.textContent = '';
     };
+    // Tamaño aproximado: el SVG de la vista actual comprimido, por vistas elegidas × 2 temas, +33 % de base64 (los temas no se deduplican: la ventana de gzip es de 32 KB)
+    const sizeEl = form.querySelector('.sh-size');
+    let unit = 0;
+    const estimate = () => {
+      const n = form.querySelectorAll('input[name="views"]:checked').length;
+      sizeEl.textContent = unit && n ? T('share.size', { kb: Math.max(1, Math.round(unit * n * 2 * 1.34 / 1024)) }) : '';
+    };
+    form.addEventListener('change', ev => { if (ev.target.name === 'views') { err.textContent = ''; estimate(); } });
+    new Response(new Blob([buildSVG().str]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer().then(b => { unit = b.byteLength; estimate(); }, () => {});
     pw.addEventListener('input', rate);
     pw2.addEventListener('input', () => { err.textContent = ''; });
     back.addEventListener('mousedown', ev => { if (ev.target === back && !form.classList.contains('busy')) close(); });
@@ -3714,6 +3802,8 @@
     form.addEventListener('submit', async ev => {
       ev.preventDefault();
       if (form.classList.contains('busy')) return;
+      const keys = [...form.querySelectorAll('input[name="views"]:checked')].map(i => i.value);
+      if (!keys.length) { err.textContent = T('share.noViews'); return; }
       if (pw.value.length < 12) { err.textContent = T('share.min'); return pw.focus(); }
       if (SH.strength(pw.value).level < 1) { err.textContent = T('share.weak'); return pw.focus(); }
       if (pw.value !== pw2.value) { err.textContent = T('share.mismatch'); return pw2.focus(); }
@@ -3721,7 +3811,9 @@
       form.querySelector('[type="submit"]').textContent = T('share.busy');
       try {
         const av = activeVersion();
-        const payload = { title: S.model.title, version: av ? verLabel(av) : S.model.meta?.version || '', sharedAt: new Date().toISOString(), theme: S.theme, dark: svgFor('dark'), light: svgFor('light'), black: svgFor('black') };
+        const views = [];
+        await eachView(keys, key => { views.push({ key, label: viewLabel(key), svg: Object.fromEntries(shTheme().map(th => [th, svgFor(th)])) }); });
+        const payload = { fmt: 2, title: S.model.title, version: av ? verLabel(av) : S.model.meta?.version || '', sharedAt: new Date().toISOString(), theme: S.theme, view: keys.includes(S.viewKey) ? S.viewKey : keys[0], views };
         const env = await SH.encrypt(payload, pw.value);
         download(SH.viewer(env, I.lang), `diagramon-${today()}.html`, 'text/html');
         close();
@@ -3996,7 +4088,7 @@
     else if (k === 'f') fitView();
     else if (k === 'p') togglePlay();
     else if (k === 'r' && selIds().length === 2) showPath(...selIds());
-    else if (k === 'v') present();
+    else if (k === 'v') present({ views: ev.shiftKey });
     else if (k === 'i') toggleDocbar();
     else if (k === 't') toggleTheme();
     else if (k === 'l') toggleLang();
@@ -4120,14 +4212,14 @@
   window.Diagramon = {
     get model() { return clone(S.model); },
     load: (raw, opts = {}) => setModel(raw, { history: true, animate: true, fit: true, ...opts }),
-    addNode, addEdge, relayout, fitView, togglePlay, present, exitPresent, toggleTheme, toggleLang,
+    addNode, addEdge, relayout, fitView, togglePlay, present, presentViews: () => present({ views: true }), exitPresent, toggleTheme, toggleLang,
     get lang() { return I.lang; },
     select: ids => select({ kind: 'multi', ids: [].concat(ids) }), align: alignNodes,
     showPath, clearPath,
     saveVersion, openVersion, compareVersion, deleteVersion,
     setFilter, clearFilter, get filter() { return clone(S.filter); },
     setView, get view() { return S.viewKey; }, get views() { return [...VIEW_KEYS]; },
-    exportSVG, exportPNG, exportJSON, shareEncrypted, exportOther, exportCtx, toggleRouting, importFiles, config: C, icons: ICONS
+    exportSVG, exportPNG, exportViews, exportJSON, shareEncrypted, exportOther, exportCtx, toggleRouting, importFiles, config: C, icons: ICONS
   };
 
   init();
