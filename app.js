@@ -247,6 +247,19 @@
     return [...use].filter(([k, ids]) => ids.length || used.has(k));
   }
 
+  /* ---------- hallazgos: registro común (revisión automática, STRIDE, cumplimiento) ---------- */
+  // Hallazgo = { id, source, rule, severity: 'low' | 'medium' | 'high' | 'critical', target: { kind: 'node' | 'edge' | 'group' | 'zone', id }, title, detail?, fix? }
+  // `id` es estable (p. ej. `rule:sec.db-backup:node:db1`) para poder descartarlo y recordarlo. Solo avisan: nunca bloquean nada.
+  // Cada fuente registra una función (modelo) → [hallazgos] con addFindingSource; allFindings las junta (una fuente que falla no tumba las demás).
+  const FINDING_SOURCES = [];
+  const addFindingSource = (key, fn) => { FINDING_SOURCES.push({ key, fn }); };
+  function allFindings(m = S.model) {
+    return m ? FINDING_SOURCES.flatMap(s => { try { return s.fn(m) || []; } catch (err) { console.error(`findings/${s.key}`, err); return []; } }) : [];
+  }
+  // CSV para Excel: separador coma, comillas cuando hace falta y BOM para que respete tildes
+  const csvCell = v => { const t = v == null ? '' : String(v); return /[",\r\n]/.test(t) || /^[=+\-@]/.test(t) ? `"${(/^[=+\-@]/.test(t) ? "'" : '') + t.replace(/"/g, '""')}"` : t; };
+  const toCSV = rows => '\ufeff' + rows.map(r => r.map(csvCell).join(',')).join('\r\n');
+
   /* ---------- observaciones de revisión (se levantan a mano en el inspector) ---------- */
   // review: { status: 'open' | 'resolved', note, by, raised, due, closed } con fechas AAAA-MM-DD
   // Fecha AAAA-MM-DD que existe en el calendario (2026-02-30 no vale)
