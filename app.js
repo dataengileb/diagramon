@@ -3055,12 +3055,11 @@
     if (opts.history) pushHistory();
     // El texto y el JSON del editor no incluyen las versiones: se conservan las que había
     if (opts.fromEditor && S.model && raw && typeof raw === 'object' && !Array.isArray(raw.versions)) raw = { ...raw, versions: S.model.versions, active: S.model.active };
-    // Tampoco el texto incluye notas ni zonas: si el editor no las trae, se conservan
+    // El texto siempre trae notas, zonas, fronteras y descartados (el texto es la fuente de verdad: borrarlos del texto los borra); el JSON, si omite notas o zonas, las conserva
     if (opts.fromEditor && S.model && raw && typeof raw === 'object') {
       if (!Array.isArray(raw.notes)) raw = { ...raw, notes: S.model.notes };
       if (!Array.isArray(raw.zones)) raw = { ...raw, zones: S.model.zones };
       if (!Array.isArray(raw.decisions)) raw = { ...raw, decisions: S.model.decisions }; // ni el texto ni el JSON (si se borra la clave) tocan las decisiones
-      if (opts.fromEditor === 'text' && raw.dismissed === undefined && S.model.dismissed) raw = { ...raw, dismissed: S.model.dismissed }; // el texto no trae los hallazgos descartados
     }
     S.model = normalize(raw);
     ensurePositions(S.model);
