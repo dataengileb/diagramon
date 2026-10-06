@@ -23,6 +23,8 @@
    Vista:    view: security   (vista con la que se abre: full, context, logical, physical, security, data, cost; opcional)
    Conexión: a -> b -> c : etiqueta color=…   (la etiqueta va en la última flecha)
    Datos:    nodo … data=pii,pci · conexión a -> b : SQL data=pii encrypted=yes
+   Capas:    nodo o grupo … layer=gold (capa=oro): bronze|silver|gold · bronce|plata|oro · raw|curated|serving · crudo|curado|consumo
+             (los nodos heredan la capa de su grupo) · línea `layers: zones` / `capas: zonas` muestra Raw/Curated/Serving en vez de Bronze/Silver/Gold
    Comentario: líneas que empiezan por # o //
 
    Acepta las palabras clave en inglés y en español (title/título, group/grupo,
@@ -37,7 +39,7 @@
   const ARROW_SPLIT = /\s*(\.\.>|~>|=>|->)\s*/;
   const HAS_ARROW = /\.\.>|~>|=>|->/;
   const ID = /^[^\s:[\]"{}]+$/;
-  const NODE_KEYS = ['color', 'badge', 'desc', 'sub', 'x', 'y', 'costo', 'cost', 'data', 'datos'];
+  const NODE_KEYS = ['color', 'badge', 'desc', 'sub', 'x', 'y', 'costo', 'cost', 'data', 'datos', 'layer', 'capa'];
   // review id: "observación" by=… raised=AAAA-MM-DD due=AAAA-MM-DD status=open|resolved closed=AAAA-MM-DD
   const REVIEW_KEYS = { by: 'by', por: 'by', raised: 'raised', levantada: 'raised', due: 'due', compromiso: 'due', status: 'status', estado: 'status', closed: 'closed', cerrada: 'closed' };
   const isDay = v => /^\d{4}-\d{2}-\d{2}$/.test(v) && !isNaN(new Date(`${v}T12:00Z`)) && new Date(`${v}T12:00Z`).toISOString().slice(0, 10) === v;
@@ -52,9 +54,11 @@
   // Palabras que escribe stringify y mensajes de error, por idioma
   const WORDS = {
     en: { title: 'title', direction: 'direction', group: 'group', cost: 'cost', hour: 'hour', month: 'month', year: 'year', years: 'years', data: 'data', encrypted: 'encrypted', both: 'both', yes: 'yes', no: 'no', lines: 'lines', line: 'line', elbow: 'elbow', curved: 'curved', elbowOne: 'elbow', curvedOne: 'curved', author: 'author', version: 'version', view: 'view', kind: 'kind', physical: 'physical', logical: 'logical',
-      review: 'review', by: 'by', raised: 'raised', due: 'due', status: 'status', closed: 'closed', resolved: 'resolved' },
+      review: 'review', by: 'by', raised: 'raised', due: 'due', status: 'status', closed: 'closed', resolved: 'resolved', layer: 'layer', layers: 'layers', zones: 'zones',
+      layerOf: { bronze: 'bronze', silver: 'silver', gold: 'gold' } },
     es: { title: 'título', direction: 'dirección', group: 'grupo', cost: 'costo', hour: 'hora', month: 'mes', year: 'año', years: 'años', data: 'datos', encrypted: 'cifrado', both: 'ambos', yes: 'sí', no: 'no', lines: 'líneas', line: 'línea', elbow: 'codos', curved: 'curvas', elbowOne: 'codo', curvedOne: 'curva', author: 'autor', version: 'versión', view: 'vista', kind: 'tipo', physical: 'físico', logical: 'lógico',
-      review: 'revisión', by: 'por', raised: 'levantada', due: 'compromiso', status: 'estado', closed: 'cerrada', resolved: 'resuelta' }
+      review: 'revisión', by: 'por', raised: 'levantada', due: 'compromiso', status: 'estado', closed: 'cerrada', resolved: 'resuelta', layer: 'capa', layers: 'capas', zones: 'zonas',
+      layerOf: { bronze: 'bronce', silver: 'plata', gold: 'oro' } }
   };
   const MSG = {
     en: {
@@ -65,6 +69,7 @@
       data: v => `unknown data class “${v}” (e.g. pii, pci, confidential)`, enc: v => `invalid encrypted value “${v}” (use yes or no)`,
       route: v => `invalid line style “${v}” (use curved or elbow)`,
       day: v => `invalid date “${v}” (use YYYY-MM-DD)`, status: v => `invalid status “${v}” (use open or resolved)`,
+      layer: v => `unknown layer “${v}” (use bronze, silver or gold; also raw, curated or serving)`, lnames: v => `invalid layer naming “${v}” (use medallion or zones)`,
       view: v => `unknown view “${v}”`, gkind: v => `invalid group type “${v}” (use logical or physical)`,
       line: 'cannot understand this line', open: n => `missing } to close ${n === 1 ? 'a group' : `${n} groups`}`
     },
@@ -76,6 +81,7 @@
       data: v => `clasificación de datos desconocida «${v}» (ej.: pii, pci, confidential)`, enc: v => `valor de cifrado no válido «${v}» (usa sí o no)`,
       route: v => `estilo de línea no válido «${v}» (usa curvas o codos)`,
       day: v => `fecha no válida «${v}» (usa AAAA-MM-DD)`, status: v => `estado no válido «${v}» (usa abierta o resuelta)`,
+      layer: v => `capa desconocida «${v}» (usa bronce, plata u oro; también crudo, curado o consumo)`, lnames: v => `nombres de capa no válidos «${v}» (usa medallón o zonas)`,
       view: v => `vista desconocida «${v}»`, gkind: v => `tipo de grupo no válido «${v}» (usa lógico o físico)`,
       line: 'no se entiende esta línea', open: n => `falta cerrar ${n === 1 ? 'un grupo' : `${n} grupos`} con }`
     }
@@ -141,6 +147,15 @@
       return d.filter(k => !bad.includes(k));
     };
 
+    // Capa: clave o alias (bronze, raw, bronce, crudo…); si se conocen las de config.js (ctx.layers), avisa de las desconocidas
+    const checkLayer = (v, ln) => {
+      const k = String(v).trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      if (!ctx.layers) return k;
+      if (ctx.layers[k]) return ctx.layers[k];
+      err(ln, msg.layer(v));
+      return null;
+    };
+
     const nodeFor = id => {
       if (!nodes.has(id)) {
         const n = { id, label: id, type: 'generic' };
@@ -164,6 +179,11 @@
       if ((m = line.match(/^(l[ií]neas|lines|routing)\s*:\s*(\S+)\s*$/i))) {
         const r = parseRoute(m[2]);
         if (r === 'elbow') model.routing = 'elbow'; else if (!r) err(ln, msg.route(m[2]));
+        return;
+      }
+      if ((m = line.match(/^(layers|capas)\s*:\s*(\S+)\s*$/i))) {
+        const f = m[2].toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        if (/^(zones?|zonas?)$/.test(f)) model.layerNames = 'zones'; else if (!/^(medallion|medallon|medalla)$/.test(f)) err(ln, msg.lnames(m[2]));
         return;
       }
       if ((m = line.match(/^(autor|author)\s*:\s*(.*)$/i))) { if (m[2].trim()) (model.meta ||= {}).author = m[2].trim(); return; }
@@ -193,7 +213,7 @@
         const id = m[2];
         if (!ID.test(id)) return err(ln, msg.groupId(id));
         if (groups.has(id)) return err(ln, msg.groupDup(id));
-        const tk = tokens(m[3], ['color', 'icon', 'icono', 'kind', 'tipo']);
+        const tk = tokens(m[3], ['color', 'icon', 'icono', 'kind', 'tipo', 'layer', 'capa']);
         const g = { id, label: tk.quotes[0] ?? (tk.words.join(' ') || id) };
         if (tk.kv.color) g.color = tk.kv.color;
         const gi = (tk.kv.icon ?? tk.kv.icono)?.trim().toLowerCase();
@@ -203,6 +223,8 @@
           const f = gk.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
           if (/^(physical|fisic[oa]?)$/.test(f)) g.kind = 'physical'; else if (/^(logical|logic[oa]?)$/.test(f)) g.kind = 'logical'; else err(ln, msg.gkind(gk));
         }
+        const gl = tk.kv.layer ?? tk.kv.capa;
+        if (gl != null) { const l = checkLayer(gl, ln); if (l) g.layer = l; }
         if (stack.length) g.parent = stack[stack.length - 1];
         groups.add(id);
         model.groups.push(g);
@@ -265,6 +287,8 @@
         if (cv != null) { const c = parseCost(cv); if (c) Object.assign(n, c); else err(ln, msg.cost(cv)); }
         const dv = tk.kv.data ?? tk.kv.datos;
         if (dv != null) { const d = checkData(dv, ln); if (d.length) n.data = d; }
+        const lv = tk.kv.layer ?? tk.kv.capa;
+        if (lv != null) { const l = checkLayer(lv, ln); if (l) n.layer = l; }
         if (stack.length) n.group = stack[stack.length - 1];
         return;
       }
@@ -280,6 +304,7 @@
     const out = [`${w.title}: ${m.title}`];
     if (m.direction) out.push(`${w.direction}: ${m.direction}`);
     if (m.routing === 'elbow') out.push(`${w.lines}: ${w.elbow}`);
+    if (m.layerNames === 'zones') out.push(`${w.layers}: ${w.zones}`);
     if (m.meta?.author) out.push(`${w.author}: ${m.meta.author}`);
     if (m.meta?.version) out.push(`${w.version}: ${m.meta.version}`);
     if (m.meta?.view) out.push(`${w.view}: ${m.meta.view}`);
@@ -292,12 +317,13 @@
       if (n.color) p.push(`color=${bare(n.color)}`);
       if (n.cost != null && n.cost !== '' && Number.isFinite(+n.cost)) p.push(`${w.cost}=${costValue(n, w)}`);
       if (n.data?.length) p.push(`${w.data}=${n.data.join(',')}`);
+      if (n.layer) p.push(`${w.layer}=${w.layerOf[n.layer] || n.layer}`);
       if (n.desc) p.push(`desc=${quote(n.desc)}`);
       return p.join(' ');
     };
     const groupIds = new Set(m.groups.map(g => g.id));
     const writeGroup = (g, ind) => {
-      out.push(`${ind}${w.group} ${g.id} ${quote(g.label)}${g.icon ? ` icon=${bare(g.icon)}` : ''}${g.color ? ` color=${bare(g.color)}` : ''}${g.kind ? ` ${w.kind}=${w[g.kind]}` : ''} {`);
+      out.push(`${ind}${w.group} ${g.id} ${quote(g.label)}${g.icon ? ` icon=${bare(g.icon)}` : ''}${g.color ? ` color=${bare(g.color)}` : ''}${g.kind ? ` ${w.kind}=${w[g.kind]}` : ''}${g.layer ? ` ${w.layer}=${w.layerOf[g.layer] || g.layer}` : ''} {`);
       m.nodes.filter(n => n.group === g.id).forEach(n => out.push(`${ind}  ${nodeLine(n)}`));
       m.groups.filter(c => c.parent === g.id).forEach(c => writeGroup(c, ind + '  '));
       out.push(`${ind}}`);

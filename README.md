@@ -164,6 +164,18 @@ The tags appear on top of each node and on the connection's label, next to a pad
 When a connection marked *Not encrypted* carries sensitive data, or links a component with sensitive data, it turns red and a warning appears above the canvas.
 With several components selected, the tags apply to all of them.
 
+### Data lake layers
+
+Tag where a component sits in a medallion-style data lake.
+
+1. Select a component or a group. Under **Data lake layer**, pick **Bronze**, **Silver** or **Gold** (or *None*).
+2. Components inherit the layer of their group, so you can tag a whole zone once. The *None* button then reads *Inherited (Gold)* and a hint says which group it comes from.
+3. Below the buttons, switch the document-wide naming between **Bronze · Silver · Gold** and **Raw · Curated · Serving**. It applies to every label, the legend and the filters.
+
+A layered component gets a colored band on its left edge and a small layer label at its bottom-left corner. A group with its own layer gets a thicker, tinted border and a label next to its title.
+The **Layers** legend (exports and the document card, key **I**) lists the layers in use; click a row in the document card to filter by it. The **Filters** menu has a *Layer* section, and the **Data** view highlights layered components.
+The *Context* and *Cost* views hide layer marks. Scripts can read `Diagramon.layers()` and call `Diagramon.setLayerNames('zones')`.
+
 ### 7. Review findings
 
 1. Select a component and click **⚑ Raise a review finding**.
@@ -331,6 +343,8 @@ api ~> queue : events
 | `data=pii,pci` | Data classification of a node or a connection |
 | `a -> b : TLS encrypted=yes` | Encryption in transit (`yes` or `no`) |
 | `group id "Name" color=… { … }` | Group; groups can be nested |
+| `layer=gold` (`bronze`, `silver`, `gold`; also `raw`, `curated`, `serving`) | Data lake layer of a node or group (Spanish: `capa=oro`); nodes inherit it from their group |
+| `layers: zones` | Show Raw / Curated / Serving instead of Bronze / Silver / Gold (Spanish: `capas: zonas`) |
 | `a -> b` · `a => b` · `a ~> b` · `a ..> b` | Request · data · event · optional |
 | `a -> b -> c : label` | Chain; the label goes on the last arrow |
 | `lines: elbow` · `a -> b : x line=curved` | Elbow or curved lines, for the diagram or one connection |
@@ -376,6 +390,7 @@ Everything you can customize is in **`config.js`**. Save and reload `index.html`
 - **Default theme**: `app.defaultTheme: 'dark' | 'light' | 'black'`. The `T` key and the theme button cycle light → dark → black.
 - **Default language**: `app.defaultLang: 'en' | 'es'`. UI texts live in `i18n.js`; texts in `config.js` and `examples.js` can be `{ en: '…', es: '…' }`.
 - **Data classes**: `dataClasses` sets the tags (name, short label, color). `sensitive: true` turns on the red warning for unencrypted flows.
+- **Data lake layers**: `dataLayers` sets the layers in order (`label` for the medallion names, `alt` for the Raw/Curated/Serving names, short letters and `color`). Colors default to `--layer-bronze`, `--layer-silver` and `--layer-gold`, set per theme in `index.html`; edit them there or put a fixed color in `config.js`. `layerAliases` lists the other words accepted when reading JSON and text. Each view's `layers` flag shows or hides them.
 - **Environments**: `environments` sets the buttons of the *Versions* tab (name, short label and color). Add or remove as many as you need.
 - **Node size**: with `node.sameSize: true` (default) every node is `node.width` wide and long names wrap to 2 lines.
   With `false`, each node grows with its text.

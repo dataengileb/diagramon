@@ -116,6 +116,23 @@ window.DIAGRAMON_CONFIG = {
     phi:          { label: { en: 'Health data (PHI)', es: 'Datos de salud (PHI)' }, short: 'PHI', color: 'lila', sensitive: true }
   },
 
+  /* Capas del data lake (medallion): etiqueta de color en la esquina inferior izquierda de cada nodo, franja en su borde
+     izquierdo y borde de color en los grupos. Los nodos heredan la capa de su grupo.
+     label: nombre «Medallion» · alt: nombre «Zonas» (el diagrama elige cuál ver, ver `layerNames` en el JSON) · short: letra corta
+     color: cualquier color CSS. Por defecto usan variables --layer-<clave> definidas por tema en index.html (#diagram-css),
+     para que se lean bien en oscuro, claro y negro; cámbialas ahí o pon aquí un color fijo (p. ej. '#c27c3e').
+     El orden de las claves es el de la leyenda. layerAliases (abajo): otros nombres aceptados al leer JSON y texto (se comparan en minúsculas, sin tildes). */
+  dataLayers: {
+    bronze: { label: { en: 'Bronze', es: 'Bronce' }, alt: { en: 'Raw', es: 'Crudo' }, short: 'B', altShort: 'R', color: 'var(--layer-bronze, #c27c3e)' },
+    silver: { label: { en: 'Silver', es: 'Plata' }, alt: { en: 'Curated', es: 'Curado' }, short: 'S', altShort: 'C', color: 'var(--layer-silver, #9aa7b4)' },
+    gold:   { label: { en: 'Gold', es: 'Oro' }, alt: { en: 'Serving', es: 'Consumo' }, short: 'G', altShort: 'S', color: 'var(--layer-gold, #d4a72c)' }
+  },
+  layerAliases: {
+    raw: 'bronze', bronce: 'bronze', crudo: 'bronze',
+    curated: 'silver', plata: 'silver', curado: 'silver', refined: 'silver',
+    serving: 'gold', oro: 'gold', consumo: 'gold'
+  },
+
   /* Costos escritos a mano en cada componente (recuadro bajo el nodo).
      hoursPerMonth: horas usadas para pasar un precio por hora a mensual.
      defaultYears: años por defecto del periodo "Multianual". */
@@ -133,16 +150,17 @@ window.DIAGRAMON_CONFIG = {
      - groups: 'all' (todos) · 'logical' (oculta los grupos físicos) · 'collapse-top' (cajas cerradas de primer nivel)
      - nodeDetail: 'full' | 'min' (sin detalle `sub`) · edgeLabels / dataTags / locks / cost / zones / notes / review: true | false
      - emphasis: null | 'security' | 'data' | 'cost' (resalta lo relevante y atenúa el resto)
+     - layers: true | false (capas del data lake: franja, etiqueta y borde de grupo)
      - legendGroups: true añade a la leyenda una fila que indica qué grupos se ven (ya sale sola si `groups` no es 'all')
      - icon: contenido SVG de 24×24 a trazo para el selector de vistas de la barra superior (su descripción está en i18n.js › view.desc.<clave>) */
   views: {
-    full:     { label: { en: 'Full', es: 'Completa' }, icon: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>', groups: 'all', nodeDetail: 'full', edgeLabels: true, dataTags: true, locks: true, cost: true, zones: true, notes: true, review: true, emphasis: null },
-    context:  { label: { en: 'Context', es: 'Contexto' }, icon: '<rect x="3" y="8" width="7" height="8" rx="2"/><rect x="14" y="8" width="7" height="8" rx="2"/><path d="M10 12h4"/>', groups: 'collapse-top', nodeDetail: 'min', edgeLabels: false, dataTags: false, locks: false, cost: false, zones: false, notes: false, review: false, emphasis: null },
-    logical:  { label: { en: 'Logical', es: 'Lógica' }, icon: '<path d="m12 3 9 5-9 5-9-5z"/><path d="m3 13 9 5 9-5"/>', groups: 'logical', nodeDetail: 'full', edgeLabels: true, dataTags: false, locks: false, cost: false, zones: false, notes: true, review: true, emphasis: null },
-    physical: { label: { en: 'Physical', es: 'Física' }, legendGroups: true, icon: '<rect x="3" y="4" width="18" height="6" rx="1.5"/><rect x="3" y="14" width="18" height="6" rx="1.5"/><path d="M7 7h.01M7 17h.01"/>', groups: 'all', nodeDetail: 'full', edgeLabels: false, dataTags: false, locks: true, cost: false, zones: true, notes: true, review: true, emphasis: null },
-    security: { label: { en: 'Security', es: 'Seguridad' }, icon: '<path d="M12 3 4.5 6v5.5c0 4.5 3.2 8 7.5 9.5 4.3-1.5 7.5-5 7.5-9.5V6z"/><path d="m9 12 2 2 4-4"/>', groups: 'all', nodeDetail: 'full', edgeLabels: true, dataTags: true, locks: true, cost: false, zones: true, notes: true, review: true, emphasis: 'security' },
-    data:     { label: { en: 'Data', es: 'Datos' }, icon: '<ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/>', groups: 'all', nodeDetail: 'full', edgeLabels: true, dataTags: true, locks: false, cost: false, zones: true, notes: true, review: true, emphasis: 'data' },
-    cost:     { label: { en: 'Cost', es: 'Costo' }, icon: '<circle cx="12" cy="12" r="9"/><path d="M14.8 9.2c-.4-1-1.4-1.6-2.8-1.6-1.6 0-2.8.8-2.8 2s1 1.7 2.8 2.1 2.8.9 2.8 2.1-1.2 2-2.8 2c-1.4 0-2.4-.6-2.8-1.6M12 6v1.6M12 16.4V18"/>', groups: 'all', nodeDetail: 'full', edgeLabels: true, dataTags: false, locks: false, cost: true, zones: false, notes: true, review: true, emphasis: 'cost' }
+    full:     { label: { en: 'Full', es: 'Completa' }, icon: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>', groups: 'all', nodeDetail: 'full', edgeLabels: true, dataTags: true, locks: true, cost: true, zones: true, notes: true, review: true, emphasis: null, layers: true },
+    context:  { label: { en: 'Context', es: 'Contexto' }, icon: '<rect x="3" y="8" width="7" height="8" rx="2"/><rect x="14" y="8" width="7" height="8" rx="2"/><path d="M10 12h4"/>', groups: 'collapse-top', nodeDetail: 'min', edgeLabels: false, dataTags: false, locks: false, cost: false, zones: false, notes: false, review: false, emphasis: null, layers: false },
+    logical:  { label: { en: 'Logical', es: 'Lógica' }, icon: '<path d="m12 3 9 5-9 5-9-5z"/><path d="m3 13 9 5 9-5"/>', groups: 'logical', nodeDetail: 'full', edgeLabels: true, dataTags: false, locks: false, cost: false, zones: false, notes: true, review: true, emphasis: null, layers: true },
+    physical: { label: { en: 'Physical', es: 'Física' }, legendGroups: true, icon: '<rect x="3" y="4" width="18" height="6" rx="1.5"/><rect x="3" y="14" width="18" height="6" rx="1.5"/><path d="M7 7h.01M7 17h.01"/>', groups: 'all', nodeDetail: 'full', edgeLabels: false, dataTags: false, locks: true, cost: false, zones: true, notes: true, review: true, emphasis: null, layers: true },
+    security: { label: { en: 'Security', es: 'Seguridad' }, icon: '<path d="M12 3 4.5 6v5.5c0 4.5 3.2 8 7.5 9.5 4.3-1.5 7.5-5 7.5-9.5V6z"/><path d="m9 12 2 2 4-4"/>', groups: 'all', nodeDetail: 'full', edgeLabels: true, dataTags: true, locks: true, cost: false, zones: true, notes: true, review: true, emphasis: 'security', layers: true },
+    data:     { label: { en: 'Data', es: 'Datos' }, icon: '<ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/>', groups: 'all', nodeDetail: 'full', edgeLabels: true, dataTags: true, locks: false, cost: false, zones: true, notes: true, review: true, emphasis: 'data', layers: true },
+    cost:     { label: { en: 'Cost', es: 'Costo' }, icon: '<circle cx="12" cy="12" r="9"/><path d="M14.8 9.2c-.4-1-1.4-1.6-2.8-1.6-1.6 0-2.8.8-2.8 2s1 1.7 2.8 2.1 2.8.9 2.8 2.1-1.2 2-2.8 2c-1.4 0-2.4-.6-2.8-1.6M12 6v1.6M12 16.4V18"/>', groups: 'all', nodeDetail: 'full', edgeLabels: true, dataTags: false, locks: false, cost: true, zones: false, notes: true, review: true, emphasis: 'cost', layers: false }
   },
   /* Vista por defecto al abrir si el navegador no recuerda otra (el diagrama puede traer `meta.view`). */
   defaultView: 'full',

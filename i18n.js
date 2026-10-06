@@ -202,6 +202,11 @@ review db: "DB in a public subnet" by=Ana raised=2026-10-01 due=2026-11-15
       'data.label': 'Data classification', 'data.edge': 'Data in transit', 'data.none': 'Tag the data it stores or handles.', 'data.noneEdge': 'Tag the data this connection carries.',
       'enc.label': 'Encryption in transit', 'enc.unset': 'Not set', 'enc.yes': 'Encrypted', 'enc.no': 'Not encrypted',
       'enc.warn': 'Sensitive data travels here without encryption.',
+      /* ---------- data lake layers ---------- */
+      'layer.label': 'Data lake layer', 'layer.none': 'None', 'layer.inheritedN': ({ n }) => `Inherited (${n})`, 'layer.inheritedFrom': ({ g }) => `Inherited from ${g}`,
+      'layer.mixed': 'Mixed values', 'layer.hint': 'Tag where this data sits in the lake. Components inherit the layer of their group.',
+      'layer.names': 'Names', 'layer.names.tip': 'Applies to the whole document: Bronze / Silver / Gold or Raw / Curated / Serving', 'layer.tip': ({ l }) => `Layer: ${l}`,
+      'leg.layers': 'LAYERS', 'flt.sec.layer': 'Layer', 'flt.noLayer': 'No layer', 'leg.layersN': 'Layers', 'layer.filter': 'Filter by this layer',
       'top.filter': 'Filter: dim what does not match (G)', 'top.filter.lbl': 'Filter',
       'flt.sec.data': 'Data', 'flt.sec.review': 'Review', 'flt.sec.provider': 'Provider', 'flt.sec.category': 'Category', 'flt.sec.group': 'Group', 'flt.sec.cost': 'Cost',
       'flt.insecure': 'Unencrypted sensitive flows', 'flt.open': 'Open findings', 'flt.overdue': 'Overdue', 'flt.generic': 'Generic', 'flt.cost': 'With cost',
@@ -417,6 +422,11 @@ revisión db: "BD en subred pública" por=Ana levantada=2026-10-01 compromiso=20
       'data.label': 'Clasificación de datos', 'data.edge': 'Datos en tránsito', 'data.none': 'Marca los datos que guarda o maneja.', 'data.noneEdge': 'Marca los datos que viajan por esta conexión.',
       'enc.label': 'Cifrado en tránsito', 'enc.unset': 'Sin indicar', 'enc.yes': 'Cifrado', 'enc.no': 'Sin cifrar',
       'enc.warn': 'Por aquí viajan datos sensibles sin cifrar.',
+      /* ---------- capas del data lake ---------- */
+      'layer.label': 'Capa del data lake', 'layer.none': 'Ninguna', 'layer.inheritedN': ({ n }) => `Heredada (${n})`, 'layer.inheritedFrom': ({ g }) => `Heredada de ${g}`,
+      'layer.mixed': 'Valores distintos', 'layer.hint': 'Indica en qué capa del lake está este dato. Los componentes heredan la capa de su grupo.',
+      'layer.names': 'Nombres', 'layer.names.tip': 'Vale para todo el documento: Bronce / Plata / Oro o Crudo / Curado / Consumo', 'layer.tip': ({ l }) => `Capa: ${l}`,
+      'leg.layers': 'CAPAS', 'flt.sec.layer': 'Capa', 'flt.noLayer': 'Sin capa', 'leg.layersN': 'Capas', 'layer.filter': 'Filtrar por esta capa',
       'top.filter': 'Filtrar: atenuar lo que no coincide (G)', 'top.filter.lbl': 'Filtrar',
       'flt.sec.data': 'Datos', 'flt.sec.review': 'Revisión', 'flt.sec.provider': 'Proveedor', 'flt.sec.category': 'Categoría', 'flt.sec.group': 'Grupo', 'flt.sec.cost': 'Costo',
       'flt.insecure': 'Flujos sensibles sin cifrar', 'flt.open': 'Observaciones abiertas', 'flt.overdue': 'Vencidas', 'flt.generic': 'Genérico', 'flt.cost': 'Con costo',
