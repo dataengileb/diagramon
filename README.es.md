@@ -49,6 +49,8 @@ de verdad. Ese tipo de información no debería viajar a un servicio de terceros
 
 > **Consejos para datos sensibles:** en un equipo compartido, usa una ventana privada o borra los datos del sitio al terminar.
 > Revisa también las extensiones del navegador: tienen acceso a las páginas que abres, incluida esta.
+>
+> **Importa solo archivos de confianza.** Trata los JSON o archivos de infraestructura como código de origen desconocido como cualquier archivo descargado.
 
 ---
 
@@ -646,6 +648,8 @@ Para mantener el espíritu del proyecto:
 - **Sin dependencias externas** ni pasos de compilación: tiene que seguir funcionando con doble clic.
 - **Sin conexiones de red**: nada de analítica, CDN, fuentes web cargadas de internet ni APIs (las tipografías van incluidas).
 - Lo personalizable va en `config.js`.
+
+Más detalles en [CONTRIBUTING.md](CONTRIBUTING.md) (en inglés). Para reportar una vulnerabilidad de forma privada, consulta [SECURITY.md](SECURITY.md).
 
 ---
 

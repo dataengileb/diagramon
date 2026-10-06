@@ -62,6 +62,8 @@ around 290 official cloud icons, and the browser itself blocks every network req
 
 > **Tips for sensitive data:** on a shared computer, use a private window or clear the site data when you finish.
 > Also review your browser extensions: they can read the pages you open, this one included.
+>
+> **Only import files you trust.** JSON or infrastructure-as-code files from unknown sources should be treated like any downloaded file.
 
 ---
 
@@ -662,6 +664,8 @@ To keep the spirit of the project:
 - **No external dependencies** and no build step: it must keep working with a double-click.
 - **No network connections**: no analytics, CDN, web fonts loaded from the web or APIs (the fonts are bundled).
 - Customizable things belong in `config.js`. New UI text goes in `i18n.js`, in both languages.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the details, and [SECURITY.md](SECURITY.md) to report a vulnerability privately.
 
 ---
 
