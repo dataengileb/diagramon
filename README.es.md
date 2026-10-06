@@ -337,6 +337,20 @@ Una **vista** es una forma de mirar el mismo diagrama: solo decide qué se ve, c
 
 Las reglas de cada vista están en `config.js` › `views`; en el inspector puedes marcar un grupo como `lógico` o `físico`.
 
+### Niveles C4 (drill-down)
+
+Un mismo archivo puede tener varios niveles de detalle, como en el **modelo C4**: *contexto del sistema* → *contenedores* → *componentes*. Cualquier componente puede tener un **diagrama interno**; el modelo sigue siendo plano (cada elemento solo indica en qué componente vive, con `in`), así que revisiones, linaje, cumplimiento, dueños, costos y versiones siguen viéndolo todo.
+
+1. Elige un componente y pulsa **Crear diagrama interno** en el inspector (sección **Elemento C4**); luego añade componentes dentro. Lo nuevo (componentes, grupos, notas y zonas) nace en el nivel en el que estás. Dentro de un *Sistema de software* los nuevos son *Contenedor* por defecto; dentro de un *Contenedor*, *Componente*.
+2. Un componente con diagrama interno muestra una pastilla **⊞ n** a la derecha de su tarjeta. **Haz clic en la pastilla**, **doble clic en el componente** (doble clic en su *nombre* lo renombra), pulsa **`Intro`** con él elegido, o usa **Abrir diagrama interno** en el inspector.
+3. Para volver: **`Esc`** (sin nada seleccionado), **`Alt`+`↑`** o las **migas de pan** sobre el lienzo (*Superior › Sistema tienda › API*), que además nombran el nivel C4 (*L1 Contexto del sistema*, *L2 Contenedores*, *L3 Componentes*).
+4. Dentro de un nivel, un **marco de límite** discontinuo lleva el nombre y el tipo C4 del padre. Lo que vive fuera pero se conecta con él (otros sistemas, los vecinos del padre) aparece como **tarjetas fantasma** atenuadas a la izquierda (entrantes) y a la derecha (salientes) del marco; haz clic en una para saltar a su nivel.
+5. Elige un **Elemento C4** (*Persona*, *Sistema de software*, *Contenedor*, *Componente*, *Sistema externo*) en el inspector; se ve como una etiqueta `[Contenedor]` en los componentes sin línea de detalle, y en el tooltip.
+6. **Mover dentro de…** (los nodos elegidos pasan dentro de otro componente del mismo nivel) y **Subir un nivel** están en el inspector; las conexiones los siguen y los grupos viajan con sus nodos cuando se mueven todos. Borrar un componente con diagrama interno pide confirmación y borra todo lo que contiene.
+7. Cada nivel tiene sus propias posiciones y su propio **Ordenar**, **Ajustar** y presentación. Las vistas (también el colapso de *Contexto*), los filtros, los hallazgos y las exportaciones funcionan dentro del nivel abierto. **Exportar** › *Todos los niveles* escribe una imagen por cada nivel con contenido.
+
+Desde la consola: `Diagramon.setScope('api')`, `Diagramon.scope`, `Diagramon.scopes()`, `Diagramon.exportLevels('png')`.
+
 ### Atajos de teclado
 
 | Tecla | Acción |
@@ -359,7 +373,9 @@ Las reglas de cada vista están en `config.js` › `views`; en el inspector pued
 | `E` | Cambiar entre conectores curvos y en ángulo recto |
 | `G` | Abrir el panel de filtros (`Esc` lo cierra) |
 | `1`–`8` | Cambiar de vista: Completa, Contexto, Lógica, Física, Seguridad, Datos, Costo, Gobierno |
-| `Esc` | Cancelar o quitar la selección |
+| `Intro` | Abrir el diagrama interno del componente elegido (niveles C4) |
+| `Esc` | Cancelar o quitar la selección; sin selección, subir un nivel C4 |
+| `Alt`+`↑` | Subir un nivel C4 |
 
 ---
 
@@ -439,6 +455,7 @@ api ~> cola : eventos
 | `a -> b : SQL amenazas="T=mitigada,I=aceptada"` | Decisiones STRIDE de una conexión (en inglés: `threats=`); letras `S T R I D E`, estados `mitigada`, `aceptada`, `na` (en inglés `mitigated`, `accepted`, `na`). Las notas y las fronteras de confianza no van en el texto |
 | `controles="iso27001:A.8.24=cumple,pcidss:4.2=brecha"` | Controles de cumplimiento de un nodo o grupo (en inglés: `controls=`, estados `met` `partial` `gap` `na`); cada uno es `marco:id=cumple\|parcial\|brecha\|na`; los nodos heredan de su grupo |
 | `grupo id "Nombre" color=… { … }` | Grupo; se pueden anidar |
+| `dentro=tienda` (en inglés: `in=tienda`) · `c4=contenedor` | Niveles C4: el nodo o grupo vive en el diagrama interno de `tienda`; tipo C4 `persona`, `sistema`, `contenedor`, `componente` o `externo` (en inglés: `person`, `system`, `container`, `component`, `external`). Los nodos dentro de las llaves de un grupo con `dentro=` heredan su nivel |
 | `a -> b` · `a => b` · `a ~> b` · `a ..> b` | Petición · datos · evento · opcional |
 | `a -> b -> c : etiqueta` | Cadena; la etiqueta va en la última flecha |
 | `líneas: codos` · `a -> b : x línea=curva` | Líneas en ángulo recto o curvas, para el diagrama o una conexión |
@@ -529,6 +546,7 @@ Todo lo personalizable está en **`config.js`**. Guarda y recarga `index.html`.
 
 `window.Diagramon` expone `model`, `load()`, `addNode()`, `addEdge()`, `select()`, `align()`, `relayout()`,
 `fitView()`, `togglePlay()`, `toggleTheme()`, `toggleLang()`, `lang`, `saveVersion()`, `openVersion()`, `compareVersion()`, `deleteVersion()`, `exportSVG()`, `exportPNG()`, `exportJSON()`, `lineage()`, `datasets()`, `owners()`, `crossBorder()`, `layers()`, `setLayerNames()`, `compliance()`, `exportCompliance()`, `decisions()`, `addDecision()`, `updateDecision()`, `removeDecision()`, `exportDecisions()`, `config` e `icons`.
+Además: `setScope(id | null)`, `scope`, `scopes()` y `exportLevels(formato)` para los niveles C4.
 El lenguaje de texto está en `window.DiagramonText` (`parse` y `stringify`).
 
 </details>
@@ -578,6 +596,7 @@ Cosas que funcionan pero aún no se han revisado a fondo. Probablemente necesite
 - Las **decisiones de arquitectura** (ADR) no forman parte del formato de texto, no se exportan a Mermaid, PlantUML ni draw.io y no se comparan entre versiones. La etiqueta ADR del lienzo y la exportación a Markdown no se han revisado visualmente en todos los temas.
 - El catálogo de cumplimiento es un subconjunto práctico de cada norma con títulos parafraseados; revísalo antes de usarlo en una auditoría.
 - **Informe de arquitectura**: el PDF depende del diálogo de impresión del navegador (los encabezados y números de página solo salen donde el navegador admite los márgenes `@page` de CSS). Los visores de Markdown que bloquean imágenes `data:` no muestran los diagramas salvo que guardes las imágenes aparte. Los diagramas grandes con muchas vistas y niveles internos pueden tardar unos segundos. No se han revisado tablas muy anchas al imprimir, y la matriz de cumplimiento se lista por control y por componente, no como cuadrícula.
+- **Niveles C4** aún no se han probado en un navegador. *Duplicar* no copia el diagrama interno de un componente duplicado, y Mermaid, PlantUML y draw.io exportan el modelo plano completo (sin niveles; `in` y `c4` se ignoran). Pestaña Texto: los nodos sin `dentro=` van al nivel superior, así que para editar un nivel desde la pestaña Texto escribe `dentro=` en sus nodos. Las tarjetas fantasma son como máximo 8 por lado. Lo que cruza niveles (una conexión entre dos niveles distintos) solo se dibuja como fantasma y no se puede seleccionar en el lienzo; llega a ello desde los enlaces del inspector.
 
 ---
 

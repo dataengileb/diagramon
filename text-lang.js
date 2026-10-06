@@ -35,6 +35,9 @@
    Seguridad: nodo … exposure=public|internal (exposición=pública|interna: sustituye a la deducida) · backup=yes|no (respaldo=sí|no)
    Cumplimiento: nodo o grupo … controls="iso27001:A.8.24=met,pcidss:4.2=gap" (es: controles=; estados met|partial|gap|na · cumple|parcial|brecha|na;
              cada control es marco:id=estado, los nodos heredan de sus grupos; sin espacios no hacen falta comillas)
+   Niveles C4: nodo o grupo … in=tienda (es: dentro=tienda): vive en el diagrama interno del nodo `tienda` (sin él, en el nivel superior);
+             un nodo dentro de las llaves de un grupo con `in=` hereda ese nivel · nodo … c4=container (es: c4=contenedor): tipo C4
+             person|persona, system|sistema, container|contenedor, component|componente, external|externo
    Comentario: líneas que empiezan por # o //
 
    Acepta las palabras clave en inglés y en español (title/título, group/grupo,
@@ -49,7 +52,7 @@
   const ARROW_SPLIT = /\s*(\.\.>|~>|=>|->)\s*/;
   const HAS_ARROW = /\.\.>|~>|=>|->/;
   const ID = /^[^\s:[\]"{}]+$/;
-  const NODE_KEYS = ['color', 'badge', 'desc', 'sub', 'x', 'y', 'costo', 'cost', 'data', 'datos', 'region', 'región', 'country', 'pais', 'país', 'layer', 'capa', 'exposure', 'exposición', 'exposicion', 'backup', 'respaldo', 'controls', 'controles'];
+  const NODE_KEYS = ['color', 'badge', 'desc', 'sub', 'x', 'y', 'costo', 'cost', 'data', 'datos', 'region', 'región', 'country', 'pais', 'país', 'layer', 'capa', 'exposure', 'exposición', 'exposicion', 'backup', 'respaldo', 'controls', 'controles', 'in', 'dentro', 'c4'];
   /* ---------- gobierno: dueño, responsable, equipo, centro de costo ---------- */
   const GOV_KEYS = { owner: 'owner', dueño: 'owner', dueno: 'owner', steward: 'steward', responsable: 'steward', team: 'team', equipo: 'team',
     costcenter: 'costCenter', centro: 'costCenter', centrocosto: 'costCenter', centrodecosto: 'costCenter' };
@@ -68,6 +71,9 @@
     });
     return { controls, bad };
   };
+  /* ---------- niveles C4: in=<nodo> y c4=<tipo> ---------- */
+  const C4_IN = { person: 'person', persona: 'person', system: 'system', sistema: 'system', container: 'container', contenedor: 'container', component: 'component', componente: 'component', external: 'external', externo: 'external' };
+  const C4_OUT = { en: { person: 'person', system: 'system', container: 'container', component: 'component', external: 'external' }, es: { person: 'persona', system: 'sistema', container: 'contenedor', component: 'componente', external: 'externo' } };
   const REGION_KEYS = ['region', 'región', 'country', 'pais', 'país']; // todas escriben en `region`
   // review id: "observación" by=… raised=AAAA-MM-DD due=AAAA-MM-DD status=open|resolved closed=AAAA-MM-DD
   const REVIEW_KEYS = { by: 'by', por: 'by', raised: 'raised', levantada: 'raised', due: 'due', compromiso: 'due', status: 'status', estado: 'status', closed: 'closed', cerrada: 'closed' };
@@ -102,11 +108,11 @@
     en: { title: 'title', direction: 'direction', group: 'group', cost: 'cost', hour: 'hour', month: 'month', year: 'year', years: 'years', data: 'data', encrypted: 'encrypted', both: 'both', yes: 'yes', no: 'no', lines: 'lines', line: 'line', region: 'region', transfer: 'transfer', ok: 'ok', elbow: 'elbow', curved: 'curved', elbowOne: 'elbow', curvedOne: 'curved', author: 'author', version: 'version', view: 'view', kind: 'kind', physical: 'physical', logical: 'logical',
       review: 'review', by: 'by', raised: 'raised', due: 'due', status: 'status', closed: 'closed', resolved: 'resolved', layer: 'layer', layers: 'layers', zones: 'zones',
       owner: 'owner', steward: 'steward', team: 'team', costCenter: 'costcenter',
-      layerOf: { bronze: 'bronze', silver: 'silver', gold: 'gold' }, exposure: 'exposure', backup: 'backup', expoOf: { public: 'public', internal: 'internal' } },
+      in: 'in', layerOf: { bronze: 'bronze', silver: 'silver', gold: 'gold' }, exposure: 'exposure', backup: 'backup', expoOf: { public: 'public', internal: 'internal' } },
     es: { title: 'título', direction: 'dirección', group: 'grupo', cost: 'costo', hour: 'hora', month: 'mes', year: 'año', years: 'años', data: 'datos', encrypted: 'cifrado', both: 'ambos', yes: 'sí', no: 'no', lines: 'líneas', line: 'línea', region: 'región', transfer: 'transferencia', ok: 'ok', elbow: 'codos', curved: 'curvas', elbowOne: 'codo', curvedOne: 'curva', author: 'autor', version: 'versión', view: 'vista', kind: 'tipo', physical: 'físico', logical: 'lógico',
       review: 'revisión', by: 'por', raised: 'levantada', due: 'compromiso', status: 'estado', closed: 'cerrada', resolved: 'resuelta', layer: 'capa', layers: 'capas', zones: 'zonas',
       owner: 'dueño', steward: 'responsable', team: 'equipo', costCenter: 'centro',
-      layerOf: { bronze: 'bronce', silver: 'plata', gold: 'oro' }, exposure: 'exposición', backup: 'respaldo', expoOf: { public: 'pública', internal: 'interna' } }
+      in: 'dentro', layerOf: { bronze: 'bronce', silver: 'plata', gold: 'oro' }, exposure: 'exposición', backup: 'respaldo', expoOf: { public: 'pública', internal: 'interna' } }
   };
   const MSG = {
     en: {
@@ -121,6 +127,7 @@
       layer: v => `unknown layer “${v}” (use bronze, silver or gold; also raw, curated or serving)`, lnames: v => `invalid layer naming “${v}” (use medallion or zones)`,
       expo: v => `invalid exposure “${v}” (use public or internal)`, backup: v => `invalid backup value “${v}” (use yes or no)`,
       view: v => `unknown view “${v}”`, gkind: v => `invalid group type “${v}” (use logical or physical)`,
+      c4: v => `unknown C4 type “${v}” (use person, system, container, component or external)`, inRef: id => `“in” points to “${id}”, which is not a component`,
       line: 'cannot understand this line', open: n => `missing } to close ${n === 1 ? 'a group' : `${n} groups`}`
     },
     es: {
@@ -135,6 +142,7 @@
       layer: v => `capa desconocida «${v}» (usa bronce, plata u oro; también crudo, curado o consumo)`, lnames: v => `nombres de capa no válidos «${v}» (usa medallón o zonas)`,
       expo: v => `exposición no válida «${v}» (usa pública o interna)`, backup: v => `valor de respaldo no válido «${v}» (usa sí o no)`,
       view: v => `vista desconocida «${v}»`, gkind: v => `tipo de grupo no válido «${v}» (usa lógico o físico)`,
+      c4: v => `tipo C4 desconocido «${v}» (usa persona, sistema, contenedor, componente o externo)`, inRef: id => `«dentro» apunta a «${id}», que no es un componente`,
       line: 'no se entiende esta línea', open: n => `falta cerrar ${n === 1 ? 'un grupo' : `${n} grupos`} con }`
     }
   };
@@ -161,7 +169,7 @@
   // Divide el resto de una línea en etiqueta, [tipo], "detalle" y clave=valor
   function tokens(rest, keys) {
     const out = { words: [], brackets: [], quotes: [], kv: {} };
-    const re = /\[([^\]]*)\]|("(?:[^"\\]|\\.)*")|([A-Za-zÀ-ÿ]+)=("(?:[^"\\]|\\.)*"|\S+)|(\S+)/g;
+    const re = /\[([^\]]*)\]|("(?:[^"\\]|\\.)*")|([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ0-9]*)=("(?:[^"\\]|\\.)*"|\S+)|(\S+)/g;
     let m;
     while ((m = re.exec(rest))) {
       if (m[1] != null) out.brackets.push(m[1].trim());
@@ -189,7 +197,7 @@
     const msg = MSG[ctx.lang] || MSG.en;
     const model = { title: ctx.lang === 'es' ? 'Diagrama sin título' : 'Untitled diagram', groups: [], nodes: [], edges: [] };
     const errors = [];
-    const nodes = new Map(), groups = new Set(), stack = [];
+    const nodes = new Map(), groups = new Set(), stack = [], gobj = new Map(), inRefs = [];
     const err = (line, msg) => errors.push({ line, msg });
     // Clasificaciones: solo las de config.js (ctx.dataClasses), si se conocen
     const checkData = (v, ln) => {
@@ -274,7 +282,7 @@
         const id = m[2];
         if (!ID.test(id)) return err(ln, msg.groupId(id));
         if (groups.has(id)) return err(ln, msg.groupDup(id));
-        const tk = tokens(m[3], ['color', 'icon', 'icono', 'kind', 'tipo', ...Object.keys(GOV_KEYS), ...REGION_KEYS, 'layer', 'capa', 'controls', 'controles']);
+        const tk = tokens(m[3], ['color', 'icon', 'icono', 'kind', 'tipo', ...Object.keys(GOV_KEYS), ...REGION_KEYS, 'layer', 'capa', 'controls', 'controles', 'in', 'dentro']);
         const g = { id, label: tk.quotes[0] ?? (tk.words.join(' ') || id) };
         if (tk.kv.color) g.color = tk.kv.color;
         applyGov(g, tk.kv);
@@ -291,6 +299,9 @@
         if (gl != null) { const l = checkLayer(gl, ln); if (l) g.layer = l; }
         applyCtl(g, tk.kv, ln);
         if (stack.length) g.parent = stack[stack.length - 1];
+        const gin = (tk.kv.in ?? tk.kv.dentro)?.trim() || (g.parent && gobj.get(g.parent)?.in);
+        if (gin) { g.in = gin; if (tk.kv.in != null || tk.kv.dentro != null) inRefs.push({ ln, id: gin }); }
+        gobj.set(id, g);
         groups.add(id);
         model.groups.push(g);
         stack.push(id);
@@ -370,13 +381,18 @@
         const bv = tk.kv.backup ?? tk.kv.respaldo;
         if (bv != null) { const b = parseBool(bv.trim()); if (b == null) err(ln, msg.backup(bv)); else n.backup = b; }
         applyCtl(n, tk.kv, ln);
-        if (stack.length) n.group = stack[stack.length - 1];
+        const c4v = tk.kv.c4;
+        if (c4v != null) { const k = C4_IN[c4v.trim().toLowerCase()]; if (k) n.c4 = k; else err(ln, msg.c4(c4v)); }
+        const inV = (tk.kv.in ?? tk.kv.dentro)?.trim();
+        if (inV) { n.in = inV; inRefs.push({ ln, id: inV }); }
+        if (stack.length) { n.group = stack[stack.length - 1]; if (!n.in && gobj.get(n.group)?.in) n.in = gobj.get(n.group).in; }
         return;
       }
 
       err(ln, msg.line);
     });
     if (stack.length) err(String(src).split(/\r?\n/).length, msg.open(stack.length));
+    inRefs.forEach(r => { if (!nodes.has(r.id)) err(r.ln, msg.inRef(r.id)); });
     return { model, errors };
   }
 
@@ -405,12 +421,14 @@
       if (n.exposure) p.push(`${w.exposure}=${w.expoOf[n.exposure] || n.exposure}`);
       if (typeof n.backup === 'boolean') p.push(`${w.backup}=${n.backup ? w.yes : w.no}`);
       if (n.controls) p.push(ctlText(n));
+      if (n.c4) p.push(`c4=${(C4_OUT[lang] || C4_OUT.en)[n.c4] || n.c4}`);
+      if (n.in) p.push(`${w.in}=${bare(n.in)}`);
       if (n.desc) p.push(`desc=${quote(n.desc)}`);
       return p.join(' ');
     };
     const groupIds = new Set(m.groups.map(g => g.id));
     const writeGroup = (g, ind) => {
-      out.push(`${ind}${w.group} ${g.id} ${quote(g.label)}${g.icon ? ` icon=${bare(g.icon)}` : ''}${g.color ? ` color=${bare(g.color)}` : ''}${g.kind ? ` ${w.kind}=${w[g.kind]}` : ''}${GOV_WORDS.filter(k => g[k]).map(k => ` ${w[k]}=${bare(g[k])}`).join('')}${g.region ? ` ${w.region}=${bare(g.region)}` : ''}${g.layer ? ` ${w.layer}=${w.layerOf[g.layer] || g.layer}` : ''}${g.controls ? ` ${ctlText(g)}` : ''} {`);
+      out.push(`${ind}${w.group} ${g.id} ${quote(g.label)}${g.icon ? ` icon=${bare(g.icon)}` : ''}${g.color ? ` color=${bare(g.color)}` : ''}${g.kind ? ` ${w.kind}=${w[g.kind]}` : ''}${GOV_WORDS.filter(k => g[k]).map(k => ` ${w[k]}=${bare(g[k])}`).join('')}${g.region ? ` ${w.region}=${bare(g.region)}` : ''}${g.layer ? ` ${w.layer}=${w.layerOf[g.layer] || g.layer}` : ''}${g.controls ? ` ${ctlText(g)}` : ''}${g.in ? ` ${w.in}=${bare(g.in)}` : ''} {`);
       m.nodes.filter(n => n.group === g.id).forEach(n => out.push(`${ind}  ${nodeLine(n)}`));
       m.groups.filter(c => c.parent === g.id).forEach(c => writeGroup(c, ind + '  '));
       out.push(`${ind}}`);

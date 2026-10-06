@@ -68,16 +68,17 @@
     provider: store.get('provider', 'generic'),
     compare: null, verNote: '', verEdit: null,
     viewKey: viewKey(store.get('view')),  // vista activa (S.view es la cámara); viewChosen: el usuario ya eligió una en esta sesión
-    viewChosen: false, flow: null         // flow: conexión agregada elegida en la vista Contexto
+    viewChosen: false, flow: null,        // flow: conexión agregada elegida en la vista Contexto
+    scope: null                           // nivel C4 abierto: id del nodo cuyo diagrama interno se ve (null = nivel superior)
   };
   // Referencias a elementos SVG y medidas calculadas (nunca se guardan en el modelo)
   const R = { nodes: new Map(), edges: new Map(), groups: new Map(), width: new Map(), gbox: new Map(), notes: new Map(), zones: new Map() };
   // Lo que la vista activa oculta o resume (se recalcula en applyViewMode / updateContext) y el último resaltado
-  const VW = { dimNodes: 0, dimEdges: 0, hideNodes: new Set(), hideEdges: new Set(), hideGroups: new Set(), flows: new Map(), ctxBoxes: new Map(), ctxEdges: new Map(), gcost: null };
+  const VW = { dimNodes: 0, dimEdges: 0, hideNodes: new Set(), hideEdges: new Set(), hideGroups: new Set(), flows: new Map(), ctxBoxes: new Map(), ctxEdges: new Map(), gcost: null, sc: { nodes: new Set(), edges: new Set(), groups: new Set() }, xs: null };
   const HL = { f: null, fr: null };
 
   const svg = $('#canvas'), viewport = $('#viewport'), stage = $('#stage');
-  const L = { zones: $('#l-zones'), groups: $('#l-groups'), edges: $('#l-edges'), ctx: $('#l-ctx'), ghosts: $('#l-ghosts'), nodes: $('#l-nodes'), zoneTop: $('#l-zone-top'), notes: $('#l-notes'), guides: $('#l-guides') };
+  const L = { zones: $('#l-zones'), groups: $('#l-groups'), edges: $('#l-edges'), ctx: $('#l-ctx'), ghosts: $('#l-ghosts'), nodes: $('#l-nodes'), zoneTop: $('#l-zone-top'), notes: $('#l-notes'), guides: $('#l-guides'), scope: $('#l-scope') };
 
   const ICON = {
     x: '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>',
@@ -562,6 +563,7 @@
 
     m.groups.forEach(g => { const l = cleanLayer(g.layer); if (l) g.layer = l; else delete g.layer; });
     m.groups.forEach(g => { const c = cleanControls(g.controls); if (c) g.controls = c; else delete g.controls; });
+    m.groups.forEach(g => { if (g.in == null || g.in === '') delete g.in; else g.in = String(g.in); }); // nivel C4: se valida al final, cuando ya existen los nodos
     list(raw.nodes).forEach((n, i) => {
       const type = C.types[n.type] ? n.type : 'generic';
       const o = { ...n, id: take(n.id, 'n', i), type, label: String(n.label ?? typeLabel(type)) };
@@ -575,6 +577,8 @@
       { const l = cleanLayer(o.layer); if (l) o.layer = l; else delete o.layer; }
       { const ex = cleanExposure(o.exposure); if (ex) o.exposure = ex; else delete o.exposure; const bk = cleanBackup(o.backup); if (bk != null) o.backup = bk; else delete o.backup; }
       { const c = cleanControls(o.controls); if (c) o.controls = c; else delete o.controls; }
+      if (o.in == null || o.in === '') delete o.in; else o.in = String(o.in);
+      { const k = cleanC4(o.c4); if (k) o.c4 = k; else delete o.c4; }
       m.nodes.push(o);
     });
     [...m.groups, ...m.nodes].forEach(cleanGov);
@@ -597,14 +601,17 @@
     list(raw.notes).forEach((n, i) => {
       const o = { id: take(n.id, 'note', i), ...cleanBox(n, 180, 110), text: String(n.text ?? '') };
       if (n.color != null && String(n.color).trim()) o.color = String(n.color).trim();
+      if (n.in != null && n.in !== '') o.in = String(n.in);
       m.notes.push(o);
     });
     list(raw.zones).forEach((z, i) => {
       const o = { id: take(z.id, 'zone', i), ...cleanBox(z, 360, 220), label: String(z.label ?? ''), severity: SEVERITY.includes(z.severity) ? z.severity : 'medium' };
       if (z.kind === 'trust') { o.kind = 'trust'; delete o.severity; if (z.trust != null && String(z.trust).trim()) o.trust = String(z.trust).trim(); }
       if (z.desc != null && String(z.desc).trim()) o.desc = String(z.desc);
+      if (z.in != null && z.in !== '') o.in = String(z.in);
       m.zones.push(o);
     });
+    cleanScopes(m);
     m.versions = normVersions(raw.versions);
     m.decisions = cleanDecisions(raw.decisions, m);
     if (raw.active != null && m.versions.some(v => v.id === String(raw.active))) m.active = String(raw.active);
@@ -655,7 +662,12 @@
     });
   }
 
+  // Cada nivel C4 tiene su propio espacio de coordenadas: se ordena por separado (sin `in` en ningún lado = un solo nivel, como siempre)
   function ensurePositions(m) {
+    if (!m.nodes.some(n => n.in)) return ensurePositionsIn(m);
+    [...new Set(m.nodes.map(n => n.in || null))].forEach(sc => ensurePositionsIn(scopeModel(m, sc)));
+  }
+  function ensurePositionsIn(m) {
     const ok = n => Number.isFinite(+n.x) && Number.isFinite(+n.y) && n.x !== '' && n.y !== '' && n.x != null && n.y != null;
     const missing = m.nodes.filter(n => !ok(n));
     m.nodes.forEach(n => { if (ok(n)) { n.x = +n.x; n.y = +n.y; } });
@@ -698,6 +710,83 @@
     while (g && i++ < 50) { if (g === gid) return true; g = groupById(g)?.parent; }
     return false;
   }
+  /* ---------- niveles C4: un nodo puede tener un diagrama interno ---------- */
+  // El modelo sigue plano: `in` (en nodos, grupos, notas y zonas) = id del nodo cuyo diagrama interno lo contiene; omitido = nivel superior.
+  // Una conexión pertenece a un nivel cuando sus dos extremos lo hacen; con extremos en niveles distintos cruza niveles.
+  const C4_KINDS = ['person', 'system', 'container', 'component', 'external'];
+  const C4_ALIAS = { person: 'person', persona: 'person', system: 'system', sistema: 'system', container: 'container', contenedor: 'container', component: 'component', componente: 'component', external: 'external', externo: 'external' };
+  const cleanC4 = v => C4_ALIAS[fold(v).trim()] || '';
+  const scopeId = x => (x && x.in) || null;
+  const inScope = (x, sc = S.scope) => scopeId(x) === sc;
+  // Nivel al que pertenece un elemento (objeto, o id de nodo / grupo)
+  function scopeOf(x, m = S.model) {
+    if (typeof x === 'string') x = m.nodes.find(n => n.id === x) || m.groups.find(g => g.id === x);
+    return scopeId(x);
+  }
+  // Ids desde el nivel superior hasta `id` (incluido); [] para el nivel superior
+  function scopePath(id, m = S.model) {
+    const out = [];
+    let cur = id, i = 0;
+    while (cur && i++ < 50) { const n = m.nodes.find(x => x.id === cur); if (!n) break; out.unshift(cur); cur = n.in; }
+    return out;
+  }
+  // Lo que contiene directamente un nodo (null = nivel superior)
+  function innerOf(id, m = S.model) {
+    const sc = id || null, f = x => (x.in || null) === sc;
+    return { nodes: m.nodes.filter(f), groups: m.groups.filter(f), notes: (m.notes || []).filter(f), zones: (m.zones || []).filter(f) };
+  }
+  const innerCount = (id, m = S.model) => m.nodes.reduce((a, n) => a + (n.in === id ? 1 : 0), 0);
+  // Ids de todos los nodos que cuelgan de `ids`, a cualquier profundidad
+  function innerDeep(ids, m = S.model) {
+    const out = new Set(), q = [...ids];
+    while (q.length) { const u = q.pop(); m.nodes.forEach(n => { if (n.in === u && !out.has(n.id)) { out.add(n.id); q.push(n.id); } }); }
+    return out;
+  }
+  // La parte del modelo que se ve en un nivel (nodos, grupos y conexiones entre ellos). Sin `in` en ningún sitio = el propio modelo
+  function scopeModel(m = S.model, sc = S.scope) {
+    if (!sc && !m.nodes.some(n => n.in) && !m.groups.some(g => g.in)) return m;
+    const f = x => (x.in || null) === sc, nodes = m.nodes.filter(f), ids = new Set(nodes.map(n => n.id));
+    return { ...m, nodes, groups: m.groups.filter(f), edges: m.edges.filter(e => ids.has(e.from) && ids.has(e.to)) };
+  }
+  // Sanea `in`: debe apuntar a un nodo que existe, no a sí mismo ni formar ciclos; un grupo y su padre (o un nodo y su grupo) comparten nivel
+  function cleanScopes(m) {
+    const byId = new Map(m.nodes.map(n => [n.id, n]));
+    m.nodes.forEach(n => { if (n.in && (!byId.has(n.in) || n.in === n.id)) delete n.in; });
+    m.nodes.forEach(n => {
+      const seen = new Set([n.id]);
+      let p = n.in;
+      while (p) { if (seen.has(p)) { delete n.in; break; } seen.add(p); p = byId.get(p)?.in; }
+    });
+    [...m.groups, ...m.notes, ...m.zones].forEach(x => { if (x.in && !byId.has(x.in)) delete x.in; });
+    const gmap = new Map(m.groups.map(g => [g.id, g]));
+    m.groups.forEach(g => { if (g.parent && (gmap.get(g.parent)?.in || null) !== (g.in || null)) delete g.parent; });
+    m.nodes.forEach(n => { if (n.group && (gmap.get(n.group)?.in || null) !== (n.in || null)) delete n.group; });
+  }
+  const scopeNode = (id = S.scope) => (id ? S.model.nodes.find(n => n.id === id) || null : null);
+  const c4Label = k => (C4_KINDS.includes(k) ? T(`c4.k.${k}`) : '');
+  // Nivel C4 de lo que hay dentro de un nodo: 1 contexto, 2 contenedores, 3 componentes, 4 código. Manda el tipo C4 del nodo; si no, la profundidad
+  function levelOf(id = S.scope) {
+    const nd = scopeNode(id);
+    return ({ system: 2, container: 3, component: 4 })[nd?.c4] || scopePath(id).length + 1;
+  }
+  const levelName = n => (n <= 4 ? T(`c4.level.${n}`) : T('c4.levelN', n));
+  // Tipo C4 que se sugiere para lo nuevo dentro de un nodo
+  const c4Default = id => ({ system: 'container', container: 'component' })[scopeNode(id)?.c4] || '';
+  const hasLevels = (m = S.model) => m.nodes.some(n => n.in);
+  // Niveles con contenido: el superior y cada nodo con diagrama interno, en profundidad
+  function scopeList(m = S.model) {
+    const out = [];
+    const walk = (id, depth) => {
+      const nodes = m.nodes.filter(n => (n.in || null) === id);
+      if (id === null || nodes.length) out.push({ id, label: id ? m.nodes.find(n => n.id === id).label : T('c4.top'), depth, path: scopePath(id, m), nodes: nodes.length });
+      if (depth < 20) nodes.forEach(n => walk(n.id, depth + 1));
+    };
+    walk(null, 0);
+    return out;
+  }
+  // Notas y zonas del nivel abierto
+  const scopeItems = k => S.model[k].filter(o => inScope(o));
+  const itemInScope = (k, id) => { const o = S.model[k].find(x => x.id === id); return !o || inScope(o); };
   /* ---------- dueños y responsables: dueño, responsable de datos, equipo y centro de costo (heredan del grupo) ---------- */
   const GOV_FIELDS = ['owner', 'steward', 'team', 'costCenter'];
   const cleanGov = o => GOV_FIELDS.forEach(f => { const v = o[f] == null ? '' : String(o[f]).trim(); if (v) o[f] = v; else delete o[f]; });
@@ -1220,6 +1309,8 @@
       const r = map.get(o.id), t = `translate(${o.x} ${o.y})`;
       r?.g.setAttribute('transform', t);
       r?.top?.setAttribute('transform', t);
+      const out = !inScope(o); // de otro nivel C4
+      r?.g.classList.toggle('v-hide', out); r?.top?.classList.toggle('v-hide', out);
     }));
   }
   const markItems = () => {
@@ -1397,7 +1488,7 @@
 
   function buildNode(n, delay) {
     const t = typeOf(n), w = R.width.get(n.id);
-    const g = el('g', { class: 'node', 'data-id': n.id }, L.nodes);
+    const g = el('g', { class: 'node' + (n.c4 ? ` c4-${n.c4}` : ''), 'data-id': n.id }, L.nodes);
     g.style.setProperty('--c', nodeColor(n));
     const b = el('g', { class: 'node-body' + (delay >= 0 ? ' enter' : '') }, g);
     if (delay >= 0) { b.style.animationDelay = `${delay}ms`; endEnter(b); }
@@ -1411,11 +1502,12 @@
       el('rect', { class: 'node-icon-bg', x: 12, y: (H - 40) / 2, width: 40, height: 40, rx: 11 }, b);
       el('g', { class: 'node-icon', transform: `translate(20 ${(H - 24) / 2})` }, b).innerHTML = t.icon;
     }
-    const max = w - 64 - 16;
+    const inn = innerCount(n.id), ctxt = inn ? `⊞ ${inn}` : '', cw = inn ? Math.ceil(textW(ctxt, FONT.badge)) + 14 : 0; // indicador del diagrama interno, a la derecha dentro de la tarjeta
+    const max = w - 64 - 16 - (cw ? cw + 4 : 0);
     // Nombre en 1 o 2 líneas y detalle debajo, todo centrado en vertical
     const lines = C.node.sameSize !== false ? wrapText(n.label, FONT.label, max) : [fitText(n.label, FONT.label, max)];
     // Con detalle se dibujan dos variantes (completa y mínima, centradas cada una): la vista elige cuál se ve
-    const sub = n.sub ? fitText(n.sub, FONT.sub, max) : '';
+    const sub = n.sub ? fitText(n.sub, FONT.sub, max) : n.c4 ? fitText(`[${c4Label(n.c4)}]`, FONT.sub, max) : ''; // sin detalle propio, el tipo C4 ocupa su línea
     const paint = (withSub, cls) => {
       const top = (H - lines.length * 16 - (withSub && sub ? 15 : 0)) / 2;
       lines.forEach((l, i) => { el('text', { class: `node-label${cls}`, x: 64, y: top + 12 + i * 16 }, b).textContent = l; });
@@ -1426,7 +1518,7 @@
     const dt = [...(n.review ? [{ ...reviewTag(n.review), cls: 'dt-review' }] : []), ...dataTags(n).map(t => ({ ...t, cls: 'dt-data' })), ...adrTags(n)];
     const rg = regionOf(n).value;
     const ly = layerOf(n), li = ly.value ? layerInfo(ly.value) : null;
-    el('title', null, g).textContent = [n.sub ? `${n.label} · ${n.sub}` : n.label, ...dt.map(t => t.label), govTip(n), cmpTip(n), li ? T('layer.tip', { l: li.label }) : '', rg ? T('res.tip', regionLabel(rg)) : ''].filter(Boolean).join('\n');
+    el('title', null, g).textContent = [n.sub ? `${n.label} · ${n.sub}` : n.label, n.c4 ? `${T('c4.label')}: ${c4Label(n.c4)}` : '', inn ? T('c4.inner.tip', inn) : '', ...dt.map(t => t.label), govTip(n), cmpTip(n), li ? T('layer.tip', { l: li.label }) : '', rg ? T('res.tip', regionLabel(rg)) : ''].filter(Boolean).join('\n');
     if (dt.length) {
       const dg = el('g', { class: 'node-data' }, b);
       let x = 14;
@@ -1459,6 +1551,12 @@
       el('text', { x: ow / 2, y: 14, 'text-anchor': 'middle' }, og).textContent = ot;
     }
     if (li) drawNodeLayer(b, li);
+    if (inn) {
+      const cg = el('g', { class: 'node-inner', transform: `translate(${w - 8 - cw} ${(H - 20) / 2})` }, b);
+      el('title', null, cg).textContent = T('c4.inner.tip', inn);
+      el('rect', { width: cw, height: 20, rx: 10 }, cg);
+      el('text', { x: cw / 2, y: 14, 'text-anchor': 'middle' }, cg).textContent = ctxt;
+    }
     R.nodes.set(n.id, g);
   }
 
@@ -1581,10 +1679,12 @@
     updateItems();
 
     const sc = R.edges.size && m.zones.some(z => z.kind === 'trust') ? strideCtx(m) : null;
-    const pairs = new Set(m.edges.map(e => e.from + '\0' + e.to));
-    const allRects = m.nodes.map(n => ({ id: n.id, ...rect(n.id) }));
-    const ports = elbowPorts(m.edges, rect, routeOf);
+    const sm = scopeModel(); // solo el nivel abierto cuenta para los obstáculos y los anclajes de los codos
+    const pairs = new Set(sm.edges.map(e => e.from + '\0' + e.to));
+    const allRects = sm.nodes.map(n => ({ id: n.id, ...rect(n.id) }));
+    const ports = elbowPorts(sm.edges, rect, routeOf);
     R.edges.forEach(r => {
+      if (VW.sc.edges.has(r.e.id)) return;
       const e = r.e, a = rect(e.from), b = rect(e.to), off = pairs.has(e.to + '\0' + e.from) ? 7 : 0, pt = ports.get(e.id);
       const d = e.from === e.to ? loopPath(a)
         : pt ? elbowPath(a, b, pt.s, allRects.filter(o => o.id !== e.from && o.id !== e.to), pt.t) : curvePath(a, b, off);
@@ -1623,6 +1723,7 @@
       r.tag.setAttribute('transform', `translate(${box.x + 12} ${box.y + 10})`);
     });
     updateContext();
+    drawScopeFrame();
     if (S.compare?.diff) drawGhosts();
   }
 
@@ -1684,6 +1785,7 @@
     if (vc().groups === 'collapse-top') { toast(T('ctx.noPath')); return null; }
     const m = S.model;
     if (!m.nodes.some(n => n.id === a) || !m.nodes.some(n => n.id === b) || a === b) return null;
+    if (VW.sc.nodes.has(a) || VW.sc.nodes.has(b)) { toast(T('view.hiddenHere')); return null; } // el camino solo se pide entre nodos visibles (mismo nivel C4)
     let directed = true, res = shortestPaths(m, a, b, true);
     if (!res) { directed = false; res = shortestPaths(m, a, b, false); }
     clearPath();
@@ -1698,6 +1800,7 @@
     bar.hidden = false;
     if (res) {
       res.nodes.forEach(id => {
+        if (VW.hideNodes.has(id)) return;
         const n = m.nodes.find(x => x.id === id), g = el('g', { class: 'path-badge', transform: `translate(${n.x + 2} ${n.y + 2})` }, L.guides);
         el('circle', { r: 9 }, g);
         el('text', {}, g).textContent = res.dist.get(id) + 1;
@@ -1777,7 +1880,7 @@
     bar.hidden = false;
     res.nodes.forEach(id => {
       const n = m.nodes.find(x => x.id === id);
-      if (!n) return;
+      if (!n || VW.hideNodes.has(id)) return;
       const g = el('g', { class: `path-badge${res.origins.includes(id) ? ' lin-src' : ''}${res.consumers.includes(id) ? ' lin-dst' : ''}`, transform: `translate(${n.x + 2} ${n.y + 2})` }, L.guides);
       el('circle', { r: 9 }, g);
       el('text', {}, g).textContent = res.dist.get(id) + 1;
@@ -1839,7 +1942,7 @@
 
   // Encuadra solo algunos nodos (suave); no aleja más de lo necesario
   function fitNodes(ids) {
-    const ns = S.model.nodes.filter(n => ids.includes(n.id)), r = svg.getBoundingClientRect();
+    const ns = S.model.nodes.filter(n => ids.includes(n.id) && !VW.hideNodes.has(n.id)), r = svg.getBoundingClientRect();
     if (!ns.length || !r.width) return;
     const x0 = Math.min(...ns.map(n => n.x)), y0 = Math.min(...ns.map(n => n.y));
     const x1 = Math.max(...ns.map(n => n.x + R.width.get(n.id))), y1 = Math.max(...ns.map(n => n.y + nodeBoxH(n)));
@@ -1941,6 +2044,13 @@
       m.edges.forEach(e => hideE.add(e.id));
       m.groups.forEach(g => (g.parent ? hideG : top).add(g.id));
     } else if (v.groups === 'logical') m.groups.forEach(g => { if (groupKind(g) === 'physical') hideG.add(g.id); });
+    // Nivel C4 abierto: lo de otros niveles se oculta con el mismo mecanismo que las vistas (las conexiones que cruzan niveles se dibujan aparte)
+    const sc = { nodes: new Set(), edges: new Set(), groups: new Set() };
+    m.nodes.forEach(n => { if (!inScope(n)) sc.nodes.add(n.id); });
+    m.groups.forEach(g => { if (!inScope(g)) sc.groups.add(g.id); });
+    m.edges.forEach(e => { if (sc.nodes.has(e.from) || sc.nodes.has(e.to)) sc.edges.add(e.id); });
+    sc.nodes.forEach(id => hideN.add(id)); sc.edges.forEach(id => hideE.add(id)); sc.groups.forEach(id => hideG.add(id));
+    VW.sc = sc;
 
     if (emph === 'security') {
       m.nodes.forEach(n => nodeCls.set(n.id, isSensitive(n) ? 'v-hl' : 'v-dim'));
@@ -2001,8 +2111,8 @@
     if (sel.kind === 'multi') return normSel({ kind: 'multi', ids: sel.ids.filter(id => !VW.hideNodes.has(id)) });
     if (sel.kind === 'edge') return VW.hideEdges.has(sel.id) ? null : sel;
     if (sel.kind === 'group') return VW.hideGroups.has(sel.id) ? null : sel;
-    if (sel.kind === 'note') return v.notes ? sel : null;
-    if (sel.kind === 'zone') return v.zones ? sel : null;
+    if (sel.kind === 'note') return v.notes && itemInScope('notes', sel.id) ? sel : null;
+    if (sel.kind === 'zone') return v.zones && itemInScope('zones', sel.id) ? sel : null;
     return sel;
   }
   // Vuelve a pintar todo con la vista activa (sin reconstruir el lienzo)
@@ -2040,7 +2150,7 @@
   function viewCounts() {
     const m = S.model, v = vc();
     if (v.groups === 'collapse-top') return { ctx: [...VW.ctxBoxes.values()].reduce((a, b) => a + b.ids.length, 0), hidden: 0, dim: 0 };
-    const hidden = VW.hideNodes.size + VW.hideGroups.size + VW.hideEdges.size + (v.zones ? 0 : m.zones.length) + (v.notes ? 0 : m.notes.length);
+    const hidden = VW.hideNodes.size - VW.sc.nodes.size + VW.hideGroups.size - VW.sc.groups.size + VW.hideEdges.size - VW.sc.edges.size + (v.zones ? 0 : scopeItems('zones').length) + (v.notes ? 0 : scopeItems('notes').length);
     return { hidden, dim: VW.dimNodes + VW.dimEdges };
   }
   function renderViewMenu() {
@@ -2104,6 +2214,241 @@
   // si no, la última que eligió (guardada) o la de config.js. Deshacer, versiones y editores no la cambian.
   const adoptMetaView = m => { if (!S.viewChosen) S.viewKey = viewKey(m.meta?.view || store.get('view')); };
 
+  /* ---------- niveles C4: abrir, salir, marco de límite y fantasmas del exterior ---------- */
+  // Abre el diagrama interno de un nodo (null = nivel superior). Las posiciones de cada nivel son independientes.
+  function setScope(id, opts = {}) {
+    id = id && S.model.nodes.some(n => n.id === id) ? id : null;
+    if (id === S.scope) { if (opts.fit) fitView(); return id; }
+    stopPlay(); cancelConnect();
+    $('.item-edit')?.blur();
+    S.scope = id; S.flow = null; S.hover = null;
+    store.set('scope', id);
+    if (!opts.keepSel) S.sel = null;
+    if (S.path) clearPath();
+    refreshView();
+    updateMeta();
+    viewport.classList.remove('xs-enter'); void viewport.getBoundingClientRect(); viewport.classList.add('xs-enter');
+    viewport.addEventListener('animationend', () => viewport.classList.remove('xs-enter'), { once: true });
+    if (opts.fit !== false) fitView(opts.fit !== 'instant');
+    return id;
+  }
+  const scopeUp = () => { if (S.scope) setScope(scopeNode()?.in || null); };
+  // Abre el diagrama interno del nodo; si está vacío, entra igualmente y avisa de cómo empezarlo
+  function openInner(id) {
+    const n = S.model.nodes.find(x => x.id === id);
+    if (!n) return false;
+    const empty = !innerCount(id);
+    setScope(id);
+    if (empty) toast(T('c4.emptyHint', { name: n.label }), 3600);
+    return true;
+  }
+  // La selección puede estar en otro nivel (un hallazgo, un vecino del inspector, el diff de versiones…): se abre ese nivel
+  function revealScope(sel) {
+    if (!sel || !S.model) return;
+    const m = S.model, o = sel.kind === 'node' ? m.nodes.find(x => x.id === sel.id) : sel.kind === 'group' ? m.groups.find(x => x.id === sel.id)
+      : sel.kind === 'note' ? m.notes.find(x => x.id === sel.id) : sel.kind === 'zone' ? m.zones.find(x => x.id === sel.id)
+      : sel.kind === 'edge' ? m.nodes.find(x => x.id === m.edges.find(e => e.id === sel.id)?.from) : null;
+    if (o && scopeId(o) !== S.scope) setScope(scopeId(o), { fit: false, keepSel: true });
+  }
+  // Migas de pan: «Superior › Sistema › Contenedor» y el nivel C4 en el que se está
+  function renderCrumbs() {
+    const box = $('#stage-scope');
+    if (!box || !S.model) return;
+    const show = !!S.scope || hasLevels();
+    $('#empty-scope').hidden = !S.scope || scopeModel().nodes.length > 0;
+    box.hidden = !show;
+    if (!show) { box.innerHTML = ''; return; }
+    const path = scopePath(S.scope), crumbs = [{ id: '', label: T('c4.top') }, ...path.map(id => ({ id, label: scopeNode(id).label }))], last = crumbs.length - 1;
+    box.setAttribute('aria-label', T('c4.crumbs'));
+    box.innerHTML = crumbs.map((c, i) => `${i ? '<span class="sep" aria-hidden="true">›</span>' : ''}<button class="crumb${i === last ? ' on' : ''}" data-scope="${esc(c.id)}"${i === last ? ' aria-current="location"' : ''} title="${esc(c.label)}">${esc(c.label)}</button>`).join('')
+      + `<span class="lvl" title="${esc(T('c4.level.tip'))}">L${levelOf()} · ${esc(levelName(levelOf()))}</span>`;
+  }
+  $('#stage-scope').addEventListener('click', ev => { const b = ev.target.closest('[data-scope]'); if (b && !b.classList.contains('on')) setScope(b.dataset.scope || null); });
+
+  // Marco de límite (C4) alrededor de lo del nivel abierto y tarjetas fantasma de lo que queda fuera pero se conecta con ello.
+  // Es solo dibujo (no se guarda): va en el SVG para que se exporte.
+  function drawScopeFrame() {
+    L.scope.textContent = ''; VW.xs = null;
+    const nd = scopeNode();
+    if (!nd) return;
+    const m = S.model, sm = scopeModel(), collapse = vc().groups === 'collapse-top';
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    const add = (x, y, w, h) => { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x + w); y1 = Math.max(y1, y + h); };
+    sm.nodes.forEach(n => add(n.x, n.y, R.width.get(n.id) || C.node.width, nodeBoxH(n)));
+    sm.groups.forEach(g => { const b = R.gbox.get(g.id); if (b) add(b.x, b.y, b.w, b.h); });
+    const PAD = 44, LBL = 26, kind = c4Label(nd.c4), name = `${nd.label}${kind ? ` [${kind}]` : ''}`;
+    const nameW = Math.ceil(textW(name, '700 12.5px')) + 36;
+    let fr = x0 === Infinity ? { x: 0, y: 0, w: 560, h: 260 } : { x: x0 - PAD, y: y0 - PAD - LBL, w: x1 - x0 + 2 * PAD, h: y1 - y0 + 2 * PAD + LBL };
+    if (fr.w < nameW) { fr.x -= (nameW - fr.w) / 2; fr.w = nameW; }
+    const frame = el('g', { class: 'xs-frame' }, L.scope);
+    el('rect', { class: 'xs-frame-box', x: fr.x, y: fr.y, width: fr.w, height: fr.h, rx: 18 }, frame);
+    el('text', { class: 'xs-frame-label', x: fr.x + 18, y: fr.y + 24 }, frame).textContent = fitText(name, '700 12.5px', fr.w - 36);
+    el('title', null, frame).textContent = name;
+    // Fantasmas: lo de fuera conectado con algo de dentro (conexión entre niveles) y los vecinos del propio nodo en su nivel
+    const inner = new Set(sm.nodes.map(n => n.id)), byId = new Map(m.nodes.map(n => [n.id, n])), ghosts = new Map(), links = new Map();
+    const link = (gid, target, e, out) => { // out: la conexión sale del interior (o del marco) hacia el fantasma
+      if (!ghosts.has(gid)) ghosts.set(gid, { n: byId.get(gid), inc: false });
+      if (!out) ghosts.get(gid).inc = true;
+      const k = `${gid}|${target || '*'}|${out ? 1 : 0}`, cur = links.get(k);
+      if (cur) { if (e.label && !cur.label) cur.label = e.label; cur.both ||= !!e.both; return; }
+      links.set(k, { gid, target, out, label: e.label || '', both: !!e.both });
+    };
+    m.edges.forEach(e => {
+      const a = inner.has(e.from), b = inner.has(e.to);
+      if (a === b) return;
+      const ext = a ? e.to : e.from;
+      if (ext === nd.id || !byId.has(ext)) return;
+      link(ext, a ? e.from : e.to, e, a);
+    });
+    m.edges.forEach(e => {
+      if (e.from !== nd.id && e.to !== nd.id) return;
+      const other = byId.get(e.from === nd.id ? e.to : e.from);
+      if (other && other.id !== nd.id && scopeId(other) === scopeId(nd)) link(other.id, null, e, e.from === nd.id);
+    });
+    const GAP = 110, ROW = H + 26, MAXG = 8, sides = { l: [], r: [] };
+    ghosts.forEach(g => (g.inc ? sides.l : sides.r).push(g));
+    const rects = new Map(), more = [];
+    [['l', sides.l], ['r', sides.r]].forEach(([s, list]) => {
+      const shown = list.slice(0, MAXG), top = fr.y + fr.h / 2 - shown.length * ROW / 2 + 13;
+      shown.forEach((g, i) => {
+        const w = nodeWidth(g.n);
+        rects.set(g.n.id, { x: s === 'l' ? fr.x - GAP - w : fr.x + fr.w + GAP, y: top + i * ROW, w, h: H });
+      });
+      if (list.length > shown.length) more.push({ s, k: list.length - shown.length, y: top + shown.length * ROW });
+    });
+    const target = id => { const n = id && inner.has(id) && !VW.hideNodes.has(id) ? byId.get(id) : null; return n ? { x: n.x, y: n.y, w: R.width.get(n.id) || nodeWidth(n), h: H } : fr; };
+    links.forEach(l => {
+      const gr = rects.get(l.gid);
+      if (!gr || collapse) return;
+      const t = target(l.target), A = l.out ? t : gr, B = l.out ? gr : t;
+      const d = m.routing === 'elbow' ? elbowPath(A, B, 0, []) : curvePath(A, B, 0);
+      const g = el('g', { class: 'xs-edge' }, L.scope), line = el('path', { class: 'xs-edge-line', d }, g);
+      el('path', { class: 'xs-edge-arrow', d: arrowD(line, line.getTotalLength(), l.both) }, g);
+      if (l.label) { const mp = line.getPointAtLength(line.getTotalLength() / 2); el('text', { class: 'xs-edge-label', x: mp.x, y: mp.y - 4 }, g).textContent = fitText(String(l.label).split('\n')[0], FONT.edge, 150); }
+    });
+    rects.forEach((r, id) => {
+      const n = byId.get(id), g = el('g', { class: 'xs-ghost', 'data-xs': id, transform: `translate(${r.x} ${r.y})` }, L.scope);
+      g.style.setProperty('--c', nodeColor(n));
+      el('rect', { class: 'xs-ghost-card', width: r.w, height: r.h, rx: C.node.radius }, g);
+      const where = scopePath(scopeId(n)).map(x => byId.get(x)?.label).filter(Boolean).join(' › '), tag = c4Label(n.c4);
+      const sub = [tag ? `[${tag}]` : '', where].filter(Boolean).join(' · ');
+      el('text', { class: 'xs-ghost-name', x: 16, y: sub ? r.h / 2 - 3 : r.h / 2 + 5 }, g).textContent = fitText(n.label, FONT.label, r.w - 32);
+      if (sub) el('text', { class: 'xs-ghost-sub', x: 16, y: r.h / 2 + 14 }, g).textContent = fitText(sub, FONT.sub, r.w - 32);
+      el('title', null, g).textContent = `${n.label}${where ? ` · ${where}` : ''}\n${T('c4.ghost.tip')}`;
+    });
+    more.forEach(o => {
+      const w = C.node.width;
+      el('text', { class: 'xs-ghost-sub', x: o.s === 'l' ? fr.x - GAP - w + 16 : fr.x + fr.w + GAP + 16, y: o.y + 14 }, L.scope).textContent = T('c4.ghost.more', o.k);
+    });
+    VW.xs = { frame: fr, ghosts: [...rects.values()] };
+  }
+
+  /* ---------- niveles C4: mover entre niveles ---------- */
+  // Mueve nodos al diagrama interno de `target` (id de un nodo; null = nivel superior). Los grupos que quedan enteros viajan con ellos;
+  // las conexiones los siguen solas. Los nodos se recolocan junto a lo que ya hay en el nivel de destino.
+  function moveToScope(ids, target) {
+    const m = S.model, set = new Set(ids), nodes = m.nodes.filter(n => set.has(n.id));
+    target = target || null;
+    if (!nodes.length) return false;
+    if (target && (set.has(target) || innerDeep(ids).has(target) || !m.nodes.some(n => n.id === target))) return false;
+    if (nodes.every(n => scopeId(n) === target)) return false;
+    pushHistory();
+    // Un grupo viaja si todos sus nodos se mueven; si no, el nodo sale de su grupo
+    const gmove = new Set(m.groups.filter(g => { const mem = m.nodes.filter(n => inGroup(n, g.id)); return mem.length && mem.every(n => set.has(n.id)); }).map(g => g.id));
+    const rest = m.nodes.filter(n => scopeId(n) === target && !set.has(n.id));
+    const bx = Math.min(...nodes.map(n => n.x)), by = Math.min(...nodes.map(n => n.y));
+    const dx = rest.length ? snap(Math.max(...rest.map(n => n.x + (R.width.get(n.id) || nodeWidth(n)))) + 80 - bx) : snap(-bx);
+    const dy = rest.length ? snap(Math.min(...rest.map(n => n.y)) - by) : snap(-by);
+    nodes.forEach(n => {
+      n.x += dx; n.y += dy;
+      if (target) n.in = target; else delete n.in;
+      if (n.group && !gmove.has(n.group)) delete n.group;
+    });
+    m.groups.forEach(g => {
+      if (!gmove.has(g.id)) return;
+      if (target) g.in = target; else delete g.in;
+      if (g.parent && !gmove.has(g.parent)) delete g.parent;
+    });
+    S.sel = null; S.hover = null;
+    changed(true);
+    renderInspector();
+    toast(T('c4.moved', { n: nodes.length, where: target ? m.nodes.find(n => n.id === target).label : T('c4.top') }));
+    return true;
+  }
+  const moveUp = () => { if (S.scope && selIds().length) moveToScope(selIds(), scopeNode()?.in || null); };
+  // Sección «Niveles C4» del inspector (nodo o varios): tipo C4, abrir el diagrama interno y mover entre niveles
+  function c4Field(items) {
+    const list = [].concat(items), one = list.length === 1 && list[0], kinds = new Set(list.map(n => n.c4 || '')), k1 = kinds.size === 1 ? [...kinds][0] : null;
+    const sib = scopeModel().nodes.filter(n => !list.some(x => x.id === n.id)), inner = one ? innerCount(one.id) : 0;
+    return `<div class="c4-box">
+      <label>${T('c4.label')}<select data-field="c4">${k1 == null ? `<option value="__mixed" selected>${T('insp.mixed')}</option>` : ''}<option value=""${k1 === '' ? ' selected' : ''}>—</option>${C4_KINDS.map(k => `<option value="${k}"${k1 === k ? ' selected' : ''}>${esc(c4Label(k))}</option>`).join('')}</select></label>
+      <div class="insp-actions" style="margin-top:0">
+        ${one ? `<button class="btn" data-act="c4open" title="${esc(T('c4.open.tip'))}">${T(inner ? 'c4.open' : 'c4.create')}${inner ? ` · ${inner}` : ''}</button>` : ''}
+        ${S.scope ? `<button class="btn" data-act="c4up">${T('c4.moveUp')}</button>` : ''}
+      </div>
+      ${sib.length ? `<label>${T('c4.moveInto')}<select data-c4-into><option value="">—</option>${sib.map(n => `<option value="${esc(n.id)}">${esc(n.label)}</option>`).join('')}</select></label>` : ''}
+    </div>`;
+  }
+
+  /* ---------- niveles C4: exportar todos los niveles ---------- */
+  // Ejecuta fn(nivel, i) en cada nivel con contenido SIN guardar nada; al final restaura el nivel, la vista y la selección
+  async function eachScope(list, fn) {
+    const saved = { scope: S.scope, sel: S.sel, view: { ...S.view } };
+    viewBusy = true;
+    stopPlay(); clearPath();
+    try {
+      for (let i = 0; i < list.length; i++) {
+        setScope(list[i].id, { fit: false });
+        await fn(list[i], i);
+      }
+    } finally {
+      viewBusy = false;
+      setScope(saved.scope, { fit: false });
+      select(saved.sel);
+      Object.assign(S.view, saved.view); applyView();
+    }
+  }
+  // Un archivo por nivel con contenido (<título>-nivel-<ruta>.png|svg): el superior y cada nodo con diagrama interno
+  async function exportLevels(format = 'png') {
+    format = format === 'svg' ? 'svg' : 'png';
+    if (viewBusy || P || !S.model.nodes.length) return false;
+    const list = scopeList().filter(s => s.nodes), slug = s => (s.id ? s.path.map(id => fold(S.model.nodes.find(n => n.id === id)?.label || id).replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || id).join('-') : 'top');
+    if (list.length < 2) { toast(T('c4.noLevels'), 3000); return 0; }
+    let done = 0;
+    try {
+      await eachScope(list, async (s, i) => {
+        toast(T('c4.progress', { i: i + 1, n: list.length, name: s.label }), 60000);
+        const out = buildSVG(), suffix = `${T('c4.file')}-${slug(s)}`;
+        if (format === 'svg') download(out.str, fileName('svg', suffix), 'image/svg+xml');
+        else {
+          const blob = await pngBlob(out);
+          if (!blob) throw new Error('png');
+          download(blob, fileName('png', suffix));
+        }
+        done++;
+        await new Promise(r => setTimeout(r, 350));
+      });
+    } catch { toast(T('toast.pngFail'), 3200); return done; }
+    toast(T('c4.done', done), 4200);
+    return done;
+  }
+  // Importar infraestructura como código estando dentro de un nivel: se añade a ese nivel (no sustituye el diagrama)
+  function importIntoScope(raw) {
+    const d = normalize(clone(raw));
+    ensurePositions(d);
+    const m = S.model, used = new Set([...m.nodes, ...m.edges, ...m.groups, ...m.notes, ...m.zones].map(x => x.id)), map = new Map();
+    const fresh = id => { let v = String(id); while (used.has(v)) v += '_'; used.add(v); return v; };
+    [...d.groups, ...d.nodes].forEach(x => map.set(x.id, fresh(x.id)));
+    const rest = scopeModel().nodes, ox = rest.length ? Math.max(...rest.map(n => n.x + (R.width.get(n.id) || nodeWidth(n)))) + 100 - Math.min(...d.nodes.map(n => n.x)) : 0, oy = rest.length ? Math.min(...rest.map(n => n.y)) - Math.min(...d.nodes.map(n => n.y)) : 0;
+    pushHistory();
+    d.groups.forEach(g => { const o = { ...g, id: map.get(g.id), in: S.scope }; if (o.parent) o.parent = map.get(o.parent); m.groups.push(o); });
+    d.nodes.forEach(n => { const o = { ...n, id: map.get(n.id), in: S.scope, x: snap(n.x + ox), y: snap(n.y + oy) }; if (o.group) o.group = map.get(o.group); const k = c4Default(S.scope); if (k && !o.c4) o.c4 = k; m.nodes.push(o); });
+    d.edges.forEach(e => m.edges.push({ ...e, id: fresh(e.id), from: map.get(e.from), to: map.get(e.to) }));
+    changed(true);
+    fitView();
+    return d.nodes.length;
+  }
+
   /* ---------- vista Contexto: cajas cerradas y conexiones agregadas (solo dibujo; el modelo no cambia) ---------- */
   function updateContext() {
     L.ctx.textContent = '';
@@ -2113,7 +2458,7 @@
     const topOf = gid => { let g = gmap.get(gid), i = 0; while (g?.parent && gmap.has(g.parent) && i++ < 50) g = gmap.get(g.parent); return g; };
     // Representante visible de cada nodo: la caja cerrada de su grupo de primer nivel, o él mismo
     const reps = new Map(), repOf = new Map();
-    m.nodes.forEach(n => {
+    scopeModel().nodes.forEach(n => {
       const tg = n.group && topOf(n.group), b = tg && R.gbox.get(tg.id), k = b ? `g:${tg.id}` : `n:${n.id}`;
       // La caja cerrada es una tarjeta compacta centrada en el centro del grupo (no del tamaño del grupo)
       const card = b && { w: Math.min(b.w, 300), h: Math.min(b.h, 128) };
@@ -2296,10 +2641,11 @@
       VW.ctxBoxes.forEach(b => { const q = b.card; add(q.x, q.y, q.w, q.h); });
       VW.ctxEdges.forEach(e => { try { const q = e.g.getBBox(); add(q.x, q.y, q.width, q.height); } catch { /* sin medir */ } });
     } else {
-    S.model.nodes.forEach(n => add(n.x, n.y, R.width.get(n.id) || C.node.width, nodeBoxH(n)));
+    S.model.nodes.forEach(n => { if (!VW.hideNodes.has(n.id)) add(n.x, n.y, R.width.get(n.id) || C.node.width, nodeBoxH(n)); });
     R.gbox.forEach((b, id) => { if (!VW.hideGroups.has(id)) add(b.x, b.y, b.w, b.h); });
     }
-    [...(vc().notes ? S.model.notes : []), ...(vc().zones ? S.model.zones : [])].forEach(o => add(o.x, o.y, o.w, o.h));
+    [...(vc().notes ? scopeItems('notes') : []), ...(vc().zones ? scopeItems('zones') : [])].forEach(o => add(o.x, o.y, o.w, o.h));
+    if (VW.xs) { const q = VW.xs.frame; add(q.x, q.y, q.w, q.h); VW.xs.ghosts.forEach(g => add(g.x, g.y, g.w, g.h)); } // marco de límite y fantasmas del nivel C4
     return x0 === Infinity ? null : { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
   }
   function fitView(smooth = true) {
@@ -2364,11 +2710,11 @@
   const save = debounce(() => { store.set('model', S.model); updateMeta(); renderVersions(); renderAdr(); }, 250);
 
   const ORDER = {
-    group: ['id', 'label', 'icon', 'color', 'parent', 'kind', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'controls'],
-    node: ['id', 'label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'x', 'y', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'exposure', 'backup', 'controls'],
+    group: ['id', 'label', 'icon', 'color', 'parent', 'kind', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'controls', 'in'],
+    node: ['id', 'label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'x', 'y', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'exposure', 'backup', 'controls', 'in', 'c4'],
     edge: ['id', 'from', 'to', 'label', 'style', 'route', 'both', 'color', 'data', 'encrypted', 'datasets', 'transferOk', 'threats'],
-    note: ['id', 'x', 'y', 'w', 'h', 'text', 'color'],
-    zone: ['id', 'x', 'y', 'w', 'h', 'label', 'severity', 'desc', 'kind', 'trust'],
+    note: ['id', 'x', 'y', 'w', 'h', 'text', 'color', 'in'],
+    zone: ['id', 'x', 'y', 'w', 'h', 'label', 'severity', 'desc', 'kind', 'trust', 'in'],
     decision: ['id', 'title', 'status', 'date', 'deciders', 'context', 'decision', 'consequences', 'supersededBy', 'links']
   };
   function serialize(m, full = false) {
@@ -2445,6 +2791,9 @@
     }
     S.model = normalize(raw);
     ensurePositions(S.model);
+    if (opts.animate && !opts.keepScope) S.scope = null;  // otro diagrama: nivel superior; deshacer, versiones y editores conservan el nivel si sigue existiendo
+    if (S.scope && !S.model.nodes.some(n => n.id === S.scope)) S.scope = null;
+    store.set('scope', S.scope);
     if (opts.animate) { adoptMetaView(S.model); S.flow = null; }
     S.sel = normSel(S.sel);
     if (S.sel && !selTarget()) S.sel = null;
@@ -2483,10 +2832,12 @@
     const reviews = open.length ? T('meta.review', { n: open.length, o: overdue }) : '';
     refreshFindings();
     const nFind = FC.open.filter(f => f.source === 'rule').length;
-    $('#stage-meta').textContent = [T('meta.nodes', m.nodes.length), T('meta.edges', m.edges.length), m.groups.length ? T('meta.groups', m.groups.length) : '', costs, insecure ? T('meta.insecure', insecure) : '', xb ? T('meta.xborder', xb) : '', zones, reviews, nFind ? T('meta.findings', nFind) : ''].filter(Boolean).join(' · ');
+    const sm = scopeModel(m);
+    $('#stage-meta').textContent = [T('meta.nodes', sm.nodes.length), T('meta.edges', sm.edges.length), sm.groups.length ? T('meta.groups', sm.groups.length) : '', costs, insecure ? T('meta.insecure', insecure) : '', xb ? T('meta.xborder', xb) : '', zones, reviews, nFind ? T('meta.findings', nFind) : ''].filter(Boolean).join(' · ');
     const t = $('#title');
     if (document.activeElement !== t) t.value = m.title;
-    $('#empty').hidden = m.nodes.length > 0;
+    $('#empty').hidden = !!S.scope || sm.nodes.length > 0;
+    renderCrumbs();
     const v = activeVersion(), pill = $('#stage-ver');
     pill.hidden = !v;
     if (v) {
@@ -2692,6 +3043,7 @@
   }
   function select(sel, opts = {}) {
     S.flow = null;
+    revealScope(sel);  // un elemento de otro nivel C4: se abre ese nivel
     S.sel = visibleSel(normSel(sel));
     if (S.sel && !selTarget()) S.sel = null;
     if (S.path) clearPath();
@@ -2715,11 +3067,14 @@
     const n = { id: uniqueId(`${base}-`), label: extra.label || typeLabel(type), type: S.lastType };
     if (extra.icon) n.icon = extra.icon;
     if (extra.sub) n.sub = extra.sub;
+    if (S.scope) { n.in = S.scope; const k = c4Default(S.scope); if (k) n.c4 = k; } // lo nuevo nace en el nivel abierto (con el tipo C4 que toca)
     n.x = snap(wx - nodeWidth(n) / 2);
     n.y = snap(wy - H / 2);
     // Si cae dentro de un grupo, entra en el más profundo
     let best = null, depth = -1;
     R.gbox.forEach((b, gid) => {
+      const gq = groupById(gid);
+      if (!gq || !inScope(gq)) return;
       if (wx >= b.x && wx <= b.x + b.w && wy >= b.y && wy <= b.y + b.h) {
         const d = groupDepth(groupById(gid));
         if (d > depth) { depth = d; best = gid; }
@@ -2760,9 +3115,19 @@
     applyHighlight();
   }
 
-  function deleteSelection() {
+  function deleteSelection(opts = {}) {
     const s = S.sel, t = selTarget();
     if (!t) return;
+    // Un nodo con diagrama interno se lleva su contenido (a cualquier profundidad): se pide confirmación
+    if ((s.kind === 'node' || s.kind === 'multi') && !opts.confirmed) {
+      const deep = selNodes().filter(n => innerCount(n.id));
+      if (deep.length) {
+        const total = innerDeep(deep.map(n => n.id)).size;
+        confirmBox({ title: T('c4.del.title', deep.length), text: T('c4.del.text', total), list: deep.map(n => `${n.label} · ${T('c4.del.n', innerCount(n.id))}`), ok: T('insp.delete'), cancel: T('ver.cf.cancel'), danger: true })
+          .then(ok => { if (ok && selTarget()) deleteSelection({ confirmed: true }); });
+        return;
+      }
+    }
     pushHistory();
     const m = S.model;
     if (s.kind === 'note' || s.kind === 'zone') {
@@ -2770,8 +3135,10 @@
       m[k] = m[k].filter(x => x.id !== s.id);
     } else if (s.kind === 'node' || s.kind === 'multi') {
       const ids = new Set(selIds());
+      innerDeep([...ids]).forEach(id => ids.add(id));
       m.nodes = m.nodes.filter(n => !ids.has(n.id));
       m.edges = m.edges.filter(e => !ids.has(e.from) && !ids.has(e.to));
+      m.groups = m.groups.filter(g => !ids.has(g.in)); m.notes = m.notes.filter(x => !ids.has(x.in)); m.zones = m.zones.filter(x => !ids.has(x.in));
     } else if (s.kind === 'edge') {
       m.edges = m.edges.filter(e => e.id !== s.id);
     } else {
@@ -2787,7 +3154,7 @@
 
   // Tecla Z: selecciona la zona siguiente (Mayús, la anterior); red de seguridad si una zona queda tapada
   function cycleZone(dir) {
-    const zs = S.model.zones;
+    const zs = scopeItems('zones');
     if (!zs.length) return;
     const i = S.sel?.kind === 'zone' ? zs.findIndex(z => z.id === S.sel.id) : -1;
     const z = zs[(i < 0 ? (dir > 0 ? 0 : zs.length - 1) : i + dir + zs.length) % zs.length];
@@ -2819,7 +3186,7 @@
   function addItem(kind, o) {
     pushHistory();
     const id = uniqueId(kind);
-    S.model[kind === 'note' ? 'notes' : 'zones'].push({ id, ...o });
+    S.model[kind === 'note' ? 'notes' : 'zones'].push({ id, ...o, ...(S.scope ? { in: S.scope } : {}) });
     changed(true);
     select({ kind, id });
     toast(T(kind === 'note' ? 'toast.noteAdded' : o.kind === 'trust' ? 'toast.trustAdded' : 'toast.zoneAdded'));
@@ -2885,12 +3252,13 @@
   }
 
   function relayout() {
-    if (!S.model.nodes.length) return;
+    const sm = scopeModel(); // solo se ordena el nivel abierto
+    if (!sm.nodes.length) return;
     stopPlay();
     pushHistory();
-    const from = new Map(S.model.nodes.map(n => [n.id, { x: n.x, y: n.y }]));
-    autoLayout(S.model);
-    const to = new Map(S.model.nodes.map(n => [n.id, { x: n.x, y: n.y }]));
+    const from = new Map(sm.nodes.map(n => [n.id, { x: n.x, y: n.y }]));
+    autoLayout(sm);
+    const to = new Map(sm.nodes.map(n => [n.id, { x: n.x, y: n.y }]));
     toast(T('toast.relayout'));
     tweenNodes(from, to, 700, () => fitView());
   }
@@ -2966,7 +3334,7 @@
     const mx = [bx0, (bx0 + bx1) / 2, bx1].map(v => v + dx), my = [by0, (by0 + by1) / 2, by1].map(v => v + dy);
     let gx = null, gy = null;
     S.model.nodes.forEach(n => {
-      if (moving.has(n.id)) return;
+      if (moving.has(n.id) || VW.hideNodes.has(n.id)) return;
       [n.x, n.x + w(n) / 2, n.x + w(n)].forEach(c => mx.forEach(m => { const v = c - m; if (Math.abs(v) <= tol && (!gx || Math.abs(v) < Math.abs(gx.d))) gx = { d: v, at: c, n }; }));
       [n.y, n.y + H / 2, n.y + H].forEach(c => my.forEach(m => { const v = c - m; if (Math.abs(v) <= tol && (!gy || Math.abs(v) < Math.abs(gy.d))) gy = { d: v, at: c, n }; }));
     });
@@ -2983,11 +3351,11 @@
   /* ---------- reproducir flujo ---------- */
   function togglePlay() {
     if (S.play) return stopPlay();
-    if (!S.model.nodes.length) return;
+    if (!scopeModel().nodes.length) return;
     if (vc().groups === 'collapse-top') return toast(T('ctx.noPlay'));
     cancelConnect();
     select(null);
-    const ranks = computeRanks(S.model), max = Math.max(0, ...ranks.values());
+    const ranks = computeRanks(scopeModel()), max = Math.max(0, ...ranks.values());
     svg.classList.remove('focusing', 'hovering');
     svg.classList.add('playing');
     $('#btn-play').classList.add('on');
@@ -3023,7 +3391,7 @@
   // P = null fuera de la presentación; si no: { slides, i, saved, fs, idle, sl }
   let P = null;
   function presentSlides() {
-    const m = S.model, TB = (m.direction || C.layout.direction) === 'TB';
+    const m = scopeModel(), TB = (m.direction || C.layout.direction) === 'TB';
     const groups = m.groups.filter(g => R.gbox.has(g.id) && m.nodes.some(n => inGroup(n, g.id)));
     const pos = g => { const b = R.gbox.get(g.id); return TB ? [b.y, b.x] : [b.x, b.y]; };
     const ids = new Set(groups.map(g => g.id));
@@ -3056,7 +3424,7 @@
     R.groups.forEach((r, id) => { r.g.classList.remove('sel'); r.g.classList.toggle('pdim', !!gin && !gin.has(id)); });
   }
   function presentCaption(sl) {
-    const m = S.model;
+    const m = scopeModel();
     let h = m.title, sub = '', desc = '', notes = [];
     if (sl.kind === 'view') {
       sub = viewLabel(sl.key);
@@ -3082,7 +3450,7 @@
     if (!P) return;
     stopPlay();
     P.i = clamp(i, 0, P.slides.length - 1);
-    const sl = P.slides[P.i], m = S.model;
+    const sl = P.slides[P.i], m = scopeModel();
     let box = null, lit = null, gin = null;
     if (sl.kind === 'view' && sl.key !== S.viewKey) setView(sl.key, { toast: false });  // recalcula el estado derivado de la vista
     if (sl.kind === 'group') {
@@ -3292,9 +3660,9 @@
 
   // Diferencias entre lo guardado (a) y el lienzo (b). La posición no cuenta como cambio.
   const DIFF_FIELDS = {
-    node: ['label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'exposure', 'backup', 'controls'],
+    node: ['label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'exposure', 'backup', 'controls', 'in', 'c4'],
     edge: ['label', 'style', 'route', 'both', 'color', 'data', 'encrypted', 'datasets', 'transferOk', 'threats'],
-    group: ['label', 'icon', 'color', 'parent', 'kind', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'controls']
+    group: ['label', 'icon', 'color', 'parent', 'kind', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'controls', 'in']
   };
   function diffModels(a, b) {
     const val = (f, x) => (f === 'style' ? x || 'sync' : x == null ? '' : typeof x === 'object' ? JSON.stringify(x) : String(x));
@@ -3349,11 +3717,14 @@
     const { base, diff: d } = S.compare;
     const cur = new Map(S.model.nodes.map(n => [n.id, n])), old = new Map(base.nodes.map(n => [n.id, n]));
     const rect = id => { const n = cur.get(id) || old.get(id); return n && { x: n.x, y: n.y, w: R.width.get(id) || nodeWidth(n), h: H }; };
+    const lvl = id => scopeId(cur.get(id) || old.get(id));
     d.edges.removed.forEach(e => {
       const a = rect(e.from), b = rect(e.to);
+      if (lvl(e.from) !== S.scope || lvl(e.to) !== S.scope) return;
       if (a && b && e.from !== e.to) el('path', { class: 'ghost-edge', d: routeOf(e) === 'elbow' ? elbowPath(a, b, 0, []) : curvePath(a, b, 0) }, L.ghosts);
     });
     d.nodes.removed.forEach(n => {
+      if (scopeId(n) !== S.scope) return;
       const w = nodeWidth(n), g = el('g', { class: 'ghost', transform: `translate(${n.x} ${n.y})` }, L.ghosts);
       el('rect', { class: 'ghost-card', width: w, height: H, rx: C.node.radius }, g);
       el('text', { x: 18, y: H / 2 + 5 }, g).textContent = fitText(`− ${n.label}`, FONT.label, w - 30);
@@ -3436,7 +3807,7 @@
     if (!(d.count.a + d.count.r + d.count.c)) return `<p class="ver-sum">${esc(T('ver.same'))}</p>`;
     const FIELD = { label: 'insp.name', sub: 'insp.detail', type: 'insp.type', icon: 'insp.icon', group: 'insp.group', color: 'insp.color', badge: 'field.badge',
       cost: 'cost.label', costPeriod: 'cost.period', costYears: 'cost.yearsAria', desc: 'insp.desc', style: 'insp.style', parent: 'insp.parent',
-      data: 'data.label', encrypted: 'enc.label', route: 'insp.route', both: 'insp.dir', review: 'rev.label', kind: 'gkind.label', exposure: 'sec.expo.label', backup: 'sec.backup.label', controls: 'cmp.title' };
+      data: 'data.label', encrypted: 'enc.label', route: 'insp.route', both: 'insp.dir', review: 'rev.label', kind: 'gkind.label', exposure: 'sec.expo.label', backup: 'sec.backup.label', controls: 'cmp.title', in: 'c4.in', c4: 'c4.label' };
     const fields = (fs, kind) => fs.map(f => T(kind === 'edge' && f === 'label' ? 'insp.label' : FIELD[f] || f).toLowerCase()).join(', ');
     const names = new Map([...S.compare.base.nodes, ...S.model.nodes].map(n => [n.id, n.label]));
     const edgeName = e => `${names.get(e.from) || e.from} ${e.both ? '↔' : '→'} ${names.get(e.to) || e.to}`;
@@ -3932,9 +4303,10 @@
       html = head('var(--accent)', '', T('insp.selection'), T('insp.count', t.length)) + `
         <div class="field">${T('insp.align')}<div class="tools">${['left', 'hcenter', 'right', 'top', 'vcenter', 'bottom'].map(tool).join('')}</div></div>
         <div class="field">${T('insp.distribute')}<div class="tools two">${['hdist', 'vdist'].map(k => tool(k).replace('</svg>', `</svg>${T(k === 'hdist' ? 'insp.horizontal' : 'insp.vertical')}`)).join('')}</div></div>
-        <label>${T('insp.group')}<select data-field="group">${g1 == null ? `<option value="__mixed" selected>${T('insp.mixed')}</option>` : ''}<option value=""${g1 === '' ? ' selected' : ''}>${T('insp.none')}</option>${m.groups.map(g => `<option value="${esc(g.id)}"${g.id === g1 ? ' selected' : ''}>${esc(g.label)}</option>`).join('')}<option value="__new">${T('insp.newGroup')}</option></select></label>
+        <label>${T('insp.group')}<select data-field="group">${g1 == null ? `<option value="__mixed" selected>${T('insp.mixed')}</option>` : ''}<option value=""${g1 === '' ? ' selected' : ''}>${T('insp.none')}</option>${m.groups.filter(g => inScope(g)).map(g => `<option value="${esc(g.id)}"${g.id === g1 ? ' selected' : ''}>${esc(g.label)}</option>`).join('')}<option value="__new">${T('insp.newGroup')}</option></select></label>
         <div class="field">${T('insp.color')}${swatches(colorsOf.size === 1 ? [...colorsOf][0] : '__mixed')}</div>
         ${t.length === 2 ? pathField() : ''}
+        ${c4Field(t)}
         ${dataField(t)}
         ${govField(t, 'multi')}
         ${regionField(t)}
@@ -3959,10 +4331,11 @@
         <label>${T('insp.detail')}<input data-field="sub" value="${esc(t.sub || '')}" placeholder="${esc(T('insp.detail.ph'))}"></label>
         <div class="row2">
           <label>${T('insp.type')}<select data-field="type">${typeOptions(t.type)}</select></label>
-          <label>${T('insp.group')}<select data-field="group"><option value="">${T('insp.none')}</option>${m.groups.map(g => `<option value="${esc(g.id)}"${g.id === t.group ? ' selected' : ''}>${esc(g.label)}</option>`).join('')}<option value="__new">${T('insp.newGroup')}</option></select></label>
+          <label>${T('insp.group')}<select data-field="group"><option value="">${T('insp.none')}</option>${m.groups.filter(g => inScope(g)).map(g => `<option value="${esc(g.id)}"${g.id === t.group ? ' selected' : ''}>${esc(g.label)}</option>`).join('')}<option value="__new">${T('insp.newGroup')}</option></select></label>
         </div>
         ${Object.keys(ICONS).length ? iconPicker(t) : ''}
         <div class="field">${T('insp.color')}${swatches(t.color)}</div>
+        ${c4Field(t)}
         ${costField(t)}
         ${dataField(t)}
         ${govField(t, 'node')}
@@ -4040,7 +4413,7 @@
         <label>${T('gkind.label')}<select data-field="kind"><option value=""${t.kind ? '' : ' selected'}>${esc(T('gkind.auto', { k: T(`gkind.${groupKindAuto(t)}`) }))}</option>${['logical', 'physical'].map(k => `<option value="${k}"${t.kind === k ? ' selected' : ''}>${T(`gkind.${k}`)}</option>`).join('')}</select></label>
         ${regionField(t)}
         ${layerField(t)}
-        <label>${T('insp.parent')}<select data-field="parent"><option value="">${T('insp.none')}</option>${m.groups.filter(g => !blocked.has(g.id)).map(g => `<option value="${esc(g.id)}"${g.id === t.parent ? ' selected' : ''}>${esc(g.label)}</option>`).join('')}</select></label>
+        <label>${T('insp.parent')}<select data-field="parent"><option value="">${T('insp.none')}</option>${m.groups.filter(g => !blocked.has(g.id) && (g.in || null) === (t.in || null)).map(g => `<option value="${esc(g.id)}"${g.id === t.parent ? ' selected' : ''}>${esc(g.label)}</option>`).join('')}</select></label>
         <div class="field">${T('insp.color')}${swatches(t.color)}</div>
         ${govField(t, 'group')}
         ${cmpField(t, 'group')}
@@ -4074,7 +4447,7 @@
       if (!name || !name.trim()) { S.history.pop(); updateUndoButtons(); renderInspector(); return; }
       const id = uniqueId('grupo-'), parent = parents.size === 1 ? [...parents][0] : '';
       const keys = paletteKeys();
-      S.model.groups.push({ id, label: name.trim(), color: keys[S.model.groups.length % keys.length], ...(parent ? { parent } : {}) });
+      S.model.groups.push({ id, label: name.trim(), color: keys[S.model.groups.length % keys.length], ...(parent ? { parent } : {}), ...(S.scope ? { in: S.scope } : {}) });
       v = id;
     }
     list.forEach(x => {
@@ -4161,6 +4534,7 @@
   });
   inspector.addEventListener('input', ev => { if (ev.target.matches('input[data-field], textarea[data-field]')) onField(ev.target); });
   inspector.addEventListener('change', ev => { if (ev.target.matches('select[data-field]')) onField(ev.target); });
+  inspector.addEventListener('change', ev => { if (ev.target.matches('select[data-c4-into]') && ev.target.value) moveToScope(selIds(), ev.target.value); });
   // Añadir conjuntos de datos a la conexión elegida (Intro o coma; también al elegir de la lista o salir del campo)
   function addDatasets(inp) {
     const t = selTarget(), add = cleanDatasets(inp.value);
@@ -4266,7 +4640,7 @@
       $$('.seg button', inspector).forEach(x => x.classList.toggle('on', x === b));
       applyHighlight();
     } else if (b.dataset.goto) {
-      if (VW.hideNodes.has(b.dataset.goto)) return toast(T('view.hiddenHere'));
+      if (VW.hideNodes.has(b.dataset.goto) && !VW.sc.nodes.has(b.dataset.goto)) return toast(T('view.hiddenHere'));
       select({ kind: 'node', id: b.dataset.goto }, { center: true });
     } else switch (b.dataset.act) {
       case 'close': select(null); break;
@@ -4279,6 +4653,8 @@
         break;
       }
       case 'connect': startConnect(t.id); break;
+      case 'c4open': openInner(t.id); break;
+      case 'c4up': moveUp(); break;
       case 'dup': duplicateSelection(); break;
       case 'mkzone': markZone(); break;
       case 'mktrust': markZone('trust'); break;
@@ -4683,6 +5059,7 @@
     versionBox.value = S.model.meta?.version || '';
     const av = activeVersion();
     versionBox.placeholder = av ? verLabel(av) : '1.0';
+    $('#exp-levels-svg').hidden = $('#exp-levels-png').hidden = !hasLevels();
     const r = exportMenu.querySelector('summary').getBoundingClientRect(), pop = exportMenu.querySelector('.menu-pop');
     pop.style.top = `${r.bottom}px`;
     pop.style.right = `${Math.max(8, innerWidth - r.right)}px`;
@@ -4692,7 +5069,7 @@
     const b = ev.target.closest('[data-export]');
     if (!b) return;
     exportMenu.open = false;
-    const f = { svg: exportSVG, png: exportPNG, 'svg-all': () => exportViews('svg'), 'png-all': () => exportViews('png'), json: exportJSON, copy: copyJSON, share: shareEncrypted, stride: exportThreats, compliance: openCompMatrix, report: openReportDialog }[b.dataset.export];
+    const f = { svg: exportSVG, png: exportPNG, 'svg-all': () => exportViews('svg'), 'png-all': () => exportViews('png'), 'svg-levels': () => exportLevels('svg'), 'png-levels': () => exportLevels('png'), json: exportJSON, copy: copyJSON, share: shareEncrypted, stride: exportThreats, compliance: openCompMatrix, report: openReportDialog }[b.dataset.export];
     if (f) f(); else exportOther(b.dataset.export);
   });
 
@@ -4720,7 +5097,7 @@
       ...(S.viewKey !== 'full' ? [[T('leg.view'), viewLabel(S.viewKey)]] : []),
       ...(av ? [[T('leg.status'), T(`ver.st.${av.status}`)], ...(decided(av) ? [[decLabel(av), [av.decidedBy, fmtDay(av.decidedOn)].filter(Boolean).join(' · ')]] : []), [T('ver.created'), fmtDay(av.created)], [T('ver.updatedOn'), fmtDay(av.updated)]] : [[T('leg.date'), new Intl.DateTimeFormat(I.lang, { dateStyle: 'long' }).format(new Date())]]),
       ...(cost ? [[T('leg.cost'), cost]] : [])];
-    return { title: m.title, info, av };
+    return { title: S.scope ? `${m.title} · ${scopeNode()?.label || ''}` : m.title, info, av };
   }
   // Tipos de componente que usa el diagrama, con el color con que se ven (el propio del nodo o el del tipo).
   // Una fila por tipo+color: un mismo tipo con colores distintos se distingue en el lienzo y en la leyenda.
@@ -4932,6 +5309,7 @@
     out.querySelectorAll('.lit, .sel, .pulse, .pulse-node, .enter, .connect-src, .fdim').forEach(n => n.classList.remove('lit', 'sel', 'pulse', 'pulse-node', 'enter', 'connect-src', 'fdim'));
     const vp = out.querySelector('#viewport');
     vp.removeAttribute('id');
+    vp.classList.remove('xs-enter');
     vp.setAttribute('transform', `translate(${pad - b.x} ${pad + top - b.y})`);
     const t = C.themes[S.theme], p = C.palettes[S.palette];
     const vars = [...Object.entries(t).map(([k, v]) => `--${k}:${v}`), ...Object.entries(p[S.theme] || p.dark).map(([k, v]) => `--p-${k}:${v}`), `--font:${fontCss()}`].join(';');
@@ -4941,7 +5319,7 @@
     out.insertBefore(el('rect', { width: W, height: Ht, fill: t.bg }), style.nextSibling);
     const title = el('text', { x: pad, y: pad + 10, fill: t.text, 'font-size': 20, 'font-weight': 700, 'font-family': fontCss() });
     const av = activeVersion();
-    title.textContent = (av ? `${S.model.title}  ·  ${verLabel(av)}` : S.model.title) + (S.viewKey !== 'full' ? `  ·  ${T('view.export', { name: viewLabel(S.viewKey) })}` : '');
+    title.textContent = (av ? `${S.model.title}  ·  ${verLabel(av)}` : S.model.title) + (S.scope ? `  ·  ${scopeNode()?.label || ''}` : '') + (S.viewKey !== 'full' ? `  ·  ${T('view.export', { name: viewLabel(S.viewKey) })}` : '');
     out.insertBefore(title, vp);
     if (lg) {
       placeLegend(lg, W - pad * 2);
@@ -5562,6 +5940,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     let res;
     try { res = IAC.convert(files); } catch { return toast(IAC ? T('toast.iacNone') : T('toast.badJson'), 3200); }
     if (!res.nodes) return toast(T('toast.iacEmpty', { format: res.format }), 3200);
+    if (S.scope) { importIntoScope(res.diagram); toast(T('toast.iac', res), 4200); return res; } // dentro de un nivel C4: se añade a ese nivel
     S.sel = null;
     setModel(res.diagram, { history: true, animate: true, fit: true });
     toast(T('toast.iac', res), 4200);
@@ -5577,13 +5956,19 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
   };
   // Zona que contiene el punto (la más pequeña si hay varias): Alt+clic la elige aunque haya algo encima
   const zoneAt = p => {
-    const hit = S.model.zones.filter(z => p.x >= z.x && p.x <= z.x + z.w && p.y >= z.y && p.y <= z.y + z.h).sort((a, b) => a.w * a.h - b.w * b.h)[0];
+    const hit = S.model.zones.filter(z => inScope(z) && p.x >= z.x && p.x <= z.x + z.w && p.y >= z.y && p.y <= z.y + z.h).sort((a, b) => a.w * a.h - b.w * b.h)[0];
     return hit ? { kind: 'zone', id: hit.id, resize: false } : null;
   };
   svg.addEventListener('pointerdown', ev => {
     if (ev.button !== 0 && ev.button !== 1) return;
     if (P) { if (ev.button === 0) presentGo(1); return; }
     if (S.play) stopPlay();
+    const ghostEl = ev.button === 0 && ev.target.closest('.xs-ghost');
+    if (ghostEl) { // tarjeta fantasma de un nivel C4: salta a su nivel y la elige
+      const gid = ghostEl.dataset.xs;
+      cancelConnect(); setScope(scopeOf(gid)); select({ kind: 'node', id: gid });
+      return;
+    }
     const nodeEl = ev.target.closest('.node'), tagEl = ev.target.closest('.group-tag'), edgeEl = ev.target.closest('.edge:not(.ctx-edge)');
     const ctxEl = ev.target.closest('.ctx-box'), flowEl = ev.target.closest('.ctx-edge');
     const p = toWorld(ev.clientX, ev.clientY), now = performance.now();
@@ -5619,7 +6004,9 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
       return;
     } else if (nodeEl) {
       const id = nodeEl.dataset.id;
-      if (dbl) { renameNode(id); return; }
+      // Diagrama interno: clic en el indicador «⊞ n» o doble clic fuera del texto lo abre; doble clic en el nombre (o en un nodo sin interior) lo renombra
+      if (ev.button === 0 && !S.connecting && !(ev.metaKey || ev.ctrlKey) && ev.target.closest('.node-inner')) { openInner(id); return; }
+      if (dbl) { if (innerCount(id) && !ev.target.closest('.node-label, .node-sub')) openInner(id); else renameNode(id); return; }
       if (multiKey && !S.connecting) { toggleInSelection(id); return; }
       const from = S.connecting || (ev.shiftKey && S.sel?.kind === 'node' && S.sel.id !== id ? S.sel.id : null);
       if (from) { addEdge(from, id); return; }
@@ -5755,7 +6142,9 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     else if (mod) return;
     else if (ev.key === 'Delete' || ev.key === 'Backspace') { if (S.sel) { ev.preventDefault(); deleteSelection(); } }
     else if (ev.key === 'Escape' && filterMenu.open) filterMenu.open = false;
-    else if (ev.key === 'Escape') { if (S.play) stopPlay(); else if (S.path) clearPath(); else if (S.connecting) cancelConnect(); else if (!S.sel && S.compare) compareVersion(null); else select(null); }
+    else if (ev.key === 'Escape') { if (S.play) stopPlay(); else if (S.path) clearPath(); else if (S.connecting) cancelConnect(); else if (!S.sel && S.compare) compareVersion(null); else if (!S.sel && !S.flow && S.scope) scopeUp(); else select(null); }
+    else if (ev.altKey && ev.key === 'ArrowUp') { ev.preventDefault(); scopeUp(); }  // sube un nivel C4
+    else if (ev.key === 'Enter' && S.sel?.kind === 'node' && innerCount(S.sel.id) && !ev.target.closest?.('button, a, summary')) { ev.preventDefault(); setScope(S.sel.id); }  // abre el diagrama interno
     else if (/^[1-9]$/.test(k) && VIEW_KEYS[+k - 1]) setView(VIEW_KEYS[+k - 1]);
     else if (k === 'f') fitView();
     else if (k === 'p') togglePlay();
@@ -6324,7 +6713,8 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     svg.classList.toggle('anim-off', !S.anim);
     $('#btn-anim').classList.toggle('on', S.anim);
     const saved = store.get('model', null);
-    setModel(saved && Array.isArray(saved.nodes) ? saved : I.deep(EXAMPLES[0]?.diagram || { title: T('model.new') }), { animate: true });
+    S.scope = store.get('scope', null);  // se recupera el nivel C4 abierto si sigue existiendo
+    setModel(saved && Array.isArray(saved.nodes) ? saved : I.deep(EXAMPLES[0]?.diagram || { title: T('model.new') }), { animate: true, keepScope: true });
     fitView(false);
     requestAnimationFrame(tick);
   }
@@ -6367,6 +6757,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     threats: () => strideAll().map(t => ({ edge: t.e.id, from: t.e.from, to: t.e.to, zones: t.zones.map(z => z.id), category: t.cat, severity: t.severity, status: t.status, note: t.note })),
     exportThreats, exportReport,
     decisions: () => clone(S.model.decisions || []), addDecision, updateDecision, removeDecision, exportDecisions,
+    setScope: id => setScope(id), get scope() { return S.scope; }, scopes: () => scopeList().map(x => ({ ...x, path: [...x.path] })), exportLevels,
     exportSVG, exportPNG, exportViews, exportJSON, shareEncrypted, exportOther, exportCtx, toggleRouting, importFiles, config: C, icons: ICONS
   };
 
