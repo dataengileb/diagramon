@@ -1285,7 +1285,10 @@
     const reps = new Map(), repOf = new Map();
     m.nodes.forEach(n => {
       const tg = n.group && topOf(n.group), b = tg && R.gbox.get(tg.id), k = b ? `g:${tg.id}` : `n:${n.id}`;
-      if (!reps.has(k)) reps.set(k, b ? { k, g: tg, r: b, ids: [], color: colorVar(tg.color) || 'var(--muted)', name: tg.label } : { k, n, r: { x: n.x, y: n.y, w: R.width.get(n.id), h: H }, ids: [], color: nodeColor(n), name: n.label });
+      // La caja cerrada es una tarjeta compacta centrada en el centro del grupo (no del tamaño del grupo)
+      const card = b && { w: Math.min(b.w, 300), h: Math.min(b.h, 128) };
+      if (card) { card.x = b.x + (b.w - card.w) / 2; card.y = b.y + (b.h - card.h) / 2; }
+      if (!reps.has(k)) reps.set(k, b ? { k, g: tg, r: card, ids: [], color: colorVar(tg.color) || 'var(--muted)', name: tg.label } : { k, n, r: { x: n.x, y: n.y, w: R.width.get(n.id), h: H }, ids: [], color: nodeColor(n), name: n.label });
       reps.get(k).ids.push(n.id);
       repOf.set(n.id, reps.get(k));
     });
@@ -1294,16 +1297,21 @@
       const b = rp.r, g = rp.g, root = el('g', { class: 'group ctx-box', 'data-id': g.id }, L.ctx);
       root.style.setProperty('--c', rp.color);
       el('rect', { class: 'ctx-rect', x: b.x, y: b.y, width: b.w, height: b.h, rx: C.group.radius }, root);
-      const info = iconInfo(g.icon), lines = wrapText(g.label, FONT.ctx, b.w - 32), LH = 20, ih = info ? 46 : 0;
-      const y0 = b.y + (b.h - (ih + lines.length * LH + 18)) / 2, cx = b.x + b.w / 2;
-      if (info) {
+      // Tipos principales de lo que contiene (los más frecuentes), si caben
+      const cnt = new Map();
+      rp.ids.forEach(id => { const t = typeLabel(byId.get(id).type); cnt.set(t, (cnt.get(t) || 0) + 1); });
+      const types = b.h >= 120 ? fitText([...cnt].sort((x, y) => y[1] - x[1]).slice(0, 3).map(x => x[0]).join(' · '), FONT.sub, b.w - 24) : '';
+      const info = iconInfo(g.icon), lines = wrapText(g.label, FONT.ctx, b.w - 32), LH = 20, ih = info && b.h >= 100 ? 46 : 0;
+      const y0 = b.y + (b.h - (ih + lines.length * LH + 18 + (types ? 16 : 0))) / 2, cx = b.x + b.w / 2;
+      if (ih) {
         el('rect', { class: 'node-icon-tile', x: cx - 20, y: y0, width: 40, height: 40, rx: 10 }, root);
         el('image', { href: info.src, x: cx - 16, y: y0 + 4, width: 32, height: 32 }, root);
       }
       lines.forEach((l, i) => { el('text', { class: 'ctx-name', x: cx, y: y0 + ih + 15 + i * LH }, root).textContent = l; });
       el('text', { class: 'ctx-count', x: cx, y: y0 + ih + lines.length * LH + 12 }, root).textContent = T('ctx.components', rp.ids.length);
+      if (types) el('text', { class: 'ctx-count ctx-types', x: cx, y: y0 + ih + lines.length * LH + 28 }, root).textContent = types;
       el('title', null, root).textContent = `${g.label} · ${T('ctx.components', rp.ids.length)}`;
-      VW.ctxBoxes.set(g.id, { g: root, ids: rp.ids });
+      VW.ctxBoxes.set(g.id, { g: root, ids: rp.ids, card: b });
     });
     // Una conexión por par de representantes: las internas de una caja se ocultan; ida y vuelta = bidireccional
     const agg = new Map();
@@ -1452,8 +1460,14 @@
   function contentBox() {
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     const add = (x, y, w, h) => { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x + w); y1 = Math.max(y1, y + h); };
+    if (vc().groups === 'collapse-top') { // Contexto: solo lo visible (tarjetas, nodos sueltos y conexiones agregadas)
+      S.model.nodes.forEach(n => { if (!VW.hideNodes.has(n.id)) add(n.x, n.y, R.width.get(n.id) || C.node.width, H); });
+      VW.ctxBoxes.forEach(b => { const q = b.card; add(q.x, q.y, q.w, q.h); });
+      VW.ctxEdges.forEach(e => { try { const q = e.g.getBBox(); add(q.x, q.y, q.width, q.height); } catch { /* sin medir */ } });
+    } else {
     S.model.nodes.forEach(n => add(n.x, n.y, R.width.get(n.id) || C.node.width, nodeBoxH(n)));
     R.gbox.forEach((b, id) => { if (!VW.hideGroups.has(id)) add(b.x, b.y, b.w, b.h); });
+    }
     [...(vc().notes ? S.model.notes : []), ...(vc().zones ? S.model.zones : [])].forEach(o => add(o.x, o.y, o.w, o.h));
     return x0 === Infinity ? null : { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
   }
