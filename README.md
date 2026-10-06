@@ -273,6 +273,15 @@ Use the two buttons next to the zoom controls (bottom right of the canvas).
 - Drag to move, drag the corner handle to resize (it snaps to the grid), **`⌘D`** duplicates and **Delete** removes. Everything can be undone.
 - The summary above the canvas counts the zones (*⚠ 2 risk zones (1 critical)*), exports with the legend list them by severity, and versions and JSON files keep notes and zones.
 
+#### Threat modeling (STRIDE)
+
+Some zones are **trust boundaries** instead of risk zones: open a zone and switch **Kind** to *Trust boundary* (or select components and click **Trust boundary** next to *Mark as risk zone*). A trust boundary has a name, an optional **Trust level** (*Internet, DMZ, Internal, Restricted*…) and a description. It is drawn with a bold dashed line, no hatch, and a tag like `TRUST BOUNDARY · DMZ` with a shield; the legend and the document card list boundaries apart from risk zones.
+- A component is inside a boundary when its center is inside the zone. Zones can nest or overlap. A connection **crosses** a boundary when its two ends are not in the same set of boundaries.
+- Select a crossing connection: the **Threats (STRIDE)** section shows *Crosses: ‹Internet› → ‹DMZ›* and one suggestion per category (**S**poofing, **T**ampering, **R**epudiation, **I**nformation disclosure, **D**enial of service, **E**levation of privilege) with a severity from simple rules (encryption, sensitive data, inbound direction, target is a data store or identity component).
+- Decide each one: **Open · Mitigated · Accepted · N/A**, with a note (what you did, or why). Only decisions are saved, and every change can be undone. Open threats show up as findings under *STRIDE threats*.
+- In the **Security** view crossing connections get a small `STRIDE n` pill (n = open threats). **Export › Threat model (CSV)** writes one row per crossing connection and category (`<diagram>-stride.csv`).
+- From the console: `Diagramon.threats()` returns `[{ edge, from, to, zones, category, severity, status, note }]` and `Diagramon.exportThreats()` downloads the CSV.
+
 ### 10. Present and export
 
 - **Flow** (or **`P`**) lights up the diagram step by step, from clients to data.
@@ -400,6 +409,7 @@ api ~> queue : events
 | `a -> b : SQL datasets=orders,customers` | Datasets carried by a connection (Spanish: `tablas=`); quote names with spaces: `datasets="sales orders,crm.customers"` |
 | `region=eu-west-1` | Region of a node or a group (aliases `country=`, `país=`, `región=`); nodes inherit it from their group |
 | `a -> b : x data=pii transfer=ok` | Cross-border transfer approved (`transferencia=ok` in Spanish) |
+| `a -> b : SQL threats="T=mitigated,I=accepted"` | STRIDE decisions of a connection (Spanish: `amenazas=`); letters `S T R I D E`, statuses `mitigated`, `accepted`, `na` (Spanish `mitigada`, `aceptada`, `na`). Notes and trust boundaries are not part of the text |
 | `group id "Name" color=… { … }` | Group; groups can be nested |
 | `layer=gold` (`bronze`, `silver`, `gold`; also `raw`, `curated`, `serving`) | Data lake layer of a node or group (Spanish: `capa=oro`); nodes inherit it from their group |
 | `layers: zones` | Show Raw / Curated / Serving instead of Bronze / Silver / Gold (Spanish: `capas: zonas`) |
@@ -451,6 +461,7 @@ Everything you can customize is in **`config.js`**. Save and reload `index.html`
 - **Default language**: `app.defaultLang: 'en' | 'es'`. UI texts live in `i18n.js`; texts in `config.js` and `examples.js` can be `{ en: '…', es: '…' }`.
 - **Data classes**: `dataClasses` sets the tags (name, short label, color). `sensitive: true` turns on the red warning for unencrypted flows.
 - **Jurisdictions (data residency)**: `residency.jurisdictions` in `config.js` is an ordered map `key → { label: { en, es }, short, match }`. `match` is a case-insensitive RegExp tested against the region text (`eu-west-1`, `westeurope`, `ES`…); the first jurisdiction that matches wins, so put specific ones (`uk`, `ch`) before wide ones (`eu`). To add one, copy a line and change its key, labels and `match`; to adjust one, edit its `match` (anchor it with `^…$`). `of` is the optional text used in the warning (*leaves **the EU***). Set `residency.warnSameJurisdiction: true` to also warn when regions differ inside the same jurisdiction.
+- **STRIDE threat rules**: `stride` in `config.js` sets the thresholds and the text. `inboundSeverity` is the severity of *Spoofing* on inbound crossings, `criticalClasses` the data classes that make *Information disclosure* critical, `storeTypes` and `storeIconCategories` what counts as a data store, secrets or identity component for *Elevation of privilege*, and `categories` the label, description and mitigation hint (`{ en, es }`) of each letter. The rules are explained in a comment above it.
 - **Data lake layers**: `dataLayers` sets the layers in order (`label` for the medallion names, `alt` for the Raw/Curated/Serving names, short letters and `color`). Colors default to `--layer-bronze`, `--layer-silver` and `--layer-gold`, set per theme in `index.html`; edit them there or put a fixed color in `config.js`. `layerAliases` lists the other words accepted when reading JSON and text. Each view's `layers` flag shows or hides them.
 - **Automatic security review**: `securityRules` in `config.js` has one entry per rule (`sec.unencrypted-sensitive`, `sec.unstated-encryption`, `sec.public-sensitive`, `sec.datastore-backup`, `sec.cross-border`, `sec.sensitive-no-owner`, `sec.public-datastore`) with `enabled` (set `false` to turn a rule off) and `severity` (`low`, `medium`, `high`, `critical`). The rest are the rule's parameters: `clientTypes`, `publicGroupIcons` and `publicGroupName` (what counts as public), `dataStoreTypes` and `dataStoreIconCategories`, `backupIcons`, `backupName` and `backupEdgeLabel` (what counts as a backup). Text patterns are case-insensitive RegExps.
 - **Environments**: `environments` sets the buttons of the *Versions* tab (name, short label and color). Add or remove as many as you need.

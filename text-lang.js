@@ -28,6 +28,8 @@
    Linaje:   conexión a -> b : SQL datasets=orders,customers   (es: tablas= o conjuntos=; con espacios: datasets="sales orders,crm.customers")
    Residencia: nodo o grupo … region=eu-west-1 (también región=, country=/país= como alias; hereda del grupo) ·
              conexión a -> b : SQL data=pii transfer=ok (transferencia=ok: transferencia entre jurisdicciones autorizada)
+   Amenazas: conexión a -> b : SQL threats="T=mitigated,I=accepted" (es: amenazas=): letras S T R I D E (STRIDE) con estado
+             mitigated|mitigada, accepted|aceptada o na|no aplica; solo las decididas (las abiertas no se escriben)
    Capas:    nodo o grupo … layer=gold (capa=oro): bronze|silver|gold · bronce|plata|oro · raw|curated|serving · crudo|curado|consumo
              (los nodos heredan la capa de su grupo) · línea `layers: zones` / `capas: zonas` muestra Raw/Curated/Serving en vez de Bronze/Silver/Gold
    Seguridad: nodo … exposure=public|internal (exposición=pública|interna: sustituye a la deducida) · backup=yes|no (respaldo=sí|no)
@@ -57,7 +59,20 @@
   const isDay = v => /^\d{4}-\d{2}-\d{2}$/.test(v) && !isNaN(new Date(`${v}T12:00Z`)) && new Date(`${v}T12:00Z`).toISOString().slice(0, 10) === v;
   // Opciones al final de una conexión: a -> b : etiqueta color=… data=pii encrypted=yes
   // (el valor puede ir entre comillas: datasets="sales orders,crm.customers")
-  const EDGE_OPT = /(?:^|\s)(color|data|datos|encrypted|cifrado|both|ambos|line|linea|línea|datasets|tablas|conjuntos|transfer|transferencia)=("(?:[^"\\]|\\.)*"|\S+)\s*$/i;
+  const EDGE_OPT = /(?:^|\s)(color|data|datos|encrypted|cifrado|both|ambos|line|linea|línea|datasets|tablas|conjuntos|transfer|transferencia|threats|amenazas)=("(?:[^"\\]|\\.)*"|\S+)\s*$/i;
+  /* ---------- amenazas STRIDE: threats="T=mitigated,I=accepted" ---------- */
+  const TH_KEY = { en: 'threats', es: 'amenazas' };
+  const TH_ST = { en: { mitigated: 'mitigated', accepted: 'accepted', na: 'na' }, es: { mitigated: 'mitigada', accepted: 'aceptada', na: 'na' } };
+  const TH_IN = { mitigated: 'mitigated', mitigada: 'mitigated', accepted: 'accepted', aceptada: 'accepted', na: 'na', 'n/a': 'na', 'no aplica': 'na', noaplica: 'na' };
+  // → { threats: { T: { status } }, bad: [pares no válidos] }
+  const parseThreats = v => {
+    const out = { threats: {}, bad: [] };
+    String(v).replace(/^"([\s\S]*)"$/, (_, x) => { try { return JSON.parse(`"${x}"`); } catch { return x; } }).split(/[,;]/).map(x => x.trim()).filter(Boolean).forEach(pair => {
+      const [k, st] = pair.split('=').map(x => (x ?? '').trim()), L = k.toUpperCase(), S = TH_IN[st.toLowerCase()];
+      if (/^[STRIDE]$/.test(L) && S) out.threats[L] = { status: S }; else out.bad.push(pair);
+    });
+    return out;
+  };
   /* ---------- linaje: datasets=a,b ---------- */
   const DS_KEY = { en: 'datasets', es: 'tablas' };
   const parseDatasets = v => [...new Set(String(v).replace(/^"([\s\S]*)"$/, (_, x) => { try { return JSON.parse(`"${x}"`); } catch { return x; } }).split(/[,;]/).map(s => s.trim()).filter(Boolean))];
@@ -85,7 +100,7 @@
       edge: 'incomplete connection', id: id => `invalid id “${id || '(empty)'}”`,
       cost: v => `invalid cost “${v}” (e.g. 120/month, 0.1/hour, 1400/year, 5000/3years)`,
       data: v => `unknown data class “${v}” (e.g. pii, pci, confidential)`, enc: v => `invalid encrypted value “${v}” (use yes or no)`,
-      route: v => `invalid line style “${v}” (use curved or elbow)`, transfer: v => `invalid transfer value “${v}” (use ok)`,
+      route: v => `invalid line style “${v}” (use curved or elbow)`, transfer: v => `invalid transfer value “${v}” (use ok)`, threats: v => `invalid threat “${v}” (use e.g. T=mitigated; letters S T R I D E; mitigated, accepted or na)`,
       day: v => `invalid date “${v}” (use YYYY-MM-DD)`, status: v => `invalid status “${v}” (use open or resolved)`,
       layer: v => `unknown layer “${v}” (use bronze, silver or gold; also raw, curated or serving)`, lnames: v => `invalid layer naming “${v}” (use medallion or zones)`,
       expo: v => `invalid exposure “${v}” (use public or internal)`, backup: v => `invalid backup value “${v}” (use yes or no)`,
@@ -98,7 +113,7 @@
       edge: 'conexión incompleta', id: id => `id no válido «${id || '(vacío)'}»`,
       cost: v => `costo no válido «${v}» (ej.: 120/mes, 0.1/hora, 1400/año, 5000/3años)`,
       data: v => `clasificación de datos desconocida «${v}» (ej.: pii, pci, confidential)`, enc: v => `valor de cifrado no válido «${v}» (usa sí o no)`,
-      route: v => `estilo de línea no válido «${v}» (usa curvas o codos)`, transfer: v => `valor de transferencia no válido «${v}» (usa ok)`,
+      route: v => `estilo de línea no válido «${v}» (usa curvas o codos)`, transfer: v => `valor de transferencia no válido «${v}» (usa ok)`, threats: v => `amenaza no válida «${v}» (usa p. ej. T=mitigada; letras S T R I D E; mitigada, aceptada o na)`,
       day: v => `fecha no válida «${v}» (usa AAAA-MM-DD)`, status: v => `estado no válido «${v}» (usa abierta o resuelta)`,
       layer: v => `capa desconocida «${v}» (usa bronce, plata u oro; también crudo, curado o consumo)`, lnames: v => `nombres de capa no válidos «${v}» (usa medallón o zonas)`,
       expo: v => `exposición no válida «${v}» (usa pública o interna)`, backup: v => `valor de respaldo no válido «${v}» (usa sí o no)`,
@@ -276,6 +291,8 @@
         if (bothV != null && both == null) err(ln, msg.enc(bothV));
         const trV = kv.transfer ?? kv.transferencia, tr = trV == null ? null : /^(ok|yes|y|true|si|sí|1|on)$/i.test(trV);
         if (trV != null && !tr) err(ln, msg.transfer(trV));
+        const thV = kv.threats ?? kv.amenazas, th = thV == null ? null : parseThreats(thV);
+        if (th) th.bad.forEach(b => err(ln, msg.threats(b)));
         // Etiqueta entre comillas (JSON) o con \n escapado = varias líneas
         if (/^".*"$/.test(label)) label = unquote(label); else label = label.replace(/\\n/g, '\n');
         for (let k = 0; k + 2 < parts.length; k += 2) {
@@ -291,6 +308,7 @@
           if (route) e.route = route;
           if (both) e.both = true;
           if (tr) e.transferOk = true;
+          if (th && Object.keys(th.threats).length) e.threats = JSON.parse(JSON.stringify(th.threats));
           model.edges.push(e);
         }
         return;
@@ -374,7 +392,7 @@
       const arrow = ARROW_OF[e.style] || '->';
       const tail = [e.label ? (EDGE_OPT.test(e.label) || /^".*"$/.test(e.label) || /[\n\\]/.test(e.label) ? quote(e.label) : e.label) : '', e.color ? `color=${bare(e.color)}` : '',
         e.data?.length ? `${w.data}=${e.data.join(',')}` : '', e.datasets?.length ? `${DS_KEY[lang] || DS_KEY.en}=${bare(e.datasets.join(','))}` : '', e.encrypted != null ? `${w.encrypted}=${e.encrypted ? w.yes : w.no}` : '',
-        e.both ? `${w.both}=${w.yes}` : '', e.transferOk ? `${w.transfer}=${w.ok}` : '', e.route ? `${w.line}=${e.route === 'elbow' ? w.elbowOne : w.curvedOne}` : ''].filter(Boolean).join(' ');
+        e.both ? `${w.both}=${w.yes}` : '', e.transferOk ? `${w.transfer}=${w.ok}` : '', e.threats && Object.keys(e.threats).length ? `${TH_KEY[lang] || TH_KEY.en}=${Object.entries(e.threats).map(([k, d]) => `${k}=${(TH_ST[lang] || TH_ST.en)[d.status] || d.status}`).join(',')}` : '', e.route ? `${w.line}=${e.route === 'elbow' ? w.elbowOne : w.curvedOne}` : ''].filter(Boolean).join(' ');
       out.push(`${e.from} ${arrow} ${e.to}${tail ? ` : ${tail}` : ''}`);
     });
     const reviewed = m.nodes.filter(n => n.review);

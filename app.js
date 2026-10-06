@@ -439,6 +439,7 @@
       if (o.both === true || (typeof o.both === 'string' && /^(yes|true|si|sí)$/i.test(o.both))) o.both = true; else delete o.both;
       const dsl = cleanDatasets(o.datasets); if (dsl.length) o.datasets = dsl; else delete o.datasets;
       if (o.transferOk === true || (typeof o.transferOk === 'string' && /^(yes|true|ok|si|sí)$/i.test(o.transferOk))) o.transferOk = true; else delete o.transferOk;
+      { const th = cleanThreats(o.threats); if (th) o.threats = th; else delete o.threats; }
       m.edges.push(o);
     });
     m.notes = []; m.zones = [];
@@ -449,6 +450,7 @@
     });
     list(raw.zones).forEach((z, i) => {
       const o = { id: take(z.id, 'zone', i), ...cleanBox(z, 360, 220), label: String(z.label ?? ''), severity: SEVERITY.includes(z.severity) ? z.severity : 'medium' };
+      if (z.kind === 'trust') { o.kind = 'trust'; delete o.severity; if (z.trust != null && String(z.trust).trim()) o.trust = String(z.trust).trim(); }
       if (z.desc != null && String(z.desc).trim()) o.desc = String(z.desc);
       m.zones.push(o);
     });
@@ -950,27 +952,31 @@
     return cut;
   }
   function buildZone(z) {
-    const sev = SEVERITY.includes(z.severity) ? z.severity : 'medium';
-    const g = el('g', { class: `zone zone-${sev}`, 'data-id': z.id }, L.zones);
+    const trust = z.kind === 'trust', sev = SEVERITY.includes(z.severity) ? z.severity : 'medium', zc = trust ? 'zone-trust' : `zone-${sev}`;
+    const g = el('g', { class: `zone ${zc}`, 'data-id': z.id }, L.zones);
     el('rect', { class: 'zone-tint', width: z.w, height: z.h, rx: 14 }, g);
-    el('rect', { class: 'zone-hatch', width: z.w, height: z.h, rx: 14, fill: `url(#hatch-${sev})` }, g);
+    if (!trust) el('rect', { class: 'zone-hatch', width: z.w, height: z.h, rx: 14, fill: `url(#hatch-${sev})` }, g);
     el('rect', { class: 'zone-line', width: z.w, height: z.h, rx: 14 }, g);
     el('rect', { class: 'zone-hit', width: z.w, height: z.h, rx: 14 }, g);
     // Etiqueta, contorno de selección y tirador van en otra capa, por encima de nodos y aristas:
     // si un diagrama tapa la zona, sigue pudiéndose agarrar. El relleno y el borde se quedan debajo.
-    const top = el('g', { class: `zone zone-over zone-${sev}`, 'data-id': z.id }, L.zoneTop);
+    const top = el('g', { class: `zone zone-over ${zc}`, 'data-id': z.id }, L.zoneTop);
     el('rect', { class: 'zone-line zone-top-line', width: z.w, height: z.h, rx: 14 }, top);
     // Etiqueta abajo a la izquierda: arriba suele estar la del grupo que la zona rodea
     const tag = el('g', { class: 'zone-tag', transform: `translate(10 ${z.h - 32})` }, top);
     // El CSS añade .04em de espaciado entre letras (11px → 0,44px por carácter)
     const tagW = t => textW(t, FONT.tag) + String(t).length * 0.44;
-    const head = `⚠ ${sevLabel(sev).toUpperCase()}`, label = fitText(z.label ? ` · ${z.label}` : '', FONT.tag, Math.max(20, z.w - 24 - tagW(head) - 22));
-    const tw = Math.ceil(tagW(head + label) + 22);
+    // Frontera de confianza: escudo con candado en vez de ⚠ y el nombre de la zona (o su nivel de confianza)
+    const gl = trust ? 18 : 0, head = trust ? T('trust.tag').toUpperCase() : `⚠ ${sevLabel(sev).toUpperCase()}`, nm = trust ? z.label || z.trust || '' : z.label;
+    const label = fitText(nm ? ` · ${nm}` : '', FONT.tag, Math.max(20, z.w - 24 - tagW(head) - 22 - gl));
+    const tw = Math.ceil(tagW(head + label) + 22 + gl);
     el('rect', { width: tw, height: 22, rx: 7 }, tag);
-    const tx = el('text', { x: 10, y: 15 }, tag);
+    if (trust) el('path', { class: 'trust-g', transform: 'translate(8 3) scale(.67)', d: 'M12 3 4.5 6v5.5c0 4.5 3.2 8 7.5 9.5 4.3-1.5 7.5-5 7.5-9.5V6zM9.5 12.5h5V16h-5zM10.5 12.5v-1.2a1.5 1.5 0 0 1 3 0v1.2' }, tag);
+    const tx = el('text', { x: 10 + gl, y: 15 }, tag);
     el('tspan', { class: 'zone-sev' }, tx).textContent = head;
     tx.appendChild(document.createTextNode(label));
-    if (z.desc) el('title', null, top).textContent = z.desc;
+    const tip = [trust ? z.trust : '', z.desc].filter(Boolean).join('\n');
+    if (tip) el('title', null, top).textContent = tip;
     handle(top, z.w, z.h);
     R.zones.set(z.id, { g, top, tag, tw });
   }
@@ -1034,6 +1040,7 @@
     edgeLabel(r);
     edgeDatasets(r);
     xbMarker(r);
+    strideMarker(r);
   }
   /* ---------- marcador de datos fuera de su jurisdicción (solo se ve en la vista Seguridad) ---------- */
   // Un globo en el punto medio (rojo) o un ✓ gris si la transferencia está autorizada; se reconstruye con la conexión
@@ -1045,6 +1052,111 @@
     if (cb.approved) el('path', { class: 'xb-g', d: 'M-4.5 0.5 -1.5 3.5 4.5 -3' }, mk);
     else el('path', { class: 'xb-g', d: 'M0 -6a6 6 0 1 0 0 12a6 6 0 1 0 0 -12M-6 0h12M0 -6c-3.5 3.2 -3.5 8.8 0 12M0 -6c3.5 3.2 3.5 8.8 0 12' }, mk);
     r.xb = mk;
+  }
+
+  /* ---------- STRIDE: fronteras de confianza y amenazas sugeridas ---------- */
+  // Frontera de confianza = zona con kind: 'trust'. Un nodo está dentro si su centro cae en el rectángulo de la zona (las zonas pueden anidarse o solaparse).
+  // Una conexión cruza cuando los conjuntos de fronteras de sus dos extremos difieren. Reglas y umbrales: config.js › stride (comentario allí).
+  // Decisiones: edge.threats = { S|T|R|I|D|E: { status: 'mitigated' | 'accepted' | 'na', note? } }; abierta = sin guardar.
+  const STR = { inboundSeverity: 'high', criticalClasses: ['pii', 'pci', 'phi'], storeTypes: [], storeIconCategories: [], categories: {}, ...C.stride };
+  const STRIDE_KEYS = 'STRIDE'.split('');
+  const THREAT_ST = ['mitigated', 'accepted', 'na'];
+  const cleanThreats = v => {
+    if (!v || typeof v !== 'object') return null;
+    const o = {};
+    STRIDE_KEYS.forEach(k => {
+      const x = v[k];
+      if (!x || typeof x !== 'object' || !THREAT_ST.includes(x.status)) return;
+      o[k] = { status: x.status };
+      if (x.note != null && String(x.note).trim()) o[k].note = String(x.note);
+    });
+    return Object.keys(o).length ? o : null;
+  };
+  const trustName = z => z.label || z.trust || T('trust.unnamed');
+  // Contexto barato (solo el modelo; el ancho del nodo sale de R.width): fronteras que contienen a cada nodo
+  const strideCtx = (m = S.model) => {
+    const zones = m.zones.filter(z => z.kind === 'trust'), byId = new Map(m.nodes.map(n => [n.id, n])), sets = new Map();
+    if (zones.length) m.nodes.forEach(n => {
+      const cx = n.x + (R.width.get(n.id) || nodeWidth(n)) / 2, cy = n.y + nodeBoxH(n) / 2;
+      sets.set(n.id, zones.filter(z => cx >= z.x && cx <= z.x + z.w && cy >= z.y && cy <= z.y + z.h));
+    });
+    return { m, zones, byId, sets };
+  };
+  // { from, to, enters, leaves, zones, inbound } o null si la conexión no cruza ninguna frontera
+  const crossInfo = (e, c) => {
+    const a = c.sets.get(e.from), b = c.sets.get(e.to);
+    if (!a || !b) return null;
+    const enters = b.filter(z => !a.includes(z)), leaves = a.filter(z => !b.includes(z));
+    return enters.length || leaves.length ? { from: a, to: b, enters, leaves, zones: [...leaves, ...enters], inbound: enters.length > 0 } : null;
+  };
+  const crossings = (e, c = strideCtx()) => crossInfo(e, c)?.zones || [];
+  // Amenazas sugeridas de una conexión que cruza: [{ cat, severity, why, title, mitigation, status, note, zones, e, ... }]
+  function strideFor(e, c, info = crossInfo(e, c)) {
+    if (!info) return [];
+    const A = c.byId.get(e.from), B = c.byId.get(e.to), cls = new Set([...(e.data || []), ...(A?.data || []), ...(B?.data || [])]);
+    const sens = isSensitive(e) || isSensitive(A) || isSensitive(B), crit = [...cls].some(k => (STR.criticalClasses || []).includes(k));
+    const inb = info.inbound, enc = e.encrypted, sync = (C.edgeStyles[e.style] ? e.style : 'sync') === 'sync';
+    const store = !!B && ((STR.storeTypes || []).includes(B.type) || (STR.storeIconCategories || []).includes(iconInfo(B.icon)?.category));
+    const out = [], add = (cat, severity, why) => { if (STR.categories[cat]) out.push({ cat, severity, why }); };
+    add('S', inb ? (SEVERITY.includes(STR.inboundSeverity) ? STR.inboundSeverity : 'high') : 'medium', inb ? 'S.in' : 'S.out');
+    add('T', enc === false ? 'high' : enc == null ? 'medium' : 'low', enc === false ? 'T.no' : enc == null ? 'T.unset' : 'T.yes');
+    add('R', sens ? 'medium' : 'low', sens ? 'R.sens' : 'R.plain');
+    if (sens) add('I', enc === true ? 'low' : enc === false && crit ? 'critical' : 'high', enc === true ? 'I.enc' : enc === false && crit ? 'I.crit' : 'I.high');
+    add('D', inb && sync ? 'medium' : 'low', inb && sync ? 'D.sync' : 'D.other');
+    if (inb) add('E', store ? 'high' : 'medium', store ? 'E.store' : 'E.other');
+    const from = A?.label ?? e.from, to = B?.label ?? e.to, names = info.zones.map(trustName).join(', ');
+    return out.map(t => {
+      const cat = STR.categories[t.cat], d = e.threats?.[t.cat];
+      return { ...t, e, from, to, zones: info.zones, title: T('stride.title', { cat: loc(cat.label), from, to, zones: names }), why: T(`stride.why.${t.why}`),
+        mitigation: loc(cat.mitigation), status: d?.status || 'open', note: d?.note || '' };
+    });
+  }
+  const strideAll = (m = S.model) => { const c = strideCtx(m); return c.zones.length ? m.edges.flatMap(e => strideFor(e, c)) : []; };
+  addFindingSource('stride', m => strideAll(m).filter(t => t.status === 'open').map(t => ({ id: `stride:${t.cat}:edge:${t.e.id}`, source: 'stride', rule: t.cat, severity: t.severity,
+    target: { kind: 'edge', id: t.e.id }, title: t.title, detail: t.why, fix: t.mitigation })));
+  // Guarda la decisión de una categoría (open = quitarla); las claves quedan en orden S T R I D E
+  function setThreat(e, cat, status, note) {
+    const th = { ...(e.threats || {}) };
+    if (status === 'open') delete th[cat]; else th[cat] = { status, ...((note ?? th[cat]?.note) ? { note: note ?? th[cat].note } : {}) };
+    const o = {};
+    STRIDE_KEYS.forEach(k => { if (th[k]) o[k] = th[k]; });
+    if (Object.keys(o).length) e.threats = o; else delete e.threats;
+  }
+  // Marcador «STRIDE n» (n = amenazas abiertas) al 70 % de la conexión; solo se ve en la vista Seguridad y en conexiones que cruzan
+  function strideMarker(r) {
+    const mk = el('g', { class: 'edge-stride off' }, r.g);
+    el('rect', { y: -8, height: 16, rx: 8 }, mk);
+    el('text', { 'text-anchor': 'middle', y: 3.8 }, mk);
+    r.sm = mk;
+  }
+  function strideMarkUpdate(r, c) {
+    const mk = r.sm, info = c && crossInfo(r.e, c);
+    if (!mk) return;
+    if (!info) { if (!mk.classList.contains('off')) mk.classList.add('off'); return; }
+    const open = strideFor(r.e, c, info).filter(t => t.status === 'open'), worst = open.reduce((a, t) => Math.max(a, SEVERITY.indexOf(t.severity)), -1);
+    const txt = open.length ? `STRIDE ${open.length}` : 'STRIDE ✓', tx = mk.lastChild;
+    mk.setAttribute('class', `edge-stride sev-${worst < 0 ? 'ok' : SEVERITY[worst]}`);
+    if (tx.textContent !== txt) {
+      const w = Math.ceil(textW(txt, FONT.dtag)) + 14, rc = mk.firstChild;
+      tx.textContent = txt;
+      rc.setAttribute('x', -w / 2); rc.setAttribute('width', w);
+    }
+    const mp = r.line.getPointAtLength(r.len * 0.7);
+    mk.setAttribute('transform', `translate(${mp.x} ${mp.y})`);
+  }
+  // Modelo de amenazas en CSV: una fila por conexión que cruza × categoría sugerida
+  function exportThreats() {
+    const list = strideAll();
+    if (!list.length) return toast(T('stride.none'));
+    const dl = x => (x || []).map(k => DATA[k] ? loc(DATA[k].short) || k.toUpperCase() : String(k).toUpperCase());
+    const rows = [[T('stride.csv.zones'), T('stride.csv.from'), T('stride.csv.to'), T('stride.csv.label'), T('stride.csv.data'), T('stride.csv.enc'), T('stride.csv.cat'), T('stride.csv.sev'), T('stride.csv.status'), T('stride.csv.note'), T('stride.csv.fix')]];
+    const byId = new Map(S.model.nodes.map(n => [n.id, n]));
+    list.forEach(t => rows.push([t.zones.map(trustName).join(' | '), t.from, t.to, t.e.label || '',
+      [...new Set([...dl(t.e.data), ...dl(byId.get(t.e.from)?.data), ...dl(byId.get(t.e.to)?.data)])].join(' '),
+      T(t.e.encrypted === true ? 'enc.yes' : t.e.encrypted === false ? 'enc.no' : 'enc.unset'),
+      `${t.cat} ${loc(STR.categories[t.cat].label)}`, sevLabel(t.severity), T(`stride.st.${t.status}`), t.note, t.mitigation]));
+    download(toCSV(rows), fileName('csv', 'stride'), 'text/csv;charset=utf-8');
+    toast(T('toast.exported', { name: T('exp.stride') }));
   }
   // Etiqueta: candado de cifrado, texto y clasificaciones de los datos que viajan (según lo que la vista muestre)
   function edgeLabel(r) {
@@ -1255,6 +1367,7 @@
     m.nodes.forEach(n => R.nodes.get(n.id)?.setAttribute('transform', `translate(${n.x} ${n.y})`));
     updateItems();
 
+    const sc = R.edges.size && m.zones.some(z => z.kind === 'trust') ? strideCtx(m) : null;
     const pairs = new Set(m.edges.map(e => e.from + '\0' + e.to));
     const allRects = m.nodes.map(n => ({ id: n.id, ...rect(n.id) }));
     const ports = elbowPorts(m.edges, rect, routeOf);
@@ -1275,6 +1388,7 @@
         const mp = r.line.getPointAtLength(r.len * (r.label ? 0.3 : 0.5));
         r.xb.setAttribute('transform', `translate(${mp.x} ${mp.y})`);
       }
+      if (r.sm) strideMarkUpdate(r, sc);
     });
 
     // Cajas de grupo: de dentro hacia fuera
@@ -2039,9 +2153,9 @@
   const ORDER = {
     group: ['id', 'label', 'icon', 'color', 'parent', 'kind', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer'],
     node: ['id', 'label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'x', 'y', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'exposure', 'backup'],
-    edge: ['id', 'from', 'to', 'label', 'style', 'route', 'both', 'color', 'data', 'encrypted', 'datasets', 'transferOk'],
+    edge: ['id', 'from', 'to', 'label', 'style', 'route', 'both', 'color', 'data', 'encrypted', 'datasets', 'transferOk', 'threats'],
     note: ['id', 'x', 'y', 'w', 'h', 'text', 'color'],
-    zone: ['id', 'x', 'y', 'w', 'h', 'label', 'severity', 'desc']
+    zone: ['id', 'x', 'y', 'w', 'h', 'label', 'severity', 'desc', 'kind', 'trust']
   };
   function serialize(m, full = false) {
     const ordered = (o, keys) => { const r = {}; keys.forEach(k => k in o && (r[k] = o[k])); Object.keys(o).forEach(k => k in r || (r[k] = o[k])); return r; };
@@ -2146,8 +2260,8 @@
     const byId = id => m.nodes.find(n => n.id === id), insecure = m.edges.filter(e => isInsecure(e, byId)).length;
     const xb = m.edges.filter(e => isXBorder(e, byId)).length;
     const open = m.nodes.filter(n => n.review && n.review.status !== 'resolved'), overdue = open.filter(n => reviewState(n.review) === 'overdue').length;
-    const zc = m.zones.filter(z => z.severity === 'critical').length;
-    const zones = m.zones.length ? T('meta.zones', { n: m.zones.length, c: zc }) : '';
+    const rz = m.zones.filter(z => z.kind !== 'trust'), zc = rz.filter(z => z.severity === 'critical').length;
+    const zones = rz.length ? T('meta.zones', { n: rz.length, c: zc }) : '';
     const reviews = open.length ? T('meta.review', { n: open.length, o: overdue }) : '';
     refreshFindings();
     const nFind = FC.open.filter(f => f.source === 'rule').length;
@@ -2186,8 +2300,9 @@
     // Equipos del diagrama (fuera de la vista Gobierno, que ya los muestra): al pulsar uno se filtra por él
     const teams = open && vc().emphasis !== 'owner' ? [...govTeams().values()] : [];
     const lay = open && vc().layers ? layerUsage() : [];
+    const tzs = open && vc().zones ? S.model.zones.filter(z => z.kind === 'trust') : [];
     const det = (k, head, rows) => `<details class="docbar-leg" data-k="${k}"${store.get(k, false) ? ' open' : ''}><summary>${esc(head)} · ${rows.length}</summary><ul>${rows.join('')}</ul></details>`;
-    $('#docbar-body').innerHTML = open ? `<dl>${d.info.map(([k, x]) => `<dt>${esc(k)}</dt><dd>${esc(x)}</dd>`).join('')}</dl>${types.length ? det('docbarLeg', T('leg.components'), types.map(r => `<li style="--c:${esc(r.color)}"><i></i>${esc(r.label)}</li>`)) : ''}${lay.length ? det('docbarLegL', T('leg.layersN'), lay.map(([k, ids]) => { const li = layerInfo(k); return `<li class="layer-row" data-layer="${esc(k)}" style="--c:${esc(li.color)}" title="${esc(T('layer.filter'))}"><i></i>${esc(li.label)}<b>${ids.length}</b></li>`; })) : ''}${vrows.length ? det('docbarLegV', `${T('leg.view')}: ${viewLabel(S.viewKey)}`, vrows) : ''}${teams.length ? det('docbarLegT', T('leg.teams'), teams.map(t => `<li data-gov="${esc(t.kind)}" data-k="${esc(t.key)}" style="--c:${esc(t.color)}" title="${esc(T('flt.pill'))}"><i></i>${esc([t.key, t.owners.join(', ')].filter(Boolean).join(' · '))} <small>(${t.ids.length})</small></li>`)) : ''}${dsRows.length ? det('docbarLegD', T('lin.leg'), dsRows) : ''}` : '';
+    $('#docbar-body').innerHTML = open ? `<dl>${d.info.map(([k, x]) => `<dt>${esc(k)}</dt><dd>${esc(x)}</dd>`).join('')}</dl>${types.length ? det('docbarLeg', T('leg.components'), types.map(r => `<li style="--c:${esc(r.color)}"><i></i>${esc(r.label)}</li>`)) : ''}${lay.length ? det('docbarLegL', T('leg.layersN'), lay.map(([k, ids]) => { const li = layerInfo(k); return `<li class="layer-row" data-layer="${esc(k)}" style="--c:${esc(li.color)}" title="${esc(T('layer.filter'))}"><i></i>${esc(li.label)}<b>${ids.length}</b></li>`; })) : ''}${tzs.length ? det('docbarLegZ', T('leg.trustN'), tzs.map(z => `<li class="sw" style="--c:var(--trust)"><i></i>${esc([z.label, z.trust].filter(Boolean).join(' · ') || T('trust.unnamed'))}</li>`)) : ''}${vrows.length ? det('docbarLegV', `${T('leg.view')}: ${viewLabel(S.viewKey)}`, vrows) : ''}${teams.length ? det('docbarLegT', T('leg.teams'), teams.map(t => `<li data-gov="${esc(t.kind)}" data-k="${esc(t.key)}" style="--c:${esc(t.color)}" title="${esc(T('flt.pill'))}"><i></i>${esc([t.key, t.owners.join(', ')].filter(Boolean).join(' · '))} <small>(${t.ids.length})</small></li>`)) : ''}${dsRows.length ? det('docbarLegD', T('lin.leg'), dsRows) : ''}` : '';
   }
   // Clic en un equipo de la leyenda: filtra por él (otro clic lo quita)
   $('#docbar-body').addEventListener('click', ev => {
@@ -2487,16 +2602,17 @@
     S.model[kind === 'note' ? 'notes' : 'zones'].push({ id, ...o });
     changed(true);
     select({ kind, id });
-    toast(T(kind === 'note' ? 'toast.noteAdded' : 'toast.zoneAdded'));
+    toast(T(kind === 'note' ? 'toast.noteAdded' : o.kind === 'trust' ? 'toast.trustAdded' : 'toast.zoneAdded'));
   }
   const addNote = () => { const c = viewCenter(); addItem('note', { x: snap(c.x - 90), y: snap(c.y - 55), w: 180, h: 110, text: '', color: 'limon' }); editItemText('note', S.sel.id); };
   const addZone = () => { const c = viewCenter(); addItem('zone', { x: snap(c.x - 180), y: snap(c.y - 110), w: 360, h: 220, label: T('zone.new'), severity: 'medium' }); };
   // Caja alrededor de los nodos elegidos, con margen
-  function markZone() {
+  function markZone(kind) {
     const ns = selNodes();
     if (!ns.length) return;
     const pad = 36, x0 = Math.min(...ns.map(n => n.x)), y0 = Math.min(...ns.map(n => n.y)), x1 = Math.max(...ns.map(n => n.x + R.width.get(n.id))), y1 = Math.max(...ns.map(n => n.y + nodeBoxH(n)));
-    addItem('zone', { x: snap(x0 - pad), y: snap(y0 - pad - 20), w: snap(x1 - x0 + 2 * pad) + 20, h: snap(y1 - y0 + 2 * pad + 20) + 20, label: T('zone.new'), severity: 'high' });
+    const box = { x: snap(x0 - pad), y: snap(y0 - pad - 20), w: snap(x1 - x0 + 2 * pad) + 20, h: snap(y1 - y0 + 2 * pad + 20) + 20 };
+    addItem('zone', kind === 'trust' ? { ...box, label: '', kind: 'trust' } : { ...box, label: T('zone.new'), severity: 'high' });
   }
   function duplicateItem() {
     const s = itemSel(), k = s.kind === 'note' ? 'notes' : 'zones', o = S.model[k].find(x => x.id === s.id);
@@ -2956,7 +3072,7 @@
   // Diferencias entre lo guardado (a) y el lienzo (b). La posición no cuenta como cambio.
   const DIFF_FIELDS = {
     node: ['label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'exposure', 'backup'],
-    edge: ['label', 'style', 'route', 'both', 'color', 'data', 'encrypted', 'datasets', 'transferOk'],
+    edge: ['label', 'style', 'route', 'both', 'color', 'data', 'encrypted', 'datasets', 'transferOk', 'threats'],
     group: ['label', 'icon', 'color', 'parent', 'kind', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer']
   };
   function diffModels(a, b) {
@@ -3479,6 +3595,23 @@
       <div class="layer-names" title="${esc(T('layer.names.tip'))}"><span>${T('layer.names')}</span><div class="seg">${['medallion', 'zones'].map(k =>
         `<button data-lnames="${k}" class="${nm === k ? 'on' : ''}" title="${esc(T('layer.names.tip'))}">${esc(names(k))}</button>`).join('')}</div></div></div>`;
   };
+  /* ---------- STRIDE: sección del inspector de la conexión ---------- */
+  const strideField = e => {
+    const c = strideCtx(), info = crossInfo(e, c), nm = zs => (zs.length ? zs.map(z => `‹${esc(trustName(z))}›`).join(' + ') : esc(T('stride.outside')));
+    if (!info) { // ya no cruza: las decisiones guardadas se ven en solo lectura, con opción de borrarlas
+      const st = Object.entries(e.threats || {});
+      if (!st.length) return '';
+      return `<div class="field stride-box">${T('stride.label')}<span class="cost-hint">${T('stride.stored')}</span>${st.map(([k, d]) =>
+        `<div class="th-ro"><b class="th-badge">${k}</b><span>${esc(loc(STR.categories[k]?.label) || k)} · ${esc(T(`stride.st.${d.status}`))}${d.note ? ` — ${esc(d.note)}` : ''}</span></div>`).join('')}
+        <button class="btn small" data-th-clear="1">${T('stride.clear')}</button></div>`;
+    }
+    const ts = strideFor(e, c, info);
+    return `<div class="field stride-box">${T('stride.label')}<span class="cost-hint th-cross">${T('stride.crosses')} ${info.from.length ? nm(info.from) : nm([])} → ${nm(info.to)}</span>${ts.map(t => `
+      <div class="th-row" style="--sv:var(--sev-${t.severity})"><div class="th-head"><b class="th-badge" title="${esc(loc(STR.categories[t.cat].desc))}">${t.cat}</b><span class="th-title">${esc(t.title)}</span><span class="th-sev">${esc(sevLabel(t.severity))}</span></div>
+        <div class="seg th-seg">${['open', ...THREAT_ST].map(s => `<button data-th="${t.cat}" data-st="${s}" class="${t.status === s ? 'on' : ''}">${T(`stride.st.${s}`)}</button>`).join('')}</div>
+        ${t.status !== 'open' ? `<input class="th-note" data-th-note="${t.cat}" value="${esc(t.note)}" placeholder="${esc(T('stride.note.ph'))}" autocomplete="off">` : ''}
+        <span class="cost-hint">${esc(t.why)}</span></div>`).join('')}</div>`;
+  };
   const encField = e => {
     const cur = e.encrypted === true ? 'yes' : e.encrypted === false ? 'no' : '';
     const byId = id => S.model.nodes.find(n => n.id === id);
@@ -3587,6 +3720,7 @@
         <p class="note">${T('insp.multiNote')}</p>
         <div class="insp-actions">
           <button class="btn" data-act="mkzone">⚠ ${T('zone.mark')}</button>
+          <button class="btn" data-act="mktrust">${T('trust.mark')}</button>
           <button class="btn" data-act="dup">${T('insp.duplicate')}</button>
           <button class="btn danger" data-act="delete">${T('insp.deleteN', t.length)}</button>
         </div>`;
@@ -3637,6 +3771,7 @@
         ${dataField(t, true)}
         ${dsField(t)}
         ${xferField(t)}
+        ${strideField(t)}
         <div class="field">${T('insp.color')}${swatches(t.color)}</div>
         <div class="conns"><div class="conn-title">${T('insp.ends')}</div>
           <button class="conn" data-goto="${esc(a.id)}" style="--c:${nodeColor(a)}"><span class="dot"></span>${esc(a.label)}<em>${T('insp.source')}</em></button>
@@ -3655,10 +3790,13 @@
           <button class="btn danger" data-act="delete">${T('insp.delete')}</button>
         </div>`;
     } else if (kind === 'zone') {
-      html = head(`var(--sev-${t.severity})`, '', T('insp.zone'), t.label || T('zone.new')) + `
-        <label>${T('zone.label')}<input data-field="label" value="${esc(t.label || '')}" placeholder="${esc(T('zone.label.ph'))}"></label>
-        <div class="field">${T('zone.severity')}<div class="seg">${SEVERITY.map(k => `<button data-sev="${k}" class="sev-${k}${t.severity === k ? ' on' : ''}">${esc(sevLabel(k))}</button>`).join('')}</div></div>
-        <label>${T('insp.desc')}<textarea data-field="desc" rows="3" placeholder="${esc(T('zone.desc.ph'))}">${esc(t.desc || '')}</textarea></label>
+      const tr = t.kind === 'trust';
+      html = head(tr ? 'var(--trust)' : `var(--sev-${t.severity})`, '', T(tr ? 'insp.trust' : 'insp.zone'), t.label || (tr ? t.trust : '') || T(tr ? 'trust.new' : 'zone.new')) + `
+        <div class="field">${T('zone.kind')}<div class="seg">${['risk', 'trust'].map(k => `<button data-zkind="${k}" class="${(tr ? 'trust' : 'risk') === k ? 'on' : ''}">${T(`zone.kind.${k}`)}</button>`).join('')}</div></div>
+        <label>${T('zone.label')}<input data-field="label" value="${esc(t.label || '')}" placeholder="${esc(T(tr ? 'trust.label.ph' : 'zone.label.ph'))}"></label>
+        ${tr ? `<label>${T('trust.level')}<input data-field="trust" list="trust-levels" value="${esc(t.trust || '')}" placeholder="${esc(T('trust.level.ph'))}" autocomplete="off"><datalist id="trust-levels">${['Internet', 'DMZ', 'Internal', 'Restricted'].map(o => `<option value="${o}">`).join('')}</datalist></label>`
+          : `<div class="field">${T('zone.severity')}<div class="seg">${SEVERITY.map(k => `<button data-sev="${k}" class="sev-${k}${t.severity === k ? ' on' : ''}">${esc(sevLabel(k))}</button>`).join('')}</div></div>`}
+        <label>${T('insp.desc')}<textarea data-field="desc" rows="3" placeholder="${esc(T(tr ? 'trust.desc.ph' : 'zone.desc.ph'))}">${esc(t.desc || '')}</textarea></label>
         <div class="insp-actions">
           <button class="btn" data-act="dup">${T('insp.duplicate')}</button>
           <button class="btn danger" data-act="delete">${T('insp.delete')}</button>
@@ -3783,6 +3921,15 @@
     (Array.isArray(t) ? t : [t]).forEach(x => { if (v) x[f.dataset.gov] = v; else delete x[f.dataset.gov]; });
     changed(true);
   });
+  /* ---------- STRIDE: nota de cada decisión ---------- */
+  inspector.addEventListener('focusin', ev => { if (ev.target.matches('input[data-th-note]')) beginEdit(); });
+  inspector.addEventListener('input', ev => {
+    const f = ev.target, t = selTarget(), d = f.matches('input[data-th-note]') && t && !Array.isArray(t) && t.threats?.[f.dataset.thNote];
+    if (!d) return;
+    markEdit();
+    if (f.value.trim()) d.note = f.value; else delete d.note;
+    changed(true);
+  });
   inspector.addEventListener('input', ev => { if (ev.target.matches('input[data-field], textarea[data-field]')) onField(ev.target); });
   inspector.addEventListener('change', ev => { if (ev.target.matches('select[data-field]')) onField(ev.target); });
   // Añadir conjuntos de datos a la conexión elegida (Intro o coma; también al elegir de la lista o salir del campo)
@@ -3847,6 +3994,19 @@
       changed(true); renderInspector();
     } else if (b.dataset.lnames && t) {
       setLayerNames(b.dataset.lnames);
+    } else if (b.dataset.th && t && !Array.isArray(t) && S.sel?.kind === 'edge') {
+      pushHistory();
+      setThreat(t, b.dataset.th, b.dataset.st);
+      changed(true); renderInspector();
+    } else if (b.dataset.thClear != null && t && !Array.isArray(t)) {
+      pushHistory();
+      delete t.threats;
+      changed(true); renderInspector();
+    } else if (b.dataset.zkind && t && !Array.isArray(t) && S.sel?.kind === 'zone') {
+      pushHistory();
+      if (b.dataset.zkind === 'trust') { t.kind = 'trust'; delete t.severity; if (t.label === T('zone.new')) t.label = ''; }
+      else { delete t.kind; delete t.trust; t.severity = SEVERITY.includes(t.severity) ? t.severity : 'medium'; if (!t.label) t.label = T('zone.new'); }
+      changed(true); renderInspector();
     } else if (b.dataset.dir != null && t && !Array.isArray(t)) {
       pushHistory();
       if (b.dataset.dir) t.both = true; else delete t.both;
@@ -3884,6 +4044,7 @@
       case 'connect': startConnect(t.id); break;
       case 'dup': duplicateSelection(); break;
       case 'mkzone': markZone(); break;
+      case 'mktrust': markZone('trust'); break;
       case 'delete': deleteSelection(); break;
       case 'reverse': pushHistory(); [t.from, t.to] = [t.to, t.from]; changed(true); renderInspector(); break;
     }
@@ -4200,7 +4361,7 @@
     const b = ev.target.closest('[data-export]');
     if (!b) return;
     exportMenu.open = false;
-    const f = { svg: exportSVG, png: exportPNG, 'svg-all': () => exportViews('svg'), 'png-all': () => exportViews('png'), json: exportJSON, copy: copyJSON, share: shareEncrypted }[b.dataset.export];
+    const f = { svg: exportSVG, png: exportPNG, 'svg-all': () => exportViews('svg'), 'png-all': () => exportViews('png'), json: exportJSON, copy: copyJSON, share: shareEncrypted, stride: exportThreats }[b.dataset.export];
     if (f) f(); else exportOther(b.dataset.export);
   });
 
@@ -4358,7 +4519,7 @@
       } };
     }));
     // Zonas de riesgo, de la más grave a la más leve
-    const zs = [...m.zones].sort((a, b) => SEVERITY.indexOf(b.severity) - SEVERITY.indexOf(a.severity)).slice(0, 8);
+    const zs = m.zones.filter(z => z.kind !== 'trust').sort((a, b) => SEVERITY.indexOf(b.severity) - SEVERITY.indexOf(a.severity)).slice(0, 8);
     if (v.zones) col(T('leg.zones'), zs.map(z => {
       const txt = fitText(`${sevLabel(z.severity)}${z.label ? ` · ${z.label}` : ''}`, '400 12px', 260);
       return { w: 30 + textW(txt, '400 12px'), draw: (x, y) => {
@@ -4366,6 +4527,16 @@
         el('rect', { class: 'zone-tint', x, y: y - 6, width: 20, height: 14, rx: 3 }, zg);
         el('rect', { class: 'zone-hatch', x, y: y - 6, width: 20, height: 14, rx: 3, fill: `url(#hatch-${z.severity})` }, zg);
         el('rect', { class: 'zone-line', x, y: y - 6, width: 20, height: 14, rx: 3, 'stroke-dasharray': '4 3' }, zg);
+        textRow(x + 30, y, txt);
+      } };
+    }));
+    // Fronteras de confianza (STRIDE), aparte de las zonas de riesgo
+    if (v.zones) col(T('leg.trust'), m.zones.filter(z => z.kind === 'trust').slice(0, 8).map(z => {
+      const txt = fitText([z.label, z.trust].filter(Boolean).join(' · ') || T('trust.unnamed'), '400 12px', 260);
+      return { w: 30 + textW(txt, '400 12px'), draw: (x, y) => {
+        const zg = el('g', { class: 'zone zone-trust' }, g);
+        el('rect', { class: 'zone-tint', x, y: y - 6, width: 20, height: 14, rx: 3 }, zg);
+        el('rect', { class: 'zone-line', x, y: y - 6, width: 20, height: 14, rx: 3, 'stroke-dasharray': '6 3' }, zg);
         textRow(x + 30, y, txt);
       } };
     }));
@@ -5225,6 +5396,8 @@
     setView, get view() { return S.viewKey; }, get views() { return [...VIEW_KEYS]; },
     owners: () => govTeamList(),
     findings: (opts = {}) => apiFindings(opts), dismissFinding: (id, reason) => dismissFinding(id, reason), restoreFinding: id => restoreFinding(id),
+    threats: () => strideAll().map(t => ({ edge: t.e.id, from: t.e.from, to: t.e.to, zones: t.zones.map(z => z.id), category: t.cat, severity: t.severity, status: t.status, note: t.note })),
+    exportThreats,
     exportSVG, exportPNG, exportViews, exportJSON, shareEncrypted, exportOther, exportCtx, toggleRouting, importFiles, config: C, icons: ICONS
   };
 

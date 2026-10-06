@@ -257,6 +257,15 @@ Usa los dos botones junto al zoom (abajo a la derecha del lienzo).
 - Arrastra para mover, arrastra el tirador de la esquina para cambiar el tamaño (se ajusta a la cuadrícula), **`⌘D`** duplica y **Supr** elimina. Todo se puede deshacer.
 - El resumen sobre el lienzo cuenta las zonas (*⚠ 2 zonas de riesgo (1 crítica)*), las exportaciones con leyenda las listan por severidad, y las versiones y el JSON conservan notas y zonas.
 
+#### Modelado de amenazas (STRIDE)
+
+Algunas zonas son **fronteras de confianza** en vez de zonas de riesgo: abre una zona y cambia **Tipo** a *Frontera de confianza* (o selecciona componentes y pulsa **Frontera de confianza**, junto a *Marcar como zona de riesgo*). Una frontera tiene nombre, un **Nivel de confianza** opcional (*Internet, DMZ, Interna, Restringida*…) y una descripción. Se dibuja con una línea discontinua gruesa, sin rayado, y una etiqueta como `FRONTERA DE CONFIANZA · DMZ` con un escudo; la leyenda y la ficha del documento listan las fronteras aparte de las zonas de riesgo.
+- Un componente está dentro de una frontera cuando su centro cae dentro de la zona. Las zonas pueden anidarse o solaparse. Una conexión **cruza** una frontera cuando sus dos extremos no están en el mismo conjunto de fronteras.
+- Selecciona una conexión que cruza: la sección **Amenazas (STRIDE)** muestra *Cruza: ‹Internet› → ‹DMZ›* y una sugerencia por categoría (**S**uplantación, manipulación (**T**ampering), **R**epudio, divulgación de **I**nformación, **D**enegación de servicio, **E**levación de privilegios) con una severidad según reglas sencillas (cifrado, datos sensibles, dirección entrante, destino que es un almacén de datos o de identidad).
+- Decide cada una: **Abierta · Mitigada · Aceptada · No aplica**, con una nota (qué hiciste o por qué). Solo se guardan las decisiones y todo se puede deshacer. Las amenazas abiertas aparecen como hallazgos en *Amenazas STRIDE*.
+- En la vista **Seguridad** las conexiones que cruzan llevan una pastilla `STRIDE n` (n = amenazas abiertas). **Exportar › Modelo de amenazas (CSV)** escribe una fila por conexión que cruza y categoría (`<diagrama>-stride.csv`).
+- Desde la consola: `Diagramon.threats()` devuelve `[{ edge, from, to, zones, category, severity, status, note }]` y `Diagramon.exportThreats()` descarga el CSV.
+
 ### 10. Presentar y exportar
 
 - **Flujo** (o **`P`**) ilumina el diagrama paso a paso, de los clientes a los datos.
@@ -387,6 +396,7 @@ api ~> cola : eventos
 | `capa=oro` (`bronce`, `plata`, `oro`; también `crudo`, `curado`, `consumo` y los nombres en inglés) | Capa del data lake de un nodo o grupo (en inglés: `layer=gold`); los nodos la heredan del grupo |
 | `capas: zonas` | Muestra Crudo / Curado / Consumo en vez de Bronce / Plata / Oro (en inglés: `layers: zones`) |
 | `exposición=pública` (`interna`) · `respaldo=sí` (`no`) | Anula la exposición y el respaldo deducidos de un nodo (en inglés: `exposure=public` / `internal`, `backup=yes` / `no`) |
+| `a -> b : SQL amenazas="T=mitigada,I=aceptada"` | Decisiones STRIDE de una conexión (en inglés: `threats=`); letras `S T R I D E`, estados `mitigada`, `aceptada`, `na` (en inglés `mitigated`, `accepted`, `na`). Las notas y las fronteras de confianza no van en el texto |
 | `grupo id "Nombre" color=… { … }` | Grupo; se pueden anidar |
 | `a -> b` · `a => b` · `a ~> b` · `a ..> b` | Petición · datos · evento · opcional |
 | `a -> b -> c : etiqueta` | Cadena; la etiqueta va en la última flecha |
@@ -435,6 +445,7 @@ Todo lo personalizable está en **`config.js`**. Guarda y recarga `index.html`.
 - **Idioma por defecto**: `app.defaultLang: 'en' | 'es'`. Los textos de la interfaz están en `i18n.js`; los de `config.js` y `examples.js` pueden ser `{ en: '…', es: '…' }`.
 - **Clasificaciones de datos**: `dataClasses` define las etiquetas (nombre, texto corto y color). `sensitive: true` activa el aviso rojo en flujos sin cifrar.
 - **Jurisdicciones (residencia de datos)**: `residency.jurisdictions` en `config.js` es un mapa ordenado `clave → { label: { en, es }, short, match }`. `match` es una expresión regular (sin distinguir mayúsculas) que se prueba contra el texto de la región (`eu-west-1`, `westeurope`, `ES`…); gana la primera que coincide, así que pon las específicas (`uk`, `ch`) antes que las amplias (`eu`). Para añadir una, copia una línea y cambia clave, etiquetas y `match`. `of` es el texto opcional del aviso (*salen de **la UE***). Con `residency.warnSameJurisdiction: true` también avisa cuando cambian de región dentro de una misma jurisdicción.
+- **Reglas de amenazas STRIDE**: `stride` en `config.js` fija los umbrales y los textos. `inboundSeverity` es la severidad de *Suplantación* en cruces entrantes, `criticalClasses` las clases de datos que vuelven crítica la *Divulgación de información*, `storeTypes` y `storeIconCategories` lo que cuenta como almacén de datos, secretos o identidad para la *Elevación de privilegios*, y `categories` la etiqueta, descripción y pista de mitigación (`{ en, es }`) de cada letra. Las reglas están explicadas en un comentario encima.
 - **Capas del data lake**: `dataLayers` define las capas en orden (`label` para los nombres medallón, `alt` para Crudo/Curado/Consumo, letras cortas y `color`). Los colores usan `--layer-bronze`, `--layer-silver` y `--layer-gold`, definidos por tema en `index.html`; cámbialos ahí o pon un color fijo en `config.js`. `layerAliases` lista otras palabras aceptadas al leer JSON y texto. La opción `layers` de cada vista las muestra u oculta.
 - **Revisión de seguridad automática**: `securityRules` en `config.js` tiene una entrada por regla (`sec.unencrypted-sensitive`, `sec.unstated-encryption`, `sec.public-sensitive`, `sec.datastore-backup`, `sec.cross-border`, `sec.sensitive-no-owner`, `sec.public-datastore`) con `enabled` (pon `false` para apagarla) y `severity` (`low`, `medium`, `high`, `critical`). Lo demás son parámetros de la regla: `clientTypes`, `publicGroupIcons` y `publicGroupName` (qué cuenta como público), `dataStoreTypes` y `dataStoreIconCategories`, `backupIcons`, `backupName` y `backupEdgeLabel` (qué cuenta como respaldo). Los patrones de texto son RegExp sin distinguir mayúsculas.
 - **Ambientes**: `environments` define los botones de la pestaña *Versiones* (nombre, texto corto y color). Añade o quita los que necesites.
