@@ -247,6 +247,168 @@
     return [...use].filter(([k, ids]) => ids.length || used.has(k));
   }
 
+  /* ---------- hallazgos: registro común (revisión automática, STRIDE, cumplimiento) ---------- */
+  // Hallazgo = { id, source, rule, severity: 'low' | 'medium' | 'high' | 'critical', target: { kind: 'node' | 'edge' | 'group' | 'zone', id }, title, detail?, fix? }
+  // `id` es estable (p. ej. `rule:sec.db-backup:node:db1`) para poder descartarlo y recordarlo. Solo avisan: nunca bloquean nada.
+  // Cada fuente registra una función (modelo) → [hallazgos] con addFindingSource; allFindings las junta (una fuente que falla no tumba las demás).
+  const FINDING_SOURCES = [];
+  const addFindingSource = (key, fn) => { FINDING_SOURCES.push({ key, fn }); };
+  function allFindings(m = S.model) {
+    return m ? FINDING_SOURCES.flatMap(s => { try { return s.fn(m) || []; } catch (err) { console.error(`findings/${s.key}`, err); return []; } }) : [];
+  }
+  // CSV para Excel: separador coma, comillas cuando hace falta y BOM para que respete tildes
+  const csvCell = v => { const t = v == null ? '' : String(v); return /[",\r\n]/.test(t) || /^[=+\-@]/.test(t) ? `"${(/^[=+\-@]/.test(t) ? "'" : '') + t.replace(/"/g, '""')}"` : t; };
+  const toCSV = rows => '\ufeff' + rows.map(r => r.map(csvCell).join(',')).join('\r\n');
+
+  /* ---------- cumplimiento normativo (ISO 27001, SOC 2, GDPR, HIPAA, PCI DSS) ---------- */
+  // controls: { 'iso27001:A.8.24': 'met' | 'partial' | 'gap' | 'na' } en nodos y grupos; los nodos heredan de sus grupos (gana el más cercano y, al final, el propio).
+  // Catálogo, sugerencias y cómo añadir marcos o controles: config.js › compliance
+  const CMP = C.compliance || {}, FWS = CMP.frameworks || {};
+  const CTL_STATUS = ['met', 'partial', 'gap', 'na'], CTL_ALIAS = { cumple: 'met', parcial: 'partial', brecha: 'gap', 'n/a': 'na' };
+  const CTL_COLOR = { met: 'var(--p-menta)', partial: 'var(--p-limon)', gap: 'var(--p-coral)', na: 'var(--muted)' }, CTL_SYM = { met: '✓', partial: '◐', gap: '✗', na: '—' };
+  const cleanCtlStatus = v => { const k = fold(v).trim(); return CTL_STATUS.includes(k) ? k : CTL_ALIAS[k] || null; };
+  // Solo claves «marco:id» con estado válido; los marcos desconocidos se conservan (catálogos propios)
+  const cleanControls = raw => {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+    const o = {};
+    Object.entries(raw).forEach(([k, v]) => { const key = String(k).trim(), i = key.indexOf(':'), s = cleanCtlStatus(v); if (i > 0 && i < key.length - 1 && s) o[key] = s; });
+    return Object.keys(o).length ? o : null;
+  };
+  const ctlSplit = key => { const i = key.indexOf(':'); return [key.slice(0, i), key.slice(i + 1)]; };
+  const ctlInfo = key => {
+    const [fw, id] = ctlSplit(key), f = FWS[fw], c = f?.controls?.[id];
+    return { key, fw, id, short: f?.short || fw.toUpperCase(), fwLabel: f ? loc(f.label) : fw, title: c ? loc(c.label) : '', known: !!c };
+  };
+  const CTL_ALL = Object.entries(FWS).flatMap(([fw, f]) => Object.keys(f.controls || {}).map(id => `${fw}:${id}`));
+  // Orden: el del catálogo (marcos y controles en el orden de config.js); los desconocidos al final
+  const sortCtl = keys => {
+    const fws = Object.keys(FWS), rank = k => { const i = CTL_ALL.indexOf(k); return i >= 0 ? i : 1e6 + (fws.indexOf(ctlSplit(k)[0]) < 0 ? 1e3 : 0); };
+    return [...keys].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b, undefined, { numeric: true }));
+  };
+  // Controles efectivos de un nodo o grupo: Map clave → { status, from }. Primero los del grupo más lejano, luego los más cercanos y al final los propios.
+  // from = null si es propio; si no, id del grupo que lo aporta
+  function controlsOf(x, m = S.model) {
+    const out = new Map();
+    if (!x) return out;
+    const chain = [];
+    let g = 'type' in x ? x.group : x.parent, i = 0;
+    while (g && i++ < 50) { const gg = m.groups.find(q => q.id === g); if (!gg) break; chain.push(gg); g = gg.parent; }
+    chain.reverse().forEach(q => Object.entries(q.controls || {}).forEach(([k, s]) => out.set(k, { status: s, from: q.id })));
+    Object.entries(x.controls || {}).forEach(([k, s]) => out.set(k, { status: s, from: null }));
+    return out;
+  }
+  // Clases de datos que maneja un nodo: las suyas y las de sus conexiones
+  const dataClassesOf = (n, m = S.model) => [...new Set([...(n.data || []), ...m.edges.filter(e => e.from === n.id || e.to === n.id).flatMap(e => e.data || [])])]
+    .sort((a, b) => Object.keys(DATA).indexOf(a) - Object.keys(DATA).indexOf(b));
+  const nodesUnder = (x, m = S.model) => ('type' in x ? [x] : m.nodes.filter(n => inGroup(n, x.id)));
+  // Sugerencias para una lista de nodos/grupos según sus clases de datos (y las conexiones entre jurisdicciones); sin las ya marcadas en todos
+  function ctlSuggest(list, m = S.model) {
+    const sg = CMP.suggest || {}, byId = new Map(m.nodes.map(n => [n.id, n])), out = [];
+    const add = k => { if (!out.includes(k) && ctlInfo(k).known) out.push(k); };
+    const ns = [...new Set(list.flatMap(x => nodesUnder(x, m)))], cls = new Set(ns.flatMap(n => dataClassesOf(n, m)));
+    Object.keys(DATA).filter(k => cls.has(k)).forEach(k => (sg[k] || []).forEach(add));
+    if (ns.some(n => m.edges.some(e => (e.from === n.id || e.to === n.id) && crossBorder(e, byId)))) (sg.crossBorder || []).forEach(add);
+    const effs = list.map(x => controlsOf(x, m));
+    return out.filter(k => !effs.every(e => e.has(k)));
+  }
+  // Filas de la matriz: nodos con algún control o con datos sensibles
+  const cmpRows = (m = S.model) => m.nodes.map(n => ({ n, eff: controlsOf(n, m), cls: dataClassesOf(n, m).filter(k => DATA[k]?.sensitive) })).filter(r => r.eff.size || r.cls.length);
+  // { rows, keys (controles en uso, ordenados; opcionalmente de un marco), stats: Map clave → { met, partial, gap, na, unmapped } }
+  function cmpModel(m = S.model, fw = '') {
+    const rows = cmpRows(m), used = new Set(rows.flatMap(r => [...r.eff.keys()]));
+    const keys = sortCtl([...used]).filter(k => !fw || ctlSplit(k)[0] === fw), stats = new Map(keys.map(k => [k, { met: 0, partial: 0, gap: 0, na: 0, unmapped: 0 }]));
+    rows.forEach(r => keys.forEach(k => { stats.get(k)[r.eff.get(k)?.status || 'unmapped']++; }));
+    return { rows, keys, stats };
+  }
+  const cmpFrameworks = keys => [...new Set(keys.map(k => ctlSplit(k)[0]))];
+  const cmpGroupName = n => groupById(n.group)?.label || '';
+  // CSV ancho (una fila por componente, una columna por control) o largo (una fila por componente × control)
+  function complianceCSV(kind = 'wide', m = S.model, fw = '') {
+    const { rows, keys } = cmpModel(m, fw), name = (k) => { const c = ctlInfo(k); return `${c.short} ${c.id}`; };
+    if (kind === 'long') {
+      const out = [[T('cmp.csv.fw'), T('cmp.csv.ctl'), T('cmp.csv.title'), T('cmp.csv.comp'), T('cmp.csv.group'), T('cmp.csv.status'), T('cmp.csv.inh'), T('cmp.csv.data')]];
+      rows.forEach(r => keys.forEach(k => {
+        const e = r.eff.get(k);
+        if (!e) return;
+        const c = ctlInfo(k);
+        out.push([c.short, c.id, c.title, r.n.label, cmpGroupName(r.n), e.status, e.from ? groupById(e.from)?.label || e.from : '', dataClassesOf(r.n, m).join(' ')]);
+      }));
+      return toCSV(out);
+    }
+    return toCSV([[T('cmp.csv.comp'), 'ID', T('cmp.csv.group'), T('cmp.csv.data'), ...keys.map(name)],
+      ...rows.map(r => [r.n.label, r.n.id, cmpGroupName(r.n), dataClassesOf(r.n, m).join(' '), ...keys.map(k => r.eff.get(k)?.status || '')])]);
+  }
+  function exportCompliance(kind = 'wide', fw = '') {
+    const long = kind === 'long', csv = complianceCSV(kind, S.model, fw);
+    download(csv, fileName('csv', long ? 'compliance-long' : 'compliance'), 'text/csv;charset=utf-8');
+    toast(T('toast.exported', { name: T('cmp.matrix') }));
+    return csv;
+  }
+  // API: { frameworks: [{ key, label, controls: [{ key, id, label, met, partial, gap, na, unmapped }] }], rows: [{ node, label, controls: { 'marco:id': estado } }] }
+  function complianceReport(m = S.model) {
+    const { rows, keys, stats } = cmpModel(m);
+    return {
+      frameworks: cmpFrameworks(keys).map(fw => ({ key: fw, label: ctlInfo(`${fw}:x`).fwLabel, controls: keys.filter(k => ctlSplit(k)[0] === fw).map(k => ({ key: k, id: ctlSplit(k)[1], label: ctlInfo(k).title, ...stats.get(k) })) })),
+      rows: rows.map(r => ({ node: r.n.id, label: r.n.label, controls: Object.fromEntries([...r.eff].map(([k, e]) => [k, e.status])) }))
+    };
+  }
+  // Fichas del filtro «Cumplimiento»: un marco por ficha (los que usa algún nodo, con herencia) y «Con brechas»
+  function cmpOptions(m) {
+    const used = new Set();
+    m.nodes.forEach(n => controlsOf(n, m).forEach((e, k) => used.add(ctlSplit(k)[0])));
+    return [...Object.keys(FWS).filter(f => used.has(f)), ...[...used].filter(f => !FWS[f])].map(f => ({ k: f, label: ctlInfo(`${f}:x`).short })).concat(used.size ? [{ k: '@gap', label: T('flt.gap') }] : []);
+  }
+  const cmpMatch = (n, v) => { const eff = controlsOf(n); return v.some(k => (k === '@gap' ? [...eff.values()].some(e => e.status === 'gap') : [...eff.keys()].some(c => ctlSplit(c)[0] === k))); };
+  // Texto corto para el tooltip de un nodo: «Cumplimiento: ISO 27001 3 ✓ 1 ✗ · PCI DSS 1 ◐»
+  const cmpTip = n => {
+    const by = new Map();
+    controlsOf(n).forEach((e, k) => { const f = ctlInfo(k).short, c = by.get(f) || {}; c[e.status] = (c[e.status] || 0) + 1; by.set(f, c); });
+    return by.size ? `${T('cmp.title')}: ${[...by].map(([f, c]) => `${f} ${CTL_STATUS.filter(s => c[s]).map(s => `${c[s]} ${CTL_SYM[s]}`).join(' ')}`).join(' · ')}` : '';
+  };
+  // Texto escrito en el buscador del inspector → clave de control («iso27001:A.8.24 — …», «iso27001:A.8.24», «A.8.24») o null
+  function resolveCtl(text) {
+    const t = String(text || '').split(' — ')[0].trim(), f = fold(t);
+    if (!t) return null;
+    const hit = CTL_ALL.find(k => fold(k) === f);
+    if (hit) return hit;
+    const byId = CTL_ALL.filter(k => fold(ctlSplit(k)[1]) === f);
+    if (byId.length === 1) return byId[0];
+    const i = t.indexOf(':');
+    return i > 0 && i < t.length - 1 ? t : null; // catálogo propio: «marco:id» libre
+  }
+  // Fuente de hallazgos «compliance»: brecha = media (alta si el componente maneja PCI/PHI y el marco es PCI DSS/HIPAA), parcial = baja,
+  // y el control principal sugerido que falta en un componente con datos sensibles = baja. Solo cuentan los controles propios (los de un grupo se avisan una vez, en el grupo)
+  addFindingSource('compliance', m => {
+    const out = [];
+    const sevOf = (k, cls) => { const fw = ctlSplit(k)[0]; return (fw === 'pcidss' && cls.includes('pci')) || (fw === 'hipaa' && cls.includes('phi')) ? 'high' : 'medium'; };
+    const emit = (kind, x, ns) => {
+      const cls = [...new Set(ns.flatMap(n => dataClassesOf(n, m)))];
+      Object.entries(x.controls || {}).forEach(([k, s]) => {
+        if (s !== 'gap' && s !== 'partial') return;
+        // un grupo: solo si algún componente suyo sigue usando ese valor (no lo sustituye otro más cercano)
+        if (kind === 'group' && ns.length && !ns.some(n => controlsOf(n, m).get(k)?.from === x.id)) return;
+        const c = ctlInfo(k), ref = `${c.short} ${c.id}`;
+        out.push({ id: `compliance:${s}:${kind}:${x.id}:${k}`, source: 'compliance', rule: `compliance.${s}`, severity: s === 'gap' ? sevOf(k, cls) : 'low', target: { kind, id: x.id },
+          title: T(`cmp.find.${s}`, { ctl: ref, name: x.label }), detail: [c.title, T(`cmp.find.${s}.d`)].filter(Boolean).join(' · '), fix: T('cmp.find.fix') });
+      });
+    };
+    m.groups.forEach(g => emit('group', g, m.nodes.filter(n => inGroup(n, g.id))));
+    // «Sin mapear» solo para marcos que el diagrama ya usa: sin controles no hay ruido
+    const inUse = new Set([...m.groups, ...m.nodes].flatMap(x => Object.keys(x.controls || {}).map(k => ctlSplit(k)[0])));
+    m.nodes.forEach(n => {
+      emit('node', n, [n]);
+      const eff = controlsOf(n, m);
+      dataClassesOf(n, m).filter(k => DATA[k]?.sensitive).forEach(k => {
+        const core = (CMP.suggest?.[k] || [])[0];
+        if (!core || !inUse.has(ctlSplit(core)[0]) || !ctlInfo(core).known || eff.has(core)) return;
+        const c = ctlInfo(core);
+        out.push({ id: `compliance:unmapped:node:${n.id}:${core}`, source: 'compliance', rule: 'compliance.unmapped', severity: 'low', target: { kind: 'node', id: n.id },
+          title: T('cmp.find.unmapped', { ctl: `${c.short} ${c.id}`, cls: loc(DATA[k].short) || k.toUpperCase(), name: n.label }), detail: c.title, fix: T('cmp.find.fix') });
+      });
+    });
+    return out;
+  });
+
   /* ---------- observaciones de revisión (se levantan a mano en el inspector) ---------- */
   // review: { status: 'open' | 'resolved', note, by, raised, due, closed } con fechas AAAA-MM-DD
   // Fecha AAAA-MM-DD que existe en el calendario (2026-02-30 no vale)
@@ -359,6 +521,7 @@
     if (raw.direction === 'LR' || raw.direction === 'TB') m.direction = raw.direction;
     if (raw.routing === 'elbow') m.routing = 'elbow';
     if (raw.layerNames === 'zones') m.layerNames = 'zones';
+    { const dm = cleanDismissed(raw.dismissed); if (dm) m.dismissed = dm; }
     if (raw.meta && typeof raw.meta === 'object') {
       const meta = {};
       ['author', 'version'].forEach(k => { if (raw.meta[k] != null && String(raw.meta[k]).trim()) meta[k] = String(raw.meta[k]).trim(); });
@@ -398,6 +561,7 @@
     });
 
     m.groups.forEach(g => { const l = cleanLayer(g.layer); if (l) g.layer = l; else delete g.layer; });
+    m.groups.forEach(g => { const c = cleanControls(g.controls); if (c) g.controls = c; else delete g.controls; });
     list(raw.nodes).forEach((n, i) => {
       const type = C.types[n.type] ? n.type : 'generic';
       const o = { ...n, id: take(n.id, 'n', i), type, label: String(n.label ?? typeLabel(type)) };
@@ -409,6 +573,8 @@
       if (cleanReview(o.review)) o.review = cleanReview(o.review); else delete o.review;
       if (cleanRegion(o.region)) o.region = cleanRegion(o.region); else delete o.region;
       { const l = cleanLayer(o.layer); if (l) o.layer = l; else delete o.layer; }
+      { const ex = cleanExposure(o.exposure); if (ex) o.exposure = ex; else delete o.exposure; const bk = cleanBackup(o.backup); if (bk != null) o.backup = bk; else delete o.backup; }
+      { const c = cleanControls(o.controls); if (c) o.controls = c; else delete o.controls; }
       m.nodes.push(o);
     });
     [...m.groups, ...m.nodes].forEach(cleanGov);
@@ -424,6 +590,7 @@
       if (o.both === true || (typeof o.both === 'string' && /^(yes|true|si|sí)$/i.test(o.both))) o.both = true; else delete o.both;
       const dsl = cleanDatasets(o.datasets); if (dsl.length) o.datasets = dsl; else delete o.datasets;
       if (o.transferOk === true || (typeof o.transferOk === 'string' && /^(yes|true|ok|si|sí)$/i.test(o.transferOk))) o.transferOk = true; else delete o.transferOk;
+      { const th = cleanThreats(o.threats); if (th) o.threats = th; else delete o.threats; }
       m.edges.push(o);
     });
     m.notes = []; m.zones = [];
@@ -434,6 +601,7 @@
     });
     list(raw.zones).forEach((z, i) => {
       const o = { id: take(z.id, 'zone', i), ...cleanBox(z, 360, 220), label: String(z.label ?? ''), severity: SEVERITY.includes(z.severity) ? z.severity : 'medium' };
+      if (z.kind === 'trust') { o.kind = 'trust'; delete o.severity; if (z.trust != null && String(z.trust).trim()) o.trust = String(z.trust).trim(); }
       if (z.desc != null && String(z.desc).trim()) o.desc = String(z.desc);
       m.zones.push(o);
     });
@@ -563,6 +731,90 @@
     return new Map([...by].sort((a, b) => a[0].localeCompare(b[0])));
   }
   const govTip = n => GOV_FIELDS.map(f => { const v = govOf(n, f).value; return v ? `${T(`gov.${f}`)}: ${v}` : ''; }).filter(Boolean).join(' · ');
+
+  /* ---------- revisión de seguridad automática: reglas que avisan (config.js › securityRules) ---------- */
+  // Solo avisan, nunca bloquean. Una regla se apaga con `enabled: false`; el nodo puede anular lo deducido con `exposure` y `backup`.
+  const SR = C.securityRules || {};
+  const SR_SEV = { 'sec.unencrypted-sensitive': 'critical', 'sec.unstated-encryption': 'medium', 'sec.public-sensitive': 'high', 'sec.datastore-backup': 'medium', 'sec.cross-border': 'high', 'sec.sensitive-no-owner': 'low', 'sec.public-datastore': 'high' };
+  const srOn = id => !!SR[id] && SR[id].enabled !== false;
+  const srSev = id => (SEVERITY.includes(SR[id]?.severity) ? SR[id].severity : SR_SEV[id] || 'medium');
+  const srRx = (re, s) => { try { return re instanceof RegExp && new RegExp(re.source, 'i').test(String(s ?? '')); } catch { return false; } };
+  const cleanExposure = v => { const k = fold(v); return /^(public|publico|publica|external|externa?)$/.test(k) ? 'public' : /^(internal|interno|interna|private|privado|privada)$/.test(k) ? 'internal' : ''; };
+  const cleanBackup = v => (v === true || v === false ? v : typeof v === 'string' ? (/^(yes|true|si|sí)$/i.test(v.trim()) ? true : /^(no|false)$/i.test(v.trim()) ? false : null) : null);
+  // Hallazgos descartados: { [id]: { reason, by?, date } }; no se poda nada (un id viejo no estorba)
+  const cleanDismissed = v => {
+    if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
+    const out = {};
+    Object.entries(v).forEach(([id, d]) => {
+      if (!id || !d || typeof d !== 'object') return;
+      const o = { reason: String(d.reason ?? '').trim().slice(0, 300) };
+      if (d.by != null && String(d.by).trim()) o.by = String(d.by).trim();
+      if (isDay(d.date)) o.date = d.date;
+      out[id] = o;
+    });
+    return Object.keys(out).length ? out : null;
+  };
+  // Grupos de un nodo, del más cercano al más lejano
+  const groupChain = (n, m) => { const out = []; let g = n.group, i = 0; while (g && i++ < 50) { const gg = m.groups.find(x => x.id === g); if (!gg) break; out.push(gg); g = gg.parent; } return out; };
+  // Exposición: { value: 'public' | 'internal', auto, why }. Lo explícito gana; si no, se deduce del grupo o de quién le envía tráfico
+  function exposureOf(n, m = S.model) {
+    if (n.exposure === 'public' || n.exposure === 'internal') return { value: n.exposure, auto: false, why: T('sec.why.manual') };
+    const P = SR['sec.public-sensitive'] || {}, clients = P.clientTypes || [];
+    const g = groupChain(n, m).find(x => (P.publicGroupIcons || []).includes(x.icon) || srRx(P.publicGroupName, x.label));
+    if (g) return { value: 'public', auto: true, why: T('sec.why.group', g.label) };
+    const src = m.edges.filter(e => e.to === n.id || (e.both && e.from === n.id)).map(e => m.nodes.find(x => x.id === (e.to === n.id ? e.from : e.to))).find(x => x && x.id !== n.id && clients.includes(x.type));
+    return src ? { value: 'public', auto: true, why: T('sec.why.client', src.label) } : { value: 'internal', auto: true, why: T('sec.why.none') };
+  }
+  const isClientNode = n => (SR['sec.public-sensitive']?.clientTypes || []).includes(n.type);
+  const isDataStore = n => { const D = SR['sec.datastore-backup'] || {}; return (D.dataStoreTypes || []).includes(n.type) || (D.dataStoreIconCategories || []).includes(iconInfo(n.icon)?.category); };
+  const isBackupNode = n => { const D = SR['sec.datastore-backup'] || {}; return (D.backupIcons || []).includes(n.icon) || srRx(D.backupName, n.label); };
+  // Respaldo: { value: true | false, auto, why }. Lo explícito gana; si no, se deduce de un nodo de respaldo vecino o de una conexión «backup»
+  function backupOf(n, m = S.model) {
+    if (typeof n.backup === 'boolean') return { value: n.backup, auto: false, why: T('sec.why.manual') };
+    const D = SR['sec.datastore-backup'] || {};
+    for (const e of m.edges) {
+      if (e.from !== n.id && e.to !== n.id) continue;
+      const o = m.nodes.find(x => x.id === (e.from === n.id ? e.to : e.from));
+      if (o && o.id !== n.id && isBackupNode(o)) return { value: true, auto: true, why: T('sec.why.bknode', o.label) };
+      if (srRx(D.backupEdgeLabel, e.label)) return { value: true, auto: true, why: T('sec.why.bkedge', String(e.label).replace(/\s+/g, ' ')) };
+    }
+    return { value: false, auto: true, why: T('sec.why.nobk') };
+  }
+  // Clases sensibles de una conexión: las suyas y las de sus extremos (como secClass), en el orden de config.js
+  const edgeSens = (e, get) => {
+    const ks = [...(e.data || []), ...(get(e.from)?.data || []), ...(get(e.to)?.data || [])];
+    return [...new Set(ks)].filter(k => DATA[k]?.sensitive).sort((a, b) => Object.keys(DATA).indexOf(a) - Object.keys(DATA).indexOf(b));
+  };
+  const nodeSens = n => [...new Set(n.data || [])].filter(k => DATA[k]?.sensitive).sort((a, b) => Object.keys(DATA).indexOf(a) - Object.keys(DATA).indexOf(b));
+  function ruleFindings(m) {
+    const out = [], byId = new Map(m.nodes.map(n => [n.id, n])), get = id => byId.get(id);
+    const add = (rule, kind, o, title, detail, fix) => out.push({ id: `rule:${rule}:${kind}:${o.id}`, source: 'rule', rule, severity: srSev(rule), target: { kind, id: o.id }, title, ...(detail ? { detail } : {}), fix });
+    m.edges.forEach(e => {
+      const a = get(e.from), b = get(e.to);
+      if (!a || !b) return;
+      const cls = edgeSens(e, get), ends = { a: a.label, b: b.label }, shorts = () => classShorts(cls).join(', ');
+      if (srOn('sec.unencrypted-sensitive') && isInsecure(e, get)) add('sec.unencrypted-sensitive', 'edge', e, T('sec.f.unenc.t', { cls: shorts(), n: cls.length, ...ends }), T('sec.f.unenc.d'), T('sec.f.unenc.fix'));
+      if (srOn('sec.unstated-encryption') && e.encrypted == null && cls.length) add('sec.unstated-encryption', 'edge', e, T('sec.f.unst.t', { cls: shorts(), n: cls.length, ...ends }), T('sec.f.unst.d'), T('sec.f.unst.fix'));
+      if (srOn('sec.cross-border')) {
+        const cb = crossBorder(e, get);
+        if (cb && !cb.approved) add('sec.cross-border', 'edge', e, T('sec.f.xb.t', { cls: classShorts(cb.classes).join(', '), n: cb.classes.length, fromR: cb.from.region, toR: cb.to.region, ...ends }), xbWarn(cb), T('sec.f.xb.fix'));
+      }
+    });
+    m.nodes.forEach(n => {
+      const ns = nodeSens(n), ds = isDataStore(n) && !isBackupNode(n), ex = exposureOf(n, m);
+      if (srOn('sec.public-sensitive') && ns.length && !isClientNode(n) && ex.value === 'public') add('sec.public-sensitive', 'node', n, T('sec.f.pubsens.t', { n: n.label, cls: classShorts(ns).join(', '), c: ns.length }), ex.why, T('sec.f.pubsens.fix'));
+      if (srOn('sec.datastore-backup') && ds && !backupOf(n, m).value) add('sec.datastore-backup', 'node', n, T('sec.f.bk.t', n.label), T('sec.f.bk.d'), T('sec.f.bk.fix'));
+      if (srOn('sec.sensitive-no-owner') && ns.length && !govOf(n, 'owner', m).value && !govOf(n, 'steward', m).value) add('sec.sensitive-no-owner', 'node', n, T('sec.f.owner.t', { n: n.label, cls: classShorts(ns).join(', '), c: ns.length }), '', T('sec.f.owner.fix'));
+      if (srOn('sec.public-datastore') && ds && ex.value === 'public') add('sec.public-datastore', 'node', n, T('sec.f.pubds.t', n.label), ex.why, T('sec.f.pubds.fix'));
+    });
+    return out;
+  }
+  addFindingSource('rule', ruleFindings);
+  // Observaciones de revisión manuales (abiertas o vencidas): se resuelven en el inspector, no se descartan aquí
+  addFindingSource('review', m => m.nodes.filter(n => n.review && n.review.status !== 'resolved').map(n => {
+    const late = reviewState(n.review) === 'overdue';
+    return { id: `review:observation:node:${n.id}`, source: 'review', rule: 'observation', severity: late ? 'high' : 'medium', target: { kind: 'node', id: n.id }, title: n.review.note || T('find.rev.untitled', n.label), detail: reviewHint(n.review), fix: T('find.rev.fix') };
+  }));
 
   function uniqueId(prefix) {
     const used = new Set([...S.model.nodes, ...S.model.edges, ...S.model.groups, ...S.model.notes, ...S.model.zones].map(x => x.id));
@@ -760,6 +1012,7 @@
     const base = m.nodes.length * C.animation.enterStagger * 0.6;
     m.edges.forEach((e, i) => buildEdge(e, animate ? base + i * 30 : -1));
     m.nodes.forEach((n, i) => buildNode(n, animate ? i * C.animation.enterStagger : -1));
+    refreshFindings(true);
     applyViewMode();
     updateGeometry();
     applyCompare();
@@ -850,27 +1103,31 @@
     return cut;
   }
   function buildZone(z) {
-    const sev = SEVERITY.includes(z.severity) ? z.severity : 'medium';
-    const g = el('g', { class: `zone zone-${sev}`, 'data-id': z.id }, L.zones);
+    const trust = z.kind === 'trust', sev = SEVERITY.includes(z.severity) ? z.severity : 'medium', zc = trust ? 'zone-trust' : `zone-${sev}`;
+    const g = el('g', { class: `zone ${zc}`, 'data-id': z.id }, L.zones);
     el('rect', { class: 'zone-tint', width: z.w, height: z.h, rx: 14 }, g);
-    el('rect', { class: 'zone-hatch', width: z.w, height: z.h, rx: 14, fill: `url(#hatch-${sev})` }, g);
+    if (!trust) el('rect', { class: 'zone-hatch', width: z.w, height: z.h, rx: 14, fill: `url(#hatch-${sev})` }, g);
     el('rect', { class: 'zone-line', width: z.w, height: z.h, rx: 14 }, g);
     el('rect', { class: 'zone-hit', width: z.w, height: z.h, rx: 14 }, g);
     // Etiqueta, contorno de selección y tirador van en otra capa, por encima de nodos y aristas:
     // si un diagrama tapa la zona, sigue pudiéndose agarrar. El relleno y el borde se quedan debajo.
-    const top = el('g', { class: `zone zone-over zone-${sev}`, 'data-id': z.id }, L.zoneTop);
+    const top = el('g', { class: `zone zone-over ${zc}`, 'data-id': z.id }, L.zoneTop);
     el('rect', { class: 'zone-line zone-top-line', width: z.w, height: z.h, rx: 14 }, top);
     // Etiqueta abajo a la izquierda: arriba suele estar la del grupo que la zona rodea
     const tag = el('g', { class: 'zone-tag', transform: `translate(10 ${z.h - 32})` }, top);
     // El CSS añade .04em de espaciado entre letras (11px → 0,44px por carácter)
     const tagW = t => textW(t, FONT.tag) + String(t).length * 0.44;
-    const head = `⚠ ${sevLabel(sev).toUpperCase()}`, label = fitText(z.label ? ` · ${z.label}` : '', FONT.tag, Math.max(20, z.w - 24 - tagW(head) - 22));
-    const tw = Math.ceil(tagW(head + label) + 22);
+    // Frontera de confianza: escudo con candado en vez de ⚠ y el nombre de la zona (o su nivel de confianza)
+    const gl = trust ? 18 : 0, head = trust ? T('trust.tag').toUpperCase() : `⚠ ${sevLabel(sev).toUpperCase()}`, nm = trust ? z.label || z.trust || '' : z.label;
+    const label = fitText(nm ? ` · ${nm}` : '', FONT.tag, Math.max(20, z.w - 24 - tagW(head) - 22 - gl));
+    const tw = Math.ceil(tagW(head + label) + 22 + gl);
     el('rect', { width: tw, height: 22, rx: 7 }, tag);
-    const tx = el('text', { x: 10, y: 15 }, tag);
+    if (trust) el('path', { class: 'trust-g', transform: 'translate(8 3) scale(.67)', d: 'M12 3 4.5 6v5.5c0 4.5 3.2 8 7.5 9.5 4.3-1.5 7.5-5 7.5-9.5V6zM9.5 12.5h5V16h-5zM10.5 12.5v-1.2a1.5 1.5 0 0 1 3 0v1.2' }, tag);
+    const tx = el('text', { x: 10 + gl, y: 15 }, tag);
     el('tspan', { class: 'zone-sev' }, tx).textContent = head;
     tx.appendChild(document.createTextNode(label));
-    if (z.desc) el('title', null, top).textContent = z.desc;
+    const tip = [trust ? z.trust : '', z.desc].filter(Boolean).join('\n');
+    if (tip) el('title', null, top).textContent = tip;
     handle(top, z.w, z.h);
     R.zones.set(z.id, { g, top, tag, tw });
   }
@@ -934,6 +1191,7 @@
     edgeLabel(r);
     edgeDatasets(r);
     xbMarker(r);
+    strideMarker(r);
   }
   /* ---------- marcador de datos fuera de su jurisdicción (solo se ve en la vista Seguridad) ---------- */
   // Un globo en el punto medio (rojo) o un ✓ gris si la transferencia está autorizada; se reconstruye con la conexión
@@ -945,6 +1203,111 @@
     if (cb.approved) el('path', { class: 'xb-g', d: 'M-4.5 0.5 -1.5 3.5 4.5 -3' }, mk);
     else el('path', { class: 'xb-g', d: 'M0 -6a6 6 0 1 0 0 12a6 6 0 1 0 0 -12M-6 0h12M0 -6c-3.5 3.2 -3.5 8.8 0 12M0 -6c3.5 3.2 3.5 8.8 0 12' }, mk);
     r.xb = mk;
+  }
+
+  /* ---------- STRIDE: fronteras de confianza y amenazas sugeridas ---------- */
+  // Frontera de confianza = zona con kind: 'trust'. Un nodo está dentro si su centro cae en el rectángulo de la zona (las zonas pueden anidarse o solaparse).
+  // Una conexión cruza cuando los conjuntos de fronteras de sus dos extremos difieren. Reglas y umbrales: config.js › stride (comentario allí).
+  // Decisiones: edge.threats = { S|T|R|I|D|E: { status: 'mitigated' | 'accepted' | 'na', note? } }; abierta = sin guardar.
+  const STR = { inboundSeverity: 'high', criticalClasses: ['pii', 'pci', 'phi'], storeTypes: [], storeIconCategories: [], categories: {}, ...C.stride };
+  const STRIDE_KEYS = 'STRIDE'.split('');
+  const THREAT_ST = ['mitigated', 'accepted', 'na'];
+  const cleanThreats = v => {
+    if (!v || typeof v !== 'object') return null;
+    const o = {};
+    STRIDE_KEYS.forEach(k => {
+      const x = v[k];
+      if (!x || typeof x !== 'object' || !THREAT_ST.includes(x.status)) return;
+      o[k] = { status: x.status };
+      if (x.note != null && String(x.note).trim()) o[k].note = String(x.note);
+    });
+    return Object.keys(o).length ? o : null;
+  };
+  const trustName = z => z.label || z.trust || T('trust.unnamed');
+  // Contexto barato (solo el modelo; el ancho del nodo sale de R.width): fronteras que contienen a cada nodo
+  const strideCtx = (m = S.model) => {
+    const zones = m.zones.filter(z => z.kind === 'trust'), byId = new Map(m.nodes.map(n => [n.id, n])), sets = new Map();
+    if (zones.length) m.nodes.forEach(n => {
+      const cx = n.x + (R.width.get(n.id) || nodeWidth(n)) / 2, cy = n.y + nodeBoxH(n) / 2;
+      sets.set(n.id, zones.filter(z => cx >= z.x && cx <= z.x + z.w && cy >= z.y && cy <= z.y + z.h));
+    });
+    return { m, zones, byId, sets };
+  };
+  // { from, to, enters, leaves, zones, inbound } o null si la conexión no cruza ninguna frontera
+  const crossInfo = (e, c) => {
+    const a = c.sets.get(e.from), b = c.sets.get(e.to);
+    if (!a || !b) return null;
+    const enters = b.filter(z => !a.includes(z)), leaves = a.filter(z => !b.includes(z));
+    return enters.length || leaves.length ? { from: a, to: b, enters, leaves, zones: [...leaves, ...enters], inbound: enters.length > 0 } : null;
+  };
+  const crossings = (e, c = strideCtx()) => crossInfo(e, c)?.zones || [];
+  // Amenazas sugeridas de una conexión que cruza: [{ cat, severity, why, title, mitigation, status, note, zones, e, ... }]
+  function strideFor(e, c, info = crossInfo(e, c)) {
+    if (!info) return [];
+    const A = c.byId.get(e.from), B = c.byId.get(e.to), cls = new Set([...(e.data || []), ...(A?.data || []), ...(B?.data || [])]);
+    const sens = isSensitive(e) || isSensitive(A) || isSensitive(B), crit = [...cls].some(k => (STR.criticalClasses || []).includes(k));
+    const inb = info.inbound, enc = e.encrypted, sync = (C.edgeStyles[e.style] ? e.style : 'sync') === 'sync';
+    const store = !!B && ((STR.storeTypes || []).includes(B.type) || (STR.storeIconCategories || []).includes(iconInfo(B.icon)?.category));
+    const out = [], add = (cat, severity, why) => { if (STR.categories[cat]) out.push({ cat, severity, why }); };
+    add('S', inb ? (SEVERITY.includes(STR.inboundSeverity) ? STR.inboundSeverity : 'high') : 'medium', inb ? 'S.in' : 'S.out');
+    add('T', enc === false ? 'high' : enc == null ? 'medium' : 'low', enc === false ? 'T.no' : enc == null ? 'T.unset' : 'T.yes');
+    add('R', sens ? 'medium' : 'low', sens ? 'R.sens' : 'R.plain');
+    if (sens) add('I', enc === true ? 'low' : enc === false && crit ? 'critical' : 'high', enc === true ? 'I.enc' : enc === false && crit ? 'I.crit' : 'I.high');
+    add('D', inb && sync ? 'medium' : 'low', inb && sync ? 'D.sync' : 'D.other');
+    if (inb) add('E', store ? 'high' : 'medium', store ? 'E.store' : 'E.other');
+    const from = A?.label ?? e.from, to = B?.label ?? e.to, names = info.zones.map(trustName).join(', ');
+    return out.map(t => {
+      const cat = STR.categories[t.cat], d = e.threats?.[t.cat];
+      return { ...t, e, from, to, zones: info.zones, title: T('stride.title', { cat: loc(cat.label), from, to, zones: names }), why: T(`stride.why.${t.why}`),
+        mitigation: loc(cat.mitigation), status: d?.status || 'open', note: d?.note || '' };
+    });
+  }
+  const strideAll = (m = S.model) => { const c = strideCtx(m); return c.zones.length ? m.edges.flatMap(e => strideFor(e, c)) : []; };
+  addFindingSource('stride', m => strideAll(m).filter(t => t.status === 'open').map(t => ({ id: `stride:${t.cat}:edge:${t.e.id}`, source: 'stride', rule: t.cat, severity: t.severity,
+    target: { kind: 'edge', id: t.e.id }, title: t.title, detail: t.why, fix: t.mitigation })));
+  // Guarda la decisión de una categoría (open = quitarla); las claves quedan en orden S T R I D E
+  function setThreat(e, cat, status, note) {
+    const th = { ...(e.threats || {}) };
+    if (status === 'open') delete th[cat]; else th[cat] = { status, ...((note ?? th[cat]?.note) ? { note: note ?? th[cat].note } : {}) };
+    const o = {};
+    STRIDE_KEYS.forEach(k => { if (th[k]) o[k] = th[k]; });
+    if (Object.keys(o).length) e.threats = o; else delete e.threats;
+  }
+  // Marcador «STRIDE n» (n = amenazas abiertas) al 70 % de la conexión; solo se ve en la vista Seguridad y en conexiones que cruzan
+  function strideMarker(r) {
+    const mk = el('g', { class: 'edge-stride off' }, r.g);
+    el('rect', { y: -8, height: 16, rx: 8 }, mk);
+    el('text', { 'text-anchor': 'middle', y: 3.8 }, mk);
+    r.sm = mk;
+  }
+  function strideMarkUpdate(r, c) {
+    const mk = r.sm, info = c && crossInfo(r.e, c);
+    if (!mk) return;
+    if (!info) { if (!mk.classList.contains('off')) mk.classList.add('off'); return; }
+    const open = strideFor(r.e, c, info).filter(t => t.status === 'open'), worst = open.reduce((a, t) => Math.max(a, SEVERITY.indexOf(t.severity)), -1);
+    const txt = open.length ? `STRIDE ${open.length}` : 'STRIDE ✓', tx = mk.lastChild;
+    mk.setAttribute('class', `edge-stride sev-${worst < 0 ? 'ok' : SEVERITY[worst]}`);
+    if (tx.textContent !== txt) {
+      const w = Math.ceil(textW(txt, FONT.dtag)) + 14, rc = mk.firstChild;
+      tx.textContent = txt;
+      rc.setAttribute('x', -w / 2); rc.setAttribute('width', w);
+    }
+    const mp = r.line.getPointAtLength(r.len * 0.7);
+    mk.setAttribute('transform', `translate(${mp.x} ${mp.y})`);
+  }
+  // Modelo de amenazas en CSV: una fila por conexión que cruza × categoría sugerida
+  function exportThreats() {
+    const list = strideAll();
+    if (!list.length) return toast(T('stride.none'));
+    const dl = x => (x || []).map(k => DATA[k] ? loc(DATA[k].short) || k.toUpperCase() : String(k).toUpperCase());
+    const rows = [[T('stride.csv.zones'), T('stride.csv.from'), T('stride.csv.to'), T('stride.csv.label'), T('stride.csv.data'), T('stride.csv.enc'), T('stride.csv.cat'), T('stride.csv.sev'), T('stride.csv.status'), T('stride.csv.note'), T('stride.csv.fix')]];
+    const byId = new Map(S.model.nodes.map(n => [n.id, n]));
+    list.forEach(t => rows.push([t.zones.map(trustName).join(' | '), t.from, t.to, t.e.label || '',
+      [...new Set([...dl(t.e.data), ...dl(byId.get(t.e.from)?.data), ...dl(byId.get(t.e.to)?.data)])].join(' '),
+      T(t.e.encrypted === true ? 'enc.yes' : t.e.encrypted === false ? 'enc.no' : 'enc.unset'),
+      `${t.cat} ${loc(STR.categories[t.cat].label)}`, sevLabel(t.severity), T(`stride.st.${t.status}`), t.note, t.mitigation]));
+    download(toCSV(rows), fileName('csv', 'stride'), 'text/csv;charset=utf-8');
+    toast(T('toast.exported', { name: T('exp.stride') }));
   }
   // Etiqueta: candado de cifrado, texto y clasificaciones de los datos que viajan (según lo que la vista muestre)
   function edgeLabel(r) {
@@ -1001,7 +1364,7 @@
     const dt = [...(n.review ? [{ ...reviewTag(n.review), cls: 'dt-review' }] : []), ...dataTags(n).map(t => ({ ...t, cls: 'dt-data' }))];
     const rg = regionOf(n).value;
     const ly = layerOf(n), li = ly.value ? layerInfo(ly.value) : null;
-    el('title', null, g).textContent = [n.sub ? `${n.label} · ${n.sub}` : n.label, ...dt.map(t => t.label), govTip(n), li ? T('layer.tip', { l: li.label }) : '', rg ? T('res.tip', regionLabel(rg)) : ''].filter(Boolean).join('\n');
+    el('title', null, g).textContent = [n.sub ? `${n.label} · ${n.sub}` : n.label, ...dt.map(t => t.label), govTip(n), cmpTip(n), li ? T('layer.tip', { l: li.label }) : '', rg ? T('res.tip', regionLabel(rg)) : ''].filter(Boolean).join('\n');
     if (dt.length) {
       const dg = el('g', { class: 'node-data' }, b);
       let x = 14;
@@ -1155,6 +1518,7 @@
     m.nodes.forEach(n => R.nodes.get(n.id)?.setAttribute('transform', `translate(${n.x} ${n.y})`));
     updateItems();
 
+    const sc = R.edges.size && m.zones.some(z => z.kind === 'trust') ? strideCtx(m) : null;
     const pairs = new Set(m.edges.map(e => e.from + '\0' + e.to));
     const allRects = m.nodes.map(n => ({ id: n.id, ...rect(n.id) }));
     const ports = elbowPorts(m.edges, rect, routeOf);
@@ -1175,6 +1539,7 @@
         const mp = r.line.getPointAtLength(r.len * (r.label ? 0.3 : 0.5));
         r.xb.setAttribute('transform', `translate(${mp.x} ${mp.y})`);
       }
+      if (r.sm) strideMarkUpdate(r, sc);
     });
 
     // Cajas de grupo: de dentro hacia fuera
@@ -1937,11 +2302,11 @@
   const save = debounce(() => { store.set('model', S.model); updateMeta(); renderVersions(); }, 250);
 
   const ORDER = {
-    group: ['id', 'label', 'icon', 'color', 'parent', 'kind', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer'],
-    node: ['id', 'label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'x', 'y', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer'],
-    edge: ['id', 'from', 'to', 'label', 'style', 'route', 'both', 'color', 'data', 'encrypted', 'datasets', 'transferOk'],
+    group: ['id', 'label', 'icon', 'color', 'parent', 'kind', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'controls'],
+    node: ['id', 'label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'x', 'y', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'exposure', 'backup', 'controls'],
+    edge: ['id', 'from', 'to', 'label', 'style', 'route', 'both', 'color', 'data', 'encrypted', 'datasets', 'transferOk', 'threats'],
     note: ['id', 'x', 'y', 'w', 'h', 'text', 'color'],
-    zone: ['id', 'x', 'y', 'w', 'h', 'label', 'severity', 'desc']
+    zone: ['id', 'x', 'y', 'w', 'h', 'label', 'severity', 'desc', 'kind', 'trust']
   };
   function serialize(m, full = false) {
     const ordered = (o, keys) => { const r = {}; keys.forEach(k => k in o && (r[k] = o[k])); Object.keys(o).forEach(k => k in r || (r[k] = o[k])); return r; };
@@ -1956,6 +2321,7 @@
     if (m.direction) head.push(`  "direction": ${JSON.stringify(m.direction)}`);
     if (m.routing) head.push(`  "routing": ${JSON.stringify(m.routing)}`);
     if (m.layerNames === 'zones') head.push(`  "layerNames": "zones"`);
+    if (m.dismissed && Object.keys(m.dismissed).length) head.push(`  "dismissed": ${JSON.stringify(m.dismissed)}`);
     if (m.meta) head.push(`  "meta": ${JSON.stringify(m.meta)}`);
     const body = [...head, arr('groups', m.groups, ORDER.group), arr('nodes', m.nodes, ORDER.node), arr('edges', m.edges, ORDER.edge)];
     if (m.notes?.length) body.push(arr('notes', m.notes, ORDER.note));
@@ -2010,6 +2376,7 @@
     if (opts.fromEditor && S.model && raw && typeof raw === 'object') {
       if (!Array.isArray(raw.notes)) raw = { ...raw, notes: S.model.notes };
       if (!Array.isArray(raw.zones)) raw = { ...raw, zones: S.model.zones };
+      if (opts.fromEditor === 'text' && raw.dismissed === undefined && S.model.dismissed) raw = { ...raw, dismissed: S.model.dismissed }; // el texto no trae los hallazgos descartados
     }
     S.model = normalize(raw);
     ensurePositions(S.model);
@@ -2044,10 +2411,12 @@
     const byId = id => m.nodes.find(n => n.id === id), insecure = m.edges.filter(e => isInsecure(e, byId)).length;
     const xb = m.edges.filter(e => isXBorder(e, byId)).length;
     const open = m.nodes.filter(n => n.review && n.review.status !== 'resolved'), overdue = open.filter(n => reviewState(n.review) === 'overdue').length;
-    const zc = m.zones.filter(z => z.severity === 'critical').length;
-    const zones = m.zones.length ? T('meta.zones', { n: m.zones.length, c: zc }) : '';
+    const rz = m.zones.filter(z => z.kind !== 'trust'), zc = rz.filter(z => z.severity === 'critical').length;
+    const zones = rz.length ? T('meta.zones', { n: rz.length, c: zc }) : '';
     const reviews = open.length ? T('meta.review', { n: open.length, o: overdue }) : '';
-    $('#stage-meta').textContent = [T('meta.nodes', m.nodes.length), T('meta.edges', m.edges.length), m.groups.length ? T('meta.groups', m.groups.length) : '', costs, insecure ? T('meta.insecure', insecure) : '', xb ? T('meta.xborder', xb) : '', zones, reviews].filter(Boolean).join(' · ');
+    refreshFindings();
+    const nFind = FC.open.filter(f => f.source === 'rule').length;
+    $('#stage-meta').textContent = [T('meta.nodes', m.nodes.length), T('meta.edges', m.edges.length), m.groups.length ? T('meta.groups', m.groups.length) : '', costs, insecure ? T('meta.insecure', insecure) : '', xb ? T('meta.xborder', xb) : '', zones, reviews, nFind ? T('meta.findings', nFind) : ''].filter(Boolean).join(' · ');
     const t = $('#title');
     if (document.activeElement !== t) t.value = m.title;
     $('#empty').hidden = m.nodes.length > 0;
@@ -2082,8 +2451,9 @@
     // Equipos del diagrama (fuera de la vista Gobierno, que ya los muestra): al pulsar uno se filtra por él
     const teams = open && vc().emphasis !== 'owner' ? [...govTeams().values()] : [];
     const lay = open && vc().layers ? layerUsage() : [];
+    const tzs = open && vc().zones ? S.model.zones.filter(z => z.kind === 'trust') : [];
     const det = (k, head, rows) => `<details class="docbar-leg" data-k="${k}"${store.get(k, false) ? ' open' : ''}><summary>${esc(head)} · ${rows.length}</summary><ul>${rows.join('')}</ul></details>`;
-    $('#docbar-body').innerHTML = open ? `<dl>${d.info.map(([k, x]) => `<dt>${esc(k)}</dt><dd>${esc(x)}</dd>`).join('')}</dl>${types.length ? det('docbarLeg', T('leg.components'), types.map(r => `<li style="--c:${esc(r.color)}"><i></i>${esc(r.label)}</li>`)) : ''}${lay.length ? det('docbarLegL', T('leg.layersN'), lay.map(([k, ids]) => { const li = layerInfo(k); return `<li class="layer-row" data-layer="${esc(k)}" style="--c:${esc(li.color)}" title="${esc(T('layer.filter'))}"><i></i>${esc(li.label)}<b>${ids.length}</b></li>`; })) : ''}${vrows.length ? det('docbarLegV', `${T('leg.view')}: ${viewLabel(S.viewKey)}`, vrows) : ''}${teams.length ? det('docbarLegT', T('leg.teams'), teams.map(t => `<li data-gov="${esc(t.kind)}" data-k="${esc(t.key)}" style="--c:${esc(t.color)}" title="${esc(T('flt.pill'))}"><i></i>${esc([t.key, t.owners.join(', ')].filter(Boolean).join(' · '))} <small>(${t.ids.length})</small></li>`)) : ''}${dsRows.length ? det('docbarLegD', T('lin.leg'), dsRows) : ''}` : '';
+    $('#docbar-body').innerHTML = open ? `<dl>${d.info.map(([k, x]) => `<dt>${esc(k)}</dt><dd>${esc(x)}</dd>`).join('')}</dl>${types.length ? det('docbarLeg', T('leg.components'), types.map(r => `<li style="--c:${esc(r.color)}"><i></i>${esc(r.label)}</li>`)) : ''}${lay.length ? det('docbarLegL', T('leg.layersN'), lay.map(([k, ids]) => { const li = layerInfo(k); return `<li class="layer-row" data-layer="${esc(k)}" style="--c:${esc(li.color)}" title="${esc(T('layer.filter'))}"><i></i>${esc(li.label)}<b>${ids.length}</b></li>`; })) : ''}${tzs.length ? det('docbarLegZ', T('leg.trustN'), tzs.map(z => `<li class="sw" style="--c:var(--trust)"><i></i>${esc([z.label, z.trust].filter(Boolean).join(' · ') || T('trust.unnamed'))}</li>`)) : ''}${vrows.length ? det('docbarLegV', `${T('leg.view')}: ${viewLabel(S.viewKey)}`, vrows) : ''}${teams.length ? det('docbarLegT', T('leg.teams'), teams.map(t => `<li data-gov="${esc(t.kind)}" data-k="${esc(t.key)}" style="--c:${esc(t.color)}" title="${esc(T('flt.pill'))}"><i></i>${esc([t.key, t.owners.join(', ')].filter(Boolean).join(' · '))} <small>(${t.ids.length})</small></li>`)) : ''}${dsRows.length ? det('docbarLegD', T('lin.leg'), dsRows) : ''}` : '';
   }
   // Clic en un equipo de la leyenda: filtra por él (otro clic lo quita)
   $('#docbar-body').addEventListener('click', ev => {
@@ -2107,7 +2477,7 @@
   /* ---------- filtros ("lentes"): atenúan lo que no coincide ---------- */
   // Filtro: { data: [clase | '@insecure'], review: ['open','overdue'], provider, category, group, cost: ['cost'] }
   // Dentro de una sección las fichas suman (O); entre secciones se combinan (Y)
-  const FLT_SECTIONS = ['data', 'review', 'provider', 'category', 'group', 'cost', 'team', 'owner', 'steward', 'costCenter', 'region', 'layer'];
+  const FLT_SECTIONS = ['data', 'review', 'provider', 'category', 'group', 'cost', 'team', 'owner', 'steward', 'costCenter', 'region', 'layer', 'compliance'];
   const providerOf = n => { const p = String(n.icon || '').split('/')[0]; return n.icon && ICONS[p] ? p : 'generic'; };
   const topGroups = m => m.groups.filter(g => !g.parent || !m.groups.some(x => x.id === g.parent));
   // Sección «región»: una ficha por jurisdicción usada (según la región efectiva) y «sin región» si falta en algún nodo
@@ -2135,7 +2505,8 @@
       cost: [{ k: 'cost', label: T('flt.cost') }],
       ...Object.fromEntries(GOV_FIELDS.map(f => [f, govFilterOpts(m, f)])),
       region: regionOptions(m),
-      layer: layerOptions(m)
+      layer: layerOptions(m),
+      compliance: cmpOptions(m)
     };
   }
   // Fichas de dueño / equipo…: valores efectivos (heredados) usados, y «Sin asignar» (solo dueño y equipo) si a algún nodo le falta
@@ -2169,6 +2540,7 @@
       if (GOV_FIELDS.includes(s)) { const e = govOf(n, s).value; return v.some(k => (k === '@none' ? !e : k === e)); }
       if (s === 'region') return v.includes(jurOf(regionOf(n).value)?.key || '@none');
       if (s === 'layer') { const l = layerOf(n).value; return v.some(k => (k === '@none' ? !l : k === l)); }
+      if (s === 'compliance') return cmpMatch(n, v);
       return hasCost(n);
     });
   }
@@ -2383,16 +2755,17 @@
     S.model[kind === 'note' ? 'notes' : 'zones'].push({ id, ...o });
     changed(true);
     select({ kind, id });
-    toast(T(kind === 'note' ? 'toast.noteAdded' : 'toast.zoneAdded'));
+    toast(T(kind === 'note' ? 'toast.noteAdded' : o.kind === 'trust' ? 'toast.trustAdded' : 'toast.zoneAdded'));
   }
   const addNote = () => { const c = viewCenter(); addItem('note', { x: snap(c.x - 90), y: snap(c.y - 55), w: 180, h: 110, text: '', color: 'limon' }); editItemText('note', S.sel.id); };
   const addZone = () => { const c = viewCenter(); addItem('zone', { x: snap(c.x - 180), y: snap(c.y - 110), w: 360, h: 220, label: T('zone.new'), severity: 'medium' }); };
   // Caja alrededor de los nodos elegidos, con margen
-  function markZone() {
+  function markZone(kind) {
     const ns = selNodes();
     if (!ns.length) return;
     const pad = 36, x0 = Math.min(...ns.map(n => n.x)), y0 = Math.min(...ns.map(n => n.y)), x1 = Math.max(...ns.map(n => n.x + R.width.get(n.id))), y1 = Math.max(...ns.map(n => n.y + nodeBoxH(n)));
-    addItem('zone', { x: snap(x0 - pad), y: snap(y0 - pad - 20), w: snap(x1 - x0 + 2 * pad) + 20, h: snap(y1 - y0 + 2 * pad + 20) + 20, label: T('zone.new'), severity: 'high' });
+    const box = { x: snap(x0 - pad), y: snap(y0 - pad - 20), w: snap(x1 - x0 + 2 * pad) + 20, h: snap(y1 - y0 + 2 * pad + 20) + 20 };
+    addItem('zone', kind === 'trust' ? { ...box, label: '', kind: 'trust' } : { ...box, label: T('zone.new'), severity: 'high' });
   }
   function duplicateItem() {
     const s = itemSel(), k = s.kind === 'note' ? 'notes' : 'zones', o = S.model[k].find(x => x.id === s.id);
@@ -2742,7 +3115,7 @@
   const findVersion = id => S.model.versions.find(v => v.id === id);
   // Solo lo que se dibuja: sin versiones y con posiciones redondeadas
   const snapshotOf = m => {
-    const d = clone({ title: m.title, ...(m.direction ? { direction: m.direction } : {}), ...(m.routing ? { routing: m.routing } : {}), ...(m.layerNames ? { layerNames: m.layerNames } : {}), groups: m.groups, nodes: m.nodes, edges: m.edges, ...(m.notes?.length ? { notes: m.notes } : {}), ...(m.zones?.length ? { zones: m.zones } : {}) });
+    const d = clone({ title: m.title, ...(m.direction ? { direction: m.direction } : {}), ...(m.routing ? { routing: m.routing } : {}), ...(m.layerNames ? { layerNames: m.layerNames } : {}), ...(m.dismissed ? { dismissed: m.dismissed } : {}), groups: m.groups, nodes: m.nodes, edges: m.edges, ...(m.notes?.length ? { notes: m.notes } : {}), ...(m.zones?.length ? { zones: m.zones } : {}) });
     d.nodes.forEach(n => { n.x = Math.round(n.x); n.y = Math.round(n.y); });
     return d;
   };
@@ -2851,9 +3224,9 @@
 
   // Diferencias entre lo guardado (a) y el lienzo (b). La posición no cuenta como cambio.
   const DIFF_FIELDS = {
-    node: ['label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer'],
-    edge: ['label', 'style', 'route', 'both', 'color', 'data', 'encrypted', 'datasets', 'transferOk'],
-    group: ['label', 'icon', 'color', 'parent', 'kind', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer']
+    node: ['label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'exposure', 'backup', 'controls'],
+    edge: ['label', 'style', 'route', 'both', 'color', 'data', 'encrypted', 'datasets', 'transferOk', 'threats'],
+    group: ['label', 'icon', 'color', 'parent', 'kind', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'controls']
   };
   function diffModels(a, b) {
     const val = (f, x) => (f === 'style' ? x || 'sync' : x == null ? '' : typeof x === 'object' ? JSON.stringify(x) : String(x));
@@ -2993,7 +3366,7 @@
     if (!(d.count.a + d.count.r + d.count.c)) return `<p class="ver-sum">${esc(T('ver.same'))}</p>`;
     const FIELD = { label: 'insp.name', sub: 'insp.detail', type: 'insp.type', icon: 'insp.icon', group: 'insp.group', color: 'insp.color', badge: 'field.badge',
       cost: 'cost.label', costPeriod: 'cost.period', costYears: 'cost.yearsAria', desc: 'insp.desc', style: 'insp.style', parent: 'insp.parent',
-      data: 'data.label', encrypted: 'enc.label', route: 'insp.route', both: 'insp.dir', review: 'rev.label', kind: 'gkind.label' };
+      data: 'data.label', encrypted: 'enc.label', route: 'insp.route', both: 'insp.dir', review: 'rev.label', kind: 'gkind.label', exposure: 'sec.expo.label', backup: 'sec.backup.label', controls: 'cmp.title' };
     const fields = (fs, kind) => fs.map(f => T(kind === 'edge' && f === 'label' ? 'insp.label' : FIELD[f] || f).toLowerCase()).join(', ');
     const names = new Map([...S.compare.base.nodes, ...S.model.nodes].map(n => [n.id, n.label]));
     const edgeName = e => `${names.get(e.from) || e.from} ${e.both ? '↔' : '→'} ${names.get(e.to) || e.to}`;
@@ -3375,6 +3748,23 @@
       <div class="layer-names" title="${esc(T('layer.names.tip'))}"><span>${T('layer.names')}</span><div class="seg">${['medallion', 'zones'].map(k =>
         `<button data-lnames="${k}" class="${nm === k ? 'on' : ''}" title="${esc(T('layer.names.tip'))}">${esc(names(k))}</button>`).join('')}</div></div></div>`;
   };
+  /* ---------- STRIDE: sección del inspector de la conexión ---------- */
+  const strideField = e => {
+    const c = strideCtx(), info = crossInfo(e, c), nm = zs => (zs.length ? zs.map(z => `‹${esc(trustName(z))}›`).join(' + ') : esc(T('stride.outside')));
+    if (!info) { // ya no cruza: las decisiones guardadas se ven en solo lectura, con opción de borrarlas
+      const st = Object.entries(e.threats || {});
+      if (!st.length) return '';
+      return `<div class="field stride-box">${T('stride.label')}<span class="cost-hint">${T('stride.stored')}</span>${st.map(([k, d]) =>
+        `<div class="th-ro"><b class="th-badge">${k}</b><span>${esc(loc(STR.categories[k]?.label) || k)} · ${esc(T(`stride.st.${d.status}`))}${d.note ? ` — ${esc(d.note)}` : ''}</span></div>`).join('')}
+        <button class="btn small" data-th-clear="1">${T('stride.clear')}</button></div>`;
+    }
+    const ts = strideFor(e, c, info);
+    return `<div class="field stride-box">${T('stride.label')}<span class="cost-hint th-cross">${T('stride.crosses')} ${info.from.length ? nm(info.from) : nm([])} → ${nm(info.to)}</span>${ts.map(t => `
+      <div class="th-row" style="--sv:var(--sev-${t.severity})"><div class="th-head"><b class="th-badge" title="${esc(loc(STR.categories[t.cat].desc))}">${t.cat}</b><span class="th-title">${esc(t.title)}</span><span class="th-sev">${esc(sevLabel(t.severity))}</span></div>
+        <div class="seg th-seg">${['open', ...THREAT_ST].map(s => `<button data-th="${t.cat}" data-st="${s}" class="${t.status === s ? 'on' : ''}">${T(`stride.st.${s}`)}</button>`).join('')}</div>
+        ${t.status !== 'open' ? `<input class="th-note" data-th-note="${t.cat}" value="${esc(t.note)}" placeholder="${esc(T('stride.note.ph'))}" autocomplete="off">` : ''}
+        <span class="cost-hint">${esc(t.why)}</span></div>`).join('')}</div>`;
+  };
   const encField = e => {
     const cur = e.encrypted === true ? 'yes' : e.encrypted === false ? 'no' : '';
     const byId = id => S.model.nodes.find(n => n.id === id);
@@ -3479,10 +3869,12 @@
         ${govField(t, 'multi')}
         ${regionField(t)}
         ${layerField(t)}
+        ${cmpField(t, 'multi')}
         ${priced.length ? `<p class="cost-sum">${T('insp.selCost')} <b>≈ ${money(round2(monthlyTotal(t)))}${T('cost.mo')}</b><span>${T('insp.withCost', { a: priced.length, b: t.length })}</span></p>` : ''}
         <p class="note">${T('insp.multiNote')}</p>
         <div class="insp-actions">
           <button class="btn" data-act="mkzone">⚠ ${T('zone.mark')}</button>
+          <button class="btn" data-act="mktrust">${T('trust.mark')}</button>
           <button class="btn" data-act="dup">${T('insp.duplicate')}</button>
           <button class="btn danger" data-act="delete">${T('insp.deleteN', t.length)}</button>
         </div>`;
@@ -3506,6 +3898,8 @@
         ${govField(t, 'node')}
         ${regionField(t)}
         ${layerField(t)}
+        ${secField(t)}
+        ${cmpField(t, 'node')}
         ${reviewField(t)}
         <label>${T('insp.desc')}<textarea data-field="desc" rows="3" placeholder="${esc(T('insp.desc.ph'))}">${esc(t.desc || '')}</textarea></label>
         <div class="field">${T('insp.reach')}<div class="seg">${modes.map(([k, l]) => `<button data-reach="${k}" class="${S.reach === k ? 'on' : ''}">${l}</button>`).join('')}</div></div>
@@ -3532,6 +3926,7 @@
         ${dataField(t, true)}
         ${dsField(t)}
         ${xferField(t)}
+        ${strideField(t)}
         <div class="field">${T('insp.color')}${swatches(t.color)}</div>
         <div class="conns"><div class="conn-title">${T('insp.ends')}</div>
           <button class="conn" data-goto="${esc(a.id)}" style="--c:${nodeColor(a)}"><span class="dot"></span>${esc(a.label)}<em>${T('insp.source')}</em></button>
@@ -3550,10 +3945,13 @@
           <button class="btn danger" data-act="delete">${T('insp.delete')}</button>
         </div>`;
     } else if (kind === 'zone') {
-      html = head(`var(--sev-${t.severity})`, '', T('insp.zone'), t.label || T('zone.new')) + `
-        <label>${T('zone.label')}<input data-field="label" value="${esc(t.label || '')}" placeholder="${esc(T('zone.label.ph'))}"></label>
-        <div class="field">${T('zone.severity')}<div class="seg">${SEVERITY.map(k => `<button data-sev="${k}" class="sev-${k}${t.severity === k ? ' on' : ''}">${esc(sevLabel(k))}</button>`).join('')}</div></div>
-        <label>${T('insp.desc')}<textarea data-field="desc" rows="3" placeholder="${esc(T('zone.desc.ph'))}">${esc(t.desc || '')}</textarea></label>
+      const tr = t.kind === 'trust';
+      html = head(tr ? 'var(--trust)' : `var(--sev-${t.severity})`, '', T(tr ? 'insp.trust' : 'insp.zone'), t.label || (tr ? t.trust : '') || T(tr ? 'trust.new' : 'zone.new')) + `
+        <div class="field">${T('zone.kind')}<div class="seg">${['risk', 'trust'].map(k => `<button data-zkind="${k}" class="${(tr ? 'trust' : 'risk') === k ? 'on' : ''}">${T(`zone.kind.${k}`)}</button>`).join('')}</div></div>
+        <label>${T('zone.label')}<input data-field="label" value="${esc(t.label || '')}" placeholder="${esc(T(tr ? 'trust.label.ph' : 'zone.label.ph'))}"></label>
+        ${tr ? `<label>${T('trust.level')}<input data-field="trust" list="trust-levels" value="${esc(t.trust || '')}" placeholder="${esc(T('trust.level.ph'))}" autocomplete="off"><datalist id="trust-levels">${['Internet', 'DMZ', 'Internal', 'Restricted'].map(o => `<option value="${o}">`).join('')}</datalist></label>`
+          : `<div class="field">${T('zone.severity')}<div class="seg">${SEVERITY.map(k => `<button data-sev="${k}" class="sev-${k}${t.severity === k ? ' on' : ''}">${esc(sevLabel(k))}</button>`).join('')}</div></div>`}
+        <label>${T('insp.desc')}<textarea data-field="desc" rows="3" placeholder="${esc(T(tr ? 'trust.desc.ph' : 'zone.desc.ph'))}">${esc(t.desc || '')}</textarea></label>
         <div class="insp-actions">
           <button class="btn" data-act="dup">${T('insp.duplicate')}</button>
           <button class="btn danger" data-act="delete">${T('insp.delete')}</button>
@@ -3573,6 +3971,7 @@
         <label>${T('insp.parent')}<select data-field="parent"><option value="">${T('insp.none')}</option>${m.groups.filter(g => !blocked.has(g.id)).map(g => `<option value="${esc(g.id)}"${g.id === t.parent ? ' selected' : ''}>${esc(g.label)}</option>`).join('')}</select></label>
         <div class="field">${T('insp.color')}${swatches(t.color)}</div>
         ${govField(t, 'group')}
+        ${cmpField(t, 'group')}
         <div class="insp-actions"><button class="btn danger" data-act="delete">${T('insp.deleteGroup')}</button></div>`;
     }
 
@@ -3678,6 +4077,15 @@
     (Array.isArray(t) ? t : [t]).forEach(x => { if (v) x[f.dataset.gov] = v; else delete x[f.dataset.gov]; });
     changed(true);
   });
+  /* ---------- STRIDE: nota de cada decisión ---------- */
+  inspector.addEventListener('focusin', ev => { if (ev.target.matches('input[data-th-note]')) beginEdit(); });
+  inspector.addEventListener('input', ev => {
+    const f = ev.target, t = selTarget(), d = f.matches('input[data-th-note]') && t && !Array.isArray(t) && t.threats?.[f.dataset.thNote];
+    if (!d) return;
+    markEdit();
+    if (f.value.trim()) d.note = f.value; else delete d.note;
+    changed(true);
+  });
   inspector.addEventListener('input', ev => { if (ev.target.matches('input[data-field], textarea[data-field]')) onField(ev.target); });
   inspector.addEventListener('change', ev => { if (ev.target.matches('select[data-field]')) onField(ev.target); });
   // Añadir conjuntos de datos a la conexión elegida (Intro o coma; también al elegir de la lista o salir del campo)
@@ -3735,8 +4143,34 @@
       pushHistory();
       (Array.isArray(t) ? t : [t]).forEach(x => { if (b.dataset.layer && DL[b.dataset.layer]) x.layer = b.dataset.layer; else delete x.layer; });
       changed(true); renderInspector();
+    } else if ((b.dataset.expo != null || b.dataset.bak != null) && t && !Array.isArray(t)) {
+      pushHistory();
+      if (b.dataset.expo != null) { if (b.dataset.expo) t.exposure = b.dataset.expo; else delete t.exposure; }
+      else if (b.dataset.bak) t.backup = b.dataset.bak === 'yes'; else delete t.backup;
+      changed(true); renderInspector();
+    } else if (b.dataset.cst && b.dataset.ctl && t) {
+      ctlEdit('set', b.dataset.ctl, b.dataset.cst);
+    } else if (b.dataset.ctlRm && t) {
+      ctlEdit('rm', b.dataset.ctlRm);
+    } else if (b.dataset.ctlAdd && t) {
+      ctlEdit('add', b.dataset.ctlAdd);
+    } else if (b.dataset.cmp === 'matrix') {
+      openCompMatrix();
     } else if (b.dataset.lnames && t) {
       setLayerNames(b.dataset.lnames);
+    } else if (b.dataset.th && t && !Array.isArray(t) && S.sel?.kind === 'edge') {
+      pushHistory();
+      setThreat(t, b.dataset.th, b.dataset.st);
+      changed(true); renderInspector();
+    } else if (b.dataset.thClear != null && t && !Array.isArray(t)) {
+      pushHistory();
+      delete t.threats;
+      changed(true); renderInspector();
+    } else if (b.dataset.zkind && t && !Array.isArray(t) && S.sel?.kind === 'zone') {
+      pushHistory();
+      if (b.dataset.zkind === 'trust') { t.kind = 'trust'; delete t.severity; if (t.label === T('zone.new')) t.label = ''; }
+      else { delete t.kind; delete t.trust; t.severity = SEVERITY.includes(t.severity) ? t.severity : 'medium'; if (!t.label) t.label = T('zone.new'); }
+      changed(true); renderInspector();
     } else if (b.dataset.dir != null && t && !Array.isArray(t)) {
       pushHistory();
       if (b.dataset.dir) t.both = true; else delete t.both;
@@ -3774,10 +4208,104 @@
       case 'connect': startConnect(t.id); break;
       case 'dup': duplicateSelection(); break;
       case 'mkzone': markZone(); break;
+      case 'mktrust': markZone('trust'); break;
       case 'delete': deleteSelection(); break;
       case 'reverse': pushHistory(); [t.from, t.to] = [t.to, t.from]; changed(true); renderInspector(); break;
     }
   });
+
+
+  /* ---------- cumplimiento: sección del inspector y matriz ---------- */
+  // Sección plegable «Cumplimiento» (nodos, grupos y varios a la vez): controles efectivos con su estado, buscador para añadir y sugerencias.
+  // Estado por defecto al añadir: «Brecha» (no se da nada por cumplido hasta confirmarlo)
+  const cmpField = (items, kind) => {
+    if (!Object.keys(FWS).length) return '';
+    const list = [].concat(items), one = list.length === 1 && list[0], effs = list.map(x => controlsOf(x));
+    const keys = sortCtl([...new Set(effs.flatMap(e => [...e.keys()]))]), open = store.get(`govOpen.cmp-${kind}`, keys.length > 0);
+    const rows = keys.map(k => {
+      const c = ctlInfo(k), sts = effs.map(e => e.get(k)?.status), st = sts.every(s => s === sts[0]) ? sts[0] : null, have = sts.filter(Boolean).length;
+      const own = list.some(x => x.controls?.[k]), from = one && effs[0].get(k)?.from, gl = from ? groupById(from)?.label || from : '';
+      const note = [gl ? T('cmp.inh', gl) : '', have < list.length ? T('cmp.some', { a: have, b: list.length }) : '', st === null && have === list.length ? T('cmp.mixed') : ''].filter(Boolean).join(' · ');
+      return `<div class="cmp-row${gl && !own ? ' inh' : ''}"><div class="cmp-top"><span class="cmp-fw">${esc(c.short)}</span><span class="cmp-id">${esc(c.id)}</span><span class="cmp-t" title="${esc(c.title)}">${esc(c.title)}</span>
+        ${own ? `<button class="cmp-x" data-ctl-rm="${esc(k)}" title="${esc(T(from ? 'cmp.rmLocal' : 'cmp.rm'))}" aria-label="${esc(T(from ? 'cmp.rmLocal' : 'cmp.rm'))}">×</button>` : ''}</div>
+        <div class="seg cmp-seg">${CTL_STATUS.map(s => `<button data-ctl="${esc(k)}" data-cst="${s}" class="cst-${s}${st === s ? ' on' : ''}" style="--cc:${CTL_COLOR[s]}"${gl && !own ? ` title="${esc(T('cmp.override'))}"` : ''}>${esc(T(`cmp.${s}`))}</button>`).join('')}</div>
+        ${note ? `<span class="cost-hint">${esc(note)}</span>` : ''}</div>`;
+    }).join('');
+    const sug = ctlSuggest(list);
+    return `<details class="gov-box cmp-box" data-gov-open="cmp-${kind}"${open ? ' open' : ''}><summary>${T('cmp.title')}${keys.length ? ` · ${keys.length}` : ''}</summary>
+      ${rows || `<p class="cost-hint">${T('cmp.none')}</p>`}
+      <label>${T('cmp.add')}<input id="ctl-add" list="dl-ctl" placeholder="${esc(T('cmp.add.ph'))}" autocomplete="off"><datalist id="dl-ctl">${CTL_ALL.map(k => { const c = ctlInfo(k); return `<option value="${esc(`${k} — ${c.title}`)}" label="${esc(`${c.short} · ${c.title}`)}"></option>`; }).join('')}</datalist></label>
+      ${sug.length ? `<div class="cmp-sug"><span class="cost-hint" title="${esc(T('cmp.sugg.tip'))}">${T('cmp.sugg')}</span>${sug.map(k => { const c = ctlInfo(k); return `<button class="cmp-chip" data-ctl-add="${esc(k)}" title="${esc(`${c.title} · ${T('cmp.sugg.tip')}`)}">+ ${esc(c.short)} ${esc(c.id)}</button>`; }).join('')}</div>` : ''}
+      <button class="btn small cmp-open" data-cmp="matrix">${T('cmp.matrix')}</button></details>`;
+  };
+  // Acciones del inspector (varios a la vez): estado de un control (crea un valor propio que sustituye al heredado), quitar el propio y añadir
+  function ctlEdit(op, key, status) {
+    const t = selTarget();
+    if (!t) return;
+    const list = [].concat(t);
+    pushHistory();
+    list.forEach(x => {
+      if (op === 'set') (x.controls ||= {})[key] = status;
+      else if (op === 'add') { if (!controlsOf(x).has(key)) (x.controls ||= {})[key] = 'gap'; }
+      else if (op === 'rm' && x.controls) { delete x.controls[key]; if (!Object.keys(x.controls).length) delete x.controls; }
+    });
+    changed(true); renderInspector();
+    if (op === 'add') $('#ctl-add')?.focus();
+  }
+  function ctlAddFromInput(inp) {
+    const v = inp.value.trim();
+    if (!v) return;
+    const k = resolveCtl(v);
+    if (!k) return toast(T('cmp.unknown'), 3200);
+    ctlEdit('add', k);
+  }
+  inspector.addEventListener('keydown', ev => { if (ev.target.id === 'ctl-add' && ev.key === 'Enter') { ev.preventDefault(); ctlAddFromInput(ev.target); } });
+  inspector.addEventListener('change', ev => { if (ev.target.id === 'ctl-add') ctlAddFromInput(ev.target); });
+  // Elegir una opción de la lista lanza `input` sin texto escrito (insertReplacementText o sin inputType)
+  inspector.addEventListener('input', ev => { if (ev.target.id === 'ctl-add' && (!ev.inputType || ev.inputType === 'insertReplacementText') && ev.target.value.includes(' — ')) ctlAddFromInput(ev.target); });
+
+  // Matriz: filas = componentes (con controles o datos sensibles), columnas = controles en uso agrupados por marco
+  function openCompMatrix() {
+    const prev = document.activeElement, back = document.createElement('div'), id = `cm${Date.now()}`;
+    let fw = '';
+    back.className = 'cf-back';
+    back.innerHTML = `<div class="cf cm" role="dialog" aria-modal="true" aria-labelledby="${id}t">
+      <div class="cm-head"><h3 id="${id}t">${esc(T('cmp.matrix'))}</h3>
+        <label class="cm-fw">${esc(T('cmp.mx.fw'))}<select data-cm="fw"></select></label>
+        <span class="cm-btns"><button class="btn small" data-cm="csv">${esc(T('cmp.mx.csv'))}</button><button class="btn small" data-cm="long">${esc(T('cmp.mx.csvLong'))}</button><button class="btn small" data-cm="close">${esc(T('cmp.mx.close'))}</button></span></div>
+      <div class="cm-sum"></div><div class="cm-scroll"></div><p class="cm-note">${esc(T('cmp.mx.note'))}</p></div>`;
+    const sel = back.querySelector('[data-cm="fw"]'), sum = back.querySelector('.cm-sum'), box = back.querySelector('.cm-scroll');
+    const draw = () => {
+      const all = cmpModel(S.model), fws = cmpFrameworks(all.keys);
+      if (fw && !fws.includes(fw)) fw = '';
+      sel.innerHTML = `<option value="">${esc(T('cmp.mx.all'))}</option>${fws.map(f => `<option value="${esc(f)}"${f === fw ? ' selected' : ''}>${esc(ctlInfo(`${f}:x`).short)}</option>`).join('')}`;
+      const { rows, keys, stats } = fw ? cmpModel(S.model, fw) : all;
+      if (!keys.length) { sum.innerHTML = ''; box.innerHTML = `<p class="cm-empty">${esc(T('cmp.mx.empty'))}</p>`; return; }
+      const tot = f => keys.filter(k => ctlSplit(k)[0] === f).reduce((a, k) => { const s = stats.get(k); CTL_STATUS.concat('unmapped').forEach(x => { a[x] += s[x]; }); return a; }, { met: 0, partial: 0, gap: 0, na: 0, unmapped: 0 });
+      sum.innerHTML = cmpFrameworks(keys).map(f => { const t = tot(f); return `<div class="cm-card"><b>${esc(ctlInfo(`${f}:x`).short)}</b>${[...CTL_STATUS.slice(0, 3), 'unmapped'].map(s => `<span class="cm-n cst-${s}" style="--cc:${CTL_COLOR[s] || 'var(--border)'}" title="${esc(T(`cmp.${s}`))}"><i>${s === 'unmapped' ? '○' : CTL_SYM[s]}</i>${t[s]}</span>`).join('')}</div>`; }).join('');
+      const fwRow = cmpFrameworks(keys).map(f => `<th colspan="${keys.filter(k => ctlSplit(k)[0] === f).length}" class="cm-fwh">${esc(ctlInfo(`${f}:x`).short)}</th>`).join('');
+      const head = keys.map(k => { const c = ctlInfo(k); return `<th class="cm-ch" title="${esc(`${c.short} ${c.id}${c.title ? ` — ${c.title}` : ''}`)}"><b>${esc(c.id)}</b><span>${esc(c.title)}</span></th>`; }).join('');
+      const body = rows.map(r => `<tr><th class="cm-rh" title="${esc(`${r.n.label}${cmpGroupName(r.n) ? ` · ${cmpGroupName(r.n)}` : ''}`)}">${esc(r.n.label)}${cmpGroupName(r.n) ? `<small>${esc(cmpGroupName(r.n))}</small>` : ''}</th>${keys.map(k => {
+        const e = r.eff.get(k), c = ctlInfo(k);
+        return e ? `<td class="cm-c cst-${e.status}" style="--cc:${CTL_COLOR[e.status]}" title="${esc(`${r.n.label} · ${c.short} ${c.id}: ${T(`cmp.${e.status}`)}${e.from ? ` (${T('cmp.inh', groupById(e.from)?.label || e.from)})` : ''}`)}">${CTL_SYM[e.status]}</td>` : '<td class="cm-c"></td>';
+      }).join('')}</tr>`).join('');
+      const cov = keys.map(k => { const s = stats.get(k), d = rows.length - s.na; return `<td class="cm-cov" title="${esc(`${T('cmp.met')} ${s.met} · ${T('cmp.partial')} ${s.partial} · ${T('cmp.gap')} ${s.gap} · ${T('cmp.na')} ${s.na} · ${T('cmp.mx.unmapped')} ${s.unmapped}`)}">${d > 0 ? Math.round(s.met / d * 100) + '%' : '—'}</td>`; }).join('');
+      box.innerHTML = `<table class="cm-table"><thead><tr><th class="cm-rh cm-corner" rowspan="2">${esc(T('cmp.csv.comp'))}</th>${fwRow}</tr><tr>${head}</tr></thead><tbody>${body}</tbody><tfoot><tr><th class="cm-rh">${esc(T('cmp.mx.cov'))}</th>${cov}</tr></tfoot></table>`;
+    };
+    const close = () => { document.removeEventListener('keydown', key, true); back.remove(); prev?.focus?.(); };
+    const key = ev => { if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); close(); } };
+    sel.addEventListener('change', () => { fw = sel.value; draw(); });
+    back.addEventListener('mousedown', ev => { if (ev.target === back) close(); });
+    back.addEventListener('click', ev => {
+      const b = ev.target.closest('[data-cm]');
+      if (!b || b.dataset.cm === 'fw') return;
+      if (b.dataset.cm === 'close') close(); else exportCompliance(b.dataset.cm === 'long' ? 'long' : 'wide', fw);
+    });
+    document.addEventListener('keydown', key, true);
+    draw();
+    document.body.appendChild(back);
+    back.querySelector('[data-cm="close"]').focus();
+  }
 
   /* ---------- barra lateral ---------- */
   const chip = (attrs, color, iconHtml, label, isLogo) =>
@@ -3861,6 +4389,7 @@
     $$('.tab').forEach(x => x.classList.toggle('on', x === t));
     $$('.pane').forEach(p => p.classList.toggle('on', p.dataset.pane === t.dataset.tab));
     store.set('tab', t.dataset.tab);
+    if (t.dataset.tab === 'review') renderFindings();
   }));
 
   function codeBox(box, apply) {
@@ -4023,6 +4552,7 @@
     renderVersions();
     applyCompare();
     updateMeta();
+    renderFindings();
     writeEditors(null, true);
   }
   function toggleLang() {
@@ -4088,7 +4618,7 @@
     const b = ev.target.closest('[data-export]');
     if (!b) return;
     exportMenu.open = false;
-    const f = { svg: exportSVG, png: exportPNG, 'svg-all': () => exportViews('svg'), 'png-all': () => exportViews('png'), json: exportJSON, copy: copyJSON, share: shareEncrypted }[b.dataset.export];
+    const f = { svg: exportSVG, png: exportPNG, 'svg-all': () => exportViews('svg'), 'png-all': () => exportViews('png'), json: exportJSON, copy: copyJSON, share: shareEncrypted, stride: exportThreats, compliance: openCompMatrix }[b.dataset.export];
     if (f) f(); else exportOther(b.dataset.export);
   });
 
@@ -4246,7 +4776,7 @@
       } };
     }));
     // Zonas de riesgo, de la más grave a la más leve
-    const zs = [...m.zones].sort((a, b) => SEVERITY.indexOf(b.severity) - SEVERITY.indexOf(a.severity)).slice(0, 8);
+    const zs = m.zones.filter(z => z.kind !== 'trust').sort((a, b) => SEVERITY.indexOf(b.severity) - SEVERITY.indexOf(a.severity)).slice(0, 8);
     if (v.zones) col(T('leg.zones'), zs.map(z => {
       const txt = fitText(`${sevLabel(z.severity)}${z.label ? ` · ${z.label}` : ''}`, '400 12px', 260);
       return { w: 30 + textW(txt, '400 12px'), draw: (x, y) => {
@@ -4254,6 +4784,16 @@
         el('rect', { class: 'zone-tint', x, y: y - 6, width: 20, height: 14, rx: 3 }, zg);
         el('rect', { class: 'zone-hatch', x, y: y - 6, width: 20, height: 14, rx: 3, fill: `url(#hatch-${z.severity})` }, zg);
         el('rect', { class: 'zone-line', x, y: y - 6, width: 20, height: 14, rx: 3, 'stroke-dasharray': '4 3' }, zg);
+        textRow(x + 30, y, txt);
+      } };
+    }));
+    // Fronteras de confianza (STRIDE), aparte de las zonas de riesgo
+    if (v.zones) col(T('leg.trust'), m.zones.filter(z => z.kind === 'trust').slice(0, 8).map(z => {
+      const txt = fitText([z.label, z.trust].filter(Boolean).join(' · ') || T('trust.unnamed'), '400 12px', 260);
+      return { w: 30 + textW(txt, '400 12px'), draw: (x, y) => {
+        const zg = el('g', { class: 'zone zone-trust' }, g);
+        el('rect', { class: 'zone-tint', x, y: y - 6, width: 20, height: 14, rx: 3 }, zg);
+        el('rect', { class: 'zone-line', x, y: y - 6, width: 20, height: 14, rx: 3, 'stroke-dasharray': '6 3' }, zg);
         textRow(x + 30, y, txt);
       } };
     }));
@@ -4782,6 +5322,209 @@
     }
   });
 
+  /* ---------- panel «Revisión»: hallazgos de todas las fuentes, descartes y marcadores en el lienzo ---------- */
+  // FC = { all, open, dismissed, byId, fresh }: se recalcula al dibujar y al guardar (updateMeta); el panel solo se pinta si su pestaña está a la vista
+  let FC = { all: [], open: [], dismissed: [], byId: new Map(), fresh: false };
+  const FP = { sev: '', src: '', dis: false }; // filtros del panel: gravedad, fuente y «mostrar descartados»
+  const SRC_ORDER = ['rule', 'compliance', 'stride', 'review'];
+  const srcRank = k => (SRC_ORDER.includes(k) ? SRC_ORDER.indexOf(k) : SRC_ORDER.length);
+  const srcLabel = k => { const key = `find.src.${k}`; const t = T(key); return t === key || !t ? k : t; };
+  const sevRank = k => SEVERITY.indexOf(k);
+  const findingsOf = m => {
+    const dm = m.dismissed || {};
+    return allFindings(m).map(f => { const d = f.source !== 'review' && dm[f.id]; return d ? { ...f, dismissed: { ...d } } : { ...f }; })
+      .sort((a, b) => srcRank(a.source) - srcRank(b.source) || sevRank(b.severity) - sevRank(a.severity) || String(a.title).localeCompare(String(b.title)));
+  };
+  function refreshFindings(fromRender = false) {
+    if (!fromRender && FC.fresh) { FC.fresh = false; return; } // render() ya lo calculó para este mismo updateMeta
+    const all = S.model ? findingsOf(S.model) : [];
+    FC = { all, open: all.filter(f => !f.dismissed), dismissed: all.filter(f => f.dismissed), byId: new Map(all.map(f => [f.id, f])), fresh: fromRender };
+    syncSecMarkers();
+    const worst = FC.open.reduce((w, f) => (sevRank(f.severity) > sevRank(w) ? f.severity : w), 'low'), bd = $('#review-badge');
+    if (bd) { bd.hidden = !FC.open.length; bd.textContent = FC.open.length > 99 ? '99+' : FC.open.length; bd.style.setProperty('--b', `var(--sev-${worst})`); bd.title = T('find.badge', FC.open.length); }
+    renderFindings();
+  }
+  // Pastilla «⚠ n» arriba a la derecha de cada nodo con hallazgos abiertos de reglas (solo se ve en la vista Seguridad); evita la insignia
+  function syncSecMarkers() {
+    const per = new Map();
+    FC.open.forEach(f => { if (f.source === 'rule' && f.target.kind === 'node') { const p = per.get(f.target.id) || { n: 0, sev: 'low', t: [] }; p.n++; p.t.push(f.title); if (sevRank(f.severity) > sevRank(p.sev)) p.sev = f.severity; per.set(f.target.id, p); } });
+    S.model?.nodes.forEach(n => {
+      const g = R.nodes.get(n.id), body = g?.querySelector('.node-body'), cur = body?.querySelector(':scope > .node-sec'), p = per.get(n.id);
+      if (!body) return;
+      if (!p) return void cur?.remove();
+      const key = `${p.sev}|${p.n}|${R.width.get(n.id)}|${n.badge ?? ''}`;
+      if (cur?.dataset.k === key) return;
+      cur?.remove();
+      const w = R.width.get(n.id), txt = `⚠ ${p.n}`, pw = Math.max(30, Math.ceil(textW(txt, FONT.badge) + 12));
+      const bw = n.badge != null && n.badge !== '' ? Math.max(22, textW(n.badge, FONT.badge) + 12) : 0;
+      const x = bw ? w - 14 - bw / 2 - 5 - pw : w - 6 - pw;
+      const sg = el('g', { class: `node-sec sev-${p.sev}`, transform: `translate(${x} 0)`, 'data-k': key }, body);
+      el('title', null, sg).textContent = p.t.join('\n');
+      el('rect', { y: -9, width: pw, height: 18, rx: 9 }, sg);
+      el('text', { x: pw / 2, y: 4, 'text-anchor': 'middle' }, sg).textContent = txt;
+    });
+  }
+  const findingTarget = t => {
+    const m = S.model;
+    if (t.kind === 'node') return m.nodes.find(n => n.id === t.id);
+    if (t.kind === 'edge') return m.edges.find(e => e.id === t.id);
+    if (t.kind === 'group') return m.groups.find(g => g.id === t.id);
+    if (t.kind === 'zone') return m.zones.find(z => z.id === t.id);
+    return null;
+  };
+  const findingTargetLabel = t => {
+    const o = findingTarget(t), m = S.model;
+    if (!o) return t.id;
+    if (t.kind === 'edge') return `${m.nodes.find(n => n.id === o.from)?.label || o.from} ${o.both ? '↔' : '→'} ${m.nodes.find(n => n.id === o.to)?.label || o.to}`;
+    return t.kind === 'zone' ? o.label || T('zone.new') : o.label;
+  };
+  // Selecciona el objetivo y encuadra la vista sobre él
+  function goToFinding(id) {
+    const f = FC.byId.get(id), o = f && findingTarget(f.target);
+    if (!o) return;
+    const k = f.target.kind;
+    select({ kind: k, id: o.id });
+    if (!S.sel) return toast(T('view.hiddenHere'));
+    if (k === 'node') fitBox({ x: o.x, y: o.y, w: R.width.get(o.id) || nodeWidth(o), h: H }, 1);
+    else if (k === 'edge') {
+      const a = S.model.nodes.find(n => n.id === o.from), b = S.model.nodes.find(n => n.id === o.to);
+      if (a && b) { const x0 = Math.min(a.x, b.x), y0 = Math.min(a.y, b.y); fitBox({ x: x0, y: y0, w: Math.max(a.x + R.width.get(a.id), b.x + R.width.get(b.id)) - x0, h: Math.max(a.y, b.y) + H - y0 }, 1); }
+    } else if (k === 'group') { const bx = R.gbox.get(o.id); if (bx) fitBox({ x: bx.x, y: bx.y, w: bx.w, h: bx.h }, 1); }
+    else if (k === 'zone') fitBox({ x: o.x, y: o.y, w: o.w, h: o.h }, 1);
+  }
+  function dismissFinding(id, reason = '') {
+    const f = FC.byId.get(id) || findingsOf(S.model).find(x => x.id === id);
+    if (!f || f.source === 'review' || !S.model) return false;
+    pushHistory();
+    const by = S.model.meta?.author || store.get('reviewer', '');
+    S.model.dismissed = { ...(S.model.dismissed || {}), [id]: { reason: String(reason ?? '').trim().slice(0, 300), ...(by ? { by } : {}), date: today() } };
+    changed(false); refreshFindings(true); FC.fresh = false;
+    return true;
+  }
+  function restoreFinding(id) {
+    if (!S.model?.dismissed?.[id]) return false;
+    pushHistory();
+    delete S.model.dismissed[id];
+    if (!Object.keys(S.model.dismissed).length) delete S.model.dismissed;
+    changed(false); refreshFindings(true); FC.fresh = false;
+    return true;
+  }
+  const apiFindings = (opts = {}) => {
+    const all = findingsOf(S.model), list = opts.dismissed === false ? all.filter(f => !f.dismissed) : opts.dismissed === true ? all.filter(f => f.dismissed) : all;
+    return clone(list);
+  };
+  // Cuadro con un campo de texto (motivo): Promise<string | null>; Esc cancela, Enter acepta
+  function reasonBox({ title, text, placeholder = '', ok = 'OK', cancel = 'Cancel' }) {
+    return new Promise(done => {
+      const prev = document.activeElement, id = `cf${Date.now()}`;
+      const back = document.createElement('div');
+      back.className = 'cf-back';
+      back.innerHTML = `<div class="cf" role="dialog" aria-modal="true" aria-labelledby="${id}t" aria-describedby="${id}d">
+        <h3 id="${id}t">${esc(title)}</h3>
+        <div id="${id}d">${text ? `<p>${esc(text)}</p>` : ''}</div>
+        <input class="cf-type" type="text" maxlength="300" placeholder="${esc(placeholder)}" aria-labelledby="${id}t" autocomplete="off">
+        <div class="cf-actions"><button class="btn" data-cf="no">${esc(cancel)}</button><button class="btn primary" data-cf="ok">${esc(ok)}</button></div></div>`;
+      const input = back.querySelector('input');
+      const close = r => { document.removeEventListener('keydown', key, true); back.remove(); prev?.focus?.(); done(r ? input.value.trim() : null); };
+      const key = ev => {
+        if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); close(false); }
+        else if (ev.key === 'Enter') { ev.preventDefault(); ev.stopPropagation(); close(document.activeElement?.dataset?.cf !== 'no'); }
+        else if (ev.key === 'Tab') { ev.preventDefault(); const b = [input, ...back.querySelectorAll('button')]; b[(b.indexOf(document.activeElement) + (ev.shiftKey ? b.length - 1 : 1)) % b.length].focus(); }
+      };
+      back.addEventListener('mousedown', ev => { if (ev.target === back) close(false); });
+      back.addEventListener('click', ev => { const b = ev.target.closest('[data-cf]'); if (b) close(b.dataset.cf === 'ok'); });
+      document.addEventListener('keydown', key, true);
+      document.body.appendChild(back);
+      input.focus();
+    });
+  }
+  function renderFindings() {
+    const box = $('#review-panel');
+    if (!box || !S.model || !$('.pane[data-pane="review"]')?.classList.contains('on')) return;
+    // Los chips cuentan los abiertos; un filtro que ya no tiene hallazgos se suelta solo
+    const sevN = k => FC.open.filter(f => f.severity === k).length, srcs = [...new Set(FC.all.map(f => f.source))].sort((a, b) => srcRank(a) - srcRank(b));
+    if (FP.sev && !sevN(FP.sev)) FP.sev = '';
+    if (FP.src && !srcs.includes(FP.src)) FP.src = '';
+    if (FP.dis && !FC.dismissed.length) FP.dis = false;
+    const list = (FP.dis ? FC.all : FC.open).filter(f => (!FP.sev || f.severity === FP.sev) && (!FP.src || f.source === FP.src));
+    const chip = (attr, val, on, color, label, n) => `<button class="fnd-chip${on ? ' on' : ''}" ${attr}="${esc(val)}" aria-pressed="${on}" style="--s:${color}">${esc(label)} <b>${n}</b></button>`;
+    const sevChips = SEVERITY.slice().reverse().map(k => chip('data-f-sev', k, FP.sev === k, `var(--sev-${k})`, sevLabel(k), sevN(k))).join('');
+    const srcChips = srcs.length > 1 ? srcs.map(k => chip('data-f-src', k, FP.src === k, 'var(--accent)', srcLabel(k), FC.open.filter(f => f.source === k).length)).join('') : '';
+    const card = f => {
+      const o = findingTarget(f.target), node = f.target.kind === 'node' && o, d = f.dismissed;
+      return `<div class="fnd${d ? ' dis' : ''}" style="--s:var(--sev-${f.severity})" data-fid="${esc(f.id)}">
+        <div class="fnd-head"><span class="fnd-sev">${esc(sevLabel(f.severity))}</span><span class="fnd-title">${esc(f.title)}</span></div>
+        ${o ? `<button class="fnd-target" data-f-go="${esc(f.id)}" title="${esc(T('find.go'))}">${esc(T(`find.kind.${f.target.kind}`))}: ${esc(findingTargetLabel(f.target))}</button>` : ''}
+        ${f.detail ? `<div class="fnd-detail">${esc(f.detail)}</div>` : ''}
+        ${f.fix ? `<div class="fnd-fix">${esc(f.fix)}</div>` : ''}
+        ${d ? `<div class="fnd-reason">${esc(T('find.dismissedBy', { reason: d.reason || T('find.noReason'), date: d.date ? fmtDay(d.date) : '', by: d.by || '' }))}</div>` : ''}
+        <div class="fnd-actions">${d ? `<button class="btn small" data-f-restore="${esc(f.id)}">${esc(T('find.restore'))}</button>`
+          : `${f.source !== 'review' ? `<button class="btn small" data-f-dis="${esc(f.id)}">${esc(T('find.dismiss'))}</button>` : ''}${f.source === 'rule' && node && !node.review ? `<button class="btn small" data-f-raise="${esc(f.id)}">${esc(T('find.raise'))}</button>` : ''}`}</div>
+      </div>`;
+    };
+    let body = '';
+    if (!FC.all.length || (!FC.open.length && !FP.dis)) body = `<p class="fnd-empty">${esc(T(FC.all.length ? 'find.allDismissed' : 'find.empty'))}</p>`;
+    else if (!list.length) body = `<p class="fnd-empty">${esc(T('find.noMatch'))} <button class="btn small" data-f-clear="1">${esc(T('ver.f.clear'))}</button></p>`;
+    else {
+      const groups = [...new Set(list.map(f => f.source))];
+      body = groups.map(src => `<div class="cat">${esc(srcLabel(src))} · ${list.filter(f => f.source === src).length}</div>${list.filter(f => f.source === src).map(card).join('')}`).join('');
+    }
+    const keepScroll = box.parentElement.scrollTop;
+    box.innerHTML = `<div class="fnd-chips" role="group" aria-label="${esc(T('find.filter'))}">${sevChips}</div>
+      ${srcChips ? `<div class="fnd-chips" role="group" aria-label="${esc(T('find.bySource'))}">${srcChips}</div>` : ''}
+      <div class="fnd-bar">${FC.dismissed.length ? `<button class="btn small fnd-toggle${FP.dis ? ' on' : ''}" data-f-toggle="1" aria-pressed="${FP.dis}">${esc(T(FP.dis ? 'find.hideDismissed' : 'find.showDismissed', FC.dismissed.length))}</button>` : ''}
+        <button class="btn small" data-f-csv="1"${FC.all.length ? '' : ' disabled'}>${esc(T('find.csv'))}</button></div>
+      <div class="fnd-list">${body}</div>`;
+    box.parentElement.scrollTop = keepScroll;
+  }
+  function exportFindingsCSV() {
+    const rows = [['severity', 'source', 'rule', 'title', 'targetKind', 'targetLabel', 'detail', 'fix', 'dismissed', 'reason'].map(k => T(`find.col.${k}`))];
+    FC.all.forEach(f => rows.push([sevLabel(f.severity), srcLabel(f.source), f.rule, f.title, T(`find.kind.${f.target.kind}`), findingTargetLabel(f.target), f.detail || '', f.fix || '', f.dismissed ? T('sec.yes') : T('sec.no'), f.dismissed?.reason || '']));
+    download(toCSV(rows), `${(S.model.title || 'diagram').replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-+|-+$/g, '') || 'diagram'}-findings.csv`, 'text/csv;charset=utf-8');
+  }
+  $('#review-panel').addEventListener('click', async ev => {
+    const b = ev.target.closest('button');
+    if (!b) return;
+    const d = b.dataset;
+    if (d.fSev != null) FP.sev = FP.sev === d.fSev ? '' : d.fSev;
+    else if (d.fSrc != null) FP.src = FP.src === d.fSrc ? '' : d.fSrc;
+    else if (d.fToggle != null) FP.dis = !FP.dis;
+    else if (d.fClear != null) { FP.sev = ''; FP.src = ''; }
+    else if (d.fCsv != null) return exportFindingsCSV();
+    else if (d.fGo != null) return goToFinding(d.fGo);
+    else if (d.fDis != null) {
+      const f = FC.byId.get(d.fDis);
+      if (!f) return;
+      const r = await reasonBox({ title: T('find.dismissTitle'), text: f.title, placeholder: T('find.reason.ph'), ok: T('find.dismiss'), cancel: T('ver.cf.cancel') });
+      if (r != null) { dismissFinding(f.id, r); toast(T('find.toast.dismissed')); }
+      return;
+    } else if (d.fRestore != null) { restoreFinding(d.fRestore); toast(T('find.toast.restored')); return; }
+    else if (d.fRaise != null) {
+      const f = FC.byId.get(d.fRaise), n = f && S.model.nodes.find(x => x.id === f.target.id);
+      if (!n || n.review) return;
+      pushHistory();
+      n.review = { status: 'open', raised: today(), note: f.title, ...(store.get('reviewer', '') ? { by: store.get('reviewer', '') } : {}) };
+      changed(true); renderInspector(); refreshFindings(true); FC.fresh = false;
+      toast(T('toast.revAdded'));
+      return;
+    }
+    renderFindings();
+  });
+  // Inspector del nodo: exposición y respaldo (automáticos o a mano) y sus hallazgos abiertos
+  const secField = n => {
+    const ex = exposureOf(n), bk = backupOf(n), curE = n.exposure === 'public' || n.exposure === 'internal' ? n.exposure : '', curB = typeof n.backup === 'boolean' ? (n.backup ? 'yes' : 'no') : '';
+    const seg = (attr, cur, items) => `<div class="seg">${items.map(([k, l]) => `<button ${attr}="${k}" class="${cur === k ? 'on' : ''}">${esc(l)}</button>`).join('')}</div>`;
+    const mine = FC.open.filter(f => f.target.kind === 'node' && f.target.id === n.id);
+    const exL = v => T(v === 'public' ? 'sec.expo.public' : 'sec.expo.internal'), bkL = v => T(v ? 'sec.yes' : 'sec.no');
+    return `<div class="field sec-field">${T('sec.label')}
+      <div class="sec-row"><span>${T('sec.expo.label')}</span>${seg('data-expo', curE, [['', T('sec.auto', { v: exL(ex.value) })], ['public', exL('public')], ['internal', exL('internal')]])}
+        <span class="cost-hint">${esc(ex.auto ? ex.why : T('sec.why.manual'))}</span></div>
+      <div class="sec-row"><span>${T('sec.backup.label')}</span>${seg('data-bak', curB, [['', T('sec.auto', { v: bkL(bk.value) })], ['yes', T('sec.yes')], ['no', T('sec.no')]])}
+        <span class="cost-hint">${esc(bk.auto ? bk.why : T('sec.why.manual'))}</span></div>
+      ${mine.length ? `<div class="sec-list">${mine.map(f => `<div style="--s:var(--sev-${f.severity})"><i></i><span><b>${esc(sevLabel(f.severity))}</b> · ${esc(f.title)}</span></div>`).join('')}</div>` : ''}
+    </div>`;
+  };
+
   /* ---------- avisos ---------- */
   let toastTimer;
   // Diálogo de confirmación propio: Promise<boolean>; Esc cancela, Enter acepta, foco en lo seguro
@@ -4907,8 +5650,12 @@
       .map(({ e, cb }) => ({ edge: clone(e), from: cb.from, to: cb.to, fromRegion: cb.from.region, toRegion: cb.to.region, fromJur: cb.from.jur.short, toJur: cb.to.jur.short, classes: [...cb.classes], approved: cb.approved })); },
     layers: () => ({ naming: layerNaming(), layers: Object.keys(DL).map(k => ({ key: k, label: layerInfo(k).label, nodes: S.model.nodes.filter(n => layerOf(n).value === k).map(n => n.id) })) }),
     setLayerNames,
+    compliance: () => complianceReport(), exportCompliance: (kind = 'wide') => exportCompliance(kind === 'long' ? 'long' : 'wide'),
     setView, get view() { return S.viewKey; }, get views() { return [...VIEW_KEYS]; },
     owners: () => govTeamList(),
+    findings: (opts = {}) => apiFindings(opts), dismissFinding: (id, reason) => dismissFinding(id, reason), restoreFinding: id => restoreFinding(id),
+    threats: () => strideAll().map(t => ({ edge: t.e.id, from: t.e.from, to: t.e.to, zones: t.zones.map(z => z.id), category: t.cat, severity: t.severity, status: t.status, note: t.note })),
+    exportThreats,
     exportSVG, exportPNG, exportViews, exportJSON, shareEncrypted, exportOther, exportCtx, toggleRouting, importFiles, config: C, icons: ICONS
   };
 

@@ -205,6 +205,43 @@ The component gets a tag: **IN REVIEW** (orange), **OVERDUE** (red, once the due
 The panel shows how many days are left or how late it is, and the summary above the canvas counts open and overdue findings.
 Diagramon remembers the last reviewer name. Exports with the legend list the open findings with their due date.
 
+#### Automatic security review
+
+Diagramon checks the diagram for common security problems and **only warns, it never blocks anything**. The **Review** tab (next to *Versions*) lists every finding, grouped by source and severity, and its label shows the number of open findings in the color of the worst one. The same number appears in the line above the canvas (*⚑ N findings*), and in the **Security** view each component with findings gets a small *⚠ n* pill.
+
+| Rule | Severity | Fires when |
+|---|---|---|
+| Sensitive data unencrypted | critical | A connection marked *Not encrypted* carries PII, PCI, PHI or confidential data |
+| Encryption not stated | medium | A connection carries sensitive data but its encryption is not set |
+| Public with sensitive data | high | A component that holds sensitive data is public |
+| Data store without backup | medium | A database or storage has no backup component or backup connection |
+| Unapproved cross-border transfer | high | Sensitive data crosses jurisdictions without an approved transfer |
+| Sensitive data without owner | low | A component with sensitive data has no owner and no steward |
+| Public data store | high | A data store is public or is reached directly by users or an external service |
+
+- **Exposure and backup are deduced.** A component is *public* when it sits in a public area (a group with the AWS public-subnet icon, or named *public*, *DMZ*, *internet*…) or receives a connection from users, a web or mobile app or an external service. A data store *has a backup* when it is connected to a backup component (AWS Backup, Recovery Services, a name with *backup*, *snapshot*, *replica*…) or to a connection labelled *backup*, *snapshot*, *replica*… In the component panel, **Security** shows the deduced value and why; choose **Public / Internal** or **Yes / No** to override it.
+- **Dismiss** a finding to hide it: Diagramon asks for a short reason and stores it (with the author and date) in the diagram. **Show dismissed (N)** lists them with their reason and a **Restore** button.
+- **Raise as review observation** turns a finding into a manual review observation on the component (see above), with the finding as its note.
+- Click a finding's target to select it and zoom to it. Your own review observations appear in the same list (they cannot be dismissed: resolve them in the component panel).
+- **Export CSV** saves all findings, dismissed ones included, for a spreadsheet.
+- From the console: `Diagramon.findings({ dismissed: false })`, `Diagramon.dismissFinding(id, reason)` and `Diagramon.restoreFinding(id)`.
+
+#### Compliance mapping
+
+Tag which controls each component meets (ISO 27001, SOC 2, GDPR, HIPAA, PCI DSS) and export a matrix of component × control.
+
+1. Select a component or a group and open the **Compliance** section of the panel (it opens by itself once a control is set).
+2. Type in **Add control** to search the catalog (`iso27001:A.8.24 — Use of cryptography`) and pick one. It is added as **Gap**: nothing counts as met until you confirm it.
+3. Set each control to **Met**, **Partial**, **Gap** or **N/A**. The **×** removes it.
+4. Components **inherit** the controls of their groups: set `pcidss:1.3` once on the *Payments* group and every component inside gets it. Choosing a status on a component overrides the inherited one (the **×** then goes back to the inherited value).
+5. **Suggested** chips offer controls for the data classes of the component (PII → GDPR Art. 32, 5, 25…; PCI → PCI DSS 3.5, 4.2…; PHI → HIPAA transmission security…) and for components on a cross-border connection (GDPR Art. 44–46). Click one to add it as a gap.
+6. With several components selected, the same section applies to all of them.
+
+**Compliance matrix** (button in the section, or **Export › Compliance matrix**): one row per component that has controls or sensitive data, one column per control in use grouped by framework, with ✓ met, ◐ partial, ✗ gap, — N/A and blank for not mapped. The header stays in view while you scroll; a row at the bottom shows the coverage of each control (met ÷ components that are not N/A) and cards on top summarize each framework. Pick a framework to narrow it down. **CSV** exports one row per component and one column per control (`met|partial|gap|na|`); **CSV (long)** one row per component × control with framework, control, title, group, status, inherited-from and data classes (`<diagram>-compliance.csv`, `<diagram>-compliance-long.csv`).
+
+Review findings include a **Compliance** group: a gap is *medium* (*high* for a PCI DSS control on a component that handles PCI data, or HIPAA with PHI), a partial control is *low*, and a component with PII, PCI or PHI that lacks its main suggested control (for example GDPR Art. 32) is *low*, but only for frameworks the diagram already uses, so a diagram without controls stays quiet. The **Filter** gets a **Compliance** section (one chip per framework in use, plus *Has gaps*). From the console: `Diagramon.compliance()` and `Diagramon.exportCompliance('wide' | 'long')`.
+The catalog lives in `config.js` › `compliance` and is a practical subset, not the full standards; the control titles are short paraphrases. This is a documentation aid, not an audit or a certification.
+
 #### Owners and stewards
 
 Say who is responsible for each component.
@@ -251,6 +288,15 @@ Use the two buttons next to the zoom controls (bottom right of the canvas).
 - Select several components and click **⚠ Mark as risk zone** to draw a zone around them.
 - Drag to move, drag the corner handle to resize (it snaps to the grid), **`⌘D`** duplicates and **Delete** removes. Everything can be undone.
 - The summary above the canvas counts the zones (*⚠ 2 risk zones (1 critical)*), exports with the legend list them by severity, and versions and JSON files keep notes and zones.
+
+#### Threat modeling (STRIDE)
+
+Some zones are **trust boundaries** instead of risk zones: open a zone and switch **Kind** to *Trust boundary* (or select components and click **Trust boundary** next to *Mark as risk zone*). A trust boundary has a name, an optional **Trust level** (*Internet, DMZ, Internal, Restricted*…) and a description. It is drawn with a bold dashed line, no hatch, and a tag like `TRUST BOUNDARY · DMZ` with a shield; the legend and the document card list boundaries apart from risk zones.
+- A component is inside a boundary when its center is inside the zone. Zones can nest or overlap. A connection **crosses** a boundary when its two ends are not in the same set of boundaries.
+- Select a crossing connection: the **Threats (STRIDE)** section shows *Crosses: ‹Internet› → ‹DMZ›* and one suggestion per category (**S**poofing, **T**ampering, **R**epudiation, **I**nformation disclosure, **D**enial of service, **E**levation of privilege) with a severity from simple rules (encryption, sensitive data, inbound direction, target is a data store or identity component).
+- Decide each one: **Open · Mitigated · Accepted · N/A**, with a note (what you did, or why). Only decisions are saved, and every change can be undone. Open threats show up as findings under *STRIDE threats*.
+- In the **Security** view crossing connections get a small `STRIDE n` pill (n = open threats). **Export › Threat model (CSV)** writes one row per crossing connection and category (`<diagram>-stride.csv`).
+- From the console: `Diagramon.threats()` returns `[{ edge, from, to, zones, category, severity, status, note }]` and `Diagramon.exportThreats()` downloads the CSV.
 
 ### 10. Present and export
 
@@ -379,9 +425,12 @@ api ~> queue : events
 | `a -> b : SQL datasets=orders,customers` | Datasets carried by a connection (Spanish: `tablas=`); quote names with spaces: `datasets="sales orders,crm.customers"` |
 | `region=eu-west-1` | Region of a node or a group (aliases `country=`, `país=`, `región=`); nodes inherit it from their group |
 | `a -> b : x data=pii transfer=ok` | Cross-border transfer approved (`transferencia=ok` in Spanish) |
+| `a -> b : SQL threats="T=mitigated,I=accepted"` | STRIDE decisions of a connection (Spanish: `amenazas=`); letters `S T R I D E`, statuses `mitigated`, `accepted`, `na` (Spanish `mitigada`, `aceptada`, `na`). Notes and trust boundaries are not part of the text |
 | `group id "Name" color=… { … }` | Group; groups can be nested |
 | `layer=gold` (`bronze`, `silver`, `gold`; also `raw`, `curated`, `serving`) | Data lake layer of a node or group (Spanish: `capa=oro`); nodes inherit it from their group |
 | `layers: zones` | Show Raw / Curated / Serving instead of Bronze / Silver / Gold (Spanish: `capas: zonas`) |
+| `exposure=public` (`internal`) · `backup=yes` (`no`) | Override the deduced exposure and backup of a node (Spanish: `exposición=pública` / `interna`, `respaldo=sí` / `no`) |
+| `controls="iso27001:A.8.24=met,pcidss:4.2=gap"` | Compliance controls of a node or group (Spanish: `controles=`, states `cumple` `parcial` `brecha` `na`); each is `framework:id=met\|partial\|gap\|na`; nodes inherit from their group |
 | `a -> b` · `a => b` · `a ~> b` · `a ..> b` | Request · data · event · optional |
 | `a -> b -> c : label` | Chain; the label goes on the last arrow |
 | `lines: elbow` · `a -> b : x line=curved` | Elbow or curved lines, for the diagram or one connection |
@@ -429,7 +478,10 @@ Everything you can customize is in **`config.js`**. Save and reload `index.html`
 - **Default language**: `app.defaultLang: 'en' | 'es'`. UI texts live in `i18n.js`; texts in `config.js` and `examples.js` can be `{ en: '…', es: '…' }`.
 - **Data classes**: `dataClasses` sets the tags (name, short label, color). `sensitive: true` turns on the red warning for unencrypted flows.
 - **Jurisdictions (data residency)**: `residency.jurisdictions` in `config.js` is an ordered map `key → { label: { en, es }, short, match }`. `match` is a case-insensitive RegExp tested against the region text (`eu-west-1`, `westeurope`, `ES`…); the first jurisdiction that matches wins, so put specific ones (`uk`, `ch`) before wide ones (`eu`). To add one, copy a line and change its key, labels and `match`; to adjust one, edit its `match` (anchor it with `^…$`). `of` is the optional text used in the warning (*leaves **the EU***). Set `residency.warnSameJurisdiction: true` to also warn when regions differ inside the same jurisdiction.
+- **STRIDE threat rules**: `stride` in `config.js` sets the thresholds and the text. `inboundSeverity` is the severity of *Spoofing* on inbound crossings, `criticalClasses` the data classes that make *Information disclosure* critical, `storeTypes` and `storeIconCategories` what counts as a data store, secrets or identity component for *Elevation of privilege*, and `categories` the label, description and mitigation hint (`{ en, es }`) of each letter. The rules are explained in a comment above it.
 - **Data lake layers**: `dataLayers` sets the layers in order (`label` for the medallion names, `alt` for the Raw/Curated/Serving names, short letters and `color`). Colors default to `--layer-bronze`, `--layer-silver` and `--layer-gold`, set per theme in `index.html`; edit them there or put a fixed color in `config.js`. `layerAliases` lists the other words accepted when reading JSON and text. Each view's `layers` flag shows or hides them.
+- **Automatic security review**: `securityRules` in `config.js` has one entry per rule (`sec.unencrypted-sensitive`, `sec.unstated-encryption`, `sec.public-sensitive`, `sec.datastore-backup`, `sec.cross-border`, `sec.sensitive-no-owner`, `sec.public-datastore`) with `enabled` (set `false` to turn a rule off) and `severity` (`low`, `medium`, `high`, `critical`). The rest are the rule's parameters: `clientTypes`, `publicGroupIcons` and `publicGroupName` (what counts as public), `dataStoreTypes` and `dataStoreIconCategories`, `backupIcons`, `backupName` and `backupEdgeLabel` (what counts as a backup). Text patterns are case-insensitive RegExps.
+- **Compliance**: `compliance.frameworks` is an ordered map `key → { label, short, url?, controls: { '<id>': { label: { en, es } } } }`. Add a control by adding a line in its framework, or a framework (NIST CSF, ENS, DORA…) by copying a block; JSON and Text accept any `framework:id`, even without a catalog entry. `compliance.suggest` maps each data class (and `crossBorder`) to the controls offered as chips; the first one of each list is the one the review expects.
 - **Environments**: `environments` sets the buttons of the *Versions* tab (name, short label and color). Add or remove as many as you need.
 - **Node size**: with `node.sameSize: true` (default) every node is `node.width` wide and long names wrap to 2 lines.
   With `false`, each node grows with its text.
@@ -467,7 +519,7 @@ Set `"icons": { "enabled": false }` in `config.js` to turn them off.
 <summary><b>Extension API</b></summary>
 
 `window.Diagramon` exposes `model`, `load()`, `addNode()`, `addEdge()`, `select()`, `align()`, `relayout()`,
-`fitView()`, `togglePlay()`, `toggleTheme()`, `toggleLang()`, `lang`, `saveVersion()`, `openVersion()`, `compareVersion()`, `deleteVersion()`, `exportSVG()`, `exportPNG()`, `exportJSON()`, `lineage()`, `datasets()`, `owners()`, `crossBorder()`, `layers()`, `setLayerNames()`, `config` and `icons`.
+`fitView()`, `togglePlay()`, `toggleTheme()`, `toggleLang()`, `lang`, `saveVersion()`, `openVersion()`, `compareVersion()`, `deleteVersion()`, `exportSVG()`, `exportPNG()`, `exportJSON()`, `lineage()`, `datasets()`, `owners()`, `crossBorder()`, `layers()`, `setLayerNames()`, `compliance()`, `exportCompliance()`, `config` and `icons`.
 The text language is in `window.DiagramonText` (`parse` and `stringify`). UI translations are in `window.DiagramonI18n`.
 
 </details>

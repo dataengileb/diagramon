@@ -189,6 +189,43 @@ El componente lleva una etiqueta: **EN REVISIÓN** (naranja), **VENCIDA** (roja,
 El panel dice cuántos días faltan o cuántos lleva vencida, y el resumen sobre el lienzo cuenta las abiertas y las vencidas.
 Diagramon recuerda el último nombre de revisor. Las exportaciones con leyenda listan las observaciones abiertas con su fecha compromiso.
 
+#### Revisión de seguridad automática
+
+Diagramon revisa el diagrama en busca de problemas de seguridad habituales y **solo avisa, nunca bloquea nada**. La pestaña **Revisión** (junto a *Versiones*) lista todos los hallazgos, agrupados por fuente y gravedad; su etiqueta muestra cuántos hay abiertos con el color del peor. El mismo número aparece en la línea sobre el lienzo (*⚑ N hallazgos*) y, en la vista **Seguridad**, cada componente con hallazgos lleva una pastilla *⚠ n*.
+
+| Regla | Gravedad | Salta cuando |
+|---|---|---|
+| Datos sensibles sin cifrar | crítica | Una conexión marcada *Sin cifrar* lleva PII, PCI, PHI o datos confidenciales |
+| Cifrado sin indicar | media | Una conexión lleva datos sensibles pero no se indica si va cifrada |
+| Público con datos sensibles | alta | Un componente público guarda datos sensibles |
+| Almacén sin respaldo | media | Una base de datos o almacenamiento no tiene componente ni conexión de respaldo |
+| Transferencia entre fronteras sin autorizar | alta | Datos sensibles cruzan jurisdicciones sin transferencia autorizada |
+| Datos sensibles sin dueño | baja | Un componente con datos sensibles no tiene dueño ni responsable |
+| Almacén público | alta | Un almacén de datos es público o lo alcanzan directamente usuarios o un servicio externo |
+
+- **La exposición y el respaldo se deducen.** Un componente es *público* si está en un área pública (un grupo con el icono de subred pública de AWS, o llamado *pública*, *DMZ*, *internet*…) o si recibe una conexión de usuarios, una app web o móvil o un servicio externo. Un almacén *tiene respaldo* si está conectado a un componente de respaldo (AWS Backup, Recovery Services, un nombre con *backup*, *respaldo*, *snapshot*, *réplica*…) o por una conexión llamada *backup*, *snapshot*, *réplica*… En el panel del componente, **Seguridad** muestra el valor deducido y por qué; elige **Pública / Interna** o **Sí / No** para anularlo.
+- **Descartar** un hallazgo lo oculta: Diagramon pide un motivo breve y lo guarda (con el autor y la fecha) en el diagrama. **Ver descartados (N)** los lista con su motivo y un botón **Restaurar**.
+- **Levantar como observación de revisión** convierte el hallazgo en una observación de revisión manual del componente (ver arriba), con el hallazgo como texto.
+- Pulsa el objetivo de un hallazgo para seleccionarlo y acercarte a él. Tus observaciones de revisión aparecen en la misma lista (no se descartan: se resuelven en el panel del componente).
+- **Exportar CSV** guarda todos los hallazgos, también los descartados, para una hoja de cálculo.
+- Desde la consola: `Diagramon.findings({ dismissed: false })`, `Diagramon.dismissFinding(id, motivo)` y `Diagramon.restoreFinding(id)`.
+
+#### Mapeo de cumplimiento
+
+Marca qué controles cumple cada componente (ISO 27001, SOC 2, GDPR, HIPAA, PCI DSS) y exporta una matriz componente × control.
+
+1. Selecciona un componente o un grupo y abre la sección **Cumplimiento** del panel (se abre sola cuando hay algún control).
+2. Escribe en **Añadir control** para buscar en el catálogo (`iso27001:A.8.24 — Uso de criptografía`) y elige uno. Se añade como **Brecha**: nada cuenta como cumplido hasta que lo confirmes.
+3. Pon cada control en **Cumple**, **Parcial**, **Brecha** o **N/A**. La **×** lo quita.
+4. Los componentes **heredan** los controles de sus grupos: marca `pcidss:1.3` una vez en el grupo *Pagos* y todo lo que contiene lo recibe. Elegir un estado en un componente sustituye al heredado (la **×** vuelve entonces al valor heredado).
+5. Las fichas **Sugeridos** proponen controles según las clases de datos del componente (PII → GDPR Art. 32, 5, 25…; PCI → PCI DSS 3.5, 4.2…; PHI → seguridad en la transmisión de HIPAA…) y para componentes en una conexión entre jurisdicciones (GDPR Art. 44–46). Pulsa una para añadirla como brecha.
+6. Con varios componentes seleccionados, la misma sección se aplica a todos.
+
+**Matriz de cumplimiento** (botón de la sección, o **Exportar › Matriz de cumplimiento**): una fila por componente con controles o datos sensibles, una columna por control en uso agrupada por marco, con ✓ cumple, ◐ parcial, ✗ brecha, — N/A y vacío si no está mapeado. La cabecera se queda a la vista al desplazarte; una fila inferior muestra la cobertura de cada control (cumple ÷ componentes que no son N/A) y las tarjetas de arriba resumen cada marco. Elige un marco para acotarla. **CSV** exporta una fila por componente y una columna por control (`met|partial|gap|na|`); **CSV (largo)** una fila por componente × control con marco, control, título, grupo, estado, heredado de y clases de datos (`<diagrama>-compliance.csv`, `<diagrama>-compliance-long.csv`).
+
+Los hallazgos de revisión incluyen un grupo **Cumplimiento**: una brecha es *media* (*alta* para un control de PCI DSS en un componente con datos PCI, o de HIPAA con PHI), un control parcial es *baja*, y un componente con PII, PCI o PHI al que le falta su control principal sugerido (por ejemplo GDPR Art. 32) es *baja*, solo para los marcos que el diagrama ya usa, así que un diagrama sin controles no genera avisos. El **Filtro** tiene una sección **Cumplimiento** (una ficha por marco en uso, más *Con brechas*). Desde la consola: `Diagramon.compliance()` y `Diagramon.exportCompliance('wide' | 'long')`.
+El catálogo está en `config.js` › `compliance` y es un subconjunto práctico, no las normas completas; los títulos de los controles son paráfrasis cortas. Es una ayuda de documentación, no una auditoría ni una certificación.
+
 #### Dueños y responsables
 
 Indica quién responde por cada componente.
@@ -235,6 +272,15 @@ Usa los dos botones junto al zoom (abajo a la derecha del lienzo).
 - Selecciona varios componentes y pulsa **⚠ Marcar como zona de riesgo** para dibujar una zona alrededor.
 - Arrastra para mover, arrastra el tirador de la esquina para cambiar el tamaño (se ajusta a la cuadrícula), **`⌘D`** duplica y **Supr** elimina. Todo se puede deshacer.
 - El resumen sobre el lienzo cuenta las zonas (*⚠ 2 zonas de riesgo (1 crítica)*), las exportaciones con leyenda las listan por severidad, y las versiones y el JSON conservan notas y zonas.
+
+#### Modelado de amenazas (STRIDE)
+
+Algunas zonas son **fronteras de confianza** en vez de zonas de riesgo: abre una zona y cambia **Tipo** a *Frontera de confianza* (o selecciona componentes y pulsa **Frontera de confianza**, junto a *Marcar como zona de riesgo*). Una frontera tiene nombre, un **Nivel de confianza** opcional (*Internet, DMZ, Interna, Restringida*…) y una descripción. Se dibuja con una línea discontinua gruesa, sin rayado, y una etiqueta como `FRONTERA DE CONFIANZA · DMZ` con un escudo; la leyenda y la ficha del documento listan las fronteras aparte de las zonas de riesgo.
+- Un componente está dentro de una frontera cuando su centro cae dentro de la zona. Las zonas pueden anidarse o solaparse. Una conexión **cruza** una frontera cuando sus dos extremos no están en el mismo conjunto de fronteras.
+- Selecciona una conexión que cruza: la sección **Amenazas (STRIDE)** muestra *Cruza: ‹Internet› → ‹DMZ›* y una sugerencia por categoría (**S**uplantación, manipulación (**T**ampering), **R**epudio, divulgación de **I**nformación, **D**enegación de servicio, **E**levación de privilegios) con una severidad según reglas sencillas (cifrado, datos sensibles, dirección entrante, destino que es un almacén de datos o de identidad).
+- Decide cada una: **Abierta · Mitigada · Aceptada · No aplica**, con una nota (qué hiciste o por qué). Solo se guardan las decisiones y todo se puede deshacer. Las amenazas abiertas aparecen como hallazgos en *Amenazas STRIDE*.
+- En la vista **Seguridad** las conexiones que cruzan llevan una pastilla `STRIDE n` (n = amenazas abiertas). **Exportar › Modelo de amenazas (CSV)** escribe una fila por conexión que cruza y categoría (`<diagrama>-stride.csv`).
+- Desde la consola: `Diagramon.threats()` devuelve `[{ edge, from, to, zones, category, severity, status, note }]` y `Diagramon.exportThreats()` descarga el CSV.
 
 ### 10. Presentar y exportar
 
@@ -365,6 +411,9 @@ api ~> cola : eventos
 | `a -> b : x datos=pii transferencia=ok` | Transferencia entre jurisdicciones autorizada (`transfer=ok` en inglés) |
 | `capa=oro` (`bronce`, `plata`, `oro`; también `crudo`, `curado`, `consumo` y los nombres en inglés) | Capa del data lake de un nodo o grupo (en inglés: `layer=gold`); los nodos la heredan del grupo |
 | `capas: zonas` | Muestra Crudo / Curado / Consumo en vez de Bronce / Plata / Oro (en inglés: `layers: zones`) |
+| `exposición=pública` (`interna`) · `respaldo=sí` (`no`) | Anula la exposición y el respaldo deducidos de un nodo (en inglés: `exposure=public` / `internal`, `backup=yes` / `no`) |
+| `a -> b : SQL amenazas="T=mitigada,I=aceptada"` | Decisiones STRIDE de una conexión (en inglés: `threats=`); letras `S T R I D E`, estados `mitigada`, `aceptada`, `na` (en inglés `mitigated`, `accepted`, `na`). Las notas y las fronteras de confianza no van en el texto |
+| `controles="iso27001:A.8.24=cumple,pcidss:4.2=brecha"` | Controles de cumplimiento de un nodo o grupo (en inglés: `controls=`, estados `met` `partial` `gap` `na`); cada uno es `marco:id=cumple\|parcial\|brecha\|na`; los nodos heredan de su grupo |
 | `grupo id "Nombre" color=… { … }` | Grupo; se pueden anidar |
 | `a -> b` · `a => b` · `a ~> b` · `a ..> b` | Petición · datos · evento · opcional |
 | `a -> b -> c : etiqueta` | Cadena; la etiqueta va en la última flecha |
@@ -413,7 +462,10 @@ Todo lo personalizable está en **`config.js`**. Guarda y recarga `index.html`.
 - **Idioma por defecto**: `app.defaultLang: 'en' | 'es'`. Los textos de la interfaz están en `i18n.js`; los de `config.js` y `examples.js` pueden ser `{ en: '…', es: '…' }`.
 - **Clasificaciones de datos**: `dataClasses` define las etiquetas (nombre, texto corto y color). `sensitive: true` activa el aviso rojo en flujos sin cifrar.
 - **Jurisdicciones (residencia de datos)**: `residency.jurisdictions` en `config.js` es un mapa ordenado `clave → { label: { en, es }, short, match }`. `match` es una expresión regular (sin distinguir mayúsculas) que se prueba contra el texto de la región (`eu-west-1`, `westeurope`, `ES`…); gana la primera que coincide, así que pon las específicas (`uk`, `ch`) antes que las amplias (`eu`). Para añadir una, copia una línea y cambia clave, etiquetas y `match`. `of` es el texto opcional del aviso (*salen de **la UE***). Con `residency.warnSameJurisdiction: true` también avisa cuando cambian de región dentro de una misma jurisdicción.
+- **Reglas de amenazas STRIDE**: `stride` en `config.js` fija los umbrales y los textos. `inboundSeverity` es la severidad de *Suplantación* en cruces entrantes, `criticalClasses` las clases de datos que vuelven crítica la *Divulgación de información*, `storeTypes` y `storeIconCategories` lo que cuenta como almacén de datos, secretos o identidad para la *Elevación de privilegios*, y `categories` la etiqueta, descripción y pista de mitigación (`{ en, es }`) de cada letra. Las reglas están explicadas en un comentario encima.
 - **Capas del data lake**: `dataLayers` define las capas en orden (`label` para los nombres medallón, `alt` para Crudo/Curado/Consumo, letras cortas y `color`). Los colores usan `--layer-bronze`, `--layer-silver` y `--layer-gold`, definidos por tema en `index.html`; cámbialos ahí o pon un color fijo en `config.js`. `layerAliases` lista otras palabras aceptadas al leer JSON y texto. La opción `layers` de cada vista las muestra u oculta.
+- **Revisión de seguridad automática**: `securityRules` en `config.js` tiene una entrada por regla (`sec.unencrypted-sensitive`, `sec.unstated-encryption`, `sec.public-sensitive`, `sec.datastore-backup`, `sec.cross-border`, `sec.sensitive-no-owner`, `sec.public-datastore`) con `enabled` (pon `false` para apagarla) y `severity` (`low`, `medium`, `high`, `critical`). Lo demás son parámetros de la regla: `clientTypes`, `publicGroupIcons` y `publicGroupName` (qué cuenta como público), `dataStoreTypes` y `dataStoreIconCategories`, `backupIcons`, `backupName` y `backupEdgeLabel` (qué cuenta como respaldo). Los patrones de texto son RegExp sin distinguir mayúsculas.
+- **Cumplimiento**: `compliance.frameworks` es un mapa ordenado `clave → { label, short, url?, controls: { '<id>': { label: { en, es } } } }`. Añade un control con una línea en su marco, o un marco (NIST CSF, ENS, DORA…) copiando un bloque; el JSON y el Texto aceptan cualquier `marco:id`, aunque no esté en el catálogo. `compliance.suggest` asocia cada clase de datos (y `crossBorder`) con los controles que se ofrecen como fichas; el primero de cada lista es el que espera la revisión.
 - **Ambientes**: `environments` define los botones de la pestaña *Versiones* (nombre, texto corto y color). Añade o quita los que necesites.
 - **Tamaño de los nodos**: con `node.sameSize: true` (por defecto) todos miden `node.width` y los nombres largos usan 2 líneas.
   Con `false`, cada nodo crece con su texto.
@@ -451,7 +503,7 @@ Todo lo personalizable está en **`config.js`**. Guarda y recarga `index.html`.
 <summary><b>API para extensiones</b></summary>
 
 `window.Diagramon` expone `model`, `load()`, `addNode()`, `addEdge()`, `select()`, `align()`, `relayout()`,
-`fitView()`, `togglePlay()`, `toggleTheme()`, `toggleLang()`, `lang`, `saveVersion()`, `openVersion()`, `compareVersion()`, `deleteVersion()`, `exportSVG()`, `exportPNG()`, `exportJSON()`, `lineage()`, `datasets()`, `owners()`, `crossBorder()`, `layers()`, `setLayerNames()`, `config` e `icons`.
+`fitView()`, `togglePlay()`, `toggleTheme()`, `toggleLang()`, `lang`, `saveVersion()`, `openVersion()`, `compareVersion()`, `deleteVersion()`, `exportSVG()`, `exportPNG()`, `exportJSON()`, `lineage()`, `datasets()`, `owners()`, `crossBorder()`, `layers()`, `setLayerNames()`, `compliance()`, `exportCompliance()`, `config` e `icons`.
 El lenguaje de texto está en `window.DiagramonText` (`parse` y `stringify`).
 
 </details>

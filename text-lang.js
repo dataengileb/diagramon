@@ -28,8 +28,13 @@
    Linaje:   conexión a -> b : SQL datasets=orders,customers   (es: tablas= o conjuntos=; con espacios: datasets="sales orders,crm.customers")
    Residencia: nodo o grupo … region=eu-west-1 (también región=, country=/país= como alias; hereda del grupo) ·
              conexión a -> b : SQL data=pii transfer=ok (transferencia=ok: transferencia entre jurisdicciones autorizada)
+   Amenazas: conexión a -> b : SQL threats="T=mitigated,I=accepted" (es: amenazas=): letras S T R I D E (STRIDE) con estado
+             mitigated|mitigada, accepted|aceptada o na|no aplica; solo las decididas (las abiertas no se escriben)
    Capas:    nodo o grupo … layer=gold (capa=oro): bronze|silver|gold · bronce|plata|oro · raw|curated|serving · crudo|curado|consumo
              (los nodos heredan la capa de su grupo) · línea `layers: zones` / `capas: zonas` muestra Raw/Curated/Serving en vez de Bronze/Silver/Gold
+   Seguridad: nodo … exposure=public|internal (exposición=pública|interna: sustituye a la deducida) · backup=yes|no (respaldo=sí|no)
+   Cumplimiento: nodo o grupo … controls="iso27001:A.8.24=met,pcidss:4.2=gap" (es: controles=; estados met|partial|gap|na · cumple|parcial|brecha|na;
+             cada control es marco:id=estado, los nodos heredan de sus grupos; sin espacios no hacen falta comillas)
    Comentario: líneas que empiezan por # o //
 
    Acepta las palabras clave en inglés y en español (title/título, group/grupo,
@@ -44,19 +49,45 @@
   const ARROW_SPLIT = /\s*(\.\.>|~>|=>|->)\s*/;
   const HAS_ARROW = /\.\.>|~>|=>|->/;
   const ID = /^[^\s:[\]"{}]+$/;
-  const NODE_KEYS = ['color', 'badge', 'desc', 'sub', 'x', 'y', 'costo', 'cost', 'data', 'datos', 'region', 'región', 'country', 'pais', 'país', 'layer', 'capa'];
+  const NODE_KEYS = ['color', 'badge', 'desc', 'sub', 'x', 'y', 'costo', 'cost', 'data', 'datos', 'region', 'región', 'country', 'pais', 'país', 'layer', 'capa', 'exposure', 'exposición', 'exposicion', 'backup', 'respaldo', 'controls', 'controles'];
   /* ---------- gobierno: dueño, responsable, equipo, centro de costo ---------- */
   const GOV_KEYS = { owner: 'owner', dueño: 'owner', dueno: 'owner', steward: 'steward', responsable: 'steward', team: 'team', equipo: 'team',
     costcenter: 'costCenter', centro: 'costCenter', centrocosto: 'costCenter', centrodecosto: 'costCenter' };
   const GOV_WORDS = ['owner', 'steward', 'team', 'costCenter'];
   const applyGov = (o, kv) => { for (const [key, v] of Object.entries(kv)) { const k = GOV_KEYS[key]; if (k && String(v).trim()) o[k] = String(v).trim(); } };
+  /* ---------- cumplimiento: controls=marco:id=estado,… ---------- */
+  const CTL_WORD = { met: 'met', cumple: 'met', partial: 'partial', parcial: 'partial', gap: 'gap', brecha: 'gap', na: 'na', 'n/a': 'na' };
+  const CTL_OUT = { en: { met: 'met', partial: 'partial', gap: 'gap', na: 'na' }, es: { met: 'cumple', partial: 'parcial', gap: 'brecha', na: 'na' } };
+  const CTL_KEY = { en: 'controls', es: 'controles' };
+  // → { controls: { 'marco:id': estado }, bad: [par no válido] }
+  const parseControls = v => {
+    const controls = {}, bad = [];
+    String(v).split(/[,;]/).map(x => x.trim()).filter(Boolean).forEach(p => {
+      const i = p.lastIndexOf('='), k = p.slice(0, i).trim(), st = CTL_WORD[p.slice(i + 1).trim().toLowerCase()], c = k.indexOf(':');
+      if (i > 0 && st && c > 0 && c < k.length - 1) controls[k] = st; else bad.push(p);
+    });
+    return { controls, bad };
+  };
   const REGION_KEYS = ['region', 'región', 'country', 'pais', 'país']; // todas escriben en `region`
   // review id: "observación" by=… raised=AAAA-MM-DD due=AAAA-MM-DD status=open|resolved closed=AAAA-MM-DD
   const REVIEW_KEYS = { by: 'by', por: 'by', raised: 'raised', levantada: 'raised', due: 'due', compromiso: 'due', status: 'status', estado: 'status', closed: 'closed', cerrada: 'closed' };
   const isDay = v => /^\d{4}-\d{2}-\d{2}$/.test(v) && !isNaN(new Date(`${v}T12:00Z`)) && new Date(`${v}T12:00Z`).toISOString().slice(0, 10) === v;
   // Opciones al final de una conexión: a -> b : etiqueta color=… data=pii encrypted=yes
   // (el valor puede ir entre comillas: datasets="sales orders,crm.customers")
-  const EDGE_OPT = /(?:^|\s)(color|data|datos|encrypted|cifrado|both|ambos|line|linea|línea|datasets|tablas|conjuntos|transfer|transferencia)=("(?:[^"\\]|\\.)*"|\S+)\s*$/i;
+  const EDGE_OPT = /(?:^|\s)(color|data|datos|encrypted|cifrado|both|ambos|line|linea|línea|datasets|tablas|conjuntos|transfer|transferencia|threats|amenazas)=("(?:[^"\\]|\\.)*"|\S+)\s*$/i;
+  /* ---------- amenazas STRIDE: threats="T=mitigated,I=accepted" ---------- */
+  const TH_KEY = { en: 'threats', es: 'amenazas' };
+  const TH_ST = { en: { mitigated: 'mitigated', accepted: 'accepted', na: 'na' }, es: { mitigated: 'mitigada', accepted: 'aceptada', na: 'na' } };
+  const TH_IN = { mitigated: 'mitigated', mitigada: 'mitigated', accepted: 'accepted', aceptada: 'accepted', na: 'na', 'n/a': 'na', 'no aplica': 'na', noaplica: 'na' };
+  // → { threats: { T: { status } }, bad: [pares no válidos] }
+  const parseThreats = v => {
+    const out = { threats: {}, bad: [] };
+    String(v).replace(/^"([\s\S]*)"$/, (_, x) => { try { return JSON.parse(`"${x}"`); } catch { return x; } }).split(/[,;]/).map(x => x.trim()).filter(Boolean).forEach(pair => {
+      const [k, st] = pair.split('=').map(x => (x ?? '').trim()), L = k.toUpperCase(), S = TH_IN[st.toLowerCase()];
+      if (/^[STRIDE]$/.test(L) && S) out.threats[L] = { status: S }; else out.bad.push(pair);
+    });
+    return out;
+  };
   /* ---------- linaje: datasets=a,b ---------- */
   const DS_KEY = { en: 'datasets', es: 'tablas' };
   const parseDatasets = v => [...new Set(String(v).replace(/^"([\s\S]*)"$/, (_, x) => { try { return JSON.parse(`"${x}"`); } catch { return x; } }).split(/[,;]/).map(s => s.trim()).filter(Boolean))];
@@ -71,11 +102,11 @@
     en: { title: 'title', direction: 'direction', group: 'group', cost: 'cost', hour: 'hour', month: 'month', year: 'year', years: 'years', data: 'data', encrypted: 'encrypted', both: 'both', yes: 'yes', no: 'no', lines: 'lines', line: 'line', region: 'region', transfer: 'transfer', ok: 'ok', elbow: 'elbow', curved: 'curved', elbowOne: 'elbow', curvedOne: 'curved', author: 'author', version: 'version', view: 'view', kind: 'kind', physical: 'physical', logical: 'logical',
       review: 'review', by: 'by', raised: 'raised', due: 'due', status: 'status', closed: 'closed', resolved: 'resolved', layer: 'layer', layers: 'layers', zones: 'zones',
       owner: 'owner', steward: 'steward', team: 'team', costCenter: 'costcenter',
-      layerOf: { bronze: 'bronze', silver: 'silver', gold: 'gold' } },
+      layerOf: { bronze: 'bronze', silver: 'silver', gold: 'gold' }, exposure: 'exposure', backup: 'backup', expoOf: { public: 'public', internal: 'internal' } },
     es: { title: 'título', direction: 'dirección', group: 'grupo', cost: 'costo', hour: 'hora', month: 'mes', year: 'año', years: 'años', data: 'datos', encrypted: 'cifrado', both: 'ambos', yes: 'sí', no: 'no', lines: 'líneas', line: 'línea', region: 'región', transfer: 'transferencia', ok: 'ok', elbow: 'codos', curved: 'curvas', elbowOne: 'codo', curvedOne: 'curva', author: 'autor', version: 'versión', view: 'vista', kind: 'tipo', physical: 'físico', logical: 'lógico',
       review: 'revisión', by: 'por', raised: 'levantada', due: 'compromiso', status: 'estado', closed: 'cerrada', resolved: 'resuelta', layer: 'capa', layers: 'capas', zones: 'zonas',
       owner: 'dueño', steward: 'responsable', team: 'equipo', costCenter: 'centro',
-      layerOf: { bronze: 'bronce', silver: 'plata', gold: 'oro' } }
+      layerOf: { bronze: 'bronce', silver: 'plata', gold: 'oro' }, exposure: 'exposición', backup: 'respaldo', expoOf: { public: 'pública', internal: 'interna' } }
   };
   const MSG = {
     en: {
@@ -84,9 +115,11 @@
       edge: 'incomplete connection', id: id => `invalid id “${id || '(empty)'}”`,
       cost: v => `invalid cost “${v}” (e.g. 120/month, 0.1/hour, 1400/year, 5000/3years)`,
       data: v => `unknown data class “${v}” (e.g. pii, pci, confidential)`, enc: v => `invalid encrypted value “${v}” (use yes or no)`,
-      route: v => `invalid line style “${v}” (use curved or elbow)`, transfer: v => `invalid transfer value “${v}” (use ok)`,
+      route: v => `invalid line style “${v}” (use curved or elbow)`, transfer: v => `invalid transfer value “${v}” (use ok)`, threats: v => `invalid threat “${v}” (use e.g. T=mitigated; letters S T R I D E; mitigated, accepted or na)`,
       day: v => `invalid date “${v}” (use YYYY-MM-DD)`, status: v => `invalid status “${v}” (use open or resolved)`,
+      ctl: v => `invalid control “${v}” (use framework:id=met|partial|gap|na, e.g. iso27001:A.8.24=met)`,
       layer: v => `unknown layer “${v}” (use bronze, silver or gold; also raw, curated or serving)`, lnames: v => `invalid layer naming “${v}” (use medallion or zones)`,
+      expo: v => `invalid exposure “${v}” (use public or internal)`, backup: v => `invalid backup value “${v}” (use yes or no)`,
       view: v => `unknown view “${v}”`, gkind: v => `invalid group type “${v}” (use logical or physical)`,
       line: 'cannot understand this line', open: n => `missing } to close ${n === 1 ? 'a group' : `${n} groups`}`
     },
@@ -96,9 +129,11 @@
       edge: 'conexión incompleta', id: id => `id no válido «${id || '(vacío)'}»`,
       cost: v => `costo no válido «${v}» (ej.: 120/mes, 0.1/hora, 1400/año, 5000/3años)`,
       data: v => `clasificación de datos desconocida «${v}» (ej.: pii, pci, confidential)`, enc: v => `valor de cifrado no válido «${v}» (usa sí o no)`,
-      route: v => `estilo de línea no válido «${v}» (usa curvas o codos)`, transfer: v => `valor de transferencia no válido «${v}» (usa ok)`,
+      route: v => `estilo de línea no válido «${v}» (usa curvas o codos)`, transfer: v => `valor de transferencia no válido «${v}» (usa ok)`, threats: v => `amenaza no válida «${v}» (usa p. ej. T=mitigada; letras S T R I D E; mitigada, aceptada o na)`,
       day: v => `fecha no válida «${v}» (usa AAAA-MM-DD)`, status: v => `estado no válido «${v}» (usa abierta o resuelta)`,
+      ctl: v => `control no válido «${v}» (usa marco:id=cumple|parcial|brecha|na, ej.: iso27001:A.8.24=cumple)`,
       layer: v => `capa desconocida «${v}» (usa bronce, plata u oro; también crudo, curado o consumo)`, lnames: v => `nombres de capa no válidos «${v}» (usa medallón o zonas)`,
+      expo: v => `exposición no válida «${v}» (usa pública o interna)`, backup: v => `valor de respaldo no válido «${v}» (usa sí o no)`,
       view: v => `vista desconocida «${v}»`, gkind: v => `tipo de grupo no válido «${v}» (usa lógico o físico)`,
       line: 'no se entiende esta línea', open: n => `falta cerrar ${n === 1 ? 'un grupo' : `${n} grupos`} con }`
     }
@@ -173,6 +208,15 @@
       return null;
     };
 
+    // controls=… / controles=… de un nodo o grupo
+    const applyCtl = (o, kv, ln) => {
+      const v = kv.controls ?? kv.controles;
+      if (v == null) return;
+      const r = parseControls(v);
+      r.bad.forEach(p => err(ln, msg.ctl(p)));
+      if (Object.keys(r.controls).length) o.controls = r.controls;
+    };
+
     const nodeFor = id => {
       if (!nodes.has(id)) {
         const n = { id, label: id, type: 'generic' };
@@ -230,7 +274,7 @@
         const id = m[2];
         if (!ID.test(id)) return err(ln, msg.groupId(id));
         if (groups.has(id)) return err(ln, msg.groupDup(id));
-        const tk = tokens(m[3], ['color', 'icon', 'icono', 'kind', 'tipo', ...Object.keys(GOV_KEYS), ...REGION_KEYS, 'layer', 'capa']);
+        const tk = tokens(m[3], ['color', 'icon', 'icono', 'kind', 'tipo', ...Object.keys(GOV_KEYS), ...REGION_KEYS, 'layer', 'capa', 'controls', 'controles']);
         const g = { id, label: tk.quotes[0] ?? (tk.words.join(' ') || id) };
         if (tk.kv.color) g.color = tk.kv.color;
         applyGov(g, tk.kv);
@@ -245,6 +289,7 @@
         if (gr) g.region = gr.trim();
         const gl = tk.kv.layer ?? tk.kv.capa;
         if (gl != null) { const l = checkLayer(gl, ln); if (l) g.layer = l; }
+        applyCtl(g, tk.kv, ln);
         if (stack.length) g.parent = stack[stack.length - 1];
         groups.add(id);
         model.groups.push(g);
@@ -273,6 +318,8 @@
         if (bothV != null && both == null) err(ln, msg.enc(bothV));
         const trV = kv.transfer ?? kv.transferencia, tr = trV == null ? null : /^(ok|yes|y|true|si|sí|1|on)$/i.test(trV);
         if (trV != null && !tr) err(ln, msg.transfer(trV));
+        const thV = kv.threats ?? kv.amenazas, th = thV == null ? null : parseThreats(thV);
+        if (th) th.bad.forEach(b => err(ln, msg.threats(b)));
         // Etiqueta entre comillas (JSON) o con \n escapado = varias líneas
         if (/^".*"$/.test(label)) label = unquote(label); else label = label.replace(/\\n/g, '\n');
         for (let k = 0; k + 2 < parts.length; k += 2) {
@@ -288,6 +335,7 @@
           if (route) e.route = route;
           if (both) e.both = true;
           if (tr) e.transferOk = true;
+          if (th && Object.keys(th.threats).length) e.threats = JSON.parse(JSON.stringify(th.threats));
           model.edges.push(e);
         }
         return;
@@ -317,6 +365,11 @@
         if (nr) n.region = nr.trim();
         const lv = tk.kv.layer ?? tk.kv.capa;
         if (lv != null) { const l = checkLayer(lv, ln); if (l) n.layer = l; }
+        const ev = tk.kv.exposure ?? tk.kv.exposición ?? tk.kv.exposicion;
+        if (ev != null) { if (/^(public|publico|público|pública|publica|external|externa?)$/i.test(ev.trim())) n.exposure = 'public'; else if (/^(internal|interno|interna|private|privado|privada)$/i.test(ev.trim())) n.exposure = 'internal'; else err(ln, msg.expo(ev)); }
+        const bv = tk.kv.backup ?? tk.kv.respaldo;
+        if (bv != null) { const b = parseBool(bv.trim()); if (b == null) err(ln, msg.backup(bv)); else n.backup = b; }
+        applyCtl(n, tk.kv, ln);
         if (stack.length) n.group = stack[stack.length - 1];
         return;
       }
@@ -337,6 +390,7 @@
     if (m.meta?.version) out.push(`${w.version}: ${m.meta.version}`);
     if (m.meta?.view) out.push(`${w.view}: ${m.meta.view}`);
     out.push('');
+    const ctlText = o => `${CTL_KEY[lang] || CTL_KEY.en}=${bare(Object.entries(o.controls).map(([k, v]) => `${k}=${(CTL_OUT[lang] || CTL_OUT.en)[v] || v}`).join(','))}`;
     const nodeLine = n => {
       const p = [`${n.id}: ${n.label}`];
       if (n.icon) p.push(`[${n.icon}]`); else if (n.type && n.type !== 'generic') p.push(`[${n.type}]`);
@@ -348,12 +402,15 @@
       GOV_WORDS.forEach(k => { if (n[k]) p.push(`${w[k]}=${bare(n[k])}`); });
       if (n.region) p.push(`${w.region}=${bare(n.region)}`);
       if (n.layer) p.push(`${w.layer}=${w.layerOf[n.layer] || n.layer}`);
+      if (n.exposure) p.push(`${w.exposure}=${w.expoOf[n.exposure] || n.exposure}`);
+      if (typeof n.backup === 'boolean') p.push(`${w.backup}=${n.backup ? w.yes : w.no}`);
+      if (n.controls) p.push(ctlText(n));
       if (n.desc) p.push(`desc=${quote(n.desc)}`);
       return p.join(' ');
     };
     const groupIds = new Set(m.groups.map(g => g.id));
     const writeGroup = (g, ind) => {
-      out.push(`${ind}${w.group} ${g.id} ${quote(g.label)}${g.icon ? ` icon=${bare(g.icon)}` : ''}${g.color ? ` color=${bare(g.color)}` : ''}${g.kind ? ` ${w.kind}=${w[g.kind]}` : ''}${GOV_WORDS.filter(k => g[k]).map(k => ` ${w[k]}=${bare(g[k])}`).join('')}${g.region ? ` ${w.region}=${bare(g.region)}` : ''}${g.layer ? ` ${w.layer}=${w.layerOf[g.layer] || g.layer}` : ''} {`);
+      out.push(`${ind}${w.group} ${g.id} ${quote(g.label)}${g.icon ? ` icon=${bare(g.icon)}` : ''}${g.color ? ` color=${bare(g.color)}` : ''}${g.kind ? ` ${w.kind}=${w[g.kind]}` : ''}${GOV_WORDS.filter(k => g[k]).map(k => ` ${w[k]}=${bare(g[k])}`).join('')}${g.region ? ` ${w.region}=${bare(g.region)}` : ''}${g.layer ? ` ${w.layer}=${w.layerOf[g.layer] || g.layer}` : ''}${g.controls ? ` ${ctlText(g)}` : ''} {`);
       m.nodes.filter(n => n.group === g.id).forEach(n => out.push(`${ind}  ${nodeLine(n)}`));
       m.groups.filter(c => c.parent === g.id).forEach(c => writeGroup(c, ind + '  '));
       out.push(`${ind}}`);
@@ -365,7 +422,7 @@
       const arrow = ARROW_OF[e.style] || '->';
       const tail = [e.label ? (EDGE_OPT.test(e.label) || /^".*"$/.test(e.label) || /[\n\\]/.test(e.label) ? quote(e.label) : e.label) : '', e.color ? `color=${bare(e.color)}` : '',
         e.data?.length ? `${w.data}=${e.data.join(',')}` : '', e.datasets?.length ? `${DS_KEY[lang] || DS_KEY.en}=${bare(e.datasets.join(','))}` : '', e.encrypted != null ? `${w.encrypted}=${e.encrypted ? w.yes : w.no}` : '',
-        e.both ? `${w.both}=${w.yes}` : '', e.transferOk ? `${w.transfer}=${w.ok}` : '', e.route ? `${w.line}=${e.route === 'elbow' ? w.elbowOne : w.curvedOne}` : ''].filter(Boolean).join(' ');
+        e.both ? `${w.both}=${w.yes}` : '', e.transferOk ? `${w.transfer}=${w.ok}` : '', e.threats && Object.keys(e.threats).length ? `${TH_KEY[lang] || TH_KEY.en}=${Object.entries(e.threats).map(([k, d]) => `${k}=${(TH_ST[lang] || TH_ST.en)[d.status] || d.status}`).join(',')}` : '', e.route ? `${w.line}=${e.route === 'elbow' ? w.elbowOne : w.curvedOne}` : ''].filter(Boolean).join(' ');
       out.push(`${e.from} ${arrow} ${e.to}${tail ? ` : ${tail}` : ''}`);
     });
     const reviewed = m.nodes.filter(n => n.review);
