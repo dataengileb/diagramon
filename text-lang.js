@@ -20,7 +20,7 @@
              costo: número en USD + /hora, /mes, /año o /3años (sin periodo = mensual)
    Grupo:    grupo id "Nombre" icon=aws/group-vpc color=… kind=physical { … }   (se pueden anidar; icon = icono de grupo, opcional;
              kind=logical|physical / tipo=lógico|físico, opcional: sin él se deduce del icono y del nombre)
-   Vista:    view: security   (vista con la que se abre: full, context, logical, physical, security, data, cost, governance/gobierno; opcional)
+   Vista:    view: security   (vista con la que se abre: full, context, logical, physical, security, data, cost, governance/gobierno, resilience/resiliencia; opcional)
    Gobierno: nodo o grupo … owner="Ana Pérez" steward=… team="Data Eng" costcenter=CC-100   (en español: dueño= responsable= equipo= centro=;
              los nodos heredan cada campo del grupo más cercano que lo tenga; los valores con espacios van entre comillas)
    Conexión: a -> b -> c : etiqueta color=…   (la etiqueta va en la última flecha)
@@ -38,6 +38,7 @@
    Niveles C4: nodo o grupo … in=tienda (es: dentro=tienda): vive en el diagrama interno del nodo `tienda` (sin él, en el nivel superior);
              un nodo dentro de las llaves de un grupo con `in=` hereda ese nivel · nodo … c4=container (es: c4=contenedor): tipo C4
              person|persona, system|sistema, container|contenedor, component|componente, external|externo
+   Disponibilidad: nodo … sla=99.95 (objetivo en %; también 99.95% o 99,95) · rpo=15m rto=4h (s, m, h, d; es: igual) · replicas=2 (es: réplicas=; instancias en paralelo, 1 = una sola)
    Comentario: líneas que empiezan por # o //
 
    Acepta las palabras clave en inglés y en español (title/título, group/grupo,
@@ -52,7 +53,7 @@
   const ARROW_SPLIT = /\s*(\.\.>|~>|=>|->)\s*/;
   const HAS_ARROW = /\.\.>|~>|=>|->/;
   const ID = /^[^\s:[\]"{}]+$/;
-  const NODE_KEYS = ['color', 'badge', 'desc', 'sub', 'x', 'y', 'costo', 'cost', 'data', 'datos', 'region', 'región', 'country', 'pais', 'país', 'layer', 'capa', 'exposure', 'exposición', 'exposicion', 'backup', 'respaldo', 'controls', 'controles', 'in', 'dentro', 'c4'];
+  const NODE_KEYS = ['color', 'badge', 'desc', 'sub', 'x', 'y', 'costo', 'cost', 'data', 'datos', 'region', 'región', 'country', 'pais', 'país', 'layer', 'capa', 'exposure', 'exposición', 'exposicion', 'backup', 'respaldo', 'controls', 'controles', 'in', 'dentro', 'c4', 'sla', 'rpo', 'rto', 'replicas', 'réplicas'];
   /* ---------- gobierno: dueño, responsable, equipo, centro de costo ---------- */
   const GOV_KEYS = { owner: 'owner', dueño: 'owner', dueno: 'owner', steward: 'steward', responsable: 'steward', team: 'team', equipo: 'team',
     costcenter: 'costCenter', centro: 'costCenter', centrocosto: 'costCenter', centrodecosto: 'costCenter' };
@@ -381,6 +382,8 @@
         const bv = tk.kv.backup ?? tk.kv.respaldo;
         if (bv != null) { const b = parseBool(bv.trim()); if (b == null) err(ln, msg.backup(bv)); else n.backup = b; }
         applyCtl(n, tk.kv, ln);
+        ['sla', 'rpo', 'rto'].forEach(k => { if (tk.kv[k] != null && tk.kv[k].trim()) n[k] = tk.kv[k].trim(); }); // se limpian en sanitize
+        { const rv = tk.kv.replicas ?? tk.kv.réplicas; if (rv != null && rv.trim()) n.replicas = rv.trim(); }
         const c4v = tk.kv.c4;
         if (c4v != null) { const k = C4_IN[c4v.trim().toLowerCase()]; if (k) n.c4 = k; else err(ln, msg.c4(c4v)); }
         const inV = (tk.kv.in ?? tk.kv.dentro)?.trim();
@@ -420,6 +423,10 @@
       if (n.layer) p.push(`${w.layer}=${w.layerOf[n.layer] || n.layer}`);
       if (n.exposure) p.push(`${w.exposure}=${w.expoOf[n.exposure] || n.exposure}`);
       if (typeof n.backup === 'boolean') p.push(`${w.backup}=${n.backup ? w.yes : w.no}`);
+      if (n.sla != null) p.push(`sla=${n.sla}`);
+      if (n.rpo != null) p.push(`rpo=${n.rpo}`);
+      if (n.rto != null) p.push(`rto=${n.rto}`);
+      if (n.replicas != null) p.push(`${lang === 'es' ? 'réplicas' : 'replicas'}=${n.replicas}`);
       if (n.controls) p.push(ctlText(n));
       if (n.c4) p.push(`c4=${(C4_OUT[lang] || C4_OUT.en)[n.c4] || n.c4}`);
       if (n.in) p.push(`${w.in}=${bare(n.in)}`);
