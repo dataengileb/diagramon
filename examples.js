@@ -247,5 +247,65 @@ window.DIAGRAMON_EXAMPLES = [
         { id: 'z-dr', x: 1900, y: 950, w: 1130, h: 200, label: { en: 'DR failover not tested', es: 'Failover de DR sin probar' }, severity: 'low', desc: { en: 'The pilot light runbook has not been rehearsed in the last 12 months.', es: 'El runbook del pilot light no se ha ensayado en los últimos 12 meses.' } }
       ]
     }
+  },
+  {
+    name: { en: 'Online shop · C4 levels', es: 'Tienda online · niveles C4' },
+    desc: { en: 'System context, containers and components in one file, with architecture decisions (ADR).', es: 'Contexto del sistema, contenedores y componentes en un solo archivo, con decisiones de arquitectura (ADR).' },
+    diagram: {
+      title: { en: 'Online shop · C4 model', es: 'Tienda online · modelo C4' },
+      meta: { author: { en: 'Architecture team', es: 'Equipo de arquitectura' }, version: '1.0' },
+      groups: [
+        { id: 'gData', label: { en: 'Data', es: 'Datos' }, kind: 'logical', in: 'shop' }
+      ],
+      nodes: [
+        { id: 'cust', label: { en: 'Customer', es: 'Cliente' }, type: 'user', c4: 'person', desc: { en: 'Buys products on the web or the mobile app.', es: 'Compra productos en la web o en la app móvil.' } },
+        { id: 'shop', label: { en: 'Shop system', es: 'Sistema de tienda' }, type: 'web', c4: 'system', sub: 'E-commerce', desc: { en: 'Double-click (or Enter) to see its containers.', es: 'Doble clic (o Intro) para ver sus contenedores.' } },
+        { id: 'pay', label: { en: 'Payment provider', es: 'Proveedor de pagos' }, type: 'external', c4: 'external', sub: 'Stripe' },
+        { id: 'mail', label: { en: 'Email service', es: 'Servicio de correo' }, type: 'email', c4: 'external', sub: 'SES' },
+        { id: 'erp', label: 'ERP', type: 'erp', c4: 'external', sub: { en: 'Stock and invoicing', es: 'Stock y facturación' } },
+
+        { id: 'web', label: { en: 'Web front end', es: 'Front end web' }, type: 'web', c4: 'container', sub: 'React · CloudFront', in: 'shop' },
+        { id: 'api', label: 'API', type: 'gateway', c4: 'container', sub: 'Node.js · ECS', in: 'shop', cost: 180, desc: { en: 'Double-click to see its components.', es: 'Doble clic para ver sus componentes.' } },
+        { id: 'db', label: { en: 'Orders DB', es: 'BD de pedidos' }, type: 'db', c4: 'container', sub: 'PostgreSQL · RDS', in: 'shop', group: 'gData', data: ['pii'], cost: 240, backup: true, team: { en: 'Checkout', es: 'Checkout' }, owner: 'Lucía Méndez' },
+        { id: 'queue', label: { en: 'Order events', es: 'Eventos de pedidos' }, type: 'queue', c4: 'container', sub: 'SQS', in: 'shop', group: 'gData', cost: 5 },
+        { id: 'worker', label: { en: 'Fulfilment worker', es: 'Worker de despacho' }, type: 'function', c4: 'container', sub: 'Lambda', in: 'shop', cost: 20 },
+
+        { id: 'ctl', label: { en: 'Orders controller', es: 'Controlador de pedidos' }, type: 'function', c4: 'component', sub: 'REST', in: 'api' },
+        { id: 'svc', label: { en: 'Order service', es: 'Servicio de pedidos' }, type: 'compute', c4: 'component', in: 'api' },
+        { id: 'repo', label: { en: 'Order repository', es: 'Repositorio de pedidos' }, type: 'compute', c4: 'component', in: 'api' },
+        { id: 'payc', label: { en: 'Payment client', es: 'Cliente de pagos' }, type: 'external', c4: 'component', in: 'api' }
+      ],
+      edges: [
+        { from: 'cust', to: 'shop', label: { en: 'Browses and buys', es: 'Navega y compra' } },
+        { from: 'shop', to: 'pay', label: { en: 'Charges cards', es: 'Cobra con tarjeta' }, encrypted: true, data: ['pci'] },
+        { from: 'shop', to: 'mail', label: { en: 'Sends emails', es: 'Envía correos' }, style: 'async' },
+        { from: 'shop', to: 'erp', label: { en: 'Syncs stock', es: 'Sincroniza stock' }, style: 'async' },
+
+        { from: 'cust', to: 'web', label: 'HTTPS', encrypted: true },
+        { from: 'web', to: 'api', label: 'JSON / HTTPS', encrypted: true },
+        { from: 'api', to: 'db', label: 'SQL', encrypted: true, data: ['pii'] },
+        { from: 'api', to: 'queue', label: { en: 'OrderPlaced', es: 'PedidoCreado' }, style: 'async' },
+        { from: 'queue', to: 'worker', style: 'async' },
+        { from: 'api', to: 'pay', label: 'REST', encrypted: true, data: ['pci'] },
+        { from: 'worker', to: 'mail', label: 'SMTP', style: 'async' },
+        { from: 'worker', to: 'erp', label: 'SOAP', style: 'async' },
+
+        { from: 'ctl', to: 'svc' },
+        { from: 'svc', to: 'repo' },
+        { from: 'svc', to: 'payc' }
+      ],
+      decisions: [
+        { id: 'ADR-001', title: { en: 'Split the shop into a web front end and an API', es: 'Separar la tienda en front end web y API' }, status: 'accepted', date: '2026-06-02', deciders: { en: 'Architecture board', es: 'Comité de arquitectura' },
+          context: { en: 'The monolith couples UI releases to backend releases and cannot scale them separately.', es: 'El monolito ata las versiones de la interfaz a las del backend y no permite escalarlas por separado.' },
+          decision: { en: 'Serve the React front end from CloudFront and expose a stateless API on ECS.', es: 'Servir el front end React desde CloudFront y exponer una API sin estado en ECS.' },
+          consequences: { en: 'Independent deploys and scaling; we now need API versioning and CORS rules.', es: 'Despliegues y escalado independientes; ahora hace falta versionar la API y reglas CORS.' },
+          links: { nodes: ['web', 'api'] } },
+        { id: 'ADR-002', title: { en: 'Process fulfilment asynchronously with a queue', es: 'Procesar el despacho de forma asíncrona con una cola' }, status: 'proposed', date: '2026-09-20',
+          context: { en: 'Email and ERP calls slow down checkout and fail when those systems are down.', es: 'Las llamadas al correo y al ERP ralentizan el pago y fallan cuando esos sistemas no responden.' },
+          decision: { en: 'Publish an OrderPlaced event to SQS and handle email and ERP sync in a Lambda worker.', es: 'Publicar un evento PedidoCreado en SQS y resolver el correo y el ERP en un worker Lambda.' },
+          consequences: { en: 'Faster checkout; eventual consistency and a dead-letter queue to monitor.', es: 'Pago más rápido; consistencia eventual y una cola de mensajes fallidos que vigilar.' },
+          links: { nodes: ['queue', 'worker'] } }
+      ]
+    }
   }
 ];

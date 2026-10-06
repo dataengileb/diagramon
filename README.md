@@ -280,6 +280,19 @@ Open the **Versions** tab.
 - Saving, opening, deleting and every edit can be undone with **`⌘Z`**.
 - Versions are stored inside the diagram, so **Export › JSON** carries them all.
 
+#### Architecture decisions (ADR)
+
+Open the **ADR** tab to record *why* the architecture is the way it is, in the MADR style: **context**, **decision** and **consequences**.
+
+- **+ New decision** adds a card (`ADR-001`, `ADR-002`…). Click it to edit its title, **status** (*Proposed*, *Accepted*, *Rejected*, *Deprecated*, *Superseded*), date, deciders and the three texts. Choosing **Superseded by** marks it *Superseded*.
+- Link a decision to what it affects: **Link selection** links the selected components, connection or group, and **Link version…** a saved version. Linked items show as chips; click one to select it on the canvas (or to jump to the version).
+- The component, connection and group panels have a **Decisions** field with the linked ADRs, **+ New decision** (already linked) and **Link…** to pick an existing one. Each version card lists its ADRs and has **+ ADR**.
+- Components with a *proposed* or *accepted* decision show an **ADR n** tag on the canvas (views that show review marks); hover it to read the titles.
+- Status chips with counts and a search box filter the list. **Export Markdown** downloads every decision as one `.md` file: an index table plus one section per ADR.
+- A decision *proposed* for more than 30 days is a low finding in the **Review** tab.
+- Decisions belong to the document, not to a version: opening a version or editing the *Text* tab keeps them, and they are saved in **Export › JSON** under `decisions`. Everything can be undone with **`⌘Z`**.
+- From the console: `Diagramon.decisions()`, `Diagramon.addDecision({ title, status, context, decision, consequences, links: { nodes: [...] } })`, `Diagramon.updateDecision(id, patch)`, `Diagramon.removeDecision(id)` and `Diagramon.exportDecisions()`.
+
 ### 9. Sticky notes and risk zones
 
 Use the two buttons next to the zoom controls (bottom right of the canvas).
@@ -312,6 +325,17 @@ Some zones are **trust boundaries** instead of risk zones: open a zone and switc
   SVG and PNG files then get a panel at the bottom with only what the diagram uses (connection styles, padlocks,
   component colors, data classes) and a title block with title, author, version, date and estimated cost.
 
+#### Architecture report
+
+**Export › Architecture report…** builds the document architecture review boards ask for, with no libraries and no network:
+
+- **Format**: **PDF** (opens your browser's print dialog on a print-ready A4 document: choose *Save as PDF*), **Markdown** (`.md`) or **HTML** (`.html`, one self-contained file, the same document as the PDF with no external requests).
+- **Sections** (all on by default, remembered): Summary · Diagram · Components · Connections · Data classification & residency · Owners · Data lake layers · Costs · Security findings · Compliance · Threat model · Decisions (ADR) · Version history · Notes & risk zones. A section with no data is skipped and shown as *(none)*.
+- **Diagram**: pick which of the 8 views to include (the active view, plus Security and Data when they add something). If the diagram has internal diagrams (C4 levels), **Include internal diagrams** renders each one. Images use the light theme by default (good for print); **Use current theme** keeps the one on screen.
+- **Markdown images** are embedded as `data:` PNGs. Some Markdown viewers block them, so tick **Save images as separate files** to download the PNGs next to the `.md` and reference them by file name.
+- Texts come out in the current interface language, dates and money in the document's formats, and everything is escaped.
+- From the console: `Diagramon.exportReport({ format: 'pdf' | 'md' | 'html', sections?: [...], views?: [...], scopes?: true | false, theme?: 'light' | 'current', separateImages?: boolean })` returns a promise with the generated HTML or Markdown after starting the download or the print dialog. Section keys: `summary diagram components connections data owners layers costs findings compliance threats decisions versions notes`.
+
 ### Views
 
 A **view** is a way of looking at the same diagram: it only decides what is shown, how much detail and what stands out. It never changes your components or positions. Pick one from the **View** selector in the top bar, with keys **`1`**–**`8`**, or from the console (`Diagramon.setView('security')`). When the view is not *Full*, a pill above the canvas names it, counts what it hides or dims, and has an **×** to go back. The document card and the legend of exports follow the active view.
@@ -328,6 +352,20 @@ A **view** is a way of looking at the same diagram: it only decides what is show
 | `8` | **Governance** | Who owns what: components colored by team (or owner), with a team chip under each; components with neither fade |
 
 The rules of each view live in `config.js` › `views`; groups can be marked `logical` or `physical` in the inspector.
+
+### C4 levels (drill-down)
+
+One file can hold several levels of detail, as in the **C4 model**: *system context* → *containers* → *components*. Any component can have an **internal diagram**; the model stays flat (each element just says which component it lives `in`), so reviews, lineage, compliance, owners, costs and versions keep seeing everything.
+
+1. Select a component and press **Create internal diagram** in the inspector (**C4 element** section), then add components inside it. New components, groups, notes and zones take the level you are in. Inside a *Software system* they default to *Container*, inside a *Container* to *Component*.
+2. A component that has an internal diagram shows a **⊞ n** chip on the right of its card. **Click the chip**, **double-click the component** (double-click its *name* to rename), press **`Enter`** with it selected, or use **Open internal diagram** in the inspector.
+3. Go back with **`Esc`** (with nothing selected), **`Alt`+`↑`** or the **breadcrumb** above the canvas (*Top › Shop system › API*), which also names the C4 level (*L1 System context*, *L2 Containers*, *L3 Components*).
+4. Inside a level, a dashed **boundary frame** carries the parent's name and C4 type. What lives outside but connects to it (other systems, the parent's neighbours) appears as dimmed **ghost cards** left (incoming) and right (outgoing) of the frame; click one to jump to its level.
+5. Pick a **C4 element** (*Person*, *Software system*, *Container*, *Component*, *External system*) in the inspector; it shows as a `[Container]` tag on components without a detail line, and in the tooltip.
+6. **Move into…** (nodes you selected go inside another component of the same level) and **Move up a level** are in the inspector; connections follow, and groups travel with their nodes when all of them move. Deleting a component with an internal diagram asks first, and deletes everything inside it.
+7. Each level has its own positions and its own **Auto layout**, **Fit** and presentation. Views (*Context* collapse included), filters, findings and exports all work inside the open level. **Export** › *All levels* writes one image per level with content.
+
+From the console: `Diagramon.setScope('api')`, `Diagramon.scope`, `Diagramon.scopes()`, `Diagramon.exportLevels('png')`.
 
 ### Keyboard shortcuts
 
@@ -351,7 +389,9 @@ The rules of each view live in `config.js` › `views`; groups can be marked `lo
 | `E` | Switch curved / elbow connectors |
 | `G` | Open the filter panel (`Esc` closes it) |
 | `1`–`8` | Switch view: Full, Context, Logical, Physical, Security, Data, Cost, Governance |
-| `Esc` | Cancel or clear the selection |
+| `Enter` | Open the internal diagram of the selected component (C4 levels) |
+| `Esc` | Cancel or clear the selection; with nothing selected, go up one C4 level |
+| `Alt`+`↑` | Go up one C4 level |
 
 ---
 
@@ -427,6 +467,7 @@ api ~> queue : events
 | `a -> b : x data=pii transfer=ok` | Cross-border transfer approved (`transferencia=ok` in Spanish) |
 | `a -> b : SQL threats="T=mitigated,I=accepted"` | STRIDE decisions of a connection (Spanish: `amenazas=`); letters `S T R I D E`, statuses `mitigated`, `accepted`, `na` (Spanish `mitigada`, `aceptada`, `na`). Notes and trust boundaries are not part of the text |
 | `group id "Name" color=… { … }` | Group; groups can be nested |
+| `in=shop` (Spanish: `dentro=shop`) · `c4=container` | C4 levels: the node or group lives in the internal diagram of `shop`; C4 type `person`, `system`, `container`, `component` or `external` (Spanish: `persona`, `sistema`, `contenedor`, `componente`, `externo`). Nodes inside the braces of a group with `in=` inherit its level |
 | `layer=gold` (`bronze`, `silver`, `gold`; also `raw`, `curated`, `serving`) | Data lake layer of a node or group (Spanish: `capa=oro`); nodes inherit it from their group |
 | `layers: zones` | Show Raw / Curated / Serving instead of Bronze / Silver / Gold (Spanish: `capas: zonas`) |
 | `exposure=public` (`internal`) · `backup=yes` (`no`) | Override the deduced exposure and backup of a node (Spanish: `exposición=pública` / `interna`, `respaldo=sí` / `no`) |
@@ -482,6 +523,7 @@ Everything you can customize is in **`config.js`**. Save and reload `index.html`
 - **Data lake layers**: `dataLayers` sets the layers in order (`label` for the medallion names, `alt` for the Raw/Curated/Serving names, short letters and `color`). Colors default to `--layer-bronze`, `--layer-silver` and `--layer-gold`, set per theme in `index.html`; edit them there or put a fixed color in `config.js`. `layerAliases` lists the other words accepted when reading JSON and text. Each view's `layers` flag shows or hides them.
 - **Automatic security review**: `securityRules` in `config.js` has one entry per rule (`sec.unencrypted-sensitive`, `sec.unstated-encryption`, `sec.public-sensitive`, `sec.datastore-backup`, `sec.cross-border`, `sec.sensitive-no-owner`, `sec.public-datastore`) with `enabled` (set `false` to turn a rule off) and `severity` (`low`, `medium`, `high`, `critical`). The rest are the rule's parameters: `clientTypes`, `publicGroupIcons` and `publicGroupName` (what counts as public), `dataStoreTypes` and `dataStoreIconCategories`, `backupIcons`, `backupName` and `backupEdgeLabel` (what counts as a backup). Text patterns are case-insensitive RegExps.
 - **Compliance**: `compliance.frameworks` is an ordered map `key → { label, short, url?, controls: { '<id>': { label: { en, es } } } }`. Add a control by adding a line in its framework, or a framework (NIST CSF, ENS, DORA…) by copying a block; JSON and Text accept any `framework:id`, even without a catalog entry. `compliance.suggest` maps each data class (and `crossBorder`) to the controls offered as chips; the first one of each list is the one the review expects.
+- **Architecture decisions**: `adr.staleDays` (default `30`) is how many days a *proposed* decision can wait before it shows as a low finding in the *Review* tab; `0` turns it off.
 - **Environments**: `environments` sets the buttons of the *Versions* tab (name, short label and color). Add or remove as many as you need.
 - **Node size**: with `node.sameSize: true` (default) every node is `node.width` wide and long names wrap to 2 lines.
   With `false`, each node grows with its text.
@@ -519,7 +561,8 @@ Set `"icons": { "enabled": false }` in `config.js` to turn them off.
 <summary><b>Extension API</b></summary>
 
 `window.Diagramon` exposes `model`, `load()`, `addNode()`, `addEdge()`, `select()`, `align()`, `relayout()`,
-`fitView()`, `togglePlay()`, `toggleTheme()`, `toggleLang()`, `lang`, `saveVersion()`, `openVersion()`, `compareVersion()`, `deleteVersion()`, `exportSVG()`, `exportPNG()`, `exportJSON()`, `lineage()`, `datasets()`, `owners()`, `crossBorder()`, `layers()`, `setLayerNames()`, `compliance()`, `exportCompliance()`, `config` and `icons`.
+`fitView()`, `togglePlay()`, `toggleTheme()`, `toggleLang()`, `lang`, `saveVersion()`, `openVersion()`, `compareVersion()`, `deleteVersion()`, `exportSVG()`, `exportPNG()`, `exportJSON()`, `lineage()`, `datasets()`, `owners()`, `crossBorder()`, `layers()`, `setLayerNames()`, `compliance()`, `exportCompliance()`, `decisions()`, `addDecision()`, `updateDecision()`, `removeDecision()`, `exportDecisions()`, `config` and `icons`.
+Also: `setScope(id | null)`, `scope`, `scopes()` and `exportLevels(format)` for C4 levels.
 The text language is in `window.DiagramonText` (`parse` and `stringify`). UI translations are in `window.DiagramonI18n`.
 
 </details>
@@ -566,7 +609,10 @@ Things that work but have not been checked in depth yet. They probably need some
 - **Drawing a trust boundary by hand** with the mouse has not been tried; it was tested from the API and the multi-selection action.
 - **Text tab**: notes on STRIDE decisions, trust boundaries and dismissed findings are not part of the text format, so a round trip through the *Text* tab keeps the statuses but loses the notes.
 - Security review, compliance and STRIDE fields (`exposure`, `backup`, `controls`, `threats`, trust zones, dismissed findings) are not exported to Mermaid, PlantUML or draw.io.
+- **Architecture decisions** (ADR) are not part of the text format and are not exported to Mermaid, PlantUML or draw.io; they are not compared between versions. The ADR tag on the canvas and the Markdown export have not been reviewed visually in every theme.
 - The compliance catalog is a practical subset of each standard with paraphrased titles; check it before relying on it for an audit.
+- **Architecture report**: the PDF print dialog itself has not been tried yet (HTML and Markdown were checked). The PDF depends on the browser print dialog (page headers and numbers appear only where the browser supports CSS `@page` margin boxes). Markdown viewers that block `data:` images show nothing for the diagrams unless you save the images as separate files. Large diagrams with many views and internal levels can take several seconds. The report has not been checked on very wide tables in print, and the Compliance matrix is listed per control and per component rather than as a grid.
+- **C4 levels**: entering and leaving levels (`Enter`, `Esc`, `Alt+↑`, breadcrumb), the boundary frame, ghost cards, adding components inside a level, undo, *Export all levels* and the report with internal diagrams were checked in the browser; *Move into…* / *Move up a level*, deleting a component with an internal diagram, double-click on the card vs the name, and Auto layout inside a level have not been tried yet. Ghost edge labels can overlap when several connections leave the boundary close together. *Duplicate* does not copy the internal diagram of a duplicated component, and Mermaid, PlantUML and draw.io export the whole flat model (no levels, `in` and `c4` are ignored). Text tab: nodes without `in=` go to the top level, so edit a level from the Text tab by writing `in=` on its nodes. Ghost cards show at most 8 per side. Elements that cross levels (an edge between two different levels) are only drawn as ghosts, they cannot be selected on the canvas; reach them from the inspector links.
 
 ---
 

@@ -68,16 +68,17 @@
     provider: store.get('provider', 'generic'),
     compare: null, verNote: '', verEdit: null,
     viewKey: viewKey(store.get('view')),  // vista activa (S.view es la cámara); viewChosen: el usuario ya eligió una en esta sesión
-    viewChosen: false, flow: null         // flow: conexión agregada elegida en la vista Contexto
+    viewChosen: false, flow: null,        // flow: conexión agregada elegida en la vista Contexto
+    scope: null                           // nivel C4 abierto: id del nodo cuyo diagrama interno se ve (null = nivel superior)
   };
   // Referencias a elementos SVG y medidas calculadas (nunca se guardan en el modelo)
   const R = { nodes: new Map(), edges: new Map(), groups: new Map(), width: new Map(), gbox: new Map(), notes: new Map(), zones: new Map() };
   // Lo que la vista activa oculta o resume (se recalcula en applyViewMode / updateContext) y el último resaltado
-  const VW = { dimNodes: 0, dimEdges: 0, hideNodes: new Set(), hideEdges: new Set(), hideGroups: new Set(), flows: new Map(), ctxBoxes: new Map(), ctxEdges: new Map(), gcost: null };
+  const VW = { dimNodes: 0, dimEdges: 0, hideNodes: new Set(), hideEdges: new Set(), hideGroups: new Set(), flows: new Map(), ctxBoxes: new Map(), ctxEdges: new Map(), gcost: null, sc: { nodes: new Set(), edges: new Set(), groups: new Set() }, xs: null };
   const HL = { f: null, fr: null };
 
   const svg = $('#canvas'), viewport = $('#viewport'), stage = $('#stage');
-  const L = { zones: $('#l-zones'), groups: $('#l-groups'), edges: $('#l-edges'), ctx: $('#l-ctx'), ghosts: $('#l-ghosts'), nodes: $('#l-nodes'), zoneTop: $('#l-zone-top'), notes: $('#l-notes'), guides: $('#l-guides') };
+  const L = { zones: $('#l-zones'), groups: $('#l-groups'), edges: $('#l-edges'), ctx: $('#l-ctx'), ghosts: $('#l-ghosts'), nodes: $('#l-nodes'), zoneTop: $('#l-zone-top'), notes: $('#l-notes'), guides: $('#l-guides'), scope: $('#l-scope') };
 
   const ICON = {
     x: '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>',
@@ -562,6 +563,7 @@
 
     m.groups.forEach(g => { const l = cleanLayer(g.layer); if (l) g.layer = l; else delete g.layer; });
     m.groups.forEach(g => { const c = cleanControls(g.controls); if (c) g.controls = c; else delete g.controls; });
+    m.groups.forEach(g => { if (g.in == null || g.in === '') delete g.in; else g.in = String(g.in); }); // nivel C4: se valida al final, cuando ya existen los nodos
     list(raw.nodes).forEach((n, i) => {
       const type = C.types[n.type] ? n.type : 'generic';
       const o = { ...n, id: take(n.id, 'n', i), type, label: String(n.label ?? typeLabel(type)) };
@@ -575,6 +577,8 @@
       { const l = cleanLayer(o.layer); if (l) o.layer = l; else delete o.layer; }
       { const ex = cleanExposure(o.exposure); if (ex) o.exposure = ex; else delete o.exposure; const bk = cleanBackup(o.backup); if (bk != null) o.backup = bk; else delete o.backup; }
       { const c = cleanControls(o.controls); if (c) o.controls = c; else delete o.controls; }
+      if (o.in == null || o.in === '') delete o.in; else o.in = String(o.in);
+      { const k = cleanC4(o.c4); if (k) o.c4 = k; else delete o.c4; }
       m.nodes.push(o);
     });
     [...m.groups, ...m.nodes].forEach(cleanGov);
@@ -597,15 +601,19 @@
     list(raw.notes).forEach((n, i) => {
       const o = { id: take(n.id, 'note', i), ...cleanBox(n, 180, 110), text: String(n.text ?? '') };
       if (n.color != null && String(n.color).trim()) o.color = String(n.color).trim();
+      if (n.in != null && n.in !== '') o.in = String(n.in);
       m.notes.push(o);
     });
     list(raw.zones).forEach((z, i) => {
       const o = { id: take(z.id, 'zone', i), ...cleanBox(z, 360, 220), label: String(z.label ?? ''), severity: SEVERITY.includes(z.severity) ? z.severity : 'medium' };
       if (z.kind === 'trust') { o.kind = 'trust'; delete o.severity; if (z.trust != null && String(z.trust).trim()) o.trust = String(z.trust).trim(); }
       if (z.desc != null && String(z.desc).trim()) o.desc = String(z.desc);
+      if (z.in != null && z.in !== '') o.in = String(z.in);
       m.zones.push(o);
     });
+    cleanScopes(m);
     m.versions = normVersions(raw.versions);
+    m.decisions = cleanDecisions(raw.decisions, m);
     if (raw.active != null && m.versions.some(v => v.id === String(raw.active))) m.active = String(raw.active);
     return m;
   }
@@ -654,7 +662,12 @@
     });
   }
 
+  // Cada nivel C4 tiene su propio espacio de coordenadas: se ordena por separado (sin `in` en ningún lado = un solo nivel, como siempre)
   function ensurePositions(m) {
+    if (!m.nodes.some(n => n.in)) return ensurePositionsIn(m);
+    [...new Set(m.nodes.map(n => n.in || null))].forEach(sc => ensurePositionsIn(scopeModel(m, sc)));
+  }
+  function ensurePositionsIn(m) {
     const ok = n => Number.isFinite(+n.x) && Number.isFinite(+n.y) && n.x !== '' && n.y !== '' && n.x != null && n.y != null;
     const missing = m.nodes.filter(n => !ok(n));
     m.nodes.forEach(n => { if (ok(n)) { n.x = +n.x; n.y = +n.y; } });
@@ -697,6 +710,83 @@
     while (g && i++ < 50) { if (g === gid) return true; g = groupById(g)?.parent; }
     return false;
   }
+  /* ---------- niveles C4: un nodo puede tener un diagrama interno ---------- */
+  // El modelo sigue plano: `in` (en nodos, grupos, notas y zonas) = id del nodo cuyo diagrama interno lo contiene; omitido = nivel superior.
+  // Una conexión pertenece a un nivel cuando sus dos extremos lo hacen; con extremos en niveles distintos cruza niveles.
+  const C4_KINDS = ['person', 'system', 'container', 'component', 'external'];
+  const C4_ALIAS = { person: 'person', persona: 'person', system: 'system', sistema: 'system', container: 'container', contenedor: 'container', component: 'component', componente: 'component', external: 'external', externo: 'external' };
+  const cleanC4 = v => C4_ALIAS[fold(v).trim()] || '';
+  const scopeId = x => (x && x.in) || null;
+  const inScope = (x, sc = S.scope) => scopeId(x) === sc;
+  // Nivel al que pertenece un elemento (objeto, o id de nodo / grupo)
+  function scopeOf(x, m = S.model) {
+    if (typeof x === 'string') x = m.nodes.find(n => n.id === x) || m.groups.find(g => g.id === x);
+    return scopeId(x);
+  }
+  // Ids desde el nivel superior hasta `id` (incluido); [] para el nivel superior
+  function scopePath(id, m = S.model) {
+    const out = [];
+    let cur = id, i = 0;
+    while (cur && i++ < 50) { const n = m.nodes.find(x => x.id === cur); if (!n) break; out.unshift(cur); cur = n.in; }
+    return out;
+  }
+  // Lo que contiene directamente un nodo (null = nivel superior)
+  function innerOf(id, m = S.model) {
+    const sc = id || null, f = x => (x.in || null) === sc;
+    return { nodes: m.nodes.filter(f), groups: m.groups.filter(f), notes: (m.notes || []).filter(f), zones: (m.zones || []).filter(f) };
+  }
+  const innerCount = (id, m = S.model) => m.nodes.reduce((a, n) => a + (n.in === id ? 1 : 0), 0);
+  // Ids de todos los nodos que cuelgan de `ids`, a cualquier profundidad
+  function innerDeep(ids, m = S.model) {
+    const out = new Set(), q = [...ids];
+    while (q.length) { const u = q.pop(); m.nodes.forEach(n => { if (n.in === u && !out.has(n.id)) { out.add(n.id); q.push(n.id); } }); }
+    return out;
+  }
+  // La parte del modelo que se ve en un nivel (nodos, grupos y conexiones entre ellos). Sin `in` en ningún sitio = el propio modelo
+  function scopeModel(m = S.model, sc = S.scope) {
+    if (!sc && !m.nodes.some(n => n.in) && !m.groups.some(g => g.in)) return m;
+    const f = x => (x.in || null) === sc, nodes = m.nodes.filter(f), ids = new Set(nodes.map(n => n.id));
+    return { ...m, nodes, groups: m.groups.filter(f), edges: m.edges.filter(e => ids.has(e.from) && ids.has(e.to)) };
+  }
+  // Sanea `in`: debe apuntar a un nodo que existe, no a sí mismo ni formar ciclos; un grupo y su padre (o un nodo y su grupo) comparten nivel
+  function cleanScopes(m) {
+    const byId = new Map(m.nodes.map(n => [n.id, n]));
+    m.nodes.forEach(n => { if (n.in && (!byId.has(n.in) || n.in === n.id)) delete n.in; });
+    m.nodes.forEach(n => {
+      const seen = new Set([n.id]);
+      let p = n.in;
+      while (p) { if (seen.has(p)) { delete n.in; break; } seen.add(p); p = byId.get(p)?.in; }
+    });
+    [...m.groups, ...m.notes, ...m.zones].forEach(x => { if (x.in && !byId.has(x.in)) delete x.in; });
+    const gmap = new Map(m.groups.map(g => [g.id, g]));
+    m.groups.forEach(g => { if (g.parent && (gmap.get(g.parent)?.in || null) !== (g.in || null)) delete g.parent; });
+    m.nodes.forEach(n => { if (n.group && (gmap.get(n.group)?.in || null) !== (n.in || null)) delete n.group; });
+  }
+  const scopeNode = (id = S.scope) => (id ? S.model.nodes.find(n => n.id === id) || null : null);
+  const c4Label = k => (C4_KINDS.includes(k) ? T(`c4.k.${k}`) : '');
+  // Nivel C4 de lo que hay dentro de un nodo: 1 contexto, 2 contenedores, 3 componentes, 4 código. Manda el tipo C4 del nodo; si no, la profundidad
+  function levelOf(id = S.scope) {
+    const nd = scopeNode(id);
+    return ({ system: 2, container: 3, component: 4 })[nd?.c4] || scopePath(id).length + 1;
+  }
+  const levelName = n => (n <= 4 ? T(`c4.level.${n}`) : T('c4.levelN', n));
+  // Tipo C4 que se sugiere para lo nuevo dentro de un nodo
+  const c4Default = id => ({ system: 'container', container: 'component' })[scopeNode(id)?.c4] || '';
+  const hasLevels = (m = S.model) => m.nodes.some(n => n.in);
+  // Niveles con contenido: el superior y cada nodo con diagrama interno, en profundidad
+  function scopeList(m = S.model) {
+    const out = [];
+    const walk = (id, depth) => {
+      const nodes = m.nodes.filter(n => (n.in || null) === id);
+      if (id === null || nodes.length) out.push({ id, label: id ? m.nodes.find(n => n.id === id).label : T('c4.top'), depth, path: scopePath(id, m), nodes: nodes.length });
+      if (depth < 20) nodes.forEach(n => walk(n.id, depth + 1));
+    };
+    walk(null, 0);
+    return out;
+  }
+  // Notas y zonas del nivel abierto
+  const scopeItems = k => S.model[k].filter(o => inScope(o));
+  const itemInScope = (k, id) => { const o = S.model[k].find(x => x.id === id); return !o || inScope(o); };
   /* ---------- dueños y responsables: dueño, responsable de datos, equipo y centro de costo (heredan del grupo) ---------- */
   const GOV_FIELDS = ['owner', 'steward', 'team', 'costCenter'];
   const cleanGov = o => GOV_FIELDS.forEach(f => { const v = o[f] == null ? '' : String(o[f]).trim(); if (v) o[f] = v; else delete o[f]; });
@@ -815,6 +905,62 @@
     const late = reviewState(n.review) === 'overdue';
     return { id: `review:observation:node:${n.id}`, source: 'review', rule: 'observation', severity: late ? 'high' : 'medium', target: { kind: 'node', id: n.id }, title: n.review.note || T('find.rev.untitled', n.label), detail: reviewHint(n.review), fix: T('find.rev.fix') };
   }));
+
+  /* ---------- decisiones de arquitectura (ADR): modelo ---------- */
+  // m.decisions = [{ id: 'ADR-001', title, status, date, context, decision, consequences, deciders?, supersededBy?, links: { nodes?, edges?, groups?, versions? } }]
+  // Son del documento: no entran en las fotos de versiones (snapshotOf) y sobreviven al abrir una versión y a los editores.
+  const ADR_STATUS = ['proposed', 'accepted', 'rejected', 'deprecated', 'superseded'];
+  const ADR_COLOR = { proposed: 'var(--p-limon)', accepted: 'var(--p-menta)', rejected: 'var(--p-coral)', deprecated: 'var(--muted)', superseded: 'var(--p-lavanda)' };
+  const ADR_ALIAS = { propuesta: 'proposed', propuesto: 'proposed', aceptada: 'accepted', aceptado: 'accepted', rechazada: 'rejected', rechazado: 'rejected', obsoleta: 'deprecated', obsoleto: 'deprecated', reemplazada: 'superseded', reemplazado: 'superseded', sustituida: 'superseded', sustituido: 'superseded', superada: 'superseded', superado: 'superseded' };
+  const adrStatus = v => { const k = String(v ?? '').trim().toLowerCase(); return ADR_STATUS.includes(k) ? k : ADR_ALIAS[k] || 'proposed'; };
+  const adrNum = id => { const r = /^ADR-(\d+)$/i.exec(String(id)); return r ? +r[1] : 0; };
+  const adrNextId = list => `ADR-${String(Math.max(0, ...list.map(d => adrNum(d.id))) + 1).padStart(3, '0')}`;
+  // Solo enlaces a ids que existen (versiones: las de m.versions)
+  function cleanAdrLinks(l, m) {
+    const out = {};
+    l = l && typeof l === 'object' ? l : {};
+    [['nodes', m.nodes], ['edges', m.edges], ['groups', m.groups], ['versions', m.versions || []]].forEach(([k, src]) => {
+      const ok = new Set(src.map(x => x.id)), ids = [...new Set((Array.isArray(l[k]) ? l[k] : []).map(String).filter(id => ok.has(id)))];
+      if (ids.length) out[k] = ids;
+    });
+    return out;
+  }
+  function cleanDecisions(raw, m) {
+    const txt = v => String(v ?? '').replace(/\r\n?/g, '\n').slice(0, 20000);
+    const seen = new Set(), items = [];
+    (Array.isArray(raw) ? raw : []).forEach(d => {
+      if (!d || typeof d !== 'object' || Array.isArray(d)) return;
+      const o = { title: String(d.title ?? '').trim().slice(0, 200), context: txt(d.context), decision: txt(d.decision), consequences: txt(d.consequences) };
+      let id = String(d.id ?? '').trim().slice(0, 40);
+      if (!id && !o.title && !o.context && !o.decision && !o.consequences) return;
+      if (!id || seen.has(id)) id = ''; else seen.add(id);
+      items.push({ ...o, id, status: adrStatus(d.status), date: isDay(d.date) ? d.date : today(), deciders: String(d.deciders ?? '').trim().slice(0, 200), sup: String(d.supersededBy ?? '').trim(), links: cleanAdrLinks(d.links, m) });
+    });
+    items.forEach(o => { if (!o.id) o.id = adrNextId(items); });
+    const ids = new Set(items.map(o => o.id));
+    return items.map(o => {
+      const r = { id: o.id, title: o.title, status: o.status, date: o.date, context: o.context, decision: o.decision, consequences: o.consequences };
+      if (o.deciders) r.deciders = o.deciders;
+      if (o.sup && o.sup !== o.id && ids.has(o.sup)) { r.supersededBy = o.sup; r.status = 'superseded'; }
+      r.links = o.links;
+      return r;
+    });
+  }
+  const decisionsOf = (kind, id, m = S.model) => (m?.decisions || []).filter(d => d.links?.[kind]?.includes(id));
+  // Tras borrar nodos, conexiones, grupos o versiones: quita de los enlaces los ids que ya no existen
+  function pruneAdrLinks(m = S.model) { (m.decisions || []).forEach(d => { d.links = cleanAdrLinks(d.links, m); }); }
+  // Hallazgo bajo (fuente «adr»): propuestas sin resolver desde hace más de C.adr.staleDays días
+  addFindingSource('adr', m => {
+    const days = C.adr?.staleDays ?? 30;
+    if (!(days > 0)) return [];
+    const now = Date.now();
+    return (m.decisions || []).filter(d => d.status === 'proposed').flatMap(d => {
+      const age = Math.floor((now - new Date(`${d.date}T12:00`).getTime()) / 864e5);
+      if (!(age > days)) return [];
+      const l = d.links || {}, tk = l.nodes?.[0] ? 'node' : l.edges?.[0] ? 'edge' : l.groups?.[0] ? 'group' : 'node', tid = l.nodes?.[0] || l.edges?.[0] || l.groups?.[0] || '';
+      return [{ id: `adr:stale:${d.id}`, source: 'adr', rule: 'stale', severity: 'low', target: { kind: tk, id: tid }, title: T('adr.find.stale', { id: d.id, n: age }), detail: d.title, fix: T('adr.find.fix') }];
+    });
+  });
 
   function uniqueId(prefix) {
     const used = new Set([...S.model.nodes, ...S.model.edges, ...S.model.groups, ...S.model.notes, ...S.model.zones].map(x => x.id));
@@ -1029,6 +1175,11 @@
     el('text', { x: x + w / 2, y: y + h / 2 + 3.4, 'text-anchor': 'middle' }, g).textContent = t.short;
     return w;
   }
+  // Etiqueta «ADR n» (lavanda) de las decisiones propuestas o aceptadas que enlazan el nodo; el tooltip las lista
+  const adrTags = n => {
+    const ds = decisionsOf('nodes', n.id).filter(d => d.status === 'proposed' || d.status === 'accepted');
+    return ds.length ? [{ short: `ADR ${ds.length}`, label: ds.map(d => `${d.id} · ${d.title || d.id} (${T(`adr.st.${d.status}`)})`).join('\n'), color: 'var(--p-lavanda)', cls: 'dt-adr' }] : [];
+  };
   // Candado cerrado (cifrado) o abierto (sin cifrar), de 10 px de ancho
   function lockIcon(parent, x, on) {
     const g = el('g', { class: `edge-lock ${on ? 'on' : 'off'}`, transform: `translate(${x} 0)` }, parent);
@@ -1158,6 +1309,8 @@
       const r = map.get(o.id), t = `translate(${o.x} ${o.y})`;
       r?.g.setAttribute('transform', t);
       r?.top?.setAttribute('transform', t);
+      const out = !inScope(o); // de otro nivel C4
+      r?.g.classList.toggle('v-hide', out); r?.top?.classList.toggle('v-hide', out);
     }));
   }
   const markItems = () => {
@@ -1335,7 +1488,7 @@
 
   function buildNode(n, delay) {
     const t = typeOf(n), w = R.width.get(n.id);
-    const g = el('g', { class: 'node', 'data-id': n.id }, L.nodes);
+    const g = el('g', { class: 'node' + (n.c4 ? ` c4-${n.c4}` : ''), 'data-id': n.id }, L.nodes);
     g.style.setProperty('--c', nodeColor(n));
     const b = el('g', { class: 'node-body' + (delay >= 0 ? ' enter' : '') }, g);
     if (delay >= 0) { b.style.animationDelay = `${delay}ms`; endEnter(b); }
@@ -1349,11 +1502,12 @@
       el('rect', { class: 'node-icon-bg', x: 12, y: (H - 40) / 2, width: 40, height: 40, rx: 11 }, b);
       el('g', { class: 'node-icon', transform: `translate(20 ${(H - 24) / 2})` }, b).innerHTML = t.icon;
     }
-    const max = w - 64 - 16;
+    const inn = innerCount(n.id), ctxt = inn ? `⊞ ${inn}` : '', cw = inn ? Math.ceil(textW(ctxt, FONT.badge)) + 14 : 0; // indicador del diagrama interno, a la derecha dentro de la tarjeta
+    const max = w - 64 - 16 - (cw ? cw + 4 : 0);
     // Nombre en 1 o 2 líneas y detalle debajo, todo centrado en vertical
     const lines = C.node.sameSize !== false ? wrapText(n.label, FONT.label, max) : [fitText(n.label, FONT.label, max)];
     // Con detalle se dibujan dos variantes (completa y mínima, centradas cada una): la vista elige cuál se ve
-    const sub = n.sub ? fitText(n.sub, FONT.sub, max) : '';
+    const sub = n.sub ? fitText(n.sub, FONT.sub, max) : n.c4 ? fitText(`[${c4Label(n.c4)}]`, FONT.sub, max) : ''; // sin detalle propio, el tipo C4 ocupa su línea
     const paint = (withSub, cls) => {
       const top = (H - lines.length * 16 - (withSub && sub ? 15 : 0)) / 2;
       lines.forEach((l, i) => { el('text', { class: `node-label${cls}`, x: 64, y: top + 12 + i * 16 }, b).textContent = l; });
@@ -1361,10 +1515,10 @@
     };
     if (sub) { paint(true, ' nd-full'); paint(false, ' nd-min'); } else paint(false, '');
     // Arriba a la izquierda: la observación de revisión (si hay) y las clasificaciones de datos
-    const dt = [...(n.review ? [{ ...reviewTag(n.review), cls: 'dt-review' }] : []), ...dataTags(n).map(t => ({ ...t, cls: 'dt-data' }))];
+    const dt = [...(n.review ? [{ ...reviewTag(n.review), cls: 'dt-review' }] : []), ...dataTags(n).map(t => ({ ...t, cls: 'dt-data' })), ...adrTags(n)];
     const rg = regionOf(n).value;
     const ly = layerOf(n), li = ly.value ? layerInfo(ly.value) : null;
-    el('title', null, g).textContent = [n.sub ? `${n.label} · ${n.sub}` : n.label, ...dt.map(t => t.label), govTip(n), cmpTip(n), li ? T('layer.tip', { l: li.label }) : '', rg ? T('res.tip', regionLabel(rg)) : ''].filter(Boolean).join('\n');
+    el('title', null, g).textContent = [n.sub ? `${n.label} · ${n.sub}` : n.label, n.c4 ? `${T('c4.label')}: ${c4Label(n.c4)}` : '', inn ? T('c4.inner.tip', inn) : '', ...dt.map(t => t.label), govTip(n), cmpTip(n), li ? T('layer.tip', { l: li.label }) : '', rg ? T('res.tip', regionLabel(rg)) : ''].filter(Boolean).join('\n');
     if (dt.length) {
       const dg = el('g', { class: 'node-data' }, b);
       let x = 14;
@@ -1397,6 +1551,12 @@
       el('text', { x: ow / 2, y: 14, 'text-anchor': 'middle' }, og).textContent = ot;
     }
     if (li) drawNodeLayer(b, li);
+    if (inn) {
+      const cg = el('g', { class: 'node-inner', transform: `translate(${w - 8 - cw} ${(H - 20) / 2})` }, b);
+      el('title', null, cg).textContent = T('c4.inner.tip', inn);
+      el('rect', { width: cw, height: 20, rx: 10 }, cg);
+      el('text', { x: cw / 2, y: 14, 'text-anchor': 'middle' }, cg).textContent = ctxt;
+    }
     R.nodes.set(n.id, g);
   }
 
@@ -1519,10 +1679,12 @@
     updateItems();
 
     const sc = R.edges.size && m.zones.some(z => z.kind === 'trust') ? strideCtx(m) : null;
-    const pairs = new Set(m.edges.map(e => e.from + '\0' + e.to));
-    const allRects = m.nodes.map(n => ({ id: n.id, ...rect(n.id) }));
-    const ports = elbowPorts(m.edges, rect, routeOf);
+    const sm = scopeModel(); // solo el nivel abierto cuenta para los obstáculos y los anclajes de los codos
+    const pairs = new Set(sm.edges.map(e => e.from + '\0' + e.to));
+    const allRects = sm.nodes.map(n => ({ id: n.id, ...rect(n.id) }));
+    const ports = elbowPorts(sm.edges, rect, routeOf);
     R.edges.forEach(r => {
+      if (VW.sc.edges.has(r.e.id)) return;
       const e = r.e, a = rect(e.from), b = rect(e.to), off = pairs.has(e.to + '\0' + e.from) ? 7 : 0, pt = ports.get(e.id);
       const d = e.from === e.to ? loopPath(a)
         : pt ? elbowPath(a, b, pt.s, allRects.filter(o => o.id !== e.from && o.id !== e.to), pt.t) : curvePath(a, b, off);
@@ -1561,6 +1723,7 @@
       r.tag.setAttribute('transform', `translate(${box.x + 12} ${box.y + 10})`);
     });
     updateContext();
+    drawScopeFrame();
     if (S.compare?.diff) drawGhosts();
   }
 
@@ -1622,6 +1785,7 @@
     if (vc().groups === 'collapse-top') { toast(T('ctx.noPath')); return null; }
     const m = S.model;
     if (!m.nodes.some(n => n.id === a) || !m.nodes.some(n => n.id === b) || a === b) return null;
+    if (VW.sc.nodes.has(a) || VW.sc.nodes.has(b)) { toast(T('view.hiddenHere')); return null; } // el camino solo se pide entre nodos visibles (mismo nivel C4)
     let directed = true, res = shortestPaths(m, a, b, true);
     if (!res) { directed = false; res = shortestPaths(m, a, b, false); }
     clearPath();
@@ -1636,6 +1800,7 @@
     bar.hidden = false;
     if (res) {
       res.nodes.forEach(id => {
+        if (VW.hideNodes.has(id)) return;
         const n = m.nodes.find(x => x.id === id), g = el('g', { class: 'path-badge', transform: `translate(${n.x + 2} ${n.y + 2})` }, L.guides);
         el('circle', { r: 9 }, g);
         el('text', {}, g).textContent = res.dist.get(id) + 1;
@@ -1715,7 +1880,7 @@
     bar.hidden = false;
     res.nodes.forEach(id => {
       const n = m.nodes.find(x => x.id === id);
-      if (!n) return;
+      if (!n || VW.hideNodes.has(id)) return;
       const g = el('g', { class: `path-badge${res.origins.includes(id) ? ' lin-src' : ''}${res.consumers.includes(id) ? ' lin-dst' : ''}`, transform: `translate(${n.x + 2} ${n.y + 2})` }, L.guides);
       el('circle', { r: 9 }, g);
       el('text', {}, g).textContent = res.dist.get(id) + 1;
@@ -1777,7 +1942,7 @@
 
   // Encuadra solo algunos nodos (suave); no aleja más de lo necesario
   function fitNodes(ids) {
-    const ns = S.model.nodes.filter(n => ids.includes(n.id)), r = svg.getBoundingClientRect();
+    const ns = S.model.nodes.filter(n => ids.includes(n.id) && !VW.hideNodes.has(n.id)), r = svg.getBoundingClientRect();
     if (!ns.length || !r.width) return;
     const x0 = Math.min(...ns.map(n => n.x)), y0 = Math.min(...ns.map(n => n.y));
     const x1 = Math.max(...ns.map(n => n.x + R.width.get(n.id))), y1 = Math.max(...ns.map(n => n.y + nodeBoxH(n)));
@@ -1879,6 +2044,13 @@
       m.edges.forEach(e => hideE.add(e.id));
       m.groups.forEach(g => (g.parent ? hideG : top).add(g.id));
     } else if (v.groups === 'logical') m.groups.forEach(g => { if (groupKind(g) === 'physical') hideG.add(g.id); });
+    // Nivel C4 abierto: lo de otros niveles se oculta con el mismo mecanismo que las vistas (las conexiones que cruzan niveles se dibujan aparte)
+    const sc = { nodes: new Set(), edges: new Set(), groups: new Set() };
+    m.nodes.forEach(n => { if (!inScope(n)) sc.nodes.add(n.id); });
+    m.groups.forEach(g => { if (!inScope(g)) sc.groups.add(g.id); });
+    m.edges.forEach(e => { if (sc.nodes.has(e.from) || sc.nodes.has(e.to)) sc.edges.add(e.id); });
+    sc.nodes.forEach(id => hideN.add(id)); sc.edges.forEach(id => hideE.add(id)); sc.groups.forEach(id => hideG.add(id));
+    VW.sc = sc;
 
     if (emph === 'security') {
       m.nodes.forEach(n => nodeCls.set(n.id, isSensitive(n) ? 'v-hl' : 'v-dim'));
@@ -1939,8 +2111,8 @@
     if (sel.kind === 'multi') return normSel({ kind: 'multi', ids: sel.ids.filter(id => !VW.hideNodes.has(id)) });
     if (sel.kind === 'edge') return VW.hideEdges.has(sel.id) ? null : sel;
     if (sel.kind === 'group') return VW.hideGroups.has(sel.id) ? null : sel;
-    if (sel.kind === 'note') return v.notes ? sel : null;
-    if (sel.kind === 'zone') return v.zones ? sel : null;
+    if (sel.kind === 'note') return v.notes && itemInScope('notes', sel.id) ? sel : null;
+    if (sel.kind === 'zone') return v.zones && itemInScope('zones', sel.id) ? sel : null;
     return sel;
   }
   // Vuelve a pintar todo con la vista activa (sin reconstruir el lienzo)
@@ -1978,7 +2150,7 @@
   function viewCounts() {
     const m = S.model, v = vc();
     if (v.groups === 'collapse-top') return { ctx: [...VW.ctxBoxes.values()].reduce((a, b) => a + b.ids.length, 0), hidden: 0, dim: 0 };
-    const hidden = VW.hideNodes.size + VW.hideGroups.size + VW.hideEdges.size + (v.zones ? 0 : m.zones.length) + (v.notes ? 0 : m.notes.length);
+    const hidden = VW.hideNodes.size - VW.sc.nodes.size + VW.hideGroups.size - VW.sc.groups.size + VW.hideEdges.size - VW.sc.edges.size + (v.zones ? 0 : scopeItems('zones').length) + (v.notes ? 0 : scopeItems('notes').length);
     return { hidden, dim: VW.dimNodes + VW.dimEdges };
   }
   function renderViewMenu() {
@@ -2042,6 +2214,241 @@
   // si no, la última que eligió (guardada) o la de config.js. Deshacer, versiones y editores no la cambian.
   const adoptMetaView = m => { if (!S.viewChosen) S.viewKey = viewKey(m.meta?.view || store.get('view')); };
 
+  /* ---------- niveles C4: abrir, salir, marco de límite y fantasmas del exterior ---------- */
+  // Abre el diagrama interno de un nodo (null = nivel superior). Las posiciones de cada nivel son independientes.
+  function setScope(id, opts = {}) {
+    id = id && S.model.nodes.some(n => n.id === id) ? id : null;
+    if (id === S.scope) { if (opts.fit) fitView(); return id; }
+    stopPlay(); cancelConnect();
+    $('.item-edit')?.blur();
+    S.scope = id; S.flow = null; S.hover = null;
+    store.set('scope', id);
+    if (!opts.keepSel) S.sel = null;
+    if (S.path) clearPath();
+    refreshView();
+    updateMeta();
+    viewport.classList.remove('xs-enter'); void viewport.getBoundingClientRect(); viewport.classList.add('xs-enter');
+    viewport.addEventListener('animationend', () => viewport.classList.remove('xs-enter'), { once: true });
+    if (opts.fit !== false) fitView(opts.fit !== 'instant');
+    return id;
+  }
+  const scopeUp = () => { if (S.scope) setScope(scopeNode()?.in || null); };
+  // Abre el diagrama interno del nodo; si está vacío, entra igualmente y avisa de cómo empezarlo
+  function openInner(id) {
+    const n = S.model.nodes.find(x => x.id === id);
+    if (!n) return false;
+    const empty = !innerCount(id);
+    setScope(id);
+    if (empty) toast(T('c4.emptyHint', { name: n.label }), 3600);
+    return true;
+  }
+  // La selección puede estar en otro nivel (un hallazgo, un vecino del inspector, el diff de versiones…): se abre ese nivel
+  function revealScope(sel) {
+    if (!sel || !S.model) return;
+    const m = S.model, o = sel.kind === 'node' ? m.nodes.find(x => x.id === sel.id) : sel.kind === 'group' ? m.groups.find(x => x.id === sel.id)
+      : sel.kind === 'note' ? m.notes.find(x => x.id === sel.id) : sel.kind === 'zone' ? m.zones.find(x => x.id === sel.id)
+      : sel.kind === 'edge' ? m.nodes.find(x => x.id === m.edges.find(e => e.id === sel.id)?.from) : null;
+    if (o && scopeId(o) !== S.scope) setScope(scopeId(o), { fit: false, keepSel: true });
+  }
+  // Migas de pan: «Superior › Sistema › Contenedor» y el nivel C4 en el que se está
+  function renderCrumbs() {
+    const box = $('#stage-scope');
+    if (!box || !S.model) return;
+    const show = !!S.scope || hasLevels();
+    $('#empty-scope').hidden = !S.scope || scopeModel().nodes.length > 0;
+    box.hidden = !show;
+    if (!show) { box.innerHTML = ''; return; }
+    const path = scopePath(S.scope), crumbs = [{ id: '', label: T('c4.top') }, ...path.map(id => ({ id, label: scopeNode(id).label }))], last = crumbs.length - 1;
+    box.setAttribute('aria-label', T('c4.crumbs'));
+    box.innerHTML = crumbs.map((c, i) => `${i ? '<span class="sep" aria-hidden="true">›</span>' : ''}<button class="crumb${i === last ? ' on' : ''}" data-scope="${esc(c.id)}"${i === last ? ' aria-current="location"' : ''} title="${esc(c.label)}">${esc(c.label)}</button>`).join('')
+      + `<span class="lvl" title="${esc(T('c4.level.tip'))}">L${levelOf()} · ${esc(levelName(levelOf()))}</span>`;
+  }
+  $('#stage-scope').addEventListener('click', ev => { const b = ev.target.closest('[data-scope]'); if (b && !b.classList.contains('on')) setScope(b.dataset.scope || null); });
+
+  // Marco de límite (C4) alrededor de lo del nivel abierto y tarjetas fantasma de lo que queda fuera pero se conecta con ello.
+  // Es solo dibujo (no se guarda): va en el SVG para que se exporte.
+  function drawScopeFrame() {
+    L.scope.textContent = ''; VW.xs = null;
+    const nd = scopeNode();
+    if (!nd) return;
+    const m = S.model, sm = scopeModel(), collapse = vc().groups === 'collapse-top';
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    const add = (x, y, w, h) => { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x + w); y1 = Math.max(y1, y + h); };
+    sm.nodes.forEach(n => add(n.x, n.y, R.width.get(n.id) || C.node.width, nodeBoxH(n)));
+    sm.groups.forEach(g => { const b = R.gbox.get(g.id); if (b) add(b.x, b.y, b.w, b.h); });
+    const PAD = 44, LBL = 26, kind = c4Label(nd.c4), name = `${nd.label}${kind ? ` [${kind}]` : ''}`;
+    const nameW = Math.ceil(textW(name, '700 12.5px')) + 36;
+    let fr = x0 === Infinity ? { x: 0, y: 0, w: 560, h: 260 } : { x: x0 - PAD, y: y0 - PAD - LBL, w: x1 - x0 + 2 * PAD, h: y1 - y0 + 2 * PAD + LBL };
+    if (fr.w < nameW) { fr.x -= (nameW - fr.w) / 2; fr.w = nameW; }
+    const frame = el('g', { class: 'xs-frame' }, L.scope);
+    el('rect', { class: 'xs-frame-box', x: fr.x, y: fr.y, width: fr.w, height: fr.h, rx: 18 }, frame);
+    el('text', { class: 'xs-frame-label', x: fr.x + 18, y: fr.y + 24 }, frame).textContent = fitText(name, '700 12.5px', fr.w - 36);
+    el('title', null, frame).textContent = name;
+    // Fantasmas: lo de fuera conectado con algo de dentro (conexión entre niveles) y los vecinos del propio nodo en su nivel
+    const inner = new Set(sm.nodes.map(n => n.id)), byId = new Map(m.nodes.map(n => [n.id, n])), ghosts = new Map(), links = new Map();
+    const link = (gid, target, e, out) => { // out: la conexión sale del interior (o del marco) hacia el fantasma
+      if (!ghosts.has(gid)) ghosts.set(gid, { n: byId.get(gid), inc: false });
+      if (!out) ghosts.get(gid).inc = true;
+      const k = `${gid}|${target || '*'}|${out ? 1 : 0}`, cur = links.get(k);
+      if (cur) { if (e.label && !cur.label) cur.label = e.label; cur.both ||= !!e.both; return; }
+      links.set(k, { gid, target, out, label: e.label || '', both: !!e.both });
+    };
+    m.edges.forEach(e => {
+      const a = inner.has(e.from), b = inner.has(e.to);
+      if (a === b) return;
+      const ext = a ? e.to : e.from;
+      if (ext === nd.id || !byId.has(ext)) return;
+      link(ext, a ? e.from : e.to, e, a);
+    });
+    m.edges.forEach(e => {
+      if (e.from !== nd.id && e.to !== nd.id) return;
+      const other = byId.get(e.from === nd.id ? e.to : e.from);
+      if (other && other.id !== nd.id && scopeId(other) === scopeId(nd)) link(other.id, null, e, e.from === nd.id);
+    });
+    const GAP = 110, ROW = H + 26, MAXG = 8, sides = { l: [], r: [] };
+    ghosts.forEach(g => (g.inc ? sides.l : sides.r).push(g));
+    const rects = new Map(), more = [];
+    [['l', sides.l], ['r', sides.r]].forEach(([s, list]) => {
+      const shown = list.slice(0, MAXG), top = fr.y + fr.h / 2 - shown.length * ROW / 2 + 13;
+      shown.forEach((g, i) => {
+        const w = nodeWidth(g.n);
+        rects.set(g.n.id, { x: s === 'l' ? fr.x - GAP - w : fr.x + fr.w + GAP, y: top + i * ROW, w, h: H });
+      });
+      if (list.length > shown.length) more.push({ s, k: list.length - shown.length, y: top + shown.length * ROW });
+    });
+    const target = id => { const n = id && inner.has(id) && !VW.hideNodes.has(id) ? byId.get(id) : null; return n ? { x: n.x, y: n.y, w: R.width.get(n.id) || nodeWidth(n), h: H } : fr; };
+    links.forEach(l => {
+      const gr = rects.get(l.gid);
+      if (!gr || collapse) return;
+      const t = target(l.target), A = l.out ? t : gr, B = l.out ? gr : t;
+      const d = m.routing === 'elbow' ? elbowPath(A, B, 0, []) : curvePath(A, B, 0);
+      const g = el('g', { class: 'xs-edge' }, L.scope), line = el('path', { class: 'xs-edge-line', d }, g);
+      el('path', { class: 'xs-edge-arrow', d: arrowD(line, line.getTotalLength(), l.both) }, g);
+      if (l.label) { const mp = line.getPointAtLength(line.getTotalLength() / 2); el('text', { class: 'xs-edge-label', x: mp.x, y: mp.y - 4 }, g).textContent = fitText(String(l.label).split('\n')[0], FONT.edge, 150); }
+    });
+    rects.forEach((r, id) => {
+      const n = byId.get(id), g = el('g', { class: 'xs-ghost', 'data-xs': id, transform: `translate(${r.x} ${r.y})` }, L.scope);
+      g.style.setProperty('--c', nodeColor(n));
+      el('rect', { class: 'xs-ghost-card', width: r.w, height: r.h, rx: C.node.radius }, g);
+      const where = scopePath(scopeId(n)).map(x => byId.get(x)?.label).filter(Boolean).join(' › '), tag = c4Label(n.c4);
+      const sub = [tag ? `[${tag}]` : '', where].filter(Boolean).join(' · ');
+      el('text', { class: 'xs-ghost-name', x: 16, y: sub ? r.h / 2 - 3 : r.h / 2 + 5 }, g).textContent = fitText(n.label, FONT.label, r.w - 32);
+      if (sub) el('text', { class: 'xs-ghost-sub', x: 16, y: r.h / 2 + 14 }, g).textContent = fitText(sub, FONT.sub, r.w - 32);
+      el('title', null, g).textContent = `${n.label}${where ? ` · ${where}` : ''}\n${T('c4.ghost.tip')}`;
+    });
+    more.forEach(o => {
+      const w = C.node.width;
+      el('text', { class: 'xs-ghost-sub', x: o.s === 'l' ? fr.x - GAP - w + 16 : fr.x + fr.w + GAP + 16, y: o.y + 14 }, L.scope).textContent = T('c4.ghost.more', o.k);
+    });
+    VW.xs = { frame: fr, ghosts: [...rects.values()] };
+  }
+
+  /* ---------- niveles C4: mover entre niveles ---------- */
+  // Mueve nodos al diagrama interno de `target` (id de un nodo; null = nivel superior). Los grupos que quedan enteros viajan con ellos;
+  // las conexiones los siguen solas. Los nodos se recolocan junto a lo que ya hay en el nivel de destino.
+  function moveToScope(ids, target) {
+    const m = S.model, set = new Set(ids), nodes = m.nodes.filter(n => set.has(n.id));
+    target = target || null;
+    if (!nodes.length) return false;
+    if (target && (set.has(target) || innerDeep(ids).has(target) || !m.nodes.some(n => n.id === target))) return false;
+    if (nodes.every(n => scopeId(n) === target)) return false;
+    pushHistory();
+    // Un grupo viaja si todos sus nodos se mueven; si no, el nodo sale de su grupo
+    const gmove = new Set(m.groups.filter(g => { const mem = m.nodes.filter(n => inGroup(n, g.id)); return mem.length && mem.every(n => set.has(n.id)); }).map(g => g.id));
+    const rest = m.nodes.filter(n => scopeId(n) === target && !set.has(n.id));
+    const bx = Math.min(...nodes.map(n => n.x)), by = Math.min(...nodes.map(n => n.y));
+    const dx = rest.length ? snap(Math.max(...rest.map(n => n.x + (R.width.get(n.id) || nodeWidth(n)))) + 80 - bx) : snap(-bx);
+    const dy = rest.length ? snap(Math.min(...rest.map(n => n.y)) - by) : snap(-by);
+    nodes.forEach(n => {
+      n.x += dx; n.y += dy;
+      if (target) n.in = target; else delete n.in;
+      if (n.group && !gmove.has(n.group)) delete n.group;
+    });
+    m.groups.forEach(g => {
+      if (!gmove.has(g.id)) return;
+      if (target) g.in = target; else delete g.in;
+      if (g.parent && !gmove.has(g.parent)) delete g.parent;
+    });
+    S.sel = null; S.hover = null;
+    changed(true);
+    renderInspector();
+    toast(T('c4.moved', { n: nodes.length, where: target ? m.nodes.find(n => n.id === target).label : T('c4.top') }));
+    return true;
+  }
+  const moveUp = () => { if (S.scope && selIds().length) moveToScope(selIds(), scopeNode()?.in || null); };
+  // Sección «Niveles C4» del inspector (nodo o varios): tipo C4, abrir el diagrama interno y mover entre niveles
+  function c4Field(items) {
+    const list = [].concat(items), one = list.length === 1 && list[0], kinds = new Set(list.map(n => n.c4 || '')), k1 = kinds.size === 1 ? [...kinds][0] : null;
+    const sib = scopeModel().nodes.filter(n => !list.some(x => x.id === n.id)), inner = one ? innerCount(one.id) : 0;
+    return `<div class="c4-box">
+      <label>${T('c4.label')}<select data-field="c4">${k1 == null ? `<option value="__mixed" selected>${T('insp.mixed')}</option>` : ''}<option value=""${k1 === '' ? ' selected' : ''}>—</option>${C4_KINDS.map(k => `<option value="${k}"${k1 === k ? ' selected' : ''}>${esc(c4Label(k))}</option>`).join('')}</select></label>
+      <div class="insp-actions" style="margin-top:0">
+        ${one ? `<button class="btn" data-act="c4open" title="${esc(T('c4.open.tip'))}">${T(inner ? 'c4.open' : 'c4.create')}${inner ? ` · ${inner}` : ''}</button>` : ''}
+        ${S.scope ? `<button class="btn" data-act="c4up">${T('c4.moveUp')}</button>` : ''}
+      </div>
+      ${sib.length ? `<label>${T('c4.moveInto')}<select data-c4-into><option value="">—</option>${sib.map(n => `<option value="${esc(n.id)}">${esc(n.label)}</option>`).join('')}</select></label>` : ''}
+    </div>`;
+  }
+
+  /* ---------- niveles C4: exportar todos los niveles ---------- */
+  // Ejecuta fn(nivel, i) en cada nivel con contenido SIN guardar nada; al final restaura el nivel, la vista y la selección
+  async function eachScope(list, fn) {
+    const saved = { scope: S.scope, sel: S.sel, view: { ...S.view } };
+    viewBusy = true;
+    stopPlay(); clearPath();
+    try {
+      for (let i = 0; i < list.length; i++) {
+        setScope(list[i].id, { fit: false });
+        await fn(list[i], i);
+      }
+    } finally {
+      viewBusy = false;
+      setScope(saved.scope, { fit: false });
+      select(saved.sel);
+      Object.assign(S.view, saved.view); applyView();
+    }
+  }
+  // Un archivo por nivel con contenido (<título>-nivel-<ruta>.png|svg): el superior y cada nodo con diagrama interno
+  async function exportLevels(format = 'png') {
+    format = format === 'svg' ? 'svg' : 'png';
+    if (viewBusy || P || !S.model.nodes.length) return false;
+    const list = scopeList().filter(s => s.nodes), slug = s => (s.id ? s.path.map(id => fold(S.model.nodes.find(n => n.id === id)?.label || id).replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || id).join('-') : 'top');
+    if (list.length < 2) { toast(T('c4.noLevels'), 3000); return 0; }
+    let done = 0;
+    try {
+      await eachScope(list, async (s, i) => {
+        toast(T('c4.progress', { i: i + 1, n: list.length, name: s.label }), 60000);
+        const out = buildSVG(), suffix = `${T('c4.file')}-${slug(s)}`;
+        if (format === 'svg') download(out.str, fileName('svg', suffix), 'image/svg+xml');
+        else {
+          const blob = await pngBlob(out);
+          if (!blob) throw new Error('png');
+          download(blob, fileName('png', suffix));
+        }
+        done++;
+        await new Promise(r => setTimeout(r, 350));
+      });
+    } catch { toast(T('toast.pngFail'), 3200); return done; }
+    toast(T('c4.done', done), 4200);
+    return done;
+  }
+  // Importar infraestructura como código estando dentro de un nivel: se añade a ese nivel (no sustituye el diagrama)
+  function importIntoScope(raw) {
+    const d = normalize(clone(raw));
+    ensurePositions(d);
+    const m = S.model, used = new Set([...m.nodes, ...m.edges, ...m.groups, ...m.notes, ...m.zones].map(x => x.id)), map = new Map();
+    const fresh = id => { let v = String(id); while (used.has(v)) v += '_'; used.add(v); return v; };
+    [...d.groups, ...d.nodes].forEach(x => map.set(x.id, fresh(x.id)));
+    const rest = scopeModel().nodes, ox = rest.length ? Math.max(...rest.map(n => n.x + (R.width.get(n.id) || nodeWidth(n)))) + 100 - Math.min(...d.nodes.map(n => n.x)) : 0, oy = rest.length ? Math.min(...rest.map(n => n.y)) - Math.min(...d.nodes.map(n => n.y)) : 0;
+    pushHistory();
+    d.groups.forEach(g => { const o = { ...g, id: map.get(g.id), in: S.scope }; if (o.parent) o.parent = map.get(o.parent); m.groups.push(o); });
+    d.nodes.forEach(n => { const o = { ...n, id: map.get(n.id), in: S.scope, x: snap(n.x + ox), y: snap(n.y + oy) }; if (o.group) o.group = map.get(o.group); const k = c4Default(S.scope); if (k && !o.c4) o.c4 = k; m.nodes.push(o); });
+    d.edges.forEach(e => m.edges.push({ ...e, id: fresh(e.id), from: map.get(e.from), to: map.get(e.to) }));
+    changed(true);
+    fitView();
+    return d.nodes.length;
+  }
+
   /* ---------- vista Contexto: cajas cerradas y conexiones agregadas (solo dibujo; el modelo no cambia) ---------- */
   function updateContext() {
     L.ctx.textContent = '';
@@ -2051,7 +2458,7 @@
     const topOf = gid => { let g = gmap.get(gid), i = 0; while (g?.parent && gmap.has(g.parent) && i++ < 50) g = gmap.get(g.parent); return g; };
     // Representante visible de cada nodo: la caja cerrada de su grupo de primer nivel, o él mismo
     const reps = new Map(), repOf = new Map();
-    m.nodes.forEach(n => {
+    scopeModel().nodes.forEach(n => {
       const tg = n.group && topOf(n.group), b = tg && R.gbox.get(tg.id), k = b ? `g:${tg.id}` : `n:${n.id}`;
       // La caja cerrada es una tarjeta compacta centrada en el centro del grupo (no del tamaño del grupo)
       const card = b && { w: Math.min(b.w, 300), h: Math.min(b.h, 128) };
@@ -2234,10 +2641,11 @@
       VW.ctxBoxes.forEach(b => { const q = b.card; add(q.x, q.y, q.w, q.h); });
       VW.ctxEdges.forEach(e => { try { const q = e.g.getBBox(); add(q.x, q.y, q.width, q.height); } catch { /* sin medir */ } });
     } else {
-    S.model.nodes.forEach(n => add(n.x, n.y, R.width.get(n.id) || C.node.width, nodeBoxH(n)));
+    S.model.nodes.forEach(n => { if (!VW.hideNodes.has(n.id)) add(n.x, n.y, R.width.get(n.id) || C.node.width, nodeBoxH(n)); });
     R.gbox.forEach((b, id) => { if (!VW.hideGroups.has(id)) add(b.x, b.y, b.w, b.h); });
     }
-    [...(vc().notes ? S.model.notes : []), ...(vc().zones ? S.model.zones : [])].forEach(o => add(o.x, o.y, o.w, o.h));
+    [...(vc().notes ? scopeItems('notes') : []), ...(vc().zones ? scopeItems('zones') : [])].forEach(o => add(o.x, o.y, o.w, o.h));
+    if (VW.xs) { const q = VW.xs.frame; add(q.x, q.y, q.w, q.h); VW.xs.ghosts.forEach(g => add(g.x, g.y, g.w, g.h)); } // marco de límite y fantasmas del nivel C4
     return x0 === Infinity ? null : { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
   }
   function fitView(smooth = true) {
@@ -2299,14 +2707,15 @@
   }
 
   // Además de guardar, refresca el aviso de "cambios sin guardar" de la versión abierta
-  const save = debounce(() => { store.set('model', S.model); updateMeta(); renderVersions(); }, 250);
+  const save = debounce(() => { store.set('model', S.model); updateMeta(); renderVersions(); renderAdr(); }, 250);
 
   const ORDER = {
-    group: ['id', 'label', 'icon', 'color', 'parent', 'kind', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'controls'],
-    node: ['id', 'label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'x', 'y', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'exposure', 'backup', 'controls'],
+    group: ['id', 'label', 'icon', 'color', 'parent', 'kind', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'controls', 'in'],
+    node: ['id', 'label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'x', 'y', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'exposure', 'backup', 'controls', 'in', 'c4'],
     edge: ['id', 'from', 'to', 'label', 'style', 'route', 'both', 'color', 'data', 'encrypted', 'datasets', 'transferOk', 'threats'],
-    note: ['id', 'x', 'y', 'w', 'h', 'text', 'color'],
-    zone: ['id', 'x', 'y', 'w', 'h', 'label', 'severity', 'desc', 'kind', 'trust']
+    note: ['id', 'x', 'y', 'w', 'h', 'text', 'color', 'in'],
+    zone: ['id', 'x', 'y', 'w', 'h', 'label', 'severity', 'desc', 'kind', 'trust', 'in'],
+    decision: ['id', 'title', 'status', 'date', 'deciders', 'context', 'decision', 'consequences', 'supersededBy', 'links']
   };
   function serialize(m, full = false) {
     const ordered = (o, keys) => { const r = {}; keys.forEach(k => k in o && (r[k] = o[k])); Object.keys(o).forEach(k => k in r || (r[k] = o[k])); return r; };
@@ -2326,6 +2735,7 @@
     const body = [...head, arr('groups', m.groups, ORDER.group), arr('nodes', m.nodes, ORDER.node), arr('edges', m.edges, ORDER.edge)];
     if (m.notes?.length) body.push(arr('notes', m.notes, ORDER.note));
     if (m.zones?.length) body.push(arr('zones', m.zones, ORDER.zone));
+    if (m.decisions?.length) body.push(arr('decisions', m.decisions, ORDER.decision));
     // El archivo exportado lleva también las versiones; el editor JSON no las muestra
     if (full && m.versions?.length) {
       if (m.active) body.push(`  "active": ${JSON.stringify(m.active)}`);
@@ -2376,10 +2786,14 @@
     if (opts.fromEditor && S.model && raw && typeof raw === 'object') {
       if (!Array.isArray(raw.notes)) raw = { ...raw, notes: S.model.notes };
       if (!Array.isArray(raw.zones)) raw = { ...raw, zones: S.model.zones };
+      if (!Array.isArray(raw.decisions)) raw = { ...raw, decisions: S.model.decisions }; // ni el texto ni el JSON (si se borra la clave) tocan las decisiones
       if (opts.fromEditor === 'text' && raw.dismissed === undefined && S.model.dismissed) raw = { ...raw, dismissed: S.model.dismissed }; // el texto no trae los hallazgos descartados
     }
     S.model = normalize(raw);
     ensurePositions(S.model);
+    if (opts.animate && !opts.keepScope) S.scope = null;  // otro diagrama: nivel superior; deshacer, versiones y editores conservan el nivel si sigue existiendo
+    if (S.scope && !S.model.nodes.some(n => n.id === S.scope)) S.scope = null;
+    store.set('scope', S.scope);
     if (opts.animate) { adoptMetaView(S.model); S.flow = null; }
     S.sel = normSel(S.sel);
     if (S.sel && !selTarget()) S.sel = null;
@@ -2390,6 +2804,7 @@
     updateRouteButton();
     writeEditors(opts.fromEditor, !opts.fromEditor);
     renderInspector();
+    renderAdr(true);
     save();
     updateUndoButtons();
     if (opts.fit) fitView(opts.fit !== 'instant');
@@ -2398,6 +2813,7 @@
   // Tras cambiar el modelo desde el lienzo o el inspector
   function changed(structural = true) {
     if (S.path) clearPath();
+    if (S.model.decisions?.length) pruneAdrLinks();
     if (structural) render(false); else { updateGeometry(); applyCompare(); }
     syncEditor();
     save();
@@ -2416,10 +2832,12 @@
     const reviews = open.length ? T('meta.review', { n: open.length, o: overdue }) : '';
     refreshFindings();
     const nFind = FC.open.filter(f => f.source === 'rule').length;
-    $('#stage-meta').textContent = [T('meta.nodes', m.nodes.length), T('meta.edges', m.edges.length), m.groups.length ? T('meta.groups', m.groups.length) : '', costs, insecure ? T('meta.insecure', insecure) : '', xb ? T('meta.xborder', xb) : '', zones, reviews, nFind ? T('meta.findings', nFind) : ''].filter(Boolean).join(' · ');
+    const sm = scopeModel(m);
+    $('#stage-meta').textContent = [T('meta.nodes', sm.nodes.length), T('meta.edges', sm.edges.length), sm.groups.length ? T('meta.groups', sm.groups.length) : '', costs, insecure ? T('meta.insecure', insecure) : '', xb ? T('meta.xborder', xb) : '', zones, reviews, nFind ? T('meta.findings', nFind) : ''].filter(Boolean).join(' · ');
     const t = $('#title');
     if (document.activeElement !== t) t.value = m.title;
-    $('#empty').hidden = m.nodes.length > 0;
+    $('#empty').hidden = !!S.scope || sm.nodes.length > 0;
+    renderCrumbs();
     const v = activeVersion(), pill = $('#stage-ver');
     pill.hidden = !v;
     if (v) {
@@ -2625,6 +3043,7 @@
   }
   function select(sel, opts = {}) {
     S.flow = null;
+    revealScope(sel);  // un elemento de otro nivel C4: se abre ese nivel
     S.sel = visibleSel(normSel(sel));
     if (S.sel && !selTarget()) S.sel = null;
     if (S.path) clearPath();
@@ -2648,11 +3067,14 @@
     const n = { id: uniqueId(`${base}-`), label: extra.label || typeLabel(type), type: S.lastType };
     if (extra.icon) n.icon = extra.icon;
     if (extra.sub) n.sub = extra.sub;
+    if (S.scope) { n.in = S.scope; const k = c4Default(S.scope); if (k) n.c4 = k; } // lo nuevo nace en el nivel abierto (con el tipo C4 que toca)
     n.x = snap(wx - nodeWidth(n) / 2);
     n.y = snap(wy - H / 2);
     // Si cae dentro de un grupo, entra en el más profundo
     let best = null, depth = -1;
     R.gbox.forEach((b, gid) => {
+      const gq = groupById(gid);
+      if (!gq || !inScope(gq)) return;
       if (wx >= b.x && wx <= b.x + b.w && wy >= b.y && wy <= b.y + b.h) {
         const d = groupDepth(groupById(gid));
         if (d > depth) { depth = d; best = gid; }
@@ -2693,9 +3115,19 @@
     applyHighlight();
   }
 
-  function deleteSelection() {
+  function deleteSelection(opts = {}) {
     const s = S.sel, t = selTarget();
     if (!t) return;
+    // Un nodo con diagrama interno se lleva su contenido (a cualquier profundidad): se pide confirmación
+    if ((s.kind === 'node' || s.kind === 'multi') && !opts.confirmed) {
+      const deep = selNodes().filter(n => innerCount(n.id));
+      if (deep.length) {
+        const total = innerDeep(deep.map(n => n.id)).size;
+        confirmBox({ title: T('c4.del.title', deep.length), text: T('c4.del.text', total), list: deep.map(n => `${n.label} · ${T('c4.del.n', innerCount(n.id))}`), ok: T('insp.delete'), cancel: T('ver.cf.cancel'), danger: true })
+          .then(ok => { if (ok && selTarget()) deleteSelection({ confirmed: true }); });
+        return;
+      }
+    }
     pushHistory();
     const m = S.model;
     if (s.kind === 'note' || s.kind === 'zone') {
@@ -2703,8 +3135,10 @@
       m[k] = m[k].filter(x => x.id !== s.id);
     } else if (s.kind === 'node' || s.kind === 'multi') {
       const ids = new Set(selIds());
+      innerDeep([...ids]).forEach(id => ids.add(id));
       m.nodes = m.nodes.filter(n => !ids.has(n.id));
       m.edges = m.edges.filter(e => !ids.has(e.from) && !ids.has(e.to));
+      m.groups = m.groups.filter(g => !ids.has(g.in)); m.notes = m.notes.filter(x => !ids.has(x.in)); m.zones = m.zones.filter(x => !ids.has(x.in));
     } else if (s.kind === 'edge') {
       m.edges = m.edges.filter(e => e.id !== s.id);
     } else {
@@ -2720,7 +3154,7 @@
 
   // Tecla Z: selecciona la zona siguiente (Mayús, la anterior); red de seguridad si una zona queda tapada
   function cycleZone(dir) {
-    const zs = S.model.zones;
+    const zs = scopeItems('zones');
     if (!zs.length) return;
     const i = S.sel?.kind === 'zone' ? zs.findIndex(z => z.id === S.sel.id) : -1;
     const z = zs[(i < 0 ? (dir > 0 ? 0 : zs.length - 1) : i + dir + zs.length) % zs.length];
@@ -2752,7 +3186,7 @@
   function addItem(kind, o) {
     pushHistory();
     const id = uniqueId(kind);
-    S.model[kind === 'note' ? 'notes' : 'zones'].push({ id, ...o });
+    S.model[kind === 'note' ? 'notes' : 'zones'].push({ id, ...o, ...(S.scope ? { in: S.scope } : {}) });
     changed(true);
     select({ kind, id });
     toast(T(kind === 'note' ? 'toast.noteAdded' : o.kind === 'trust' ? 'toast.trustAdded' : 'toast.zoneAdded'));
@@ -2818,12 +3252,13 @@
   }
 
   function relayout() {
-    if (!S.model.nodes.length) return;
+    const sm = scopeModel(); // solo se ordena el nivel abierto
+    if (!sm.nodes.length) return;
     stopPlay();
     pushHistory();
-    const from = new Map(S.model.nodes.map(n => [n.id, { x: n.x, y: n.y }]));
-    autoLayout(S.model);
-    const to = new Map(S.model.nodes.map(n => [n.id, { x: n.x, y: n.y }]));
+    const from = new Map(sm.nodes.map(n => [n.id, { x: n.x, y: n.y }]));
+    autoLayout(sm);
+    const to = new Map(sm.nodes.map(n => [n.id, { x: n.x, y: n.y }]));
     toast(T('toast.relayout'));
     tweenNodes(from, to, 700, () => fitView());
   }
@@ -2899,7 +3334,7 @@
     const mx = [bx0, (bx0 + bx1) / 2, bx1].map(v => v + dx), my = [by0, (by0 + by1) / 2, by1].map(v => v + dy);
     let gx = null, gy = null;
     S.model.nodes.forEach(n => {
-      if (moving.has(n.id)) return;
+      if (moving.has(n.id) || VW.hideNodes.has(n.id)) return;
       [n.x, n.x + w(n) / 2, n.x + w(n)].forEach(c => mx.forEach(m => { const v = c - m; if (Math.abs(v) <= tol && (!gx || Math.abs(v) < Math.abs(gx.d))) gx = { d: v, at: c, n }; }));
       [n.y, n.y + H / 2, n.y + H].forEach(c => my.forEach(m => { const v = c - m; if (Math.abs(v) <= tol && (!gy || Math.abs(v) < Math.abs(gy.d))) gy = { d: v, at: c, n }; }));
     });
@@ -2916,11 +3351,11 @@
   /* ---------- reproducir flujo ---------- */
   function togglePlay() {
     if (S.play) return stopPlay();
-    if (!S.model.nodes.length) return;
+    if (!scopeModel().nodes.length) return;
     if (vc().groups === 'collapse-top') return toast(T('ctx.noPlay'));
     cancelConnect();
     select(null);
-    const ranks = computeRanks(S.model), max = Math.max(0, ...ranks.values());
+    const ranks = computeRanks(scopeModel()), max = Math.max(0, ...ranks.values());
     svg.classList.remove('focusing', 'hovering');
     svg.classList.add('playing');
     $('#btn-play').classList.add('on');
@@ -2956,7 +3391,7 @@
   // P = null fuera de la presentación; si no: { slides, i, saved, fs, idle, sl }
   let P = null;
   function presentSlides() {
-    const m = S.model, TB = (m.direction || C.layout.direction) === 'TB';
+    const m = scopeModel(), TB = (m.direction || C.layout.direction) === 'TB';
     const groups = m.groups.filter(g => R.gbox.has(g.id) && m.nodes.some(n => inGroup(n, g.id)));
     const pos = g => { const b = R.gbox.get(g.id); return TB ? [b.y, b.x] : [b.x, b.y]; };
     const ids = new Set(groups.map(g => g.id));
@@ -2989,7 +3424,7 @@
     R.groups.forEach((r, id) => { r.g.classList.remove('sel'); r.g.classList.toggle('pdim', !!gin && !gin.has(id)); });
   }
   function presentCaption(sl) {
-    const m = S.model;
+    const m = scopeModel();
     let h = m.title, sub = '', desc = '', notes = [];
     if (sl.kind === 'view') {
       sub = viewLabel(sl.key);
@@ -3015,7 +3450,7 @@
     if (!P) return;
     stopPlay();
     P.i = clamp(i, 0, P.slides.length - 1);
-    const sl = P.slides[P.i], m = S.model;
+    const sl = P.slides[P.i], m = scopeModel();
     let box = null, lit = null, gin = null;
     if (sl.kind === 'view' && sl.key !== S.viewKey) setView(sl.key, { toast: false });  // recalcula el estado derivado de la vista
     if (sl.kind === 'group') {
@@ -3191,7 +3626,7 @@
     const v = findVersion(id);
     if (!v) return;
     S.sel = null;
-    setModel({ ...clone(v.diagram), versions: S.model.versions, active: v.id }, { history: true });
+    setModel({ ...clone(v.diagram), versions: S.model.versions, active: v.id, decisions: S.model.decisions }, { history: true });
     toast(T('ver.opened', { name: verLabel(v) }));
   }
   async function deleteVersion(id, { force } = {}) {
@@ -3200,6 +3635,7 @@
     if (v.status === 'approved' && !force && !(await confirmBox({ title: T('ver.cf.delTitle', { name: verLabel(v) }), text: T('ver.cf.delText'), ok: T('ver.delete'), cancel: T('ver.cf.cancel'), danger: true }))) return;
     pushHistory();
     S.model.versions = S.model.versions.filter(x => x.id !== id);
+    pruneAdrLinks();
     if (S.model.active === id) delete S.model.active;
     if (S.compare?.id === id) S.compare = null;
     applyCompare();
@@ -3224,9 +3660,9 @@
 
   // Diferencias entre lo guardado (a) y el lienzo (b). La posición no cuenta como cambio.
   const DIFF_FIELDS = {
-    node: ['label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'exposure', 'backup', 'controls'],
+    node: ['label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'exposure', 'backup', 'controls', 'in', 'c4'],
     edge: ['label', 'style', 'route', 'both', 'color', 'data', 'encrypted', 'datasets', 'transferOk', 'threats'],
-    group: ['label', 'icon', 'color', 'parent', 'kind', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'controls']
+    group: ['label', 'icon', 'color', 'parent', 'kind', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'controls', 'in']
   };
   function diffModels(a, b) {
     const val = (f, x) => (f === 'style' ? x || 'sync' : x == null ? '' : typeof x === 'object' ? JSON.stringify(x) : String(x));
@@ -3281,11 +3717,14 @@
     const { base, diff: d } = S.compare;
     const cur = new Map(S.model.nodes.map(n => [n.id, n])), old = new Map(base.nodes.map(n => [n.id, n]));
     const rect = id => { const n = cur.get(id) || old.get(id); return n && { x: n.x, y: n.y, w: R.width.get(id) || nodeWidth(n), h: H }; };
+    const lvl = id => scopeId(cur.get(id) || old.get(id));
     d.edges.removed.forEach(e => {
       const a = rect(e.from), b = rect(e.to);
+      if (lvl(e.from) !== S.scope || lvl(e.to) !== S.scope) return;
       if (a && b && e.from !== e.to) el('path', { class: 'ghost-edge', d: routeOf(e) === 'elbow' ? elbowPath(a, b, 0, []) : curvePath(a, b, 0) }, L.ghosts);
     });
     d.nodes.removed.forEach(n => {
+      if (scopeId(n) !== S.scope) return;
       const w = nodeWidth(n), g = el('g', { class: 'ghost', transform: `translate(${n.x} ${n.y})` }, L.ghosts);
       el('rect', { class: 'ghost-card', width: w, height: H, rx: C.node.radius }, g);
       el('text', { x: 18, y: H / 2 + 5 }, g).textContent = fitText(`− ${n.label}`, FONT.label, w - 30);
@@ -3311,6 +3750,7 @@
         ${v.status === 'approved' && openFindings(v).length ? `<div class="ver-warn">⚑ ${esc(T('ver.openFindings', openFindings(v).length))}</div>` : ''}
         ${on ? `<div class="ver-flag${dirty ? ' dirty' : ''}">${esc(T(dirty ? 'ver.dirty' : 'ver.current'))}</div>` : ''}
         <div class="ver-meta">${esc(verMeta(v))}</div>
+        ${adrChips(decisionsOf('versions', v.id))}
         ${v.note && !editing ? `<div class="ver-note">${esc(v.note)}</div>` : ''}
         ${v.status === 'rejected' && !v.reason ? `<div class="ver-warn">${esc(T('ver.reasonWarn'))}</div>` : ''}
         ${editing ? `<div class="ver-form">
@@ -3334,6 +3774,7 @@
           <button class="btn small" data-ver="open" title="${esc(T('ver.openTip'))}">${T('ver.open')}</button>
           <button class="btn small${cmp ? ' on' : ''}" data-ver="compare" title="${esc(T('ver.compareTip'))}">${T(cmp ? 'ver.stop' : 'ver.compare')}</button>
           ${v.kind === 'env' ? `<button class="btn small" data-ver="update" title="${esc(T('ver.saveHereTip'))}">${T('ver.saveHere')}</button>` : ''}
+          <button class="btn small" data-adr="newver" title="${esc(T('adr.newForVer'))}" aria-label="${esc(T('adr.newForVer'))}">+ ADR</button>
         </div>
       </div>`;
     };
@@ -3366,7 +3807,7 @@
     if (!(d.count.a + d.count.r + d.count.c)) return `<p class="ver-sum">${esc(T('ver.same'))}</p>`;
     const FIELD = { label: 'insp.name', sub: 'insp.detail', type: 'insp.type', icon: 'insp.icon', group: 'insp.group', color: 'insp.color', badge: 'field.badge',
       cost: 'cost.label', costPeriod: 'cost.period', costYears: 'cost.yearsAria', desc: 'insp.desc', style: 'insp.style', parent: 'insp.parent',
-      data: 'data.label', encrypted: 'enc.label', route: 'insp.route', both: 'insp.dir', review: 'rev.label', kind: 'gkind.label', exposure: 'sec.expo.label', backup: 'sec.backup.label', controls: 'cmp.title' };
+      data: 'data.label', encrypted: 'enc.label', route: 'insp.route', both: 'insp.dir', review: 'rev.label', kind: 'gkind.label', exposure: 'sec.expo.label', backup: 'sec.backup.label', controls: 'cmp.title', in: 'c4.in', c4: 'c4.label' };
     const fields = (fs, kind) => fs.map(f => T(kind === 'edge' && f === 'label' ? 'insp.label' : FIELD[f] || f).toLowerCase()).join(', ');
     const names = new Map([...S.compare.base.nodes, ...S.model.nodes].map(n => [n.id, n.label]));
     const edgeName = e => `${names.get(e.from) || e.from} ${e.both ? '↔' : '→'} ${names.get(e.to) || e.to}`;
@@ -3862,9 +4303,10 @@
       html = head('var(--accent)', '', T('insp.selection'), T('insp.count', t.length)) + `
         <div class="field">${T('insp.align')}<div class="tools">${['left', 'hcenter', 'right', 'top', 'vcenter', 'bottom'].map(tool).join('')}</div></div>
         <div class="field">${T('insp.distribute')}<div class="tools two">${['hdist', 'vdist'].map(k => tool(k).replace('</svg>', `</svg>${T(k === 'hdist' ? 'insp.horizontal' : 'insp.vertical')}`)).join('')}</div></div>
-        <label>${T('insp.group')}<select data-field="group">${g1 == null ? `<option value="__mixed" selected>${T('insp.mixed')}</option>` : ''}<option value=""${g1 === '' ? ' selected' : ''}>${T('insp.none')}</option>${m.groups.map(g => `<option value="${esc(g.id)}"${g.id === g1 ? ' selected' : ''}>${esc(g.label)}</option>`).join('')}<option value="__new">${T('insp.newGroup')}</option></select></label>
+        <label>${T('insp.group')}<select data-field="group">${g1 == null ? `<option value="__mixed" selected>${T('insp.mixed')}</option>` : ''}<option value=""${g1 === '' ? ' selected' : ''}>${T('insp.none')}</option>${m.groups.filter(g => inScope(g)).map(g => `<option value="${esc(g.id)}"${g.id === g1 ? ' selected' : ''}>${esc(g.label)}</option>`).join('')}<option value="__new">${T('insp.newGroup')}</option></select></label>
         <div class="field">${T('insp.color')}${swatches(colorsOf.size === 1 ? [...colorsOf][0] : '__mixed')}</div>
         ${t.length === 2 ? pathField() : ''}
+        ${c4Field(t)}
         ${dataField(t)}
         ${govField(t, 'multi')}
         ${regionField(t)}
@@ -3889,10 +4331,11 @@
         <label>${T('insp.detail')}<input data-field="sub" value="${esc(t.sub || '')}" placeholder="${esc(T('insp.detail.ph'))}"></label>
         <div class="row2">
           <label>${T('insp.type')}<select data-field="type">${typeOptions(t.type)}</select></label>
-          <label>${T('insp.group')}<select data-field="group"><option value="">${T('insp.none')}</option>${m.groups.map(g => `<option value="${esc(g.id)}"${g.id === t.group ? ' selected' : ''}>${esc(g.label)}</option>`).join('')}<option value="__new">${T('insp.newGroup')}</option></select></label>
+          <label>${T('insp.group')}<select data-field="group"><option value="">${T('insp.none')}</option>${m.groups.filter(g => inScope(g)).map(g => `<option value="${esc(g.id)}"${g.id === t.group ? ' selected' : ''}>${esc(g.label)}</option>`).join('')}<option value="__new">${T('insp.newGroup')}</option></select></label>
         </div>
         ${Object.keys(ICONS).length ? iconPicker(t) : ''}
         <div class="field">${T('insp.color')}${swatches(t.color)}</div>
+        ${c4Field(t)}
         ${costField(t)}
         ${dataField(t)}
         ${govField(t, 'node')}
@@ -3901,6 +4344,7 @@
         ${secField(t)}
         ${cmpField(t, 'node')}
         ${reviewField(t)}
+        ${adrField(t)}
         <label>${T('insp.desc')}<textarea data-field="desc" rows="3" placeholder="${esc(T('insp.desc.ph'))}">${esc(t.desc || '')}</textarea></label>
         <div class="field">${T('insp.reach')}<div class="seg">${modes.map(([k, l]) => `<button data-reach="${k}" class="${S.reach === k ? 'on' : ''}">${l}</button>`).join('')}</div></div>
         ${nodeDsField(t)}
@@ -3927,6 +4371,7 @@
         ${dsField(t)}
         ${xferField(t)}
         ${strideField(t)}
+        ${adrField(t)}
         <div class="field">${T('insp.color')}${swatches(t.color)}</div>
         <div class="conns"><div class="conn-title">${T('insp.ends')}</div>
           <button class="conn" data-goto="${esc(a.id)}" style="--c:${nodeColor(a)}"><span class="dot"></span>${esc(a.label)}<em>${T('insp.source')}</em></button>
@@ -3968,10 +4413,11 @@
         <label>${T('gkind.label')}<select data-field="kind"><option value=""${t.kind ? '' : ' selected'}>${esc(T('gkind.auto', { k: T(`gkind.${groupKindAuto(t)}`) }))}</option>${['logical', 'physical'].map(k => `<option value="${k}"${t.kind === k ? ' selected' : ''}>${T(`gkind.${k}`)}</option>`).join('')}</select></label>
         ${regionField(t)}
         ${layerField(t)}
-        <label>${T('insp.parent')}<select data-field="parent"><option value="">${T('insp.none')}</option>${m.groups.filter(g => !blocked.has(g.id)).map(g => `<option value="${esc(g.id)}"${g.id === t.parent ? ' selected' : ''}>${esc(g.label)}</option>`).join('')}</select></label>
+        <label>${T('insp.parent')}<select data-field="parent"><option value="">${T('insp.none')}</option>${m.groups.filter(g => !blocked.has(g.id) && (g.in || null) === (t.in || null)).map(g => `<option value="${esc(g.id)}"${g.id === t.parent ? ' selected' : ''}>${esc(g.label)}</option>`).join('')}</select></label>
         <div class="field">${T('insp.color')}${swatches(t.color)}</div>
         ${govField(t, 'group')}
         ${cmpField(t, 'group')}
+        ${adrField(t)}
         <div class="insp-actions"><button class="btn danger" data-act="delete">${T('insp.deleteGroup')}</button></div>`;
     }
 
@@ -4001,7 +4447,7 @@
       if (!name || !name.trim()) { S.history.pop(); updateUndoButtons(); renderInspector(); return; }
       const id = uniqueId('grupo-'), parent = parents.size === 1 ? [...parents][0] : '';
       const keys = paletteKeys();
-      S.model.groups.push({ id, label: name.trim(), color: keys[S.model.groups.length % keys.length], ...(parent ? { parent } : {}) });
+      S.model.groups.push({ id, label: name.trim(), color: keys[S.model.groups.length % keys.length], ...(parent ? { parent } : {}), ...(S.scope ? { in: S.scope } : {}) });
       v = id;
     }
     list.forEach(x => {
@@ -4088,6 +4534,7 @@
   });
   inspector.addEventListener('input', ev => { if (ev.target.matches('input[data-field], textarea[data-field]')) onField(ev.target); });
   inspector.addEventListener('change', ev => { if (ev.target.matches('select[data-field]')) onField(ev.target); });
+  inspector.addEventListener('change', ev => { if (ev.target.matches('select[data-c4-into]') && ev.target.value) moveToScope(selIds(), ev.target.value); });
   // Añadir conjuntos de datos a la conexión elegida (Intro o coma; también al elegir de la lista o salir del campo)
   function addDatasets(inp) {
     const t = selTarget(), add = cleanDatasets(inp.value);
@@ -4193,7 +4640,7 @@
       $$('.seg button', inspector).forEach(x => x.classList.toggle('on', x === b));
       applyHighlight();
     } else if (b.dataset.goto) {
-      if (VW.hideNodes.has(b.dataset.goto)) return toast(T('view.hiddenHere'));
+      if (VW.hideNodes.has(b.dataset.goto) && !VW.sc.nodes.has(b.dataset.goto)) return toast(T('view.hiddenHere'));
       select({ kind: 'node', id: b.dataset.goto }, { center: true });
     } else switch (b.dataset.act) {
       case 'close': select(null); break;
@@ -4206,6 +4653,8 @@
         break;
       }
       case 'connect': startConnect(t.id); break;
+      case 'c4open': openInner(t.id); break;
+      case 'c4up': moveUp(); break;
       case 'dup': duplicateSelection(); break;
       case 'mkzone': markZone(); break;
       case 'mktrust': markZone('trust'); break;
@@ -4390,6 +4839,7 @@
     $$('.pane').forEach(p => p.classList.toggle('on', p.dataset.pane === t.dataset.tab));
     store.set('tab', t.dataset.tab);
     if (t.dataset.tab === 'review') renderFindings();
+    else if (t.dataset.tab === 'adr') renderAdr(true);
   }));
 
   function codeBox(box, apply) {
@@ -4609,6 +5059,7 @@
     versionBox.value = S.model.meta?.version || '';
     const av = activeVersion();
     versionBox.placeholder = av ? verLabel(av) : '1.0';
+    $('#exp-levels-svg').hidden = $('#exp-levels-png').hidden = !hasLevels();
     const r = exportMenu.querySelector('summary').getBoundingClientRect(), pop = exportMenu.querySelector('.menu-pop');
     pop.style.top = `${r.bottom}px`;
     pop.style.right = `${Math.max(8, innerWidth - r.right)}px`;
@@ -4618,7 +5069,7 @@
     const b = ev.target.closest('[data-export]');
     if (!b) return;
     exportMenu.open = false;
-    const f = { svg: exportSVG, png: exportPNG, 'svg-all': () => exportViews('svg'), 'png-all': () => exportViews('png'), json: exportJSON, copy: copyJSON, share: shareEncrypted, stride: exportThreats, compliance: openCompMatrix }[b.dataset.export];
+    const f = { svg: exportSVG, png: exportPNG, 'svg-all': () => exportViews('svg'), 'png-all': () => exportViews('png'), 'svg-levels': () => exportLevels('svg'), 'png-levels': () => exportLevels('png'), json: exportJSON, copy: copyJSON, share: shareEncrypted, stride: exportThreats, compliance: openCompMatrix, report: openReportDialog }[b.dataset.export];
     if (f) f(); else exportOther(b.dataset.export);
   });
 
@@ -4646,7 +5097,7 @@
       ...(S.viewKey !== 'full' ? [[T('leg.view'), viewLabel(S.viewKey)]] : []),
       ...(av ? [[T('leg.status'), T(`ver.st.${av.status}`)], ...(decided(av) ? [[decLabel(av), [av.decidedBy, fmtDay(av.decidedOn)].filter(Boolean).join(' · ')]] : []), [T('ver.created'), fmtDay(av.created)], [T('ver.updatedOn'), fmtDay(av.updated)]] : [[T('leg.date'), new Intl.DateTimeFormat(I.lang, { dateStyle: 'long' }).format(new Date())]]),
       ...(cost ? [[T('leg.cost'), cost]] : [])];
-    return { title: m.title, info, av };
+    return { title: S.scope ? `${m.title} · ${scopeNode()?.label || ''}` : m.title, info, av };
   }
   // Tipos de componente que usa el diagrama, con el color con que se ven (el propio del nodo o el del tipo).
   // Una fila por tipo+color: un mismo tipo con colores distintos se distingue en el lienzo y en la leyenda.
@@ -4858,6 +5309,7 @@
     out.querySelectorAll('.lit, .sel, .pulse, .pulse-node, .enter, .connect-src, .fdim').forEach(n => n.classList.remove('lit', 'sel', 'pulse', 'pulse-node', 'enter', 'connect-src', 'fdim'));
     const vp = out.querySelector('#viewport');
     vp.removeAttribute('id');
+    vp.classList.remove('xs-enter');
     vp.setAttribute('transform', `translate(${pad - b.x} ${pad + top - b.y})`);
     const t = C.themes[S.theme], p = C.palettes[S.palette];
     const vars = [...Object.entries(t).map(([k, v]) => `--${k}:${v}`), ...Object.entries(p[S.theme] || p.dark).map(([k, v]) => `--p-${k}:${v}`), `--font:${fontCss()}`].join(';');
@@ -4867,7 +5319,7 @@
     out.insertBefore(el('rect', { width: W, height: Ht, fill: t.bg }), style.nextSibling);
     const title = el('text', { x: pad, y: pad + 10, fill: t.text, 'font-size': 20, 'font-weight': 700, 'font-family': fontCss() });
     const av = activeVersion();
-    title.textContent = (av ? `${S.model.title}  ·  ${verLabel(av)}` : S.model.title) + (S.viewKey !== 'full' ? `  ·  ${T('view.export', { name: viewLabel(S.viewKey) })}` : '');
+    title.textContent = (av ? `${S.model.title}  ·  ${verLabel(av)}` : S.model.title) + (S.scope ? `  ·  ${scopeNode()?.label || ''}` : '') + (S.viewKey !== 'full' ? `  ·  ${T('view.export', { name: viewLabel(S.viewKey) })}` : '');
     out.insertBefore(title, vp);
     if (lg) {
       placeLegend(lg, W - pad * 2);
@@ -5035,6 +5487,397 @@
     document.body.appendChild(back);
     pw.focus();
   }
+  /* ---------- informe de arquitectura (PDF por impresión, Markdown, HTML) ---------- */
+  // reportData() arma un modelo plano (secciones de bloques) y dos dibujantes lo pintan: reportMarkdown y reportHTML, así que los dos formatos no se desincronizan.
+  // Bloques: { k: 'h3', t } · { k: 'p', t, muted? } · { k: 'kv', items: [[k, v]] } · { k: 'cards', items: [{ label, value, tone? }] }
+  //          { k: 'table', head: [], rows: [[celda]], cls? } (celda = texto | { t, tone }) · { k: 'text', label, t } · { k: 'ul', items } · { k: 'img', alt, caption, svg?, uri?, file? }
+  const REP_SECS = ['summary', 'diagram', 'components', 'connections', 'data', 'owners', 'layers', 'costs', 'findings', 'compliance', 'threats', 'decisions', 'versions', 'notes'];
+  const REP_PAGE = ['diagram', 'components', 'findings', 'decisions']; // secciones que empiezan página al imprimir
+  const repT = (k, v) => T(`rep.${k}`, v);
+  const repSleep = ms => new Promise(r => setTimeout(r, ms));
+  // base64 de un texto UTF-8 y de un Blob (por trozos, para no reventar la pila con SVG grandes)
+  const repB64 = s => { const b = new TextEncoder().encode(s); let o = ''; for (let i = 0; i < b.length; i += 0x8000) o += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000)); return btoa(o); };
+  const repBlobUri = async blob => { const b = new Uint8Array(await blob.arrayBuffer()); let o = ''; for (let i = 0; i < b.length; i += 0x8000) o += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000)); return `data:${blob.type || 'image/png'};base64,${btoa(o)}`; };
+  // Nodos con interior (C4): solo si el modelo y la app lo soportan
+  const repScopes = (m = S.model) => {
+    if (typeof scopePath !== 'function' || typeof setScope !== 'function') return [];
+    const ids = new Set([...m.nodes, ...m.groups, ...(m.notes || []), ...(m.zones || [])].map(x => x.in).filter(Boolean));
+    return m.nodes.filter(n => ids.has(n.id)).map(n => n.id);
+  };
+  const repScopeName = id => (id == null ? '' : (typeof scopePath === 'function' ? scopePath(id) : [id]).map(i => S.model.nodes.find(n => n.id === i)?.label || i).join(' › '));
+  // Qué secciones tienen datos (las demás se saltan y el diálogo las muestra «(ninguno)»)
+  function repAvail(m = S.model) {
+    return {
+      summary: true, diagram: m.nodes.length > 0, components: m.nodes.length > 0, connections: m.edges.length > 0,
+      data: m.nodes.some(n => dataClassesOf(n, m).length || regionOf(n, m).value), owners: govTeamList(m).length > 0,
+      layers: m.nodes.some(n => layerOf(n).value), costs: m.nodes.some(hasCost), findings: findingsOf(m).length > 0,
+      compliance: cmpModel(m).keys.length > 0, threats: strideAll(m).length > 0, decisions: !!m.decisions?.length,
+      versions: m.versions.length > 0, notes: (m.notes || []).length > 0 || (m.zones || []).some(z => z.kind !== 'trust')
+    };
+  }
+  const repDefaultViews = () => {
+    const ok = k => VIEWS[k] && viewWorth(k);
+    const l = [S.viewKey, ...['security', 'data'].filter(ok)].filter((k, i, a) => VIEWS[k] && a.indexOf(k) === i);
+    return l.length ? l : ['full'];
+  };
+
+  async function reportData(o) {
+    const m = S.model, av = repAvail(m), want = k => av[k] && (!o.sections || o.sections.includes(k));
+    const byId = new Map(m.nodes.map(n => [n.id, n])), nm = id => byId.get(id)?.label || id;
+    const edgeName = e => `${nm(e.from)} ${e.both ? '↔' : '→'} ${nm(e.to)}`;
+    const gpath = x => { const out = []; let g = 'type' in x ? x.group : x.parent, i = 0; while (g && i++ < 50) { const gg = groupById(g); if (!gg) break; out.unshift(gg.label); g = gg.parent; } return out.join(' › '); };
+    const dShort = ks => (ks || []).map(k => loc(DATA[k]?.short) || String(k).toUpperCase()).join(' ');
+    const dLabel = k => loc(DATA[k]?.label) || String(k);
+    const sevCell = s => ({ t: sevLabel(s), tone: `sev-${s}` });
+    const yn = v => T(v ? 'sec.yes' : 'sec.no');
+    const hasScopes = typeof scopePath === 'function' && m.nodes.some(n => n.in);
+    const av0 = activeVersion(), find = findingsOf(m), open = find.filter(f => !f.dismissed), dis = find.filter(f => f.dismissed);
+    const D = { lang: I.lang, title: m.title, author: m.meta?.author || av0?.author || '', version: m.meta?.version || '', active: av0 ? { label: verLabel(av0), status: T(`ver.st.${av0.status}`) } : null,
+      date: fmtDay(today()), desc: m.meta?.desc ? String(m.meta.desc) : '', sections: [], files: [] };
+    const sec = (id, blocks) => D.sections.push({ id, title: repT(`s.${id}`), blocks });
+
+    /* diagrama: una imagen por vista (y por interior C4); es lo único lento, así que se cede el hilo entre imágenes */
+    const imgs = [];
+    if (want('diagram')) {
+      const keys = (o.views || []).filter(k => VIEWS[k]), scopes = [null, ...(o.scopes ? repScopes(m) : [])], total = keys.length * scopes.length, theme = o.theme === 'current' ? S.theme : 'light';
+      const oldScope = typeof S.scope !== 'undefined' ? S.scope : null, oldTheme = S.theme;
+      let n = 0;
+      try {
+        for (const sc of scopes) {
+          if (scopes.length > 1) setScope(sc);
+          await eachView(keys, async key => {
+            o.progress?.(++n, total, [repScopeName(sc), viewLabel(key)].filter(Boolean).join(' · '));
+            let out;
+            S.theme = theme; try { out = buildSVG(); } finally { S.theme = oldTheme; }
+            const im = { key, label: viewLabel(key), scope: sc, scopeLabel: repScopeName(sc), svg: out.str };
+            if (o.format === 'md') {
+              const blob = await pngBlob(out);
+              if (!blob) im.uri = 'data:image/svg+xml;base64,' + repB64(out.str);
+              else if (o.separateImages) { im.file = fileName('png', `report-${String(n).padStart(2, '0')}-${key}`); D.files.push({ name: im.file, blob }); } else im.uri = await repBlobUri(blob);
+            } else im.uri = 'data:image/svg+xml;base64,' + repB64(out.str);
+            imgs.push(im);
+            await repSleep(0);
+          });
+        }
+      } finally { if (scopes.length > 1) setScope(oldScope ?? null); }
+    }
+
+    /* resumen */
+    if (want('summary')) {
+      const mt = monthlyTotal(m.nodes), cards = [{ label: repT('k.components'), value: m.nodes.length }, { label: repT('k.connections'), value: m.edges.length }, { label: repT('k.groups'), value: m.groups.length },
+        { label: repT('k.views'), value: VIEW_KEYS.length }];
+      if (m.nodes.some(hasCost)) cards.push({ label: repT('k.cost'), value: money(round2(mt)) });
+      cards.push({ label: repT('k.findings'), value: open.length, tone: open.some(f => f.severity === 'critical' || f.severity === 'high') ? 'sev-high' : '' });
+      if (m.decisions?.length) cards.push({ label: repT('k.decisions'), value: m.decisions.length });
+      const kv = [[repT('author'), D.author], [repT('version'), D.version], [repT('active'), D.active ? `${D.active.label} · ${D.active.status}` : ''], [repT('date'), D.date]].filter(r => r[1]);
+      const blocks = [];
+      if (D.desc) blocks.push({ k: 'p', t: D.desc });
+      if (kv.length) blocks.push({ k: 'kv', items: kv });
+      blocks.push({ k: 'cards', items: cards });
+      if (find.length) {
+        blocks.push({ k: 'h3', t: repT('sum.findings') });
+        blocks.push({ k: 'table', cls: 'compact', head: [...SEVERITY.slice().reverse().map(sevLabel), repT('dismissed')], rows: [[...SEVERITY.slice().reverse().map(s => String(open.filter(f => f.severity === s).length)), String(dis.length)]] });
+      }
+      if (m.decisions?.length) {
+        const st = [...new Set(m.decisions.map(d => d.status))];
+        blocks.push({ k: 'h3', t: repT('sum.decisions') });
+        blocks.push({ k: 'table', cls: 'compact', head: st.map(s => repT(`adr.${s}`)), rows: [st.map(s => String(m.decisions.filter(d => d.status === s).length))] });
+      }
+      sec('summary', blocks);
+    }
+
+    if (want('diagram')) {
+      const blocks = [];
+      imgs.forEach(im => {
+        blocks.push({ k: 'h3', t: [im.scopeLabel, im.label].filter(Boolean).join(' · ') });
+        blocks.push({ k: 'img', alt: `${m.title} — ${[im.scopeLabel, im.label].filter(Boolean).join(' · ')}`, svg: im.svg, uri: im.uri, file: im.file });
+      });
+      if (!blocks.length) blocks.push({ k: 'p', t: repT('noViews'), muted: true });
+      sec('diagram', blocks);
+    }
+
+    if (want('components')) {
+      const head = [repT('h.component'), repT('h.type'), repT('h.group'), ...(hasScopes ? [repT('h.scope')] : []), repT('h.data'), repT('h.region'), repT('h.owner'), repT('h.layer'), repT('h.cost'), repT('h.review')];
+      const rows = m.nodes.map(n => {
+        const ic = iconInfo(n.icon), rv = n.review ? { t: T(`rev.tag.${reviewState(n.review)}`), tone: `rev-${reviewState(n.review)}` } : '';
+        const gov = [govOf(n, 'team').value, govOf(n, 'owner').value].filter(Boolean).join(' · '), ly = layerOf(n).value;
+        return [[n.label, n.sub].filter(Boolean).join('\n'), ic ? `${ic.providerLabel} · ${ic.label}` : typeLabel(n.type), gpath(n), ...(hasScopes ? [n.in ? repScopeName(n.in) : ''] : []),
+          dShort(dataClassesOf(n, m)), regionOf(n, m).value, gov, ly ? layerInfo(ly).label : '', hasCost(n) ? money(round2(perMonth(n))) : '', rv];
+      });
+      sec('components', [{ k: 'table', head, rows, cls: 'wide' }]);
+    }
+
+    if (want('connections')) {
+      const rows = m.edges.map(e => {
+        const cb = crossBorder(e, byId);
+        return [nm(e.from), nm(e.to) + (e.both ? ' ↔' : ''), e.label || '', loc((C.edgeStyles[e.style] || C.edgeStyles.sync).label), e.encrypted === true ? T('enc.yes') : e.encrypted === false ? { t: T('enc.no'), tone: 'sev-high' } : T('enc.unset'),
+          dShort(e.data), (e.datasets || []).join(', '), cb ? { t: `${cb.from.region} → ${cb.to.region}${cb.approved ? ' ✓' : ''}`, tone: cb.approved ? '' : 'sev-high' } : ''];
+      });
+      sec('connections', [{ k: 'table', head: [repT('h.from'), repT('h.to'), repT('h.label'), repT('h.style'), repT('h.enc'), repT('h.data'), repT('h.datasets'), repT('h.xb')], rows, cls: 'wide' }]);
+    }
+
+    if (want('data')) {
+      const blocks = [], used = Object.keys(DATA).filter(k => m.nodes.some(n => dataClassesOf(n, m).includes(k)) || m.edges.some(e => e.data?.includes(k)));
+      if (used.length) blocks.push({ k: 'table', head: [repT('h.class'), repT('h.sens'), repT('h.nodes'), repT('h.edges')], rows: used.map(k => [`${loc(DATA[k].short) || k.toUpperCase()} · ${dLabel(k)}`, yn(DATA[k].sensitive),
+        m.nodes.filter(n => dataClassesOf(n, m).includes(k)).map(n => n.label).join(', '), m.edges.filter(e => e.data?.includes(k)).map(edgeName).join(', ')]) });
+      const regs = new Map();
+      m.nodes.forEach(n => { const r = regionOf(n, m).value; if (r) (regs.get(r) || regs.set(r, []).get(r)).push(n.label); });
+      if (regs.size) { blocks.push({ k: 'h3', t: repT('h.residency') }); blocks.push({ k: 'table', head: [repT('h.region'), repT('h.jur'), repT('h.nodes')], rows: [...regs].map(([r, ns]) => [r, jurOf(r)?.label || '', ns.join(', ')]) }); }
+      const xb = m.edges.map(e => ({ e, cb: crossBorder(e, byId) })).filter(x => x.cb);
+      if (xb.length) { blocks.push({ k: 'h3', t: repT('h.transfers') }); blocks.push({ k: 'table', head: [repT('h.connection'), repT('h.region'), repT('h.class'), repT('h.status')],
+        rows: xb.map(({ e, cb }) => [edgeName(e), `${cb.from.region} (${cb.from.jur.short}) → ${cb.to.region} (${cb.to.jur.short})`, classShorts(cb.classes).join(' '), cb.approved ? repT('approved') : { t: repT('pending'), tone: 'sev-high' }]) }); }
+      sec('data', blocks);
+    }
+
+    if (want('owners')) {
+      sec('owners', [{ k: 'table', head: [repT('h.team'), repT('h.owners'), repT('h.stewards'), repT('h.nodes')], rows: govTeamList(m).map(t => [t.team || repT('noTeam'), t.owners.join(', '), t.stewards.join(', '), t.nodes.map(nm).join(', ')]) }]);
+    }
+
+    if (want('layers')) {
+      sec('layers', [{ k: 'table', head: [repT('h.layer'), repT('h.nodes')], rows: Object.keys(DL).map(k => [layerInfo(k).label, m.nodes.filter(n => layerOf(n).value === k).map(n => n.label).join(', ')]).filter(r => r[1]) }]);
+    }
+
+    if (want('costs')) {
+      const cn = m.nodes.filter(hasCost), blocks = [{ k: 'table', head: [repT('h.component'), repT('h.group'), repT('h.price'), repT('h.cost')], rows: [...cn.map(n => [n.label, gpath(n), costText(n), money(round2(perMonth(n)))]), [{ t: repT('total'), tone: 'total' }, '', '', { t: money(round2(monthlyTotal(m.nodes))), tone: 'total' }]] }];
+      const gr = m.groups.map(g => ({ g, sum: monthlyTotal(nodesUnder(g, m)), n: nodesUnder(g, m).filter(hasCost).length })).filter(x => x.n);
+      if (gr.length) { blocks.push({ k: 'h3', t: repT('h.perGroup') }); blocks.push({ k: 'table', head: [repT('h.group'), repT('h.nodes'), repT('h.cost')], rows: gr.map(x => [[gpath(x.g), x.g.label].filter(Boolean).join(' › '), String(x.n), money(round2(x.sum))]) }); }
+      const per = [...new Set(cn.map(periodOf))];
+      blocks.push({ k: 'p', muted: true, t: repT('costNote', { h: COST.hoursPerMonth, p: per.map(p => T(PERIODS[p].label)).join(', ') }) });
+      sec('costs', blocks);
+    }
+
+    if (want('findings')) {
+      const row = f => [sevCell(f.severity), srcLabel(f.source), f.title, findingTargetLabel(f.target), [f.detail, f.fix].filter(Boolean).join('\n')];
+      const head = [repT('h.severity'), repT('h.source'), repT('h.finding'), repT('h.target'), repT('h.detail')], blocks = [];
+      blocks.push({ k: 'table', cls: 'compact', head: [...SEVERITY.slice().reverse().map(sevLabel), repT('dismissed')], rows: [[...SEVERITY.slice().reverse().map(s => String(open.filter(f => f.severity === s).length)), String(dis.length)]] });
+      if (open.length) blocks.push({ k: 'table', head, rows: open.map(row), cls: 'wide' });
+      if (dis.length) { blocks.push({ k: 'h3', t: repT('dismissed') }); blocks.push({ k: 'table', cls: 'wide', head: [...head, repT('h.reason')], rows: dis.map(f => [...row(f), [f.dismissed.reason, f.dismissed.by, f.dismissed.date ? fmtDay(f.dismissed.date) : ''].filter(Boolean).join(' · ')]) }); }
+      sec('findings', blocks);
+    }
+
+    if (want('compliance')) {
+      const { rows, keys, stats } = cmpModel(m), blocks = [];
+      cmpFrameworks(keys).forEach(fw => {
+        const ks = keys.filter(k => ctlSplit(k)[0] === fw), ci = ctlInfo(`${fw}:x`);
+        blocks.push({ k: 'h3', t: ci.fwLabel });
+        blocks.push({ k: 'table', head: [repT('h.control'), repT('h.title'), ...CTL_STATUS.map(s => T(`cmp.${s}`)), T('cmp.unmapped'), T('cmp.mx.cov')], rows: ks.map(k => {
+          const s = stats.get(k), d = rows.length - s.na;
+          return [ctlSplit(k)[1], ctlInfo(k).title, ...CTL_STATUS.map(x => String(s[x])), String(s.unmapped), d > 0 ? Math.round(s.met / d * 100) + '%' : '—'];
+        }) });
+        const st = rows.flatMap(r => ks.filter(k => r.eff.has(k)).map(k => [r.n.label, ctlSplit(k)[1], { t: `${CTL_SYM[r.eff.get(k).status]} ${T(`cmp.${r.eff.get(k).status}`)}`, tone: `st-${r.eff.get(k).status}` }, r.eff.get(k).from ? T('cmp.inh', groupById(r.eff.get(k).from)?.label || r.eff.get(k).from) : '']));
+        if (st.length) blocks.push({ k: 'table', cls: 'compact', head: [repT('h.component'), repT('h.control'), repT('h.status'), ''], rows: st });
+      });
+      blocks.push({ k: 'p', muted: true, t: T('cmp.mx.note') });
+      sec('compliance', blocks);
+    }
+
+    if (want('threats')) {
+      sec('threats', [{ k: 'table', cls: 'wide', head: [repT('h.zones'), repT('h.connection'), repT('h.cat'), repT('h.severity'), repT('h.status'), repT('h.note'), repT('h.mitigation')],
+        rows: strideAll(m).map(t => [t.zones.map(trustName).join(' | '), `${t.from} → ${t.to}${t.e.label ? ` (${t.e.label})` : ''}`, `${t.cat} ${loc(STR.categories[t.cat].label)}`, sevCell(t.severity), T(`stride.st.${t.status}`), t.note, t.mitigation]) }]);
+    }
+
+    if (want('decisions')) {
+      const ds = m.decisions, link = l => [...(l?.nodes || []).map(nm), ...(l?.edges || []).map(id => { const e = m.edges.find(x => x.id === id); return e ? edgeName(e) : id; }),
+        ...(l?.groups || []).map(id => groupById(id)?.label || id), ...(l?.versions || []).map(id => { const v = findVersion(id); return v ? verLabel(v) : id; })];
+      const blocks = [{ k: 'table', head: [repT('h.id'), repT('h.title'), repT('h.status'), repT('h.date'), repT('h.deciders')], rows: ds.map(d => [d.id, d.title, repT(`adr.${d.status}`), fmtDay(d.date), d.deciders || '']) }];
+      ds.forEach(d => {
+        blocks.push({ k: 'h3', t: `${d.id} · ${d.title}` });
+        blocks.push({ k: 'kv', items: [[repT('h.status'), repT(`adr.${d.status}`)], [repT('h.date'), fmtDay(d.date)], [repT('h.deciders'), d.deciders || ''], [repT('h.supersededBy'), d.supersededBy ? (ds.find(x => x.id === d.supersededBy)?.title ? `${d.supersededBy} · ${ds.find(x => x.id === d.supersededBy).title}` : d.supersededBy) : ''], [repT('h.links'), link(d.links).join(', ')]].filter(r => r[1]) });
+        [['context', d.context], ['decision', d.decision], ['consequences', d.consequences]].forEach(([k, t]) => { if (t && String(t).trim()) blocks.push({ k: 'text', label: repT(`adr.${k}`), t: String(t) }); });
+      });
+      sec('decisions', blocks);
+    }
+
+    if (want('versions')) {
+      const blocks = [{ k: 'table', cls: 'wide', head: [repT('h.version'), repT('h.env'), repT('h.status'), repT('h.author'), repT('h.created'), repT('h.updated'), repT('h.decided'), repT('h.note')], rows: m.versions.map(v => [
+        verLabel(v) + (v.id === m.active ? ` ★ ${repT('activeMark')}` : ''), v.kind === 'env' ? loc(C.environments?.[v.env]?.label) || v.env : '', { t: T(`ver.st.${v.status}`), tone: `vs-${v.status}` }, v.author || '', fmtDay(v.created), fmtDay(v.updated),
+        [v.decidedBy, fmtDay(v.decidedOn)].filter(Boolean).join(' · '), [v.reason, v.note].filter(Boolean).join('\n')]) }];
+      const hist = m.versions.flatMap(v => (v.history || []).map(h => [verLabel(v), fmtDay(h.date), T(`ver.st.${h.status}`), h.by || '', h.reason || '']));
+      if (hist.length) { blocks.push({ k: 'h3', t: T('ver.history') }); blocks.push({ k: 'table', cls: 'compact', head: [repT('h.version'), repT('h.date'), repT('h.status'), repT('h.by'), repT('h.reason')], rows: hist }); }
+      sec('versions', blocks);
+    }
+
+    if (want('notes')) {
+      const blocks = [], zs = (m.zones || []).filter(z => z.kind !== 'trust');
+      if (zs.length) { blocks.push({ k: 'h3', t: repT('h.zones2') }); blocks.push({ k: 'table', head: [repT('h.label'), repT('h.severity'), repT('h.detail')], rows: zs.map(z => [z.label || T('zone.new'), sevCell(z.severity), z.desc || '']) }); }
+      if ((m.notes || []).length) { blocks.push({ k: 'h3', t: repT('h.notes') }); blocks.push({ k: 'ul', items: m.notes.map(n => n.text).filter(t => String(t).trim()) }); }
+      sec('notes', blocks);
+    }
+    return D;
+  }
+
+  /* Markdown: texto escapado (tablas con barras, # al inicio, etc.) */
+  const mdEsc = s => String(s ?? '').replace(/[\\`*_\[\]<>|]/g, '\\$&').replace(/^(\s*)(#|>|[-+]\s|\d+[.)]\s)/gm, '$1\\$2');
+  const mdCell = c => (mdEsc(typeof c === 'object' && c ? c.t : c).replace(/\r?\n/g, '<br>').trim() || ' ');
+  const mdLines = s => mdEsc(s).replace(/\r?\n/g, '  \n');
+  function reportMarkdown(D) {
+    const o = [`# ${mdEsc(D.title)}`, '', `*${mdEsc([D.author, D.version, D.active?.label, D.date].filter(Boolean).join(' · '))}*`, ''];
+    D.sections.forEach(s => {
+      o.push(`## ${mdEsc(s.title)}`, '');
+      s.blocks.forEach(b => {
+        if (b.k === 'h3') o.push(`### ${mdEsc(b.t)}`, '');
+        else if (b.k === 'p') o.push(b.muted ? `*${mdEsc(b.t)}*` : mdLines(b.t), '');
+        else if (b.k === 'kv') o.push(...b.items.map(([k, v]) => `- **${mdEsc(k)}:** ${mdEsc(v).replace(/\r?\n/g, ' ')}`), '');
+        else if (b.k === 'ul') o.push(...b.items.map(t => `- ${mdEsc(t).replace(/\r?\n/g, ' ')}`), '');
+        else if (b.k === 'text') o.push(`**${mdEsc(b.label)}**`, '', mdLines(b.t), '');
+        else if (b.k === 'cards') o.push(`| ${b.items.map(c => mdCell(c.label)).join(' | ')} |`, `|${b.items.map(() => ' --- |').join('')}`, `| ${b.items.map(c => mdCell(String(c.value))).join(' | ')} |`, '');
+        else if (b.k === 'table') {
+          if (!b.rows.length) return;
+          o.push(`| ${b.head.map(mdCell).join(' | ')} |`, `|${b.head.map(() => ' --- |').join('')}`, ...b.rows.map(r => `| ${r.map(mdCell).join(' | ')} |`), '');
+        } else if (b.k === 'img') o.push(`![${mdEsc(b.alt)}](${b.file ? encodeURI(b.file) : b.uri})`, '');
+      });
+    });
+    o.push('---', '', `*${mdEsc(repT('footer', { app: C.app.name, date: D.date }))}*`, '');
+    return o.join('\n');
+  }
+
+  /* HTML autocontenido (también el que se imprime a PDF): sin red, sin scripts, imágenes como data URI */
+  const REP_CSS = `*{box-sizing:border-box}html{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+body{margin:0;padding:24px 20px;background:#fff;color:#1b1a22;font:10.5pt/1.5 __FONT__;}
+main,header,nav{max-width:1000px;margin:0 auto}
+h1{margin:0 0 4px;font-size:26pt;line-height:1.15}h2{margin:30px 0 10px;padding-bottom:5px;border-bottom:2px solid #6b5bd2;font-size:15pt}h3{margin:18px 0 6px;font-size:11.5pt}h4{margin:10px 0 2px;font-size:9.5pt;text-transform:uppercase;letter-spacing:.05em;color:#6b6778}
+p{margin:0 0 8px}.muted{color:#6b6778;font-size:9.5pt}.sub{margin:0 0 14px;color:#6b6778;font-size:11pt}
+nav ol{margin:6px 0 0;padding-left:20px;columns:2;font-size:10pt}nav a{color:#4b3fb5;text-decoration:none}
+dl{display:grid;grid-template-columns:max-content 1fr;gap:3px 14px;margin:0 0 12px}dt{font-weight:700;color:#4a4757}dd{margin:0}
+.cards{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 12px}.card{min-width:110px;padding:8px 12px;border:1px solid #d6d3e0;border-radius:8px;background:#f6f5fb}.card b{display:block;font-size:16pt;line-height:1.2}.card span{font-size:8.5pt;color:#6b6778;text-transform:uppercase;letter-spacing:.04em}
+table{width:100%;border-collapse:collapse;margin:6px 0 14px;font-size:8.5pt}table.compact{width:auto;min-width:50%}th,td{padding:4px 6px;border:1px solid #d6d3e0;text-align:left;vertical-align:top;overflow-wrap:anywhere}th{background:#efedf8;font-weight:700}
+thead{display:table-header-group}tr{break-inside:avoid}table.wide{font-size:8pt}
+.txt p{white-space:pre-wrap;margin:0 0 6px}ul{margin:0 0 10px;padding-left:20px}
+figure{margin:6px 0 14px;break-inside:avoid}figure img{display:block;max-width:100%;height:auto;border:1px solid #d6d3e0;border-radius:6px}
+.sev-low{color:#2f7d4f;font-weight:700}.sev-medium{color:#9a6b00;font-weight:700}.sev-high{color:#b4361f;font-weight:700}.sev-critical{color:#fff;background:#b4361f;font-weight:700}
+.st-met{color:#2f7d4f}.st-partial{color:#9a6b00}.st-gap{color:#b4361f;font-weight:700}.st-na{color:#6b6778}.rev-open{color:#9a6b00}.rev-overdue{color:#b4361f;font-weight:700}.rev-resolved{color:#2f7d4f}
+.vs-approved{color:#2f7d4f;font-weight:700}.vs-rejected{color:#b4361f;font-weight:700}.vs-review{color:#9a6b00}.total{font-weight:700;background:#f6f5fb}
+footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid #d6d3e0;color:#6b6778;font-size:8.5pt}
+@page{size:A4;margin:18mm 14mm 18mm;@top-left{content:__TITLE__;font:8pt sans-serif;color:#6b6778}@bottom-right{content:counter(page) " / " counter(pages);font:8pt sans-serif;color:#6b6778}}
+@media print{body{padding:0}h2,h3{break-after:avoid}.pb{break-before:page}}`;
+  function reportHTML(D) {
+    const cell = c => { const t = typeof c === 'object' && c ? c.t : c, tone = typeof c === 'object' && c?.tone ? ` class="${esc(c.tone)}"` : ''; return `<td${tone}>${esc(t).replace(/\r?\n/g, '<br>')}</td>`; };
+    const css = REP_CSS.replace('__FONT__', fontCss().replace(/"/g, "'")).replace('__TITLE__', `"${String(D.title).replace(/[\\"]/g, '\\$&').replace(/[\r\n]+/g, ' ')}"`);
+    const blk = b => {
+      if (b.k === 'h3') return `<h3>${esc(b.t)}</h3>`;
+      if (b.k === 'p') return `<p${b.muted ? ' class="muted"' : ''}>${esc(b.t).replace(/\r?\n/g, '<br>')}</p>`;
+      if (b.k === 'kv') return `<dl>${b.items.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v).replace(/\r?\n/g, '<br>')}</dd>`).join('')}</dl>`;
+      if (b.k === 'ul') return `<ul>${b.items.map(t => `<li>${esc(t).replace(/\r?\n/g, '<br>')}</li>`).join('')}</ul>`;
+      if (b.k === 'text') return `<div class="txt"><h4>${esc(b.label)}</h4><p>${esc(b.t)}</p></div>`;
+      if (b.k === 'cards') return `<div class="cards">${b.items.map(c => `<div class="card"><b${c.tone ? ` class="${esc(c.tone)}"` : ''}>${esc(c.value)}</b><span>${esc(c.label)}</span></div>`).join('')}</div>`;
+      if (b.k === 'table') return b.rows.length ? `<table${b.cls ? ` class="${esc(b.cls)}"` : ''}><thead><tr>${b.head.map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${b.rows.map(r => `<tr>${r.map(cell).join('')}</tr>`).join('')}</tbody></table>` : '';
+      if (b.k === 'img') return `<figure><img src="${esc(b.uri || '')}" alt="${esc(b.alt)}"></figure>`;
+      return '';
+    };
+    const csp = "default-src 'none'; img-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'";
+    return `<!doctype html>
+<html lang="${esc(D.lang)}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="${csp}">
+<title>${esc(D.title)}</title><style>${css}</style></head><body>
+<header><h1>${esc(D.title)}</h1><p class="sub">${esc([D.author, D.version, D.active?.label, D.date].filter(Boolean).join(' · '))}</p></header>
+<nav aria-label="${esc(repT('toc'))}"><ol>${D.sections.map(s => `<li><a href="#rep-${esc(s.id)}">${esc(s.title)}</a></li>`).join('')}</ol></nav>
+<main>${D.sections.map(s => `<section id="rep-${esc(s.id)}"${REP_PAGE.includes(s.id) ? ' class="pb"' : ''}><h2>${esc(s.title)}</h2>${s.blocks.map(blk).join('')}</section>`).join('\n')}</main>
+<footer>${esc(repT('footer', { app: C.app.name, date: D.date }))}</footer></body></html>`;
+  }
+
+  // PDF: sin biblioteca; el documento se imprime desde un iframe oculto y el navegador ofrece «Guardar como PDF»
+  function repPrint(html) {
+    return new Promise((res, rej) => {
+      const f = document.createElement('iframe');
+      f.setAttribute('aria-hidden', 'true'); f.setAttribute('tabindex', '-1');
+      f.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden';
+      f.onload = async () => {
+        try {
+          const w = f.contentWindow, d = f.contentDocument;
+          for (let i = 0; i < 100 && ![...d.images].every(im => im.complete); i++) await repSleep(100);
+          w.focus();
+          w.addEventListener('afterprint', () => setTimeout(() => f.remove(), 300), { once: true });
+          setTimeout(() => f.remove(), 600000);
+          w.print();
+          res();
+        } catch (err) { f.remove(); rej(err); }
+      };
+      f.srcdoc = html;
+      document.body.appendChild(f);
+    });
+  }
+  let repBusy = false;
+  // API: Promise con el texto generado (HTML o Markdown) tras lanzar la descarga o la impresión; '' si no se pudo
+  async function exportReport(o = {}) {
+    if (repBusy || viewBusy || P) return '';
+    const format = ['pdf', 'md', 'html'].includes(o.format) ? o.format : 'pdf';
+    const opts = { format, sections: Array.isArray(o.sections) ? o.sections : REP_SECS, views: Array.isArray(o.views) ? o.views : repDefaultViews(), scopes: o.scopes !== false && repScopes().length > 0,
+      theme: o.theme === 'current' ? 'current' : 'light', separateImages: format === 'md' && !!o.separateImages, progress: o.progress };
+    repBusy = true;
+    try {
+      const D = await reportData(opts);
+      if (format === 'md') {
+        const md = reportMarkdown(D);
+        download(md, fileName('md', 'report'), 'text/markdown;charset=utf-8');
+        for (const f of D.files) { await repSleep(350); download(f.blob, f.name); }
+        return md;
+      }
+      const html = reportHTML(D);
+      if (format === 'html') download(html, fileName('html', 'report'), 'text/html;charset=utf-8'); else await repPrint(html);
+      return html;
+    } finally { repBusy = false; }
+  }
+  function openReportDialog() {
+    if (viewBusy || repBusy || P) return;
+    const prev = document.activeElement, id = `rp${Date.now()}`, av = repAvail(), scopes = repScopes();
+    const saved = store.get('report', {}) || {}, fmt0 = ['pdf', 'md', 'html'].includes(saved.format) ? saved.format : 'pdf';
+    const secOn = k => av[k] && (!Array.isArray(saved.sections) || saved.sections.includes(k));
+    const defViews = repDefaultViews();
+    const back = document.createElement('div');
+    back.className = 'cf-back';
+    back.innerHTML = `<form class="cf share rep" role="dialog" aria-modal="true" aria-labelledby="${id}t" autocomplete="off">
+      <h3 id="${id}t">${esc(repT('title'))}</h3>
+      <p>${esc(repT('lead'))}</p>
+      <fieldset class="sh-views"><legend>${esc(repT('format'))}</legend>${['pdf', 'md', 'html'].map(k => `<label class="sh-chk"><input type="radio" name="fmt" value="${k}"${k === fmt0 ? ' checked' : ''}>${esc(repT(`fmt.${k}`))}</label>`).join('')}<small class="sh-size" data-rep="hint"></small></fieldset>
+      <fieldset class="sh-views"><legend>${esc(repT('sections'))}</legend>${REP_SECS.map(k => `<label class="sh-chk rep-sec${av[k] ? '' : ' rep-none'}"><input type="checkbox" name="sec" value="${k}"${secOn(k) ? ' checked' : ''}${av[k] ? '' : ' disabled'}>${esc(repT(`s.${k}`))}${av[k] ? '' : ` <small>${esc(repT('none'))}</small>`}</label>`).join('')}</fieldset>
+      <fieldset class="sh-views" data-rep="views"><legend>${esc(repT('views'))}</legend>${VIEW_KEYS.map(k => `<label class="sh-chk"><input type="checkbox" name="views" value="${esc(k)}"${defViews.includes(k) ? ' checked' : ''}>${esc(viewLabel(k))}</label>`).join('')}
+        ${scopes.length ? `<label class="sh-chk"><input type="checkbox" name="scopes"${saved.scopes === false ? '' : ' checked'}>${esc(repT('scopes'))}</label>` : ''}</fieldset>
+      <label>${esc(repT('theme'))}<select name="theme"><option value="light">${esc(repT('theme.light'))}</option><option value="current"${saved.theme === 'current' ? ' selected' : ''}>${esc(repT('theme.current'))}</option></select></label>
+      <label class="sh-chk" data-rep="sep"><input type="checkbox" name="sep"${saved.sep ? ' checked' : ''}>${esc(repT('sep'))}</label>
+      <p class="sh-err" role="alert" data-rep="msg"></p>
+      <div class="cf-actions"><button type="button" class="btn" data-rep="no">${esc(T('ver.cf.cancel'))}</button><button type="submit" class="btn primary">${esc(repT('create'))}</button></div>
+    </form>`;
+    const form = back.querySelector('form'), msg = form.querySelector('[data-rep="msg"]'), hint = form.querySelector('[data-rep="hint"]');
+    const close = () => { document.removeEventListener('keydown', key, true); back.remove(); prev?.focus?.(); };
+    const key = ev => { if (ev.key === 'Escape' && !form.classList.contains('busy')) { ev.preventDefault(); ev.stopPropagation(); close(); } };
+    const fmtNow = () => form.elements.fmt.value;
+    const sync = () => {
+      form.querySelector('[data-rep="sep"]').hidden = fmtNow() !== 'md';
+      hint.textContent = repT(`hint.${fmtNow()}`);
+      const dia = form.querySelector('input[name="sec"][value="diagram"]').checked;
+      form.querySelectorAll('[data-rep="views"] input, select[name="theme"]').forEach(i => { i.disabled = !dia; });
+      msg.textContent = '';
+    };
+    form.addEventListener('change', sync);
+    form.addEventListener('click', ev => { if (ev.target.closest('[data-rep="no"]')) close(); });
+    back.addEventListener('mousedown', ev => { if (ev.target === back && !form.classList.contains('busy')) close(); });
+    form.addEventListener('submit', async ev => {
+      ev.preventDefault();
+      if (form.classList.contains('busy')) return;
+      const sections = [...form.querySelectorAll('input[name="sec"]:checked')].map(i => i.value), views = [...form.querySelectorAll('input[name="views"]:checked')].map(i => i.value);
+      if (!sections.length) { msg.textContent = repT('noSec'); return; }
+      if (sections.includes('diagram') && !views.length) { msg.textContent = repT('noViews'); return; }
+      const opts = { format: fmtNow(), sections, views, scopes: !!form.elements.scopes?.checked, theme: form.elements.theme.value, separateImages: !!form.elements.sep.checked };
+      store.set('report', { format: opts.format, sections, scopes: scopes.length ? opts.scopes : saved.scopes, theme: opts.theme, sep: opts.separateImages });
+      const btn = form.querySelector('[type="submit"]');
+      form.classList.add('busy'); btn.textContent = repT('busy');
+      opts.progress = (i, n, name) => { msg.style.color = 'var(--muted)'; msg.textContent = repT('progress', { i, n, name }); toast(repT('progress', { i, n, name }), 60000); };
+      try {
+        const out = await exportReport(opts);
+        if (!out) throw new Error('report');
+        close();
+        toast(repT(opts.format === 'pdf' ? 'donePdf' : 'done'), 4200);
+      } catch (err) {
+        console.error('report', err);
+        form.classList.remove('busy'); btn.textContent = repT('create');
+        msg.style.color = ''; msg.textContent = repT('fail'); toast(repT('fail'), 3000);
+      }
+    });
+    document.addEventListener('keydown', key, true);
+    document.body.appendChild(back);
+    sync();
+    form.querySelector('[type="submit"]').focus();
+  }
+
   /* ---------- exportar a otras herramientas (export-*.js) ----------
      Cada exportador recibe una copia del diagrama y este contexto, y devuelve { text, ext, mime }. */
   const hexOf = k => {
@@ -5097,6 +5940,7 @@
     let res;
     try { res = IAC.convert(files); } catch { return toast(IAC ? T('toast.iacNone') : T('toast.badJson'), 3200); }
     if (!res.nodes) return toast(T('toast.iacEmpty', { format: res.format }), 3200);
+    if (S.scope) { importIntoScope(res.diagram); toast(T('toast.iac', res), 4200); return res; } // dentro de un nivel C4: se añade a ese nivel
     S.sel = null;
     setModel(res.diagram, { history: true, animate: true, fit: true });
     toast(T('toast.iac', res), 4200);
@@ -5112,13 +5956,19 @@
   };
   // Zona que contiene el punto (la más pequeña si hay varias): Alt+clic la elige aunque haya algo encima
   const zoneAt = p => {
-    const hit = S.model.zones.filter(z => p.x >= z.x && p.x <= z.x + z.w && p.y >= z.y && p.y <= z.y + z.h).sort((a, b) => a.w * a.h - b.w * b.h)[0];
+    const hit = S.model.zones.filter(z => inScope(z) && p.x >= z.x && p.x <= z.x + z.w && p.y >= z.y && p.y <= z.y + z.h).sort((a, b) => a.w * a.h - b.w * b.h)[0];
     return hit ? { kind: 'zone', id: hit.id, resize: false } : null;
   };
   svg.addEventListener('pointerdown', ev => {
     if (ev.button !== 0 && ev.button !== 1) return;
     if (P) { if (ev.button === 0) presentGo(1); return; }
     if (S.play) stopPlay();
+    const ghostEl = ev.button === 0 && ev.target.closest('.xs-ghost');
+    if (ghostEl) { // tarjeta fantasma de un nivel C4: salta a su nivel y la elige
+      const gid = ghostEl.dataset.xs;
+      cancelConnect(); setScope(scopeOf(gid)); select({ kind: 'node', id: gid });
+      return;
+    }
     const nodeEl = ev.target.closest('.node'), tagEl = ev.target.closest('.group-tag'), edgeEl = ev.target.closest('.edge:not(.ctx-edge)');
     const ctxEl = ev.target.closest('.ctx-box'), flowEl = ev.target.closest('.ctx-edge');
     const p = toWorld(ev.clientX, ev.clientY), now = performance.now();
@@ -5154,7 +6004,9 @@
       return;
     } else if (nodeEl) {
       const id = nodeEl.dataset.id;
-      if (dbl) { renameNode(id); return; }
+      // Diagrama interno: clic en el indicador «⊞ n» o doble clic fuera del texto lo abre; doble clic en el nombre (o en un nodo sin interior) lo renombra
+      if (ev.button === 0 && !S.connecting && !(ev.metaKey || ev.ctrlKey) && ev.target.closest('.node-inner')) { openInner(id); return; }
+      if (dbl) { if (innerCount(id) && !ev.target.closest('.node-label, .node-sub')) openInner(id); else renameNode(id); return; }
       if (multiKey && !S.connecting) { toggleInSelection(id); return; }
       const from = S.connecting || (ev.shiftKey && S.sel?.kind === 'node' && S.sel.id !== id ? S.sel.id : null);
       if (from) { addEdge(from, id); return; }
@@ -5290,7 +6142,9 @@
     else if (mod) return;
     else if (ev.key === 'Delete' || ev.key === 'Backspace') { if (S.sel) { ev.preventDefault(); deleteSelection(); } }
     else if (ev.key === 'Escape' && filterMenu.open) filterMenu.open = false;
-    else if (ev.key === 'Escape') { if (S.play) stopPlay(); else if (S.path) clearPath(); else if (S.connecting) cancelConnect(); else if (!S.sel && S.compare) compareVersion(null); else select(null); }
+    else if (ev.key === 'Escape') { if (S.play) stopPlay(); else if (S.path) clearPath(); else if (S.connecting) cancelConnect(); else if (!S.sel && S.compare) compareVersion(null); else if (!S.sel && !S.flow && S.scope) scopeUp(); else select(null); }
+    else if (ev.altKey && ev.key === 'ArrowUp') { ev.preventDefault(); scopeUp(); }  // sube un nivel C4
+    else if (ev.key === 'Enter' && S.sel?.kind === 'node' && innerCount(S.sel.id) && !ev.target.closest?.('button, a, summary')) { ev.preventDefault(); setScope(S.sel.id); }  // abre el diagrama interno
     else if (/^[1-9]$/.test(k) && VIEW_KEYS[+k - 1]) setView(VIEW_KEYS[+k - 1]);
     else if (k === 'f') fitView();
     else if (k === 'p') togglePlay();
@@ -5380,9 +6234,12 @@
   };
   // Selecciona el objetivo y encuadra la vista sobre él
   function goToFinding(id) {
-    const f = FC.byId.get(id), o = f && findingTarget(f.target);
+    const f = FC.byId.get(id);
+    if (f) focusTarget(f.target.kind, f.target.id);
+  }
+  function focusTarget(k, tid) {
+    const o = findingTarget({ kind: k, id: tid });
     if (!o) return;
-    const k = f.target.kind;
     select({ kind: k, id: o.id });
     if (!S.sel) return toast(T('view.hiddenHere'));
     if (k === 'node') fitBox({ x: o.x, y: o.y, w: R.width.get(o.id) || nodeWidth(o), h: H }, 1);
@@ -5510,6 +6367,248 @@
     }
     renderFindings();
   });
+  /* ---------- decisiones de arquitectura (ADR): pestaña, inspector, versiones y exportación ---------- */
+  const ADR = { open: null, st: '', q: '' };   // ficha abierta, filtro por estado y búsqueda
+  const adrById = id => (S.model.decisions || []).find(d => d.id === id);
+  const adrTitle = d => d.title || d.id;
+  const adrChips = list => (list.length ? `<div class="adr-chips">${list.map(d => `<button type="button" class="adr-chip" data-adr-open="${esc(d.id)}" style="--s:${ADR_COLOR[d.status]}" title="${esc(`${d.id} · ${adrTitle(d)} · ${T(`adr.st.${d.status}`)}`)}"><b>${esc(d.id)}</b> ${esc(d.title)}</button>`).join('')}</div>` : '');
+  // Nombre legible de un elemento enlazado
+  function adrLinkLabel(kind, id) {
+    const m = S.model;
+    if (kind === 'nodes') return m.nodes.find(n => n.id === id)?.label;
+    if (kind === 'groups') return m.groups.find(g => g.id === id)?.label;
+    if (kind === 'versions') { const v = findVersion(id); return v && verLabel(v); }
+    const e = m.edges.find(x => x.id === id);
+    return e && `${m.nodes.find(n => n.id === e.from)?.label || e.from} ${e.both ? '↔' : '→'} ${m.nodes.find(n => n.id === e.to)?.label || e.to}`;
+  }
+  const ADR_KINDS = ['nodes', 'edges', 'groups', 'versions'];
+  const adrLinkList = d => ADR_KINDS.flatMap(k => (d.links?.[k] || []).map(id => ({ kind: k, id, label: adrLinkLabel(k, id) || id })));
+
+  // Crear, cambiar y borrar: todo pasa por cleanDecisions, así el estado, los enlaces y «sustituida por» siempre quedan coherentes
+  function addDecision(p = {}) {
+    p = p && typeof p === 'object' ? p : {};
+    pushHistory();
+    const list = cleanDecisions([...(S.model.decisions || []), { ...p, title: p.title || T('adr.new.title') }], S.model);
+    S.model.decisions = list;
+    changed(true); renderInspector(); renderAdr(true);
+    return list[list.length - 1].id;
+  }
+  function updateDecision(id, patch) {
+    const d = adrById(id);
+    if (!d || !patch || typeof patch !== 'object') return false;
+    pushHistory();
+    const next = { ...d, ...patch, id: d.id };
+    if ('status' in patch && adrStatus(patch.status) !== 'superseded' && !('supersededBy' in patch)) delete next.supersededBy;
+    if (!next.supersededBy) delete next.supersededBy;
+    S.model.decisions = cleanDecisions(S.model.decisions.map(x => (x === d ? next : x)), S.model);
+    changed(true); renderInspector(); renderAdr(true);
+    return true;
+  }
+  function removeDecision(id) {
+    if (!adrById(id)) return false;
+    pushHistory();
+    S.model.decisions = cleanDecisions(S.model.decisions.filter(d => d.id !== id), S.model);
+    if (ADR.open === id) ADR.open = null;
+    changed(true); renderInspector(); renderAdr(true);
+    return true;
+  }
+  // Enlaces de la selección actual: { nodes } | { edges } | { groups } o null
+  function adrSelLinks() {
+    const s = S.sel;
+    if (!s) return null;
+    if (s.kind === 'node') return { nodes: [s.id] };
+    if (s.kind === 'multi') return { nodes: [...s.ids] };
+    if (s.kind === 'edge') return { edges: [s.id] };
+    if (s.kind === 'group') return { groups: [s.id] };
+    return null;
+  }
+  const adrAddLinks = (d, add) => { const l = {}; ADR_KINDS.forEach(k => { const v = [...(d.links?.[k] || []), ...(add[k] || [])]; if (v.length) l[k] = v; }); return l; };
+
+  // Abre una decisión en la pestaña ADR (quita los filtros que la esconderían)
+  function adrOpen(id) {
+    const d = adrById(id);
+    if (!d) return;
+    ADR.open = id;
+    if (ADR.st && ADR.st !== d.status) ADR.st = '';
+    ADR.q = '';
+    $('.tab[data-tab="adr"]')?.click();
+    renderAdr(true);
+    $(`#adr-list .adr[data-id="${CSS.escape(id)}"]`)?.scrollIntoView({ block: 'nearest' });
+    if (matchMedia('(max-width: 760px)').matches) $('#main').classList.add('open');
+  }
+  // Muestra la versión en su pestaña y la resalta un momento
+  function adrGotoVersion(id) {
+    if (!findVersion(id)) return;
+    $('.tab[data-tab="versions"]')?.click();
+    if (store.get('verFilter', 'all') !== 'all') { store.set('verFilter', 'all'); renderVersions(); }
+    const row = $(`#versions .ver[data-id="${CSS.escape(id)}"]`);
+    row?.scrollIntoView({ block: 'nearest' });
+    row?.classList.add('adr-flash');
+    setTimeout(() => row?.classList.remove('adr-flash'), 1800);
+  }
+  function adrFocus(kind, id) {
+    if (kind === 'versions') return adrGotoVersion(id);
+    focusTarget(kind === 'nodes' ? 'node' : kind === 'edges' ? 'edge' : 'group', id);
+  }
+
+  /* pestaña */
+  const adrPanel = $('#adr-panel');
+  function renderAdr(force) {
+    if (!adrPanel || !S.model || !$('.pane[data-pane="adr"]')?.classList.contains('on')) return;
+    const a = document.activeElement;
+    if (!force && a && adrPanel.contains(a) && a.matches('input, textarea, select')) return; // no pisar lo que se está escribiendo
+    const ds = S.model.decisions || [];
+    if (ADR.open && !adrById(ADR.open)) ADR.open = null;
+    if (ADR.st && !ds.some(d => d.status === ADR.st)) ADR.st = '';
+    const chip = (k, n, label, color) => `<button class="fnd-chip${ADR.st === k ? ' on' : ''}" data-adr-st="${k}" aria-pressed="${ADR.st === k}" style="--s:${color}">${esc(label)} <b>${n}</b></button>`;
+    const counts = Object.fromEntries(ADR_STATUS.map(k => [k, ds.filter(d => d.status === k).length]));
+    $('#adr-bar').innerHTML = `<div class="adr-tools"><button class="btn small primary" data-adr="new">+ ${esc(T('adr.new'))}</button><button class="btn small" data-adr="md"${ds.length ? '' : ' disabled'}>${esc(T('adr.export'))}</button></div>
+      ${ds.length ? `<div class="fnd-chips" role="group" aria-label="${esc(T('adr.filter'))}">${chip('', ds.length, T('adr.f.all'), 'var(--accent)')}${ADR_STATUS.filter(k => counts[k]).map(k => chip(k, counts[k], T(`adr.st.${k}`), ADR_COLOR[k])).join('')}</div>
+      <input class="search" id="adr-q" style="padding-left:10px;margin-bottom:6px" value="${esc(ADR.q)}" placeholder="${esc(T('adr.search'))}" aria-label="${esc(T('adr.search'))}" autocomplete="off">` : ''}`;
+    renderAdrList();
+  }
+  const adrMatches = d => (!ADR.st || d.status === ADR.st) && (!ADR.q || [d.id, d.title, d.context, d.decision, d.consequences].some(x => String(x || '').toLowerCase().includes(ADR.q.toLowerCase())));
+  function adrCard(d, ds) {
+    const on = ADR.open === d.id, links = adrLinkList(d), col = ADR_COLOR[d.status];
+    const goChip = (l, rm) => `<span class="adr-link"><button type="button" data-adr-go="${l.kind}:${esc(l.id)}" title="${esc(T('adr.go'))}">${esc(T(`adr.kind.${l.kind}`))}: ${esc(l.label)}</button>${rm ? `<button type="button" class="adr-x" data-adr-unlink="${l.kind}:${esc(l.id)}" title="${esc(T('adr.unlink'))}" aria-label="${esc(T('adr.unlink'))}">×</button>` : ''}</span>`;
+    let form = '';
+    if (on) {
+      const others = ds.filter(x => x.id !== d.id), free = S.model.versions.filter(v => !d.links?.versions?.includes(v.id));
+      form = `<div class="adr-form">
+        <label>${esc(T('adr.f.id'))}<input value="${esc(d.id)}" readonly></label>
+        <label>${esc(T('adr.f.title'))}<input data-af="title" value="${esc(d.title)}" maxlength="200" autocomplete="off"></label>
+        <div class="adr-two"><label>${esc(T('adr.f.status'))}<select data-af="status">${ADR_STATUS.map(k => `<option value="${k}"${k === d.status ? ' selected' : ''}>${esc(T(`adr.st.${k}`))}</option>`).join('')}</select></label>
+          <label>${esc(T('adr.f.date'))}<input type="date" data-af="date" value="${esc(d.date)}"></label></div>
+        <label>${esc(T('adr.f.deciders'))}<input data-af="deciders" value="${esc(d.deciders || '')}" placeholder="${esc(T('adr.f.deciders.ph'))}" maxlength="200" autocomplete="off"></label>
+        ${['context', 'decision', 'consequences'].map(k => `<label>${esc(T(`adr.f.${k}`))}<textarea data-af="${k}" rows="4" placeholder="${esc(T(`adr.f.${k}.ph`))}">${esc(d[k])}</textarea></label>`).join('')}
+        <label>${esc(T('adr.f.superseded'))}<select data-af="supersededBy"><option value="">${esc(T('insp.none'))}</option>${others.map(x => `<option value="${esc(x.id)}"${x.id === d.supersededBy ? ' selected' : ''}>${esc(`${x.id} · ${adrTitle(x)}`)}</option>`).join('')}</select></label>
+        <div class="adr-links-edit"><span>${esc(T('adr.f.links'))}</span>${links.length ? links.map(l => goChip(l, true)).join('') : `<em>${esc(T('adr.noLinks'))}</em>`}
+          <div class="adr-row"><button class="btn small" data-adr="linksel">${esc(T('adr.linkSel'))}</button>
+          ${free.length ? `<select data-adr-linkver aria-label="${esc(T('adr.linkVer'))}"><option value="">${esc(T('adr.linkVer'))}</option>${free.map(v => `<option value="${esc(v.id)}">${esc(verLabel(v))}</option>`).join('')}</select>` : ''}</div></div>
+        <button class="btn small danger" data-adr="del">${esc(T('adr.delete'))}</button>
+      </div>`;
+    }
+    return `<div class="adr${on ? ' on' : ''}" data-id="${esc(d.id)}" style="--s:${col}">
+      <button type="button" class="adr-head" data-adr-toggle aria-expanded="${on}"><b class="adr-id">${esc(d.id)}</b><span class="adr-title">${esc(adrTitle(d))}</span><span class="adr-pill">${esc(T(`adr.st.${d.status}`))}</span></button>
+      <div class="adr-meta">${esc([fmtDay(d.date), d.deciders].filter(Boolean).join(' · '))}${d.supersededBy ? ` · ${esc(T('adr.f.superseded'))}: ${esc(d.supersededBy)}` : ''}</div>
+      ${!on && links.length ? `<div class="adr-links">${links.map(l => goChip(l, false)).join('')}</div>` : ''}
+      ${form}
+    </div>`;
+  }
+  function renderAdrList() {
+    const box = $('#adr-list');
+    if (!box || !S.model) return;
+    const ds = S.model.decisions || [], shown = ds.filter(adrMatches);
+    const keep = box.parentElement?.scrollTop || 0;
+    box.innerHTML = !ds.length ? `<p class="fnd-empty">${esc(T('adr.empty'))}</p>`
+      : shown.length ? shown.map(d => adrCard(d, ds)).join('') : `<p class="fnd-empty">${esc(T('adr.noMatch'))}</p>`;
+    if (box.parentElement) box.parentElement.scrollTop = keep;
+  }
+  // Actualiza la cabecera de una ficha sin repintarla (para no perder el foco al escribir)
+  function adrRefreshHead(card, d) {
+    card.querySelector('.adr-title').textContent = adrTitle(d);
+    card.querySelector('.adr-meta').textContent = [fmtDay(d.date), d.deciders].filter(Boolean).join(' · ') + (d.supersededBy ? ` · ${T('adr.f.superseded')}: ${d.supersededBy}` : '');
+  }
+  adrPanel?.addEventListener('focusin', ev => { if (ev.target.dataset?.af && ev.target.tagName !== 'SELECT') beginEdit(); });
+  adrPanel?.addEventListener('focusout', ev => { if (ev.target.dataset?.af) endEdit(); });
+  adrPanel?.addEventListener('input', ev => {
+    const f = ev.target;
+    if (f.id === 'adr-q') { ADR.q = f.value; return renderAdrList(); }
+    const k = f.dataset?.af, card = f.closest('.adr'), d = k && f.tagName !== 'SELECT' && card && adrById(card.dataset.id);
+    if (!d) return;
+    if (k === 'date' && !isDay(f.value)) return;
+    markEdit();
+    if (k === 'deciders' && !f.value.trim()) delete d.deciders; else d[k] = f.value;
+    syncEditor(); save();
+    adrRefreshHead(card, d);
+  });
+  adrPanel?.addEventListener('change', ev => {
+    const f = ev.target, card = f.closest('.adr'), d = card && adrById(card.dataset.id);
+    if (!d) return;
+    if (f.dataset.adrLinkver != null) { if (f.value) updateDecision(d.id, { links: adrAddLinks(d, { versions: [f.value] }) }); return; }
+    const k = f.dataset.af;
+    if (!k) return;
+    if (f.tagName === 'SELECT') {
+      if (k === 'status') updateDecision(d.id, { status: f.value });
+      else if (k === 'supersededBy') updateDecision(d.id, f.value ? { supersededBy: f.value, status: 'superseded' } : { supersededBy: '' });
+    } else { changed(true); renderInspector(); renderVersions(); }
+  });
+  adrPanel?.addEventListener('click', async ev => {
+    const b = ev.target.closest('button');
+    if (!b) return;
+    const d0 = b.dataset, card = b.closest('.adr'), d = card && adrById(card.dataset.id);
+    if (d0.adrSt != null) { ADR.st = ADR.st === d0.adrSt ? '' : d0.adrSt; return renderAdr(true); }
+    if (d0.adr === 'new') { ADR.q = ''; ADR.st = ''; return adrOpen(addDecision()); }
+    if (d0.adr === 'md') return exportDecisions();
+    if (d0.adrToggle != null && d) { ADR.open = ADR.open === d.id ? null : d.id; return renderAdr(true); }
+    if (d0.adrGo) { const [k, ...r] = d0.adrGo.split(':'); return adrFocus(k, r.join(':')); }
+    if (!d) return;
+    if (d0.adrUnlink) {
+      const [k, ...r] = d0.adrUnlink.split(':'), id = r.join(':');
+      return void updateDecision(d.id, { links: { ...d.links, [k]: (d.links?.[k] || []).filter(x => x !== id) } });
+    }
+    if (d0.adr === 'linksel') {
+      const l = adrSelLinks();
+      if (!l) return toast(T('adr.noSel'));
+      return void updateDecision(d.id, { links: adrAddLinks(d, l) });
+    }
+    if (d0.adr === 'del' && await confirmBox({ title: T('adr.cf.title', d.id), text: T('adr.cf.text', adrTitle(d)), ok: T('adr.delete'), cancel: T('ver.cf.cancel'), danger: true })) removeDecision(d.id);
+  });
+
+  /* inspector (nodo, conexión y grupo) y filas de versiones */
+  const adrKindOfSel = () => ({ node: 'nodes', edge: 'edges', group: 'groups' })[S.sel?.kind];
+  const adrField = t => {
+    const kind = adrKindOfSel();
+    if (!kind) return '';
+    const linked = decisionsOf(kind, t.id), rest = (S.model.decisions || []).filter(d => !linked.includes(d));
+    return `<div class="field adr-field">${T('adr.field')}${adrChips(linked)}
+      <div class="adr-row"><button class="btn small" data-adr="new">+ ${esc(T('adr.new'))}</button>
+      ${rest.length ? `<select data-adr-link aria-label="${esc(T('adr.linkTo'))}"><option value="">${esc(T('adr.linkTo'))}</option>${rest.map(d => `<option value="${esc(d.id)}">${esc(`${d.id} · ${adrTitle(d)}`)}</option>`).join('')}</select>` : ''}</div></div>`;
+  };
+  $('#inspector').addEventListener('click', ev => {
+    const b = ev.target.closest('button');
+    if (!b) return;
+    if (b.dataset.adrOpen) return adrOpen(b.dataset.adrOpen);
+    const l = b.dataset.adr === 'new' && adrSelLinks();
+    if (l) adrOpen(addDecision({ links: l }));
+  });
+  $('#inspector').addEventListener('change', ev => {
+    const f = ev.target, d = f.matches?.('[data-adr-link]') && f.value && adrById(f.value), l = adrSelLinks();
+    if (d && l) updateDecision(d.id, { links: adrAddLinks(d, l) });
+  });
+  $('#versions').addEventListener('click', ev => {
+    const b = ev.target.closest('button');
+    if (!b) return;
+    if (b.dataset.adrOpen) return adrOpen(b.dataset.adrOpen);
+    if (b.dataset.adr === 'newver') { const id = b.closest('.ver')?.dataset.id; if (id) adrOpen(addDecision({ links: { versions: [id] } })); }
+  });
+
+  /* exportación Markdown (MADR): índice y una sección por decisión */
+  function decisionsMarkdown() {
+    const m = S.model, ds = m.decisions || [], cell = x => String(x ?? '').replace(/\|/g, '\\|').replace(/\s*\n\s*/g, ' ');
+    const body = x => (String(x || '').trim() || '_—_');
+    const out = [`# ${T('adr.md.title', m.title)}`, ''];
+    if (ds.length) {
+      out.push(`| ${T('adr.f.id')} | ${T('adr.f.title')} | ${T('adr.f.status')} | ${T('adr.f.date')} |`, '|---|---|---|---|');
+      ds.forEach(d => out.push(`| ${cell(d.id)} | ${cell(adrTitle(d))} | ${cell(T(`adr.st.${d.status}`))} | ${cell(d.date)} |`));
+      out.push('');
+    }
+    ds.forEach(d => {
+      out.push(`## ${d.id}: ${adrTitle(d).replace(/\s*\n\s*/g, ' ')}`, '', `- **${T('adr.f.status')}:** ${T(`adr.st.${d.status}`)}`, `- **${T('adr.f.date')}:** ${d.date}`);
+      if (d.deciders) out.push(`- **${T('adr.f.deciders')}:** ${d.deciders}`);
+      out.push('', `### ${T('adr.f.context')}`, '', body(d.context), '', `### ${T('adr.f.decision')}`, '', body(d.decision), '', `### ${T('adr.f.consequences')}`, '', body(d.consequences), '');
+      const links = adrLinkList(d);
+      if (links.length) out.push(`### ${T('adr.md.linked')}`, '', ...links.map(l => `- ${T(`adr.kind.${l.kind}`)}: ${l.label}`), '');
+      if (d.supersededBy) { const s = adrById(d.supersededBy); out.push(`### ${T('adr.f.superseded')}`, '', `${d.supersededBy}${s ? ` — ${adrTitle(s)}` : ''}`, ''); }
+    });
+    return out.join('\n').replace(/\n{3,}/g, '\n\n').replace(/\n*$/, '\n');
+  }
+  function exportDecisions() {
+    const md = decisionsMarkdown(), slug = (S.model.title || 'diagram').replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-+|-+$/g, '') || 'diagram';
+    download(md, `${slug}-decisions.md`, 'text/markdown;charset=utf-8');
+    return md;
+  }
+
   // Inspector del nodo: exposición y respaldo (automáticos o a mano) y sus hallazgos abiertos
   const secField = n => {
     const ex = exposureOf(n), bk = backupOf(n), curE = n.exposure === 'public' || n.exposure === 'internal' ? n.exposure : '', curB = typeof n.backup === 'boolean' ? (n.backup ? 'yes' : 'no') : '';
@@ -5614,7 +6713,8 @@
     svg.classList.toggle('anim-off', !S.anim);
     $('#btn-anim').classList.toggle('on', S.anim);
     const saved = store.get('model', null);
-    setModel(saved && Array.isArray(saved.nodes) ? saved : I.deep(EXAMPLES[0]?.diagram || { title: T('model.new') }), { animate: true });
+    S.scope = store.get('scope', null);  // se recupera el nivel C4 abierto si sigue existiendo
+    setModel(saved && Array.isArray(saved.nodes) ? saved : I.deep(EXAMPLES[0]?.diagram || { title: T('model.new') }), { animate: true, keepScope: true });
     fitView(false);
     requestAnimationFrame(tick);
   }
@@ -5655,7 +6755,9 @@
     owners: () => govTeamList(),
     findings: (opts = {}) => apiFindings(opts), dismissFinding: (id, reason) => dismissFinding(id, reason), restoreFinding: id => restoreFinding(id),
     threats: () => strideAll().map(t => ({ edge: t.e.id, from: t.e.from, to: t.e.to, zones: t.zones.map(z => z.id), category: t.cat, severity: t.severity, status: t.status, note: t.note })),
-    exportThreats,
+    exportThreats, exportReport,
+    decisions: () => clone(S.model.decisions || []), addDecision, updateDecision, removeDecision, exportDecisions,
+    setScope: id => setScope(id), get scope() { return S.scope; }, scopes: () => scopeList().map(x => ({ ...x, path: [...x.path] })), exportLevels,
     exportSVG, exportPNG, exportViews, exportJSON, shareEncrypted, exportOther, exportCtx, toggleRouting, importFiles, config: C, icons: ICONS
   };
 

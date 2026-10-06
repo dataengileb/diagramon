@@ -264,6 +264,19 @@ Abre la pestaña **Versiones**.
 - Guardar, abrir, eliminar y cada edición se deshacen con **`⌘Z`**.
 - Las versiones se guardan dentro del diagrama, así que **Exportar › JSON** las lleva todas.
 
+#### Decisiones de arquitectura (ADR)
+
+Abre la pestaña **ADR** para registrar *por qué* la arquitectura es como es, al estilo MADR: **contexto**, **decisión** y **consecuencias**.
+
+- **+ Nueva decisión** agrega una ficha (`ADR-001`, `ADR-002`…). Haz clic para editar su título, **estado** (*Propuesta*, *Aceptada*, *Rechazada*, *Obsoleta*, *Reemplazada*), fecha, decisores y los tres textos. Elegir **Reemplazada por** la marca como *Reemplazada*.
+- Vincula la decisión a lo que afecta: **Vincular selección** enlaza los componentes, la conexión o el grupo seleccionados, y **Vincular versión…** una versión guardada. Lo vinculado aparece como fichas; haz clic en una para seleccionarla en el lienzo (o ir a la versión).
+- Los paneles de componente, conexión y grupo tienen un campo **Decisiones** con los ADR vinculados, **+ Nueva decisión** (ya vinculada) y **Vincular…** para elegir una existente. Cada tarjeta de versión lista sus ADR y tiene **+ ADR**.
+- Los componentes con una decisión *propuesta* o *aceptada* muestran una etiqueta **ADR n** en el lienzo (en las vistas que muestran las marcas de revisión); pasa el cursor para leer los títulos.
+- Fichas de estado con su conteo y un buscador filtran la lista. **Exportar Markdown** descarga todas las decisiones en un solo `.md`: una tabla índice y una sección por ADR.
+- Una decisión *propuesta* desde hace más de 30 días es un hallazgo bajo en la pestaña **Revisión**.
+- Las decisiones son del documento, no de una versión: abrir una versión o editar la pestaña *Texto* no las toca, y se guardan en **Exportar › JSON** bajo `decisions`. Todo se puede deshacer con **`⌘Z`**.
+- Desde la consola: `Diagramon.decisions()`, `Diagramon.addDecision({ title, status, context, decision, consequences, links: { nodes: [...] } })`, `Diagramon.updateDecision(id, cambios)`, `Diagramon.removeDecision(id)` y `Diagramon.exportDecisions()`.
+
 ### 9. Notas adhesivas y zonas de riesgo
 
 Usa los dos botones junto al zoom (abajo a la derecha del lienzo).
@@ -296,6 +309,17 @@ Algunas zonas son **fronteras de confianza** en vez de zonas de riesgo: abre una
   Los archivos SVG y PNG llevan entonces un panel abajo con solo lo que usa el diagrama (estilos de conexión, candados,
   colores de los componentes, clasificaciones de datos) y un cajetín con título, autor, versión, fecha y costo estimado.
 
+#### Informe de arquitectura
+
+**Exportar › Informe de arquitectura…** genera el documento que piden los comités de arquitectura, sin bibliotecas y sin red:
+
+- **Formato**: **PDF** (abre el diálogo de impresión del navegador con un documento A4 listo para imprimir: elige *Guardar como PDF*), **Markdown** (`.md`) o **HTML** (`.html`, un único archivo autocontenido, el mismo documento que el PDF y sin peticiones externas).
+- **Secciones** (todas activas por defecto, se recuerdan): Resumen · Diagrama · Componentes · Conexiones · Clasificación y residencia de datos · Dueños · Capas del data lake · Costos · Hallazgos de seguridad · Cumplimiento · Modelo de amenazas · Decisiones (ADR) · Historial de versiones · Notas y zonas de riesgo. Una sección sin datos se omite y aparece como *(ninguno)*.
+- **Diagrama**: elige cuáles de las 8 vistas incluir (la activa, más Seguridad y Datos cuando aportan algo). Si el diagrama tiene diagramas internos (niveles C4), **Incluir diagramas internos** dibuja cada uno. Las imágenes usan el tema claro por defecto (ideal para imprimir); **Usar el tema actual** mantiene el de la pantalla.
+- **Imágenes en Markdown**: van incrustadas como PNG `data:`. Algunos visores de Markdown las bloquean, así que marca **Guardar las imágenes como archivos aparte** para descargar los PNG junto al `.md` y referenciarlos por nombre.
+- Los textos salen en el idioma actual de la interfaz, con fechas y dinero en sus formatos, y todo va escapado.
+- Desde la consola: `Diagramon.exportReport({ format: 'pdf' | 'md' | 'html', sections?: [...], views?: [...], scopes?: true | false, theme?: 'light' | 'current', separateImages?: boolean })` devuelve una promesa con el HTML o Markdown generado tras iniciar la descarga o el diálogo de impresión. Claves de sección: `summary diagram components connections data owners layers costs findings compliance threats decisions versions notes`.
+
 ### Vistas
 
 Una **vista** es una forma de mirar el mismo diagrama: solo decide qué se ve, con cuánto detalle y qué destaca. Nunca cambia tus componentes ni posiciones. Elígela en el selector **Vista** de la barra superior, con las teclas **`1`**–**`8`**, o desde la consola (`Diagramon.setView('security')`). Cuando la vista no es *Completa*, una pastilla sobre el lienzo la nombra, cuenta lo que oculta o atenúa y tiene una **×** para volver. La ficha del documento y la leyenda de las exportaciones siguen la vista activa.
@@ -312,6 +336,20 @@ Una **vista** es una forma de mirar el mismo diagrama: solo decide qué se ve, c
 | `8` | **Gobierno** | Quién es dueño de qué: componentes coloreados por equipo (o dueño), con una etiqueta de equipo bajo cada uno; los que no tienen ninguno se atenúan |
 
 Las reglas de cada vista están en `config.js` › `views`; en el inspector puedes marcar un grupo como `lógico` o `físico`.
+
+### Niveles C4 (drill-down)
+
+Un mismo archivo puede tener varios niveles de detalle, como en el **modelo C4**: *contexto del sistema* → *contenedores* → *componentes*. Cualquier componente puede tener un **diagrama interno**; el modelo sigue siendo plano (cada elemento solo indica en qué componente vive, con `in`), así que revisiones, linaje, cumplimiento, dueños, costos y versiones siguen viéndolo todo.
+
+1. Elige un componente y pulsa **Crear diagrama interno** en el inspector (sección **Elemento C4**); luego añade componentes dentro. Lo nuevo (componentes, grupos, notas y zonas) nace en el nivel en el que estás. Dentro de un *Sistema de software* los nuevos son *Contenedor* por defecto; dentro de un *Contenedor*, *Componente*.
+2. Un componente con diagrama interno muestra una pastilla **⊞ n** a la derecha de su tarjeta. **Haz clic en la pastilla**, **doble clic en el componente** (doble clic en su *nombre* lo renombra), pulsa **`Intro`** con él elegido, o usa **Abrir diagrama interno** en el inspector.
+3. Para volver: **`Esc`** (sin nada seleccionado), **`Alt`+`↑`** o las **migas de pan** sobre el lienzo (*Superior › Sistema tienda › API*), que además nombran el nivel C4 (*L1 Contexto del sistema*, *L2 Contenedores*, *L3 Componentes*).
+4. Dentro de un nivel, un **marco de límite** discontinuo lleva el nombre y el tipo C4 del padre. Lo que vive fuera pero se conecta con él (otros sistemas, los vecinos del padre) aparece como **tarjetas fantasma** atenuadas a la izquierda (entrantes) y a la derecha (salientes) del marco; haz clic en una para saltar a su nivel.
+5. Elige un **Elemento C4** (*Persona*, *Sistema de software*, *Contenedor*, *Componente*, *Sistema externo*) en el inspector; se ve como una etiqueta `[Contenedor]` en los componentes sin línea de detalle, y en el tooltip.
+6. **Mover dentro de…** (los nodos elegidos pasan dentro de otro componente del mismo nivel) y **Subir un nivel** están en el inspector; las conexiones los siguen y los grupos viajan con sus nodos cuando se mueven todos. Borrar un componente con diagrama interno pide confirmación y borra todo lo que contiene.
+7. Cada nivel tiene sus propias posiciones y su propio **Ordenar**, **Ajustar** y presentación. Las vistas (también el colapso de *Contexto*), los filtros, los hallazgos y las exportaciones funcionan dentro del nivel abierto. **Exportar** › *Todos los niveles* escribe una imagen por cada nivel con contenido.
+
+Desde la consola: `Diagramon.setScope('api')`, `Diagramon.scope`, `Diagramon.scopes()`, `Diagramon.exportLevels('png')`.
 
 ### Atajos de teclado
 
@@ -335,7 +373,9 @@ Las reglas de cada vista están en `config.js` › `views`; en el inspector pued
 | `E` | Cambiar entre conectores curvos y en ángulo recto |
 | `G` | Abrir el panel de filtros (`Esc` lo cierra) |
 | `1`–`8` | Cambiar de vista: Completa, Contexto, Lógica, Física, Seguridad, Datos, Costo, Gobierno |
-| `Esc` | Cancelar o quitar la selección |
+| `Intro` | Abrir el diagrama interno del componente elegido (niveles C4) |
+| `Esc` | Cancelar o quitar la selección; sin selección, subir un nivel C4 |
+| `Alt`+`↑` | Subir un nivel C4 |
 
 ---
 
@@ -415,6 +455,7 @@ api ~> cola : eventos
 | `a -> b : SQL amenazas="T=mitigada,I=aceptada"` | Decisiones STRIDE de una conexión (en inglés: `threats=`); letras `S T R I D E`, estados `mitigada`, `aceptada`, `na` (en inglés `mitigated`, `accepted`, `na`). Las notas y las fronteras de confianza no van en el texto |
 | `controles="iso27001:A.8.24=cumple,pcidss:4.2=brecha"` | Controles de cumplimiento de un nodo o grupo (en inglés: `controls=`, estados `met` `partial` `gap` `na`); cada uno es `marco:id=cumple\|parcial\|brecha\|na`; los nodos heredan de su grupo |
 | `grupo id "Nombre" color=… { … }` | Grupo; se pueden anidar |
+| `dentro=tienda` (en inglés: `in=tienda`) · `c4=contenedor` | Niveles C4: el nodo o grupo vive en el diagrama interno de `tienda`; tipo C4 `persona`, `sistema`, `contenedor`, `componente` o `externo` (en inglés: `person`, `system`, `container`, `component`, `external`). Los nodos dentro de las llaves de un grupo con `dentro=` heredan su nivel |
 | `a -> b` · `a => b` · `a ~> b` · `a ..> b` | Petición · datos · evento · opcional |
 | `a -> b -> c : etiqueta` | Cadena; la etiqueta va en la última flecha |
 | `líneas: codos` · `a -> b : x línea=curva` | Líneas en ángulo recto o curvas, para el diagrama o una conexión |
@@ -466,6 +507,7 @@ Todo lo personalizable está en **`config.js`**. Guarda y recarga `index.html`.
 - **Capas del data lake**: `dataLayers` define las capas en orden (`label` para los nombres medallón, `alt` para Crudo/Curado/Consumo, letras cortas y `color`). Los colores usan `--layer-bronze`, `--layer-silver` y `--layer-gold`, definidos por tema en `index.html`; cámbialos ahí o pon un color fijo en `config.js`. `layerAliases` lista otras palabras aceptadas al leer JSON y texto. La opción `layers` de cada vista las muestra u oculta.
 - **Revisión de seguridad automática**: `securityRules` en `config.js` tiene una entrada por regla (`sec.unencrypted-sensitive`, `sec.unstated-encryption`, `sec.public-sensitive`, `sec.datastore-backup`, `sec.cross-border`, `sec.sensitive-no-owner`, `sec.public-datastore`) con `enabled` (pon `false` para apagarla) y `severity` (`low`, `medium`, `high`, `critical`). Lo demás son parámetros de la regla: `clientTypes`, `publicGroupIcons` y `publicGroupName` (qué cuenta como público), `dataStoreTypes` y `dataStoreIconCategories`, `backupIcons`, `backupName` y `backupEdgeLabel` (qué cuenta como respaldo). Los patrones de texto son RegExp sin distinguir mayúsculas.
 - **Cumplimiento**: `compliance.frameworks` es un mapa ordenado `clave → { label, short, url?, controls: { '<id>': { label: { en, es } } } }`. Añade un control con una línea en su marco, o un marco (NIST CSF, ENS, DORA…) copiando un bloque; el JSON y el Texto aceptan cualquier `marco:id`, aunque no esté en el catálogo. `compliance.suggest` asocia cada clase de datos (y `crossBorder`) con los controles que se ofrecen como fichas; el primero de cada lista es el que espera la revisión.
+- **Decisiones de arquitectura**: `adr.staleDays` (por defecto `30`) son los días que una decisión *propuesta* puede esperar antes de aparecer como hallazgo bajo en la pestaña *Revisión*; `0` lo desactiva.
 - **Ambientes**: `environments` define los botones de la pestaña *Versiones* (nombre, texto corto y color). Añade o quita los que necesites.
 - **Tamaño de los nodos**: con `node.sameSize: true` (por defecto) todos miden `node.width` y los nombres largos usan 2 líneas.
   Con `false`, cada nodo crece con su texto.
@@ -503,7 +545,8 @@ Todo lo personalizable está en **`config.js`**. Guarda y recarga `index.html`.
 <summary><b>API para extensiones</b></summary>
 
 `window.Diagramon` expone `model`, `load()`, `addNode()`, `addEdge()`, `select()`, `align()`, `relayout()`,
-`fitView()`, `togglePlay()`, `toggleTheme()`, `toggleLang()`, `lang`, `saveVersion()`, `openVersion()`, `compareVersion()`, `deleteVersion()`, `exportSVG()`, `exportPNG()`, `exportJSON()`, `lineage()`, `datasets()`, `owners()`, `crossBorder()`, `layers()`, `setLayerNames()`, `compliance()`, `exportCompliance()`, `config` e `icons`.
+`fitView()`, `togglePlay()`, `toggleTheme()`, `toggleLang()`, `lang`, `saveVersion()`, `openVersion()`, `compareVersion()`, `deleteVersion()`, `exportSVG()`, `exportPNG()`, `exportJSON()`, `lineage()`, `datasets()`, `owners()`, `crossBorder()`, `layers()`, `setLayerNames()`, `compliance()`, `exportCompliance()`, `decisions()`, `addDecision()`, `updateDecision()`, `removeDecision()`, `exportDecisions()`, `config` e `icons`.
+Además: `setScope(id | null)`, `scope`, `scopes()` y `exportLevels(formato)` para los niveles C4.
 El lenguaje de texto está en `window.DiagramonText` (`parse` y `stringify`).
 
 </details>
@@ -550,7 +593,10 @@ Cosas que funcionan pero aún no se han revisado a fondo. Probablemente necesite
 - **Dibujar una frontera de confianza a mano** con el ratón no se ha probado; se probó desde la API y desde la acción de selección múltiple.
 - **Pestaña Texto**: las notas de las decisiones STRIDE, las fronteras de confianza y los hallazgos descartados no forman parte del formato de texto, así que una ida y vuelta por la pestaña *Texto* conserva los estados pero pierde las notas.
 - Los campos de revisión de seguridad, cumplimiento y STRIDE (`exposure`, `backup`, `controls`, `threats`, zonas de confianza, hallazgos descartados) no se exportan a Mermaid, PlantUML ni draw.io.
+- Las **decisiones de arquitectura** (ADR) no forman parte del formato de texto, no se exportan a Mermaid, PlantUML ni draw.io y no se comparan entre versiones. La etiqueta ADR del lienzo y la exportación a Markdown no se han revisado visualmente en todos los temas.
 - El catálogo de cumplimiento es un subconjunto práctico de cada norma con títulos parafraseados; revísalo antes de usarlo en una auditoría.
+- **Informe de arquitectura**: aún no se ha probado el diálogo de impresión a PDF (sí el HTML y el Markdown). El PDF depende del diálogo de impresión del navegador (los encabezados y números de página solo salen donde el navegador admite los márgenes `@page` de CSS). Los visores de Markdown que bloquean imágenes `data:` no muestran los diagramas salvo que guardes las imágenes aparte. Los diagramas grandes con muchas vistas y niveles internos pueden tardar unos segundos. No se han revisado tablas muy anchas al imprimir, y la matriz de cumplimiento se lista por control y por componente, no como cuadrícula.
+- **Niveles C4**: se probaron en el navegador entrar y salir de niveles (`Intro`, `Esc`, `Alt+↑`, ruta de navegación), el marco de límite, las tarjetas fantasma, añadir componentes dentro de un nivel, deshacer, *Exportar todos los niveles* y el informe con diagramas internos; falta probar *Mover dentro de…* / *Subir un nivel*, borrar un componente con diagrama interno, doble clic en la tarjeta frente al nombre y el orden automático dentro de un nivel. Las etiquetas de las conexiones fantasma pueden solaparse cuando varias salen del límite muy juntas. *Duplicar* no copia el diagrama interno de un componente duplicado, y Mermaid, PlantUML y draw.io exportan el modelo plano completo (sin niveles; `in` y `c4` se ignoran). Pestaña Texto: los nodos sin `dentro=` van al nivel superior, así que para editar un nivel desde la pestaña Texto escribe `dentro=` en sus nodos. Las tarjetas fantasma son como máximo 8 por lado. Lo que cruza niveles (una conexión entre dos niveles distintos) solo se dibuja como fantasma y no se puede seleccionar en el lienzo; llega a ello desde los enlaces del inspector.
 
 ---
 
