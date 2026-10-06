@@ -653,6 +653,35 @@
   .node:hover .node-cost rect { stroke-opacity: .9; }
   .node-cost text { fill: var(--c); font-size: 10.5px; font-weight: 700; font-variant-numeric: tabular-nums; transition: fill .4s; }
 
+  /* Vistas (reglas en config.js › views). app.js pone data-view y las clases vw-* en el SVG y v-* en cada elemento; viajan en las exportaciones */
+  .v-hide { display: none !important; }
+  .nd-min { display: none; } .vw-min .nd-min { display: inline; } .vw-min .nd-full { display: none; }
+  .vw-no-dtags .dt-data, .vw-no-review .dt-review, .vw-no-cost .node-cost { display: none; }
+  .vw-no-zones #l-zones, .vw-no-zones #l-zone-top, .vw-no-notes #l-notes, .vw-collapse #l-ghosts { display: none; }
+  .diagramon-svg .node.v-dim, .diagramon-svg .edge.v-dim { opacity: .24; }
+  .diagramon-svg .edge.v-dim .particle { display: none; }
+  /* Seguridad y datos: lo relevante se resalta */
+  .diagramon-svg .node.v-hl .node-card { stroke-opacity: 1; stroke-width: 1.9; }
+  .vw-security .node.v-hl .node-card { stroke: var(--p-coral); }
+  .edge.v-crit { --c: var(--sev-critical) !important; } .edge.v-high { --c: var(--sev-high) !important; } .edge.v-warn { --c: var(--sev-medium) !important; }
+  .edge.v-hlc { --c: var(--vc) !important; }
+  .edge.v-crit .edge-line, .edge.v-high .edge-line, .edge.v-warn .edge-line, .edge.v-hlc .edge-line, .vw-data .edge.v-hl .edge-line { stroke-opacity: 1; stroke-width: calc(var(--w, 1.8px) + 1px); }
+  .edge.v-crit .edge-label > rect, .edge.v-high .edge-label > rect, .edge.v-warn .edge-label > rect, .edge.v-hlc .edge-label > rect { stroke-opacity: 1; stroke-width: 1.5; }
+  /* Costo: tinte de calor según el costo mensual (--heat lo calcula app.js) */
+  .node.v-heat .node-card { fill: color-mix(in srgb, var(--heat) 24%, var(--surface)); stroke: var(--heat); stroke-opacity: 1; stroke-width: 1.8; }
+  .node.v-heat .node-cost rect { fill: var(--heat); stroke: var(--heat); stroke-opacity: 1; }
+  .node.v-heat .node-cost text { fill: var(--bg); }
+  /* Contexto: cajas cerradas de primer nivel (el mismo rectángulo del grupo) */
+  .ctx-box { cursor: grab; }
+  .ctx-rect { fill: var(--c); fill-opacity: .13; stroke: var(--c); stroke-opacity: .75; stroke-width: 1.6; transition: fill-opacity .2s, stroke-opacity .2s; }
+  .ctx-box:hover .ctx-rect { fill-opacity: .2; stroke-opacity: 1; }
+  .ctx-box.sel .ctx-rect { fill-opacity: .22; stroke-opacity: 1; stroke-width: 2.4; }
+  .ctx-box.diff-chg .ctx-rect { stroke: var(--p-limon); stroke-opacity: 1; stroke-width: 2.4; }
+  .ctx-name { fill: var(--text); font-size: 16px; font-weight: 700; text-anchor: middle; pointer-events: none; }
+  .ctx-count { fill: var(--muted); font-size: 12px; text-anchor: middle; pointer-events: none; }
+  .diagramon-svg.focusing .ctx-box.lit { opacity: 1; }
+  .dragging .ctx-box { cursor: grabbing; }
+
   /* Comparación con una versión o ambiente guardado */
   .comparing .node:not(.diff-add):not(.diff-chg), .comparing .edge:not(.diff-add):not(.diff-chg) { opacity: .38; }
   .node.diff-add .node-card, .group.diff-add .group-box { stroke: var(--p-menta); stroke-opacity: 1; stroke-width: 2.4; }
@@ -817,7 +846,7 @@
           <pattern id="hatch-high" class="hatch hatch-high" width="9" height="9" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="9"/></pattern>
           <pattern id="hatch-critical" class="hatch hatch-critical" width="9" height="9" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="9"/></pattern>
         </defs>
-        <g id="viewport"><g id="l-zones"></g><g id="l-groups"></g><g id="l-ghosts"></g><g id="l-nodes"></g><g id="l-edges"></g><g id="l-zone-top"></g><g id="l-notes"></g><g id="l-guides"></g></g>
+        <g id="viewport"><g id="l-zones"></g><g id="l-groups"></g><g id="l-ghosts"></g><g id="l-nodes"></g><g id="l-edges"></g><g id="l-ctx"></g><g id="l-zone-top"></g><g id="l-notes"></g><g id="l-guides"></g></g>
       </svg>
       <div class="stage-title"><div class="ver-pill" id="stage-ver" hidden></div><div class="ver-pill flt-pill" id="stage-flt" hidden></div><h1 id="stage-h1"></h1><p id="stage-meta"></p></div>
       <div class="compare-bar" id="compare-bar" hidden><span id="compare-text"></span><button class="icon-btn" id="compare-exit" data-i18n-title="ver.exit" data-i18n-aria="ver.exit"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>
