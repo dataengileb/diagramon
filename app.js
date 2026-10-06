@@ -577,6 +577,8 @@
       { const l = cleanLayer(o.layer); if (l) o.layer = l; else delete o.layer; }
       { const ex = cleanExposure(o.exposure); if (ex) o.exposure = ex; else delete o.exposure; const bk = cleanBackup(o.backup); if (bk != null) o.backup = bk; else delete o.backup; }
       { const c = cleanControls(o.controls); if (c) o.controls = c; else delete o.controls; }
+      { const sl = cleanSla(o.sla); if (sl != null) o.sla = sl; else delete o.sla; const rp = cleanReplicas(o.replicas); if (rp != null) o.replicas = rp; else delete o.replicas;
+        ['rpo', 'rto'].forEach(k => { const d = normDur(o[k]); if (d != null) o[k] = d; else delete o[k]; }); }
       if (o.in == null || o.in === '') delete o.in; else o.in = String(o.in);
       { const k = cleanC4(o.c4); if (k) o.c4 = k; else delete o.c4; }
       m.nodes.push(o);
@@ -878,6 +880,8 @@
   const nodeSens = n => [...new Set(n.data || [])].filter(k => DATA[k]?.sensitive).sort((a, b) => Object.keys(DATA).indexOf(a) - Object.keys(DATA).indexOf(b));
   function ruleFindings(m) {
     const out = [], byId = new Map(m.nodes.map(n => [n.id, n])), get = id => byId.get(id);
+    // «Sin dueño» solo si el diagrama ya asigna dueños o responsables en algún sitio
+    const usesGov = [...m.nodes, ...m.groups].some(x => x.owner || x.steward || x.team);
     const add = (rule, kind, o, title, detail, fix) => out.push({ id: `rule:${rule}:${kind}:${o.id}`, source: 'rule', rule, severity: srSev(rule), target: { kind, id: o.id }, title, ...(detail ? { detail } : {}), fix });
     m.edges.forEach(e => {
       const a = get(e.from), b = get(e.to);
@@ -894,7 +898,7 @@
       const ns = nodeSens(n), ds = isDataStore(n) && !isBackupNode(n), ex = exposureOf(n, m);
       if (srOn('sec.public-sensitive') && ns.length && !isClientNode(n) && ex.value === 'public') add('sec.public-sensitive', 'node', n, T('sec.f.pubsens.t', { n: n.label, cls: classShorts(ns).join(', '), c: ns.length }), ex.why, T('sec.f.pubsens.fix'));
       if (srOn('sec.datastore-backup') && ds && !backupOf(n, m).value) add('sec.datastore-backup', 'node', n, T('sec.f.bk.t', n.label), T('sec.f.bk.d'), T('sec.f.bk.fix'));
-      if (srOn('sec.sensitive-no-owner') && ns.length && !govOf(n, 'owner', m).value && !govOf(n, 'steward', m).value) add('sec.sensitive-no-owner', 'node', n, T('sec.f.owner.t', { n: n.label, cls: classShorts(ns).join(', '), c: ns.length }), '', T('sec.f.owner.fix'));
+      if (srOn('sec.sensitive-no-owner') && usesGov && ns.length && !govOf(n, 'owner', m).value && !govOf(n, 'steward', m).value) add('sec.sensitive-no-owner', 'node', n, T('sec.f.owner.t', { n: n.label, cls: classShorts(ns).join(', '), c: ns.length }), '', T('sec.f.owner.fix'));
       if (srOn('sec.public-datastore') && ds && ex.value === 'public') add('sec.public-datastore', 'node', n, T('sec.f.pubds.t', n.label), ex.why, T('sec.f.pubds.fix'));
     });
     return out;
@@ -960,6 +964,171 @@
       const l = d.links || {}, tk = l.nodes?.[0] ? 'node' : l.edges?.[0] ? 'edge' : l.groups?.[0] ? 'group' : 'node', tid = l.nodes?.[0] || l.edges?.[0] || l.groups?.[0] || '';
       return [{ id: `adr:stale:${d.id}`, source: 'adr', rule: 'stale', severity: 'low', target: { kind: tk, id: tid }, title: T('adr.find.stale', { id: d.id, n: age }), detail: d.title, fix: T('adr.find.fix') }];
     });
+  });
+
+  /* ---------- disponibilidad (SLA), RPO/RTO, réplicas y puntos únicos de fallo ---------- */
+  const RSL = { entryTypes: ['user', 'web', 'mobile', 'external', 'client'], dataStoreTypes: ['db', 'nosql', 'storage'], dataStoreIconCategories: ['Bases de datos', 'Almacenamiento'],
+    spofSeverity: 'high', singleStoreSeverity: 'medium', defaultTarget: 99.9, ...C.resilience };
+  const DUR_UNITS = { s: 1, sec: 1, seg: 1, m: 60, min: 60, h: 3600, hr: 3600, hora: 3600, horas: 3600, hour: 3600, hours: 3600, d: 86400, dia: 86400, dias: 86400, day: 86400, days: 86400 };
+  // Duración «15m», «4 h», «1d», «0» → segundos (o null si no es válida)
+  const parseDur = v => {
+    if (typeof v === 'number') return Number.isFinite(v) && v === 0 ? 0 : null;
+    const mt = String(v ?? '').trim().toLowerCase().match(/^(\d+(?:[.,]\d+)?)\s*([a-záéíóú]*)$/);
+    if (!mt) return null;
+    const num = +mt[1].replace(',', '.');
+    if (!mt[2]) return num === 0 ? 0 : null;
+    const u = DUR_UNITS[fold(mt[2])];
+    return u ? num * u : null;
+  };
+  // Texto normalizado para guardar: «15m», «4h», «1d», «30s», «0»
+  const normDur = v => {
+    const s = parseDur(v);
+    if (s == null) return null;
+    if (s === 0) return '0';
+    const [u, k] = s % 86400 === 0 ? ['d', 86400] : s % 3600 === 0 ? ['h', 3600] : s % 60 === 0 ? ['m', 60] : ['s', 1];
+    return `${+(s / k).toFixed(3)}${u}`;
+  };
+  const numFmt = (v, d = 2) => new Intl.NumberFormat(I.lang, { maximumFractionDigits: d }).format(v);
+  // 900 → «15 min», 14400 → «4 h», 86400 → «1 d»
+  const fmtDur = s => {
+    if (s == null || !Number.isFinite(s)) return '';
+    if (s === 0) return '0';
+    const [k, u] = s >= 86400 ? [86400, 'd'] : s >= 3600 ? [3600, 'h'] : s >= 60 ? [60, 'min'] : [1, 's'];
+    return `${numFmt(s / k, 1)} ${T(`res.u.${u}`)}`;
+  };
+  const cleanSla = v => {
+    const x = typeof v === 'number' ? v : typeof v === 'string' ? parseFloat(v.replace('%', '').replace(',', '.').trim()) : NaN;
+    return Number.isFinite(x) && x > 0 && x <= 100 ? +x.toFixed(6) : null;
+  };
+  const cleanReplicas = v => { const x = Math.round(+v); return v != null && v !== '' && Number.isFinite(+v) && x >= 2 ? x : null; };
+  const hasSla = n => cleanSla(n.sla) != null;
+  const replicasOf = n => cleanReplicas(n.replicas) || 1;
+  const hasRes = n => hasSla(n) || n.rpo != null || n.rto != null || cleanReplicas(n.replicas) != null;
+  // Disponibilidad efectiva (fracción 0–1) con réplicas en paralelo; null sin SLA
+  const availOf = n => (hasSla(n) ? 1 - Math.pow(1 - cleanSla(n.sla) / 100, replicasOf(n)) : null);
+  // Decimales según los nueves que importan: 99.27% · 99.99% · 99.9999% (sin ruido de cifras)
+  const fmtPct = a => { const d = a >= 1 ? 2 : clamp(Math.ceil(-Math.log10(1 - a)) - 1, 2, 6); return `${numFmt(+(a * 100).toFixed(d), d)}%`; };
+  // Tiempo aproximado: «4.4 h», «22 min», «32 s»
+  const fmtApprox = s => {
+    if (s < 1) return `<1 ${T('res.u.s')}`;
+    const [k, u] = s >= 86400 ? [86400, 'd'] : s >= 3600 ? [3600, 'h'] : s >= 60 ? [60, 'min'] : [1, 's'], v = s / k;
+    return `${numFmt(v, v < 10 ? 1 : 0)} ${T(`res.u.${u}`)}`;
+  };
+  // Parada esperada por año y por mes a partir de una disponibilidad (fracción)
+  const downtime = a => {
+    const year = Math.max(0, 1 - a) * 31557600, month = year / 12;
+    return { year, month, text: `≈ ${fmtApprox(year)}${T('res.perYear')} · ${fmtApprox(month)}${T('res.perMonth')}` };
+  };
+  const resTip = n => {
+    if (!hasRes(n)) return '';
+    const a = availOf(n), r = replicasOf(n);
+    return [a != null ? `${T('res.title')}: ${numFmt(cleanSla(n.sla), 6)}%${r > 1 ? ` ×${r} → ${fmtPct(a)}` : ''}` : '', n.rpo != null ? `RPO ${fmtDur(parseDur(n.rpo))}` : '', n.rto != null ? `RTO ${fmtDur(parseDur(n.rto))}` : ''].filter(Boolean).join(' · ');
+  };
+  // Texto de la pastilla bajo el nodo: «99.95% · RPO 15 min · RTO 1 h · ×2»
+  const resChip = n => [hasSla(n) ? `${numFmt(cleanSla(n.sla), 6)}%` : '', n.rpo != null ? `RPO ${fmtDur(parseDur(n.rpo))}` : '', n.rto != null ? `RTO ${fmtDur(parseDur(n.rto))}` : '', cleanReplicas(n.replicas) ? `×${n.replicas}` : ''].filter(Boolean).join(' · ');
+  const isEntryNode = (n, m) => RSL.entryTypes.includes(n.type) || !m.edges.some(e => e.from !== e.to && (e.to === n.id || (e.both && e.from === n.id)));
+  const isResStore = n => RSL.dataStoreTypes.includes(n.type) || RSL.dataStoreIconCategories.includes(iconInfo(n.icon)?.category);
+  // Puntos únicos de fallo: puntos de articulación (Tarjan) del grafo sin dirección que separan una entrada del resto y no tienen réplicas
+  function spofList(m = S.model) {
+    const ids = m.nodes.map(n => n.id), byId = new Map(m.nodes.map(n => [n.id, n])), adj = new Map(ids.map(id => [id, new Set()]));
+    m.edges.forEach(e => { if (e.from !== e.to && adj.has(e.from) && adj.has(e.to)) { adj.get(e.from).add(e.to); adj.get(e.to).add(e.from); } });
+    const disc = new Map(), low = new Map(), art = new Set();
+    let t = 0;
+    const dfs = (u, parent) => { // recursivo: los diagramas son pequeños
+      disc.set(u, ++t); low.set(u, t);
+      let kids = 0;
+      adj.get(u).forEach(v => {
+        if (!disc.has(v)) {
+          kids++; dfs(v, u);
+          low.set(u, Math.min(low.get(u), low.get(v)));
+          if (parent != null && low.get(v) >= disc.get(u)) art.add(u);
+        } else if (v !== parent) low.set(u, Math.min(low.get(u), disc.get(v)));
+      });
+      if (parent == null && kids > 1) art.add(u);
+    };
+    ids.forEach(id => { if (!disc.has(id)) dfs(id, null); });
+    const entries = new Set(m.nodes.filter(n => isEntryNode(n, m) && adj.get(n.id).size).map(n => n.id));
+    const out = [];
+    art.forEach(id => {
+      const n = byId.get(id);
+      if (replicasOf(n) > 1 || isEntryNode(n, m)) return;
+      // Componentes que quedan al quitarlo
+      const comp = new Map(), comps = [];
+      ids.forEach(s => {
+        if (s === id || comp.has(s)) return;
+        const c = [s]; comp.set(s, comps.length);
+        for (let i = 0; i < c.length; i++) adj.get(c[i]).forEach(v => { if (v !== id && !comp.has(v)) { comp.set(v, comps.length); c.push(v); } });
+        comps.push(c);
+      });
+      const ent = comps.length > 1 && [...entries].find(e => e !== id && comp.has(e));
+      if (!ent) return;
+      const cut = ids.filter(x => x !== id && comp.get(x) !== comp.get(ent)).length;
+      out.push({ id, label: n.label, reason: T('res.spof.reason', { entry: byId.get(ent).label, n: cut }) });
+    });
+    return out.sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id));
+  }
+  // Disponibilidad compuesta del camino más corto entre a y b (en serie; el peor camino si hay varios)
+  function pathAvailability(m, b, res) {
+    if (!res || !res.nodes.size) return null;
+    const byId = new Map(m.nodes.map(n => [n.id, n])), dist = res.dist, preds = new Map();
+    m.edges.forEach(e => {
+      if (!res.edges.has(e.id)) return;
+      [[e.from, e.to], [e.to, e.from]].forEach(([u, v]) => { if (dist.get(u) + 1 === dist.get(v)) (preds.get(v) || preds.set(v, new Set()).get(v)).add(u); });
+    });
+    const fac = id => availOf(byId.get(id)) ?? 1, best = new Map();
+    [...res.nodes].sort((x, y) => dist.get(x) - dist.get(y)).forEach(id => {
+      let bp = null, bv = 1;
+      (preds.get(id) || []).forEach(p => { const v = best.get(p)?.val ?? 1; if (bp == null || v < bv) { bp = p; bv = v; } });
+      best.set(id, { val: bv * fac(id), prev: bp });
+    });
+    const order = [];
+    for (let id = b, i = 0; id != null && i++ < 1000; id = best.get(id)?.prev) order.unshift(id);
+    const ns = order.map(id => byId.get(id)), known = ns.filter(n => availOf(n) != null);
+    const worst = known.reduce((w, n) => (!w || availOf(n) < availOf(w) ? n : w), null);
+    const mx = k => { const v = ns.map(n => (n[k] != null ? parseDur(n[k]) : null)).filter(x => x != null); return v.length ? Math.max(...v) : null; };
+    const av = known.length ? best.get(b).val : null;
+    return { availability: av, downtimeYear: av == null ? null : downtime(av).year, nodes: order, unknown: ns.length - known.length, routes: res.count,
+      worst: worst ? { id: worst.id, label: worst.label, availability: availOf(worst) } : null, rpo: mx('rpo'), rto: mx('rto') };
+  }
+  function availability(a, b) {
+    const m = S.model;
+    const res = shortestPaths(m, a, b, true) || shortestPaths(m, a, b, false);
+    const r = pathAvailability(m, b, res);
+    if (!r) return null;
+    const { routes, ...rest } = r;
+    return rest;
+  }
+  // Fragmento HTML para la barra del camino
+  function pathResText(b, res) {
+    const r = pathAvailability(S.model, b, res);
+    if (!r) return '';
+    const parts = [];
+    if (r.availability != null) {
+      parts.push(T('res.path.comp', { a: fmtPct(r.availability), d: fmtApprox(r.downtimeYear) }) + (r.worst ? ` · ${T('res.path.worst', { n: esc(r.worst.label), a: fmtPct(r.worst.availability) })}` : ''));
+      if (r.routes > 1) parts.push(T('res.path.routes', r.routes));
+      if (r.unknown) parts.push(T('res.path.unknown', r.unknown));
+    }
+    if (r.rpo != null) parts.push(`RPO ${esc(fmtDur(r.rpo))}`);
+    if (r.rto != null) parts.push(`RTO ${esc(fmtDur(r.rto))}`);
+    return parts.length ? ` · ${parts.join(' · ')}` : '';
+  }
+  // Peldaño de disponibilidad efectiva para colorear (vista Resiliencia)
+  const RES_TIERS = [{ k: 't4', min: 0.9999, color: 'var(--p-menta)' }, { k: 't3', min: 0.999, color: 'var(--p-limon)' }, { k: 't2', min: 0.99, color: 'var(--p-melocoton)' }, { k: 't1', min: 0, color: 'var(--p-coral)' }];
+  const resTier = n => { const a = availOf(n); return a == null ? null : RES_TIERS.find(t => a >= t.min - 1e-12); };
+  addFindingSource('sla', m => {
+    // Solo si el diagrama ya usa datos de disponibilidad: sin ellos los servicios gestionados (CDN, colas, Lambda…) saldrían como falsos puntos únicos
+    if (!m.nodes.some(n => n.sla != null || n.replicas != null || n.rpo != null || n.rto != null)) return [];
+    const out = [], sp = spofList(m), spIds = new Set(sp.map(x => x.id)), sev = (k, d) => (SEVERITY.includes(RSL[k]) ? RSL[k] : d);
+    const usesRto = m.nodes.some(n => n.rpo != null || n.rto != null);
+    sp.forEach(x => out.push({ id: `sla:spof:node:${x.id}`, source: 'sla', rule: 'spof', severity: sev('spofSeverity', 'high'), target: { kind: 'node', id: x.id }, title: T('res.f.spof.t', x.label), detail: x.reason, fix: T('res.f.spof.fix') }));
+    m.nodes.forEach(n => {
+      if (!isResStore(n) || isBackupNode(n)) return;
+      if (!spIds.has(n.id) && replicasOf(n) <= 1 && !(hasSla(n) && cleanSla(n.sla) >= RSL.defaultTarget))
+        out.push({ id: `sla:single-store:node:${n.id}`, source: 'sla', rule: 'single-store', severity: sev('singleStoreSeverity', 'medium'), target: { kind: 'node', id: n.id }, title: T('res.f.store.t', n.label), fix: T('res.f.store.fix') });
+      if (usesRto && (n.rpo == null || n.rto == null))
+        out.push({ id: `sla:rpo-rto:node:${n.id}`, source: 'sla', rule: 'rpo-rto', severity: 'low', target: { kind: 'node', id: n.id }, title: T('res.f.rto.t', n.label), fix: T('res.f.rto.fix') });
+    });
+    return out;
   });
 
   function uniqueId(prefix) {
@@ -1518,7 +1687,7 @@
     const dt = [...(n.review ? [{ ...reviewTag(n.review), cls: 'dt-review' }] : []), ...dataTags(n).map(t => ({ ...t, cls: 'dt-data' })), ...adrTags(n)];
     const rg = regionOf(n).value;
     const ly = layerOf(n), li = ly.value ? layerInfo(ly.value) : null;
-    el('title', null, g).textContent = [n.sub ? `${n.label} · ${n.sub}` : n.label, n.c4 ? `${T('c4.label')}: ${c4Label(n.c4)}` : '', inn ? T('c4.inner.tip', inn) : '', ...dt.map(t => t.label), govTip(n), cmpTip(n), li ? T('layer.tip', { l: li.label }) : '', rg ? T('res.tip', regionLabel(rg)) : ''].filter(Boolean).join('\n');
+    el('title', null, g).textContent = [n.sub ? `${n.label} · ${n.sub}` : n.label, n.c4 ? `${T('c4.label')}: ${c4Label(n.c4)}` : '', inn ? T('c4.inner.tip', inn) : '', ...dt.map(t => t.label), govTip(n), cmpTip(n), li ? T('layer.tip', { l: li.label }) : '', resTip(n), rg ? T('res.tip', regionLabel(rg)) : ''].filter(Boolean).join('\n');
     if (dt.length) {
       const dg = el('g', { class: 'node-data' }, b);
       let x = 14;
@@ -1549,6 +1718,12 @@
       const og = el('g', { class: 'node-own', transform: `translate(${(w - ow) / 2} ${H + 6})` }, b);
       el('rect', { width: ow, height: 20, rx: 10 }, og);
       el('text', { x: ow / 2, y: 14, 'text-anchor': 'middle' }, og).textContent = ot;
+    }
+    if (hasRes(n)) { // Resiliencia: pastilla «99.95% · RPO 15 min · RTO 1 h · ×2» bajo el nodo; solo se ve en la vista Resiliencia
+      const rt = fitText(resChip(n), FONT.cost, w - 20), rw = Math.ceil(textW(rt, FONT.cost) + 20);
+      const rgx = el('g', { class: 'node-res', transform: `translate(${(w - rw) / 2} ${H + 6})` }, b);
+      el('rect', { width: rw, height: 20, rx: 10 }, rgx);
+      el('text', { x: rw / 2, y: 14, 'text-anchor': 'middle' }, rgx).textContent = rt;
     }
     if (li) drawNodeLayer(b, li);
     if (inn) {
@@ -1793,7 +1968,7 @@
     const lab = id => m.nodes.find(n => n.id === id).label;
     const name = `${esc(lab(a))} → ${esc(lab(b))}`;
     const txt = !res ? T('path.none', { name })
-      : (directed ? '' : T('path.undirected') + ' · ') + T('path.summary', { name, hops: res.hops, count: res.count });
+      : (directed ? '' : T('path.undirected') + ' · ') + T('path.summary', { name, hops: res.hops, count: res.count }) + pathResText(b, res);
     const bar = $('#path-bar');
     $('#path-text').innerHTML = txt;
     bar.style.top = S.compare ? '54px' : '';
@@ -2008,7 +2183,7 @@
     const sens = isSensitive(e) || isSensitive(byId.get(e.from)) || isSensitive(byId.get(e.to));
     return e.encrypted === false ? (sens ? 'v-hl v-crit' : 'v-hl v-high') : e.encrypted == null ? (sens ? 'v-hl v-warn' : 'v-dim') : '';
   };
-  const VCLS = ['v-hide', 'v-hl', 'v-dim', 'v-heat', 'v-crit', 'v-high', 'v-warn', 'v-hlc', 'v-own', 'v-xb'];
+  const VCLS = ['v-hide', 'v-hl', 'v-dim', 'v-heat', 'v-crit', 'v-high', 'v-warn', 'v-hlc', 'v-own', 'v-xb', 'v-spof'];
   // De menos a más costo: tramos de VR.costHeat mezclados con color-mix
   const heatColor = t => {
     const st = VR.costHeat;
@@ -2074,6 +2249,15 @@
         if (!hasCost(n)) return nodeCls.set(n.id, 'v-dim');
         nodeCls.set(n.id, 'v-hl v-heat');
         nodeVar.set(n.id, heatColor(max > 0 ? perMonth(n) / max : 0));
+      });
+      m.edges.forEach(e => edgeCls.set(e.id, 'v-dim'));
+    } else if (emph === 'resilience') { // color por disponibilidad efectiva; los puntos únicos de fallo, resaltados
+      const sp = new Set(spofList(m).map(x => x.id));
+      m.nodes.forEach(n => {
+        const tr = resTier(n), bad = sp.has(n.id);
+        if (!tr) return nodeCls.set(n.id, bad ? 'v-hl v-spof' : 'v-dim');
+        nodeCls.set(n.id, `v-hl v-heat${bad ? ' v-spof' : ''}`);
+        nodeVar.set(n.id, tr.color);
       });
       m.edges.forEach(e => edgeCls.set(e.id, 'v-dim'));
     } else if (emph === 'owner') { // color por equipo efectivo (o dueño); sin ninguno, atenuado
@@ -2172,7 +2356,7 @@
     const c = viewCounts(), parts = c.ctx != null ? [T('view.pill.ctx', c.ctx)] : [c.hidden && T('view.pill.hidden', c.hidden), c.dim && T('view.pill.dim', c.dim)].filter(Boolean);
     const lbl = `${T('view.pill')}: ${name}${parts.length ? ` · ${parts.join(' · ')}` : ''}`;
     viewPill.title = c.ctx != null ? '' : T('view.pill.tip', { hidden: c.hidden, dim: c.dim });
-    viewPill.innerHTML = `<svg class="vi" viewBox="0 0 24 24" aria-hidden="true">${viewIcon(key)}</svg><span>${esc(lbl)}</span><button class="icon-btn" data-view-back title="${esc(T('view.back'))}" aria-label="${esc(T('view.back'))}"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>`;
+    viewPill.innerHTML = `<svg class="vi" viewBox="0 0 24 24" aria-hidden="true">${viewIcon(key)}</svg><span>${esc(lbl)}</span>${vc().emphasis === 'cost' ? `<button class="btn small cst-open" data-cst-open title="${esc(T('cst.open.tip'))}">${esc(T('cst.open'))}</button>` : ''}<button class="icon-btn" data-view-back title="${esc(T('view.back'))}" aria-label="${esc(T('view.back'))}"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>`;
   }
   viewPill.addEventListener('click', ev => { if (ev.target.closest('[data-view-back]')) setView('full'); });
   const optList = () => [...viewList.querySelectorAll('.vopt')];
@@ -2711,7 +2895,7 @@
 
   const ORDER = {
     group: ['id', 'label', 'icon', 'color', 'parent', 'kind', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'controls', 'in'],
-    node: ['id', 'label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'x', 'y', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'exposure', 'backup', 'controls', 'in', 'c4'],
+    node: ['id', 'label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'x', 'y', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'exposure', 'backup', 'controls', 'in', 'c4', 'sla', 'rpo', 'rto', 'replicas'],
     edge: ['id', 'from', 'to', 'label', 'style', 'route', 'both', 'color', 'data', 'encrypted', 'datasets', 'transferOk', 'threats'],
     note: ['id', 'x', 'y', 'w', 'h', 'text', 'color', 'in'],
     zone: ['id', 'x', 'y', 'w', 'h', 'label', 'severity', 'desc', 'kind', 'trust', 'in'],
@@ -2862,6 +3046,7 @@
     // Leyenda compacta de la vista (solo si aporta algo): niveles, escala de calor, grupos visibles
     const vrows = ex ? [...ex.conn.map(r => `<li class="sw" style="--c:${esc(r.lock ? 'var(--muted)' : sw(r.color))}"><i></i>${esc(r.label)}</li>`),
       ...(ex.heat ? [`<li><i class="heat" style="background:linear-gradient(90deg,${esc(ex.heat.stops.join(','))})"></i>${esc(`${ex.heat.min} – ${ex.heat.max}`)}</li>`, `<li>${esc(`${T('leg.total')}: ${ex.heat.total}`)}</li>`] : []),
+      ...(ex.costBy || []).map(o => `<li style="--c:var(--muted)"><i></i>${esc(`${o.label} · ${o.value}`)}</li>`),
       ...(ex.owners || []).map(o => `<li style="--c:${esc(o.color)}"><i></i>${esc(o.label)} <small>(${o.n})</small></li>`),
       ...(ex.groups ? [`<li class="sw" style="--c:var(--muted)"><i></i>${esc(ex.groups)}</li>`] : [])] : [];
     // Conjuntos de datos del diagrama: cada fila es un botón que muestra su linaje
@@ -3660,7 +3845,7 @@
 
   // Diferencias entre lo guardado (a) y el lienzo (b). La posición no cuenta como cambio.
   const DIFF_FIELDS = {
-    node: ['label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'exposure', 'backup', 'controls', 'in', 'c4'],
+    node: ['label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'exposure', 'backup', 'controls', 'in', 'c4', 'sla', 'rpo', 'rto', 'replicas'],
     edge: ['label', 'style', 'route', 'both', 'color', 'data', 'encrypted', 'datasets', 'transferOk', 'threats'],
     group: ['label', 'icon', 'color', 'parent', 'kind', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'controls', 'in']
   };
@@ -3710,7 +3895,7 @@
     drawGhosts();
     const bar = $('#compare-bar');
     bar.style.setProperty('--c', verColor(v));
-    $('#compare-text').innerHTML = `${T('ver.comparing', { name: esc(verLabel(v)) })} · ${d.count.a + d.count.r + d.count.c ? esc(T('ver.summary', d.count)) : esc(T('ver.same'))}`;
+    $('#compare-text').innerHTML = `${T('ver.comparing', { name: esc(verLabel(v)) })} · ${d.count.a + d.count.r + d.count.c ? esc(T('ver.summary', d.count)) : esc(T('ver.same'))}${cstVerLine(base, S.model) ? ` · ${esc(cstVerLine(base, S.model))}` : ''}`;
   }
   function drawGhosts() {
     L.ghosts.textContent = '';
@@ -3774,6 +3959,7 @@
           <button class="btn small" data-ver="open" title="${esc(T('ver.openTip'))}">${T('ver.open')}</button>
           <button class="btn small${cmp ? ' on' : ''}" data-ver="compare" title="${esc(T('ver.compareTip'))}">${T(cmp ? 'ver.stop' : 'ver.compare')}</button>
           ${v.kind === 'env' ? `<button class="btn small" data-ver="update" title="${esc(T('ver.saveHereTip'))}">${T('ver.saveHere')}</button>` : ''}
+          <button class="btn small" data-cst-cmp title="${esc(T('cst.compareCosts.tip'))}">${T('cst.compareCosts')}</button>
           <button class="btn small" data-adr="newver" title="${esc(T('adr.newForVer'))}" aria-label="${esc(T('adr.newForVer'))}">+ ADR</button>
         </div>
       </div>`;
@@ -3807,7 +3993,7 @@
     if (!(d.count.a + d.count.r + d.count.c)) return `<p class="ver-sum">${esc(T('ver.same'))}</p>`;
     const FIELD = { label: 'insp.name', sub: 'insp.detail', type: 'insp.type', icon: 'insp.icon', group: 'insp.group', color: 'insp.color', badge: 'field.badge',
       cost: 'cost.label', costPeriod: 'cost.period', costYears: 'cost.yearsAria', desc: 'insp.desc', style: 'insp.style', parent: 'insp.parent',
-      data: 'data.label', encrypted: 'enc.label', route: 'insp.route', both: 'insp.dir', review: 'rev.label', kind: 'gkind.label', exposure: 'sec.expo.label', backup: 'sec.backup.label', controls: 'cmp.title', in: 'c4.in', c4: 'c4.label' };
+      data: 'data.label', encrypted: 'enc.label', route: 'insp.route', both: 'insp.dir', review: 'rev.label', kind: 'gkind.label', exposure: 'sec.expo.label', backup: 'sec.backup.label', controls: 'cmp.title', in: 'c4.in', c4: 'c4.label', sla: 'res.sla', rpo: 'res.rpo', rto: 'res.rto', replicas: 'res.replicas' };
     const fields = (fs, kind) => fs.map(f => T(kind === 'edge' && f === 'label' ? 'insp.label' : FIELD[f] || f).toLowerCase()).join(', ');
     const names = new Map([...S.compare.base.nodes, ...S.model.nodes].map(n => [n.id, n.label]));
     const edgeName = e => `${names.get(e.from) || e.from} ${e.both ? '↔' : '→'} ${names.get(e.to) || e.to}`;
@@ -3822,7 +4008,8 @@
     d.edges.added.forEach(e => rows.push(['add', edgeName(e), T('ver.edge')]));
     d.edges.changed.forEach(c => rows.push(['chg', edgeName(c.item), `${T('ver.edge')}: ${fields(c.fields, 'edge')}`]));
     d.edges.removed.forEach(e => rows.push(['del', edgeName(e), T('ver.edge')]));
-    return `<p class="ver-sum">${esc(T('ver.summary', d.count))}</p><ul class="diff-list">${rows.map(([k, name, extra, id]) =>
+    const cl = cstVerLine(S.compare.base, S.model);
+    return `<p class="ver-sum">${esc(T('ver.summary', d.count))}</p>${cl ? `<p class="ver-sum cst-vline">${esc(cl)}</p>` : ''}<ul class="diff-list">${rows.map(([k, name, extra, id]) =>
       `<li class="d-${k}"${id ? ` data-goto="${esc(id)}"` : ''}><i>${k === 'add' ? '+' : k === 'del' ? '−' : '~'}</i><span title="${esc(name)}">${esc(name)}</span>${extra ? `<em title="${esc(extra)}">${esc(extra)}</em>` : ''}</li>`).join('')}</ul>`;
   }
 
@@ -3903,6 +4090,180 @@
   });
   $('#compare-exit').addEventListener('click', () => compareVersion(null));
   $('#path-exit').addEventListener('click', clearPath);
+
+  /* ---------- costos: desglose por equipo/centro/etc. y escenarios (actual vs propuesto) ---------- */
+  const CST_BY = ['team', 'costCenter', 'owner', 'group', 'type', 'provider', 'region', 'layer'];
+  // { key, label, monthly, nodes: [ids], unassigned?, filter? } por cada valor de `by`; solo cuentan los nodos con costo. `filter` = ficha equivalente del filtro del lienzo
+  function costBreakdown(m = S.model, by = 'team') {
+    if (!CST_BY.includes(by)) by = 'team';
+    const gm = new Map(m.groups.map(g => [g.id, g]));
+    const top = n => { let g = gm.get(n.group), i = 0; while (g && gm.has(g.parent) && i++ < 50) g = gm.get(g.parent); return g || null; };
+    const lay = n => { if (DL[n.layer]) return n.layer; let g = gm.get(n.group), i = 0; while (g && i++ < 50) { if (DL[g.layer]) return g.layer; g = gm.get(g.parent); } return null; };
+    const NONE = { team: '@none', owner: '@none', region: '@none', layer: '@none' };
+    const keyOf = n => {
+      if (GOV_FIELDS.includes(by)) { const v = govOf(n, by, m).value; return v ? { key: v, label: v, filter: v } : null; }
+      if (by === 'group') { const g = top(n); return g ? { key: g.id, label: g.label, filter: g.id } : null; }
+      if (by === 'type') { const t = C.types[n.type] ? n.type : 'generic'; return { key: t, label: typeLabel(t) }; }
+      if (by === 'provider') { const p = providerOf(n); return { key: p, label: p === 'generic' ? T('flt.generic') : ICONS[p].label, filter: p }; }
+      if (by === 'region') { const r = regionOf(n, m).value; return r ? { key: r, label: regionLabel(r), filter: jurOf(r)?.key || '@none' } : null; }
+      const l = lay(n); return l ? { key: l, label: layerInfo(l).label, filter: l } : null;
+    };
+    const map = new Map();
+    m.nodes.filter(hasCost).forEach(n => {
+      const k = keyOf(n) || { key: '@none', label: T('cst.unassigned'), unassigned: true, filter: NONE[by] };
+      if (!map.has(k.key)) map.set(k.key, { key: k.key, label: k.label, monthly: 0, nodes: [], ...(k.unassigned ? { unassigned: true } : {}), ...(k.filter ? { filter: { [by]: [k.filter] } } : {}) });
+      const r = map.get(k.key);
+      r.monthly += perMonth(n);
+      r.nodes.push(n.id);
+    });
+    return [...map.values()].sort((a, b) => b.monthly - a.monthly || a.label.localeCompare(b.label));
+  }
+  // Origen de una comparación: null = lienzo; id = foto de una versión (copia normalizada, el lienzo no se toca)
+  function cstSource(id) {
+    if (id) { const v = findVersion(id); return v?.diagram ? { id, label: `${verLabel(v)} · ${T(`ver.st.${v.status}`)}`, m: prepared(v) } : null; }
+    return { id: null, label: T('cst.canvas'), m: S.model };
+  }
+  const cstSame = (a, b) => Math.abs(a - b) < 0.005;
+  function cstCompare(A, B) {
+    const am = new Map(A.m.nodes.map(n => [n.id, n])), bm = new Map(B.m.nodes.map(n => [n.id, n]));
+    const val = n => (n && hasCost(n) ? perMonth(n) : 0);
+    const rows = [...new Set([...am.keys(), ...bm.keys()])].filter(id => hasCost(am.get(id) || {}) || hasCost(bm.get(id) || {})).map(id => {
+      const a = val(am.get(id)), b = val(bm.get(id));
+      return { id, label: (bm.get(id) || am.get(id)).label, a, b, delta: b - a, status: !am.has(id) ? 'added' : !bm.has(id) ? 'removed' : cstSame(a, b) ? 'same' : 'changed' };
+    });
+    const ma = monthlyTotal(A.m.nodes), mb = monthlyTotal(B.m.nodes);
+    return { a: { label: A.label, monthly: ma }, b: { label: B.label, monthly: mb }, delta: mb - ma, deltaPct: ma ? (mb - ma) / ma * 100 : null, rows };
+  }
+  // Cambio por clave de agrupación entre dos orígenes: [{ key, label, a, b, delta }] por |delta|
+  function cstDeltaBy(A, B, by) {
+    const out = new Map();
+    [[A, 'a'], [B, 'b']].forEach(([s, f]) => costBreakdown(s.m, by).forEach(r => {
+      if (!out.has(r.key)) out.set(r.key, { key: r.key, label: r.label, a: 0, b: 0, ...(r.unassigned ? { unassigned: true } : {}) });
+      out.get(r.key)[f] += r.monthly;
+    }));
+    return [...out.values()].map(r => ({ ...r, delta: r.b - r.a })).sort((x, y) => Math.abs(y.delta) - Math.abs(x.delta) || x.label.localeCompare(y.label));
+  }
+  const cstMoney = v => money(round2(v));
+  const cstDelta = v => (cstSame(v, 0) ? cstMoney(0) : `${v > 0 ? '+' : '−'}${cstMoney(Math.abs(v))}`);
+  const cstPct = (a, d) => (a ? `${d > 0 ? '+' : d < 0 ? '−' : ''}${(Math.abs(d) / a * 100).toFixed(1)}%` : '—');
+  // «Costo: $A → $B (Δ)» para el resumen de la comparación con una versión ('' si ninguno de los dos tiene costo)
+  const cstVerLine = (a, b) => {
+    const ca = monthlyTotal(a.nodes), cb = monthlyTotal(b.nodes);
+    return a.nodes.some(hasCost) || b.nodes.some(hasCost) ? T('cst.verCost', { a: `${cstMoney(ca)}${T('cost.mo')}`, b: `${cstMoney(cb)}${T('cost.mo')}`, d: `${cstDelta(cb - ca)}${T('cost.mo')}` }) : '';
+  };
+  const cstCSV = rows => '﻿' + rows.map(r => r.map(v => (typeof v === 'number' ? String(v) : csvCell(v))).join(',')).join('\r\n');
+  let cstClose = null;
+  function openCosts(tab = 'breakdown', opts = {}) {
+    if (!S.model) return;
+    cstClose?.();
+    const prev = document.activeElement, back = document.createElement('div'), id = `cs${Date.now()}`;
+    const vers = () => S.model.versions.slice().sort((a, b) => String(b.savedAt || b.updated || b.created || '').localeCompare(String(a.savedAt || a.updated || a.created || '')) || (b.n || 0) - (a.n || 0));
+    const vs0 = vers(), defA = (vs0.find(v => v.status === 'approved') || vs0[0])?.id || null;
+    const st = { tab: tab === 'compare' ? 'compare' : 'breakdown', by: CST_BY.includes(opts.by) ? opts.by : 'team', a: opts.a !== undefined ? opts.a : defA, b: opts.b !== undefined ? opts.b : null, only: false, sort: 'delta', dir: -1 };
+    let cur = [], cmp = null;
+    const byOpts = () => CST_BY.map(k => `<option value="${k}"${k === st.by ? ' selected' : ''}>${esc(T(`cst.by.${k}`))}</option>`).join('');
+    back.className = 'cf-back';
+    back.innerHTML = `<div class="cf cm cst" role="dialog" aria-modal="true" aria-labelledby="${id}t">
+      <div class="cm-head"><h3 id="${id}t">${esc(T('cst.title'))}</h3>
+        <div class="cst-tabs" role="tablist">${['breakdown', 'compare'].map(k => `<button class="btn small" role="tab" data-cst-tab="${k}">${esc(T(`cst.tab.${k}`))}</button>`).join('')}</div>
+        <span class="cm-btns"><button class="btn small" data-cst="csv">${esc(T('cst.csv'))}</button><button class="btn small" data-cst="close">${esc(T('cst.close'))}</button></span></div>
+      <div class="cst-pane" data-pane="breakdown"><div class="cst-ctl"><label>${esc(T('cst.groupBy'))}<select data-cst="by"></select></label></div><div class="cm-scroll cst-out"></div></div>
+      <div class="cst-pane" data-pane="compare"><div class="cst-ctl">
+        <label>${esc(T('cst.a'))}<select data-cst="a"></select></label><label>${esc(T('cst.b'))}<select data-cst="b"></select></label>
+        <label>${esc(T('cst.groupBy'))}<select data-cst="by2"></select></label>
+        <label class="cst-chk"><input type="checkbox" data-cst="only">${esc(T('cst.onlyChanges'))}</label>
+        <button class="btn small" data-cst="save">${esc(T('cst.saveProposed'))}</button></div><div class="cm-scroll cst-out"></div></div></div>`;
+    const $q = s => back.querySelector(s), outs = { breakdown: $q('[data-pane="breakdown"] .cst-out'), compare: $q('[data-pane="compare"] .cst-out') };
+    const verOpts = sel => `<option value=""${sel == null ? ' selected' : ''}>${esc(T('cst.canvas'))}</option>${vers().map(v => `<option value="${esc(v.id)}"${v.id === sel ? ' selected' : ''}>${esc(`${verLabel(v)} · ${T(`ver.st.${v.status}`)}`)}</option>`).join('')}`;
+    const fillSelects = () => {
+      if (st.a && !findVersion(st.a)) st.a = null;
+      if (st.b && !findVersion(st.b)) st.b = null;
+      $q('[data-cst="a"]').innerHTML = verOpts(st.a); $q('[data-cst="b"]').innerHTML = verOpts(st.b);
+      $q('[data-cst="by"]').innerHTML = byOpts(); $q('[data-cst="by2"]').innerHTML = byOpts();
+    };
+    const bars = (v, tot) => { const p = tot > 0 ? Math.max(0, Math.min(100, v / tot * 100)) : 0; return `<span class="cst-pct"><span class="cst-bar"><i style="width:${p.toFixed(1)}%"></i></span><b>${p.toFixed(p >= 10 || p === 0 ? 0 : 1)}%</b></span>`; };
+    const drawBreakdown = () => {
+      cur = costBreakdown(S.model, st.by);
+      if (!cur.length) { outs.breakdown.innerHTML = `<p class="cm-empty">${esc(T('cst.empty'))}</p>`; return; }
+      const tot = cur.reduce((s, r) => s + r.monthly, 0), n = cur.reduce((s, r) => s + r.nodes.length, 0);
+      outs.breakdown.innerHTML = `<table class="cst-table"><thead><tr><th>${esc(T(`cst.by.${st.by}`))}</th><th class="num">${esc(T('cst.col.components'))}</th><th class="num">${esc(T('cst.col.monthly'))}</th><th class="num">${esc(T('cst.col.yearly'))}</th><th>${esc(T('cst.col.pct'))}</th></tr></thead><tbody>${cur.map((r, i) =>
+        `<tr${r.filter ? ` class="cst-click" data-i="${i}" title="${esc(T('cst.rowTip'))}"` : ''}><td${r.unassigned ? ' class="cst-un"' : ''}>${r.filter ? `<button class="cst-key" data-i="${i}">${esc(r.label)}</button>` : esc(r.label)}</td><td class="num">${r.nodes.length}</td><td class="num">${esc(cstMoney(r.monthly))}</td><td class="num">${esc(cstMoney(r.monthly * 12))}</td><td>${bars(r.monthly, tot)}</td></tr>`).join('')}</tbody>
+        <tfoot><tr><th>${esc(T('cst.total'))}</th><td class="num">${n}</td><td class="num">${esc(cstMoney(tot))}</td><td class="num">${esc(cstMoney(tot * 12))}</td><td></td></tr></tfoot></table>`;
+    };
+    const drawCompare = () => {
+      if (st.a && !findVersion(st.a)) st.a = null;
+      if (st.b && !findVersion(st.b)) st.b = null;
+      $q('[data-cst="a"]').value = st.a || ''; $q('[data-cst="b"]').value = st.b || '';
+      const A = cstSource(st.a), B = cstSource(st.b), c = cmp = cstCompare(A, B), by = cstDeltaBy(A, B, st.by);
+      const sk = st.sort, key = r => (sk === 'label' ? r.label.toLowerCase() : sk === 'a' ? r.a : sk === 'b' ? r.b : Math.abs(r.delta));
+      const rows = c.rows.filter(r => !st.only || r.status !== 'same').sort((x, y) => (key(x) > key(y) ? 1 : key(x) < key(y) ? -1 : x.label.localeCompare(y.label)) * st.dir * (sk === 'label' ? -1 : 1));
+      cmp.shown = rows; cmp.by = by;
+      const th = (k, label, cls = '') => `<th class="${cls}"><button class="cst-sort${st.sort === k ? ' on' : ''}" data-cst-sort="${k}" aria-label="${esc(T('cst.sortBy', { c: label }))}">${esc(label)}${st.sort === k ? (st.dir < 0 ? ' ↓' : ' ↑') : ''}</button></th>`;
+      const sumRow = (lbl, f) => `<tr><th>${esc(lbl)}</th><td class="num">${esc(cstMoney(c.a.monthly * f))}</td><td class="num">${esc(cstMoney(c.b.monthly * f))}</td><td class="num cst-d">${esc(cstDelta(c.delta * f))}</td><td class="num">${esc(cstPct(c.a.monthly, c.delta))}</td></tr>`;
+      outs.compare.innerHTML = `<table class="cst-table cst-sum"><thead><tr><th></th><th class="num" title="${esc(A.label)}">A</th><th class="num" title="${esc(B.label)}">B</th><th class="num">${esc(T('cst.delta'))}</th><th class="num">%</th></tr></thead><tbody>${sumRow(T('cst.col.monthly'), 1)}${sumRow(T('cst.col.yearly'), 12)}</tbody></table>
+        ${st.a === st.b ? `<p class="cst-note">${esc(T('cst.sameSrc'))}</p>` : ''}${vers().length ? '' : `<p class="cst-note">${esc(T('cst.noVersions'))}</p>`}
+        ${!c.rows.length ? `<p class="cm-empty">${esc(T('cst.empty'))}</p>` : `<table class="cst-table"><thead><tr>${th('label', T('cst.col.component'))}${th('a', 'A', 'num')}${th('b', 'B', 'num')}${th('delta', T('cst.col.delta'), 'num')}<th>${esc(T('cst.col.status'))}</th></tr></thead><tbody>${rows.map(r =>
+          `<tr class="st-${r.status}"><td>${esc(r.label)}</td><td class="num">${esc(cstMoney(r.a))}</td><td class="num">${esc(cstMoney(r.b))}</td><td class="num cst-d">${esc(cstDelta(r.delta))}</td><td><span class="cst-st">${esc(T(`cst.st.${r.status}`))}</span></td></tr>`).join('') || `<tr><td colspan="5" class="cm-empty">${esc(T('cst.noChanges'))}</td></tr>`}</tbody></table>
+        <h4 class="cst-h">${esc(T('cst.deltaBy', { by: T(`cst.by.${st.by}`) }))}</h4>
+        <table class="cst-table"><thead><tr><th>${esc(T(`cst.by.${st.by}`))}</th><th class="num">A</th><th class="num">B</th><th class="num">${esc(T('cst.col.delta'))}</th></tr></thead><tbody>${by.map(r =>
+          `<tr><td${r.unassigned ? ' class="cst-un"' : ''}>${esc(r.label)}</td><td class="num">${esc(cstMoney(r.a))}</td><td class="num">${esc(cstMoney(r.b))}</td><td class="num cst-d">${esc(cstDelta(r.delta))}</td></tr>`).join('')}</tbody></table>`}`;
+    };
+    const show = () => {
+      back.querySelectorAll('[data-pane]').forEach(p => { p.hidden = p.dataset.pane !== st.tab; });
+      back.querySelectorAll('[data-cst-tab]').forEach(b => { const on = b.dataset.cstTab === st.tab; b.classList.toggle('on', on); b.setAttribute('aria-selected', on); });
+      if (st.tab === 'compare') drawCompare(); else drawBreakdown();
+    };
+    const close = () => { document.removeEventListener('keydown', key, true); back.remove(); cstClose = null; prev?.focus?.(); };
+    const key = ev => { if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); close(); } };
+    const exportCsv = () => {
+      if (st.tab === 'breakdown') {
+        if (!cur.length) return;
+        const tot = cur.reduce((s, r) => s + r.monthly, 0);
+        download(cstCSV([[T(`cst.by.${st.by}`), T('cst.col.components'), T('cst.col.monthly'), T('cst.col.yearly'), T('cst.col.pct')], ...cur.map(r => [r.label, r.nodes.length, round2(r.monthly), round2(r.monthly * 12), tot ? round2(r.monthly / tot * 100) : 0]), [T('cst.total'), cur.reduce((s, r) => s + r.nodes.length, 0), round2(tot), round2(tot * 12), 100]]), fileName('csv', 'costs'), 'text/csv;charset=utf-8');
+      } else if (cmp) {
+        download(cstCSV([[T('cst.col.component'), `A: ${cmp.a.label}`, `B: ${cmp.b.label}`, T('cst.col.delta'), T('cst.col.status')], ...cmp.shown.map(r => [r.label, round2(r.a), round2(r.b), round2(r.delta), T(`cst.st.${r.status}`)]),
+          [T('cst.total'), round2(cmp.a.monthly), round2(cmp.b.monthly), round2(cmp.delta), ''], [], [T(`cst.by.${st.by}`), 'A', 'B', T('cst.col.delta')], ...cmp.by.map(r => [r.label, round2(r.a), round2(r.b), round2(r.delta)])]), fileName('csv', 'cost-compare'), 'text/csv;charset=utf-8');
+      }
+    };
+    back.addEventListener('mousedown', ev => { if (ev.target === back) close(); });
+    back.addEventListener('click', async ev => {
+      const t = ev.target.closest('[data-cst-tab]');
+      if (t) { st.tab = t.dataset.cstTab; return show(); }
+      const s = ev.target.closest('[data-cst-sort]');
+      if (s) { const k = s.dataset.cstSort; if (st.sort === k) st.dir = -st.dir; else { st.sort = k; st.dir = -1; } drawCompare(); return back.querySelector(`[data-cst-sort="${k}"]`)?.focus(); }
+      const r = ev.target.closest('tr[data-i]');
+      if (r) { const f = cur[+r.dataset.i]?.filter; if (f) { close(); setFilter(f); } return; }
+      const b = ev.target.closest('[data-cst]');
+      if (!b) return;
+      if (b.dataset.cst === 'close') close();
+      else if (b.dataset.cst === 'csv') exportCsv();
+      else if (b.dataset.cst === 'save') {
+        const keep = S.verNote;
+        S.verNote = T('cst.proposedNote', { date: today() });
+        await saveVersion('version');
+        S.verNote = keep;
+        const v = findVersion(S.model.active);
+        if (v && v.kind === 'version') { if (!v.name) v.name = T('cst.proposed'); versionsChanged(); st.b = v.id; show(); toast(T('cst.proposedSaved'), 2600); }
+      }
+    });
+    back.addEventListener('change', ev => {
+      const k = ev.target.dataset?.cst;
+      if (!k) return;
+      if (k === 'a' || k === 'b') st[k] = ev.target.value || null;
+      else if (k === 'only') st.only = ev.target.checked;
+      else if (k === 'by' || k === 'by2') { st.by = ev.target.value; $q('[data-cst="by"]').value = $q('[data-cst="by2"]').value = st.by; }
+      show();
+    });
+    cstClose = close;
+    document.addEventListener('keydown', key, true);
+    fillSelects();
+    document.body.appendChild(back);
+    show();
+    back.querySelector('[data-cst="close"]').focus();
+  }
+  // Botón «Costos» de la pastilla de la vista Costo y «Comparar costos» de cada versión
+  viewPill.addEventListener('click', ev => { if (ev.target.closest('[data-cst-open]')) openCosts('breakdown'); });
+  versionsBox.addEventListener('click', ev => { const b = ev.target.closest('[data-cst-cmp]'); if (b) openCosts('compare', { a: b.closest('.ver')?.dataset.id || null, b: null }); });
 
   /* ---------- inspector ---------- */
   // Tras la paleta, un botón "+": marcado y con el color cuando el actual no es de la paleta
@@ -4278,6 +4639,26 @@
     return `<details class="gov-box" data-gov-open="${kind}"${open ? ' open' : ''}><summary>${T('gov.title')}</summary><div class="row2">${cells[0]}${cells[1]}</div><div class="row2">${cells[2]}${cells[3]}</div></details>`;
   };
 
+  /* ---------- disponibilidad: campos del inspector ---------- */
+  const SLA_TIERS = [99, 99.5, 99.9, 99.95, 99.99, 99.999], DUR_TIERS = ['0', '15m', '1h', '4h', '24h'];
+  // Pista bajo los campos: disponibilidad efectiva, tiempo de parada esperado y aviso de punto único de fallo
+  const resHintHtml = list => {
+    if (list.length !== 1) return '';
+    const n = list[0], a = availOf(n), r = replicasOf(n), sp = spofList().find(x => x.id === n.id);
+    const h = a == null ? T('res.hint.empty') : `${T('res.hint.eff', { a: fmtPct(a), n: r })} · ${downtime(a).text}`;
+    return `<span class="cost-hint">${esc(h)}</span>${sp ? `<span class="enc-warn">⚠ ${esc(T('res.spof'))} · ${esc(sp.reason)}</span>` : ''}`;
+  };
+  const resField = items => {
+    const list = [].concat(items), cell = (k, lab, extra) => {
+      const vals = list.map(x => (x[k] == null ? '' : String(x[k]))), same = vals.every(v => v === vals[0]);
+      return `<label>${lab}<input data-res="${k}" ${extra} value="${esc(same ? vals[0] : '')}" placeholder="${esc(same ? '' : T('insp.mixed'))}" autocomplete="off"></label>`;
+    };
+    return `<div class="field res-field">${T('res.title')}
+      <div class="row2">${cell('sla', T('res.sla'), 'list="dl-sla" inputmode="decimal"')}${cell('replicas', T('res.replicas'), 'type="number" min="1" step="1" inputmode="numeric"')}</div>
+      <div class="row2">${cell('rpo', T('res.rpo'), 'list="dl-dur"')}${cell('rto', T('res.rto'), 'list="dl-dur"')}</div>
+      <datalist id="dl-sla">${SLA_TIERS.map(v => `<option value="${v}"></option>`).join('')}</datalist><datalist id="dl-dur">${DUR_TIERS.map(v => `<option value="${v}"></option>`).join('')}</datalist>
+      <div id="res-hint">${resHintHtml(list)}</div></div>`;
+  };
   // Sección "Camino" con exactamente dos nodos: el orden de selección define A y B
   function pathField() {
     const [a, b] = S.sel.ids.map(id => S.model.nodes.find(n => n.id === id).label);
@@ -4309,6 +4690,7 @@
         ${c4Field(t)}
         ${dataField(t)}
         ${govField(t, 'multi')}
+        ${resField(t)}
         ${regionField(t)}
         ${layerField(t)}
         ${cmpField(t, 'multi')}
@@ -4339,6 +4721,7 @@
         ${costField(t)}
         ${dataField(t)}
         ${govField(t, 'node')}
+        ${resField(t)}
         ${regionField(t)}
         ${layerField(t)}
         ${secField(t)}
@@ -4405,9 +4788,10 @@
       const blocked = new Set([t.id]);
       let grew = true;
       while (grew) { grew = false; m.groups.forEach(g => { if (g.parent && blocked.has(g.parent) && !blocked.has(g.id)) { blocked.add(g.id); grew = true; } }); }
-      const count = m.nodes.filter(n => inGroup(n, t.id)).length;
+      const count = m.nodes.filter(n => inGroup(n, t.id)).length, gPriced = m.nodes.filter(n => inGroup(n, t.id) && hasCost(n));
       html = head(colorVar(t.color) || 'var(--muted)', '', T('insp.group'), t.label) + `
         <p class="note">${T('insp.groupNote', count)}</p>
+        ${gPriced.length ? `<p class="cost-sum">${T('cst.groupCost')} <b>≈ ${money(round2(monthlyTotal(gPriced)))}${T('cost.mo')}</b><span>${T('insp.withCost', { a: gPriced.length, b: count })}</span></p>` : ''}
         <label>${T('insp.name')}<input data-field="label" value="${esc(t.label)}"></label>
         ${allIcons().some(i => i.group) ? iconPicker(t, true) : ''}
         <label>${T('gkind.label')}<select data-field="kind"><option value=""${t.kind ? '' : ' selected'}>${esc(T('gkind.auto', { k: T(`gkind.${groupKindAuto(t)}`) }))}</option>${['logical', 'physical'].map(k => `<option value="${k}"${t.kind === k ? ' selected' : ''}>${T(`gkind.${k}`)}</option>`).join('')}</select></label>
@@ -4522,6 +4906,19 @@
     const v = f.value.trim();
     (Array.isArray(t) ? t : [t]).forEach(x => { if (v) x[f.dataset.gov] = v; else delete x[f.dataset.gov]; });
     changed(true);
+  });
+  /* ---------- disponibilidad: escribir en el inspector ---------- */
+  inspector.addEventListener('focusin', ev => { if (ev.target.matches('input[data-res]')) beginEdit(); });
+  inspector.addEventListener('input', ev => {
+    const f = ev.target, t = selTarget();
+    if (!f.matches('input[data-res]') || !t) return;
+    markEdit();
+    const k = f.dataset.res, v = f.value.trim(), list = Array.isArray(t) ? t : [t];
+    const val = !v ? null : k === 'sla' ? cleanSla(v) : k === 'replicas' ? cleanReplicas(v) : normDur(v);
+    list.forEach(x => { if (val != null) x[k] = val; else delete x[k]; });
+    changed(true);
+    const h = $('#res-hint');
+    if (h) h.innerHTML = resHintHtml(list);
   });
   /* ---------- STRIDE: nota de cada decisión ---------- */
   inspector.addEventListener('focusin', ev => { if (ev.target.matches('input[data-th-note]')) beginEdit(); });
@@ -5069,7 +5466,7 @@
     const b = ev.target.closest('[data-export]');
     if (!b) return;
     exportMenu.open = false;
-    const f = { svg: exportSVG, png: exportPNG, 'svg-all': () => exportViews('svg'), 'png-all': () => exportViews('png'), 'svg-levels': () => exportLevels('svg'), 'png-levels': () => exportLevels('png'), json: exportJSON, copy: copyJSON, share: shareEncrypted, stride: exportThreats, compliance: openCompMatrix, report: openReportDialog }[b.dataset.export];
+    const f = { svg: exportSVG, png: exportPNG, 'svg-all': () => exportViews('svg'), 'png-all': () => exportViews('png'), 'svg-levels': () => exportLevels('svg'), 'png-levels': () => exportLevels('png'), json: exportJSON, copy: copyJSON, share: shareEncrypted, stride: exportThreats, compliance: openCompMatrix, report: openReportDialog, costs: () => openCosts('breakdown'), 'inventory-xlsx': () => exportInventory('xlsx'), 'inventory-csv': openInventoryDialog }[b.dataset.export];
     if (f) f(); else exportOther(b.dataset.export);
   });
 
@@ -5121,6 +5518,16 @@
     } else if (v.emphasis === 'cost') {
       const vals = m.nodes.filter(hasCost).map(perMonth);
       if (vals.length) r.heat = { min: `${money(round2(Math.min(...vals)))}${T('cost.mo')}`, max: `${money(round2(Math.max(...vals)))}${T('cost.mo')}`, total: `≈ ${money(round2(monthlyTotal(m.nodes)))}${T('cost.mo')}`, stops: VR.costHeat };
+      const teams = costBreakdown(m, 'team').filter(t => !t.unassigned).slice(0, 5);
+      if (teams.length) r.costBy = teams.map(t => ({ label: t.label, value: `${money(round2(t.monthly))}${T('cost.mo')}` }));
+    }
+    else if (v.emphasis === 'resilience') {
+      const vn = visNodes(), sp = new Set(spofList(m).map(x => x.id)), cnt = k => vn.filter(n => resTier(n)?.k === k).length;
+      RES_TIERS.forEach(t => { if (cnt(t.k)) r.owners = [...(r.owners || []), { color: t.color, label: T(`res.leg.${t.k}`), n: cnt(t.k) }]; });
+      r.ownersHead = T('res.leg.head');
+      const unk = vn.filter(n => !resTier(n)).length, nsp = vn.filter(n => sp.has(n.id)).length;
+      if (unk) r.owners = [...(r.owners || []), { color: 'var(--muted)', label: T('res.leg.none'), n: unk }];
+      if (nsp) r.owners = [...(r.owners || []), { color: 'var(--sev-critical)', label: T('res.leg.spof'), n: nsp }];
     }
     else if (v.emphasis === 'owner') {
       const vis = new Set(visNodes().map(n => n.id));
@@ -5198,7 +5605,7 @@
         el('circle', { cx: x + 6, cy: y, r: 6, style: `fill:${r.color}` }, g);
         textRow(x + 22, y, txt);
       } }; });
-      for (let i = 0; i < own.length; i += 8) col(i ? '' : T('leg.teams'), own.slice(i, i + 8));
+      for (let i = 0; i < own.length; i += 8) col(i ? '' : ex.ownersHead || T('leg.teams'), own.slice(i, i + 8));
     }
     // Escala de calor de la vista Costo
     if (ex.heat) {
@@ -5212,6 +5619,8 @@
         textRow(x + lw + BW + 16, y, hc.max);
       } }, { w: textW(tot, '400 12px'), draw: (x, y) => textRow(x, y, tot) }]);
     }
+    // Costo por equipo (vista Costo): los 5 equipos que más cuestan
+    if (ex.costBy?.length) col(T('cst.leg.byTeam'), ex.costBy.map(r => { const txt = fitText(`${r.label} · ${r.value}`, '400 12px', 300); return { w: textW(txt, '400 12px'), draw: (x, y) => textRow(x, y, txt) }; }));
     // Datos
     const used = new Set([...vn, ...es].flatMap(x => x.data || []));
     if (v.dataTags) col(T('leg.data'), dataTags({ data: [...used] }).map(t => ({ w: Math.ceil(textW(t.short, FONT.dtag)) + 20 + textW(t.label, '400 12px'), draw: (x, y) => {
@@ -5356,6 +5765,7 @@
     if (key === 'context') return m.groups.length > 0;
     if (em === 'cost') return m.nodes.some(hasCost);
     if (em === 'owner') return m.nodes.some(n => govKey(n));
+    if (em === 'resilience') return m.nodes.some(hasRes) || spofList(m).length > 0;
     if (em === 'security') return m.nodes.some(n => n.data?.length) || m.edges.some(e => e.data?.length || e.encrypted != null);
     if (em === 'data') return m.nodes.some(n => n.data?.length || VR.dataTypes.includes(n.type) || VR.dataIconCategories.includes(iconInfo(n.icon)?.category)) || m.edges.some(e => e.style === 'data' || e.data?.length);
     return true;
@@ -5491,7 +5901,7 @@
   // reportData() arma un modelo plano (secciones de bloques) y dos dibujantes lo pintan: reportMarkdown y reportHTML, así que los dos formatos no se desincronizan.
   // Bloques: { k: 'h3', t } · { k: 'p', t, muted? } · { k: 'kv', items: [[k, v]] } · { k: 'cards', items: [{ label, value, tone? }] }
   //          { k: 'table', head: [], rows: [[celda]], cls? } (celda = texto | { t, tone }) · { k: 'text', label, t } · { k: 'ul', items } · { k: 'img', alt, caption, svg?, uri?, file? }
-  const REP_SECS = ['summary', 'diagram', 'components', 'connections', 'data', 'owners', 'layers', 'costs', 'findings', 'compliance', 'threats', 'decisions', 'versions', 'notes'];
+  const REP_SECS = ['summary', 'diagram', 'components', 'connections', 'data', 'owners', 'layers', 'costs', 'resilience', 'findings', 'compliance', 'threats', 'decisions', 'versions', 'notes'];
   const REP_PAGE = ['diagram', 'components', 'findings', 'decisions']; // secciones que empiezan página al imprimir
   const repT = (k, v) => T(`rep.${k}`, v);
   const repSleep = ms => new Promise(r => setTimeout(r, ms));
@@ -5510,7 +5920,7 @@
     return {
       summary: true, diagram: m.nodes.length > 0, components: m.nodes.length > 0, connections: m.edges.length > 0,
       data: m.nodes.some(n => dataClassesOf(n, m).length || regionOf(n, m).value), owners: govTeamList(m).length > 0,
-      layers: m.nodes.some(n => layerOf(n).value), costs: m.nodes.some(hasCost), findings: findingsOf(m).length > 0,
+      layers: m.nodes.some(n => layerOf(n).value), costs: m.nodes.some(hasCost), resilience: m.nodes.some(hasRes) || spofList(m).length > 0, findings: findingsOf(m).length > 0,
       compliance: cmpModel(m).keys.length > 0, threats: strideAll(m).length > 0, decisions: !!m.decisions?.length,
       versions: m.versions.length > 0, notes: (m.notes || []).length > 0 || (m.zones || []).some(z => z.kind !== 'trust')
     };
@@ -5641,9 +6051,25 @@
       const cn = m.nodes.filter(hasCost), blocks = [{ k: 'table', head: [repT('h.component'), repT('h.group'), repT('h.price'), repT('h.cost')], rows: [...cn.map(n => [n.label, gpath(n), costText(n), money(round2(perMonth(n)))]), [{ t: repT('total'), tone: 'total' }, '', '', { t: money(round2(monthlyTotal(m.nodes))), tone: 'total' }]] }];
       const gr = m.groups.map(g => ({ g, sum: monthlyTotal(nodesUnder(g, m)), n: nodesUnder(g, m).filter(hasCost).length })).filter(x => x.n);
       if (gr.length) { blocks.push({ k: 'h3', t: repT('h.perGroup') }); blocks.push({ k: 'table', head: [repT('h.group'), repT('h.nodes'), repT('h.cost')], rows: gr.map(x => [[gpath(x.g), x.g.label].filter(Boolean).join(' › '), String(x.n), money(round2(x.sum))]) }); }
+      [['team', 'byTeam', 'gov.team'], ['costCenter', 'byCostCenter', 'gov.costCenter']].forEach(([by, hk, fk]) => {
+        const rs = costBreakdown(m, by);
+        if (!rs.some(x => !x.unassigned)) return;
+        const tot = rs.reduce((s, x) => s + x.monthly, 0);
+        blocks.push({ k: 'h3', t: repT(`h.${hk}`) });
+        blocks.push({ k: 'table', head: [T(fk), repT('h.nodes'), repT('h.cost'), T('cst.col.pct')], rows: rs.map(x => [x.label, String(x.nodes.length), money(round2(x.monthly)), tot ? `${(x.monthly / tot * 100).toFixed(1)}%` : '']) });
+      });
       const per = [...new Set(cn.map(periodOf))];
       blocks.push({ k: 'p', muted: true, t: repT('costNote', { h: COST.hoursPerMonth, p: per.map(p => T(PERIODS[p].label)).join(', ') }) });
       sec('costs', blocks);
+    }
+
+    if (want('resilience')) { // Resiliencia: SLA, RPO/RTO, réplicas y puntos únicos de fallo
+      const rn = m.nodes.filter(hasRes), sp = spofList(m), blocks = [];
+      if (rn.length) blocks.push({ k: 'table', cls: 'wide', head: [repT('h.component'), repT('h.group'), repT('h.sla'), repT('h.replicas'), repT('h.eff'), repT('h.down'), 'RPO', 'RTO'],
+        rows: rn.map(n => { const a = availOf(n); return [n.label, gpath(n), hasSla(n) ? `${numFmt(cleanSla(n.sla), 6)}%` : '', cleanReplicas(n.replicas) ? String(n.replicas) : '', a != null ? fmtPct(a) : '', a != null ? `${fmtApprox(downtime(a).year)}${T('res.perYear')}` : '', n.rpo != null ? fmtDur(parseDur(n.rpo)) : '', n.rto != null ? fmtDur(parseDur(n.rto)) : '']; }) });
+      if (sp.length) { blocks.push({ k: 'h3', t: repT('h.spof') }); blocks.push({ k: 'table', head: [repT('h.component'), repT('h.detail')], rows: sp.map(x => [x.label, x.reason]) }); }
+      blocks.push({ k: 'p', muted: true, t: repT('resNote') });
+      sec('resilience', blocks);
     }
 
     if (want('findings')) {
@@ -5922,6 +6348,127 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     if (navigator.clipboard?.writeText) navigator.clipboard.writeText(txt).then(() => toast(T('toast.copied')), fallback);
     else fallback();
   }
+  /* ---------- inventario exportable (CSV / Excel) ---------- */
+  // Una fila por componente (todos los niveles C4) y varias tablas de apoyo, para CMDB o auditoría. Excel: export-xlsx.js (sin librerías).
+  // Las ayudas opcionales se protegen con typeof para que la exportación siga funcionando si una función se quita.
+  const INV_COMP = [['id'], ['name'], ['detail'], ['type'], ['provider'], ['service'], ['category'], ['c4'], ['level'], ['group'], ['owner'], ['steward'], ['team'], ['costCenter'], ['inherited'], ['region'], ['jurisdiction'],
+    ['data'], ['sensitive'], ['layer'], ['exposure'], ['backup'], ['encIn', 'int'], ['encOut', 'int'], ['unencSens', 'int'], ['sla', 'sla'], ['rpo'], ['rto'], ['replicas', 'int'], ['cost', 'money'], ['period'], ['perMonth', 'money'], ['perYear', 'money'],
+    ['review'], ['findings', 'int'], ['adrs'], ['compliance'], ['desc']];
+  const INV_CONN = [['id'], ['from'], ['to'], ['label'], ['style'], ['encrypted'], ['data'], ['datasets'], ['crossBorder'], ['transferOk'], ['threats', 'int']];
+  const INV_GROUP = [['id'], ['name'], ['parent'], ['kind'], ['region'], ['layer'], ['owner'], ['team'], ['costCenter'], ['count', 'int'], ['monthly', 'money']];
+  const INV_OWNER = [['team'], ['owners'], ['stewards'], ['components', 'int'], ['monthly', 'money']];
+  const INV_ADR = [['id'], ['title'], ['status'], ['date'], ['links']];
+  const INV_FIND = [['severity'], ['source'], ['rule'], ['title'], ['target'], ['dismissed'], ['reason']];
+  const INV_VER = [['name'], ['env'], ['status'], ['author'], ['created'], ['updated'], ['decidedOn']];
+  const invYN = v => T(v ? 'sec.yes' : 'sec.no');
+  const invNum = v => (v == null || v === '' || !Number.isFinite(+v) ? '' : +v);
+  // Filas de componentes: objetos con claves estables (las de INV_COMP)
+  function inventoryRows(model = S.model) {
+    const m = model, byId = new Map(m.nodes.map(n => [n.id, n])), get = id => byId.get(id);
+    const finds = typeof allFindings === 'function' ? allFindings(m).filter(f => !(f.source !== 'review' && m.dismissed?.[f.id])) : [];
+    return m.nodes.map(n => {
+      const ic = typeof iconInfo === 'function' ? iconInfo(n.icon) : null, cat = ic?.category || typeOf(n).category || '';
+      const gv = f => (typeof govOf === 'function' ? govOf(n, f, m) : { value: String(n[f] ?? '').trim(), from: null });
+      const inh = ['owner', 'steward', 'team', 'costCenter'].map(f => { const g = gv(f); return g.from ? `${T(`gov.${f}`)} ← ${m.groups.find(x => x.id === g.from)?.label || g.from}` : ''; }).filter(Boolean).join('; ');
+      const reg = typeof regionOf === 'function' ? regionOf(n, m).value : cleanRegion(n.region), jur = reg && typeof jurOf === 'function' ? jurOf(reg) : null;
+      const ex = typeof exposureOf === 'function' ? exposureOf(n, m).value : n.exposure || '', bk = typeof backupOf === 'function' ? backupOf(n, m).value : typeof n.backup === 'boolean' ? n.backup : null;
+      const cls = typeof dataClassesOf === 'function' ? dataClassesOf(n, m) : n.data || [];
+      const mine = m.edges.filter(e => e.from === n.id || e.to === n.id);
+      const ins = m.edges.filter(e => e.to === n.id || (e.both && e.from === n.id)), outs = m.edges.filter(e => e.from === n.id || (e.both && e.to === n.id));
+      const unenc = typeof isInsecure === 'function' ? mine.filter(e => isInsecure(e, get)).length : 0;
+      const pc = hasCost(n) ? periodOf(n) : '', pm = hasCost(n) ? round2(perMonth(n)) : '';
+      const my = finds.filter(f => f.target?.id === n.id && f.target.kind === 'node').length;
+      const ctl = typeof controlsOf === 'function' ? [...controlsOf(n, m)] : [];
+      const comp = [...new Set(ctl.map(([k]) => ctlSplit(k)[0]))].map(fw => {
+        const st = CTL_STATUS.map(s => [s, ctl.filter(([k, v]) => ctlSplit(k)[0] === fw && v.status === s).length]).filter(x => x[1]);
+        return `${ctlInfo(`${fw}:x`).short}: ${st.map(([s, c]) => `${c} ${T(`cmp.${s}`).toLowerCase()}`).join(' / ')}`;
+      }).join('; ');
+      const grp = typeof groupChain === 'function' ? groupChain(n, m).reverse().map(g => g.label).join(' › ') : '';
+      const lvl = typeof scopePath === 'function' && n.in ? scopePath(n.in, m).map(id => byId.get(id)?.label || id).join(' › ') : '';
+      const rl = typeof layerOf === 'function' ? layerOf(n).value : n.layer;
+      return {
+        id: n.id, name: n.label, detail: n.sub || '', type: typeLabel(n.type), provider: ic?.providerLabel || '', service: ic?.label || '', category: cat && typeof I.category === 'function' ? I.category(cat) : cat,
+        c4: typeof c4Label === 'function' ? c4Label(n.c4) : '', level: lvl, group: grp,
+        owner: gv('owner').value, steward: gv('steward').value, team: gv('team').value, costCenter: gv('costCenter').value, inherited: inh,
+        region: reg, jurisdiction: jur ? `${jur.label} (${jur.short})` : '',
+        data: cls.map(k => loc(DATA[k]?.short) || String(k).toUpperCase()).join(' '), sensitive: invYN(cls.some(k => DATA[k]?.sensitive)),
+        layer: rl && typeof layerInfo === 'function' ? layerInfo(rl)?.label || rl : '', exposure: ex ? T(ex === 'public' ? 'sec.expo.public' : 'sec.expo.internal') : '', backup: bk == null ? '' : invYN(bk),
+        encIn: ins.filter(e => e.encrypted === true).length, encOut: outs.filter(e => e.encrypted === true).length, unencSens: unenc,
+        sla: invNum(n.sla), rpo: n.rpo == null ? '' : String(n.rpo), rto: n.rto == null ? '' : String(n.rto), replicas: invNum(n.replicas),
+        cost: hasCost(n) ? +n.cost : '', period: pc ? T(PERIODS[pc].label) + (pc === 'multi' ? ` · ${T('cost.years', yearsOf(n))}` : '') : '', perMonth: pm, perYear: pm === '' ? '' : round2(perMonth(n) * 12),
+        review: n.review ? T(`rev.tag.${reviewState(n.review)}`) : '', findings: my,
+        adrs: (m.decisions || []).filter(d => d.links?.nodes?.includes(n.id)).map(d => d.id).join(', '), compliance: comp, desc: n.desc || ''
+      };
+    });
+  }
+  // Todas las tablas del inventario: [{ key, name, head, rows (matrices), fmt }]; las vacías no entran salvo Componentes
+  function inventoryTables(model = S.model) {
+    const m = model, byId = new Map(m.nodes.map(n => [n.id, n])), nm = id => byId.get(id)?.label || id;
+    const mk = (key, cols, rows) => ({ key, name: T(`inv.sheet.${key}`), head: cols.map(([k]) => T(`inv.c.${k}`)), keys: cols.map(([k]) => k), fmt: cols.map(([, f]) => f || null), rows });
+    const out = [], comp = inventoryRows(m);
+    out.push(mk('components', INV_COMP, comp.map(r => INV_COMP.map(([k]) => r[k]))));
+    // Conexiones
+    const open = typeof strideAll === 'function' ? (() => { try { return strideAll(m).filter(t => t.status === 'open'); } catch { return []; } })() : [];
+    const conn = m.edges.map(e => {
+      const cb = typeof crossBorder === 'function' ? crossBorder(e, byId) : null;
+      return [e.id || '', nm(e.from), nm(e.to), String(e.label || '').replace(/\s*\n\s*/g, ' '), loc((C.edgeStyles[e.style] || C.edgeStyles.sync).label), e.encrypted === true ? T('enc.yes') : e.encrypted === false ? T('enc.no') : T('enc.unset'),
+        (e.data || []).map(k => loc(DATA[k]?.short) || String(k).toUpperCase()).join(' '), (e.datasets || []).join('; '), invYN(!!cb), cb ? invYN(cb.approved) : '', open.filter(t => t.e === e || t.e.id === e.id).length];
+    });
+    if (conn.length) out.push(mk('connections', INV_CONN, conn));
+    // Grupos
+    const gpath = g => { const p = []; let x = g.parent, i = 0; while (x && i++ < 50) { const gg = m.groups.find(q => q.id === x); if (!gg) break; p.unshift(gg.label); x = gg.parent; } return p.join(' › '); };
+    const grp = m.groups.map(g => {
+      const ns = m.nodes.filter(n => (typeof groupChain === 'function' ? groupChain(n, m) : []).some(x => x.id === g.id)), gv = f => (typeof govOf === 'function' ? govOf(g, f, m).value : g[f] || '');
+      return [g.id, g.label, gpath(g), typeof groupKind === 'function' ? T(`gkind.${groupKind(g)}`) : '', typeof regionOf === 'function' ? regionOf(g, m).value : g.region || '',
+        typeof layerOf === 'function' && layerOf(g).value && typeof layerInfo === 'function' ? layerInfo(layerOf(g).value).label : '', gv('owner'), gv('team'), gv('costCenter'), ns.length, ns.some(hasCost) ? round2(monthlyTotal(ns)) : ''];
+    });
+    if (grp.length) out.push(mk('groups', INV_GROUP, grp));
+    // Dueños por equipo
+    const own = typeof govTeamList === 'function' ? govTeamList(m).map(t => { const ns = t.nodes.map(id => byId.get(id)).filter(Boolean); return [t.team || T('inv.noTeam'), t.owners.join('; '), t.stewards.join('; '), ns.length, ns.some(hasCost) ? round2(monthlyTotal(ns)) : '']; }) : [];
+    if (own.length) out.push(mk('owners', INV_OWNER, own));
+    // Decisiones (ADR)
+    const links = l => [...(l?.nodes || []).map(nm), ...(l?.edges || []).map(id => { const e = m.edges.find(x => x.id === id); return e ? `${nm(e.from)} → ${nm(e.to)}` : id; }), ...(l?.groups || []).map(id => m.groups.find(g => g.id === id)?.label || id),
+      ...(l?.versions || []).map(id => { const v = (m.versions || []).find(x => x.id === id); return v && typeof verLabel === 'function' ? verLabel(v) : id; })].join('; ');
+    if (m.decisions?.length) out.push(mk('decisions', INV_ADR, m.decisions.map(d => [d.id, d.title, T(`adr.st.${d.status}`), d.date || '', links(d.links)])));
+    // Hallazgos (abiertos y descartados)
+    const tl = t => { const o = (t.kind === 'node' ? m.nodes : t.kind === 'edge' ? m.edges : t.kind === 'group' ? m.groups : t.kind === 'zone' ? m.zones || [] : []).find(x => x.id === t.id); return !o ? t.id : t.kind === 'edge' ? `${nm(o.from)} → ${nm(o.to)}` : o.label || t.id; };
+    const fnd = typeof allFindings === 'function' ? allFindings(m).map(f => { const d = f.source !== 'review' && m.dismissed?.[f.id]; return [sevLabel(f.severity), typeof srcLabel === 'function' ? srcLabel(f.source) : f.source, f.rule, f.title, tl(f.target || {}), invYN(!!d), d?.reason || '']; }) : [];
+    if (fnd.length) out.push(mk('findings', INV_FIND, fnd));
+    // Versiones y ambientes
+    if (m.versions?.length) out.push(mk('versions', INV_VER, m.versions.map(v => [verLabel(v), v.kind === 'env' ? loc(C.environments?.[v.env]?.label) || v.env : '', T(`ver.st.${v.status}`), v.author || '', v.created || '', v.updated || '', [v.decidedOn, v.decidedBy].filter(Boolean).join(' · ')])));
+    return out;
+  }
+  // 'xlsx' | 'csv' (solo componentes) | 'csv-all' (una descarga por tabla)
+  function exportInventory(kind = 'xlsx') {
+    try {
+      const tabs = inventoryTables(S.model), X = window.DiagramonXlsx;
+      if (kind === 'xlsx') {
+        if (!X) throw new Error('export-xlsx.js missing');
+        download(X.blob(tabs.map(t => ({ name: t.name, head: t.head, rows: t.rows, fmt: t.fmt })), { title: `${S.model.title || 'Diagramon'} · ${T('inv.title')}`, creator: 'Diagramon' }), fileName('xlsx', 'inventory'), X.MIME);
+      } else if (kind === 'csv-all') {
+        tabs.forEach((t, i) => setTimeout(() => download(toCSV([t.head, ...t.rows]), fileName('csv', `inventory-${t.key}`), 'text/csv;charset=utf-8'), i * 300));
+      } else download(toCSV([tabs[0].head, ...tabs[0].rows]), fileName('csv', 'inventory'), 'text/csv;charset=utf-8');
+      toast(T('toast.exported', { name: T('inv.title') }));
+    } catch (e) { console.error(e); toast(T('toast.exportFail')); }
+  }
+  // Diálogo del CSV: solo componentes o todas las tablas por separado
+  function openInventoryDialog() {
+    const prev = document.activeElement, id = `iv${Date.now()}`, back = document.createElement('div');
+    back.className = 'cf-back';
+    back.innerHTML = `<form class="cf share" role="dialog" aria-modal="true" aria-labelledby="${id}t" autocomplete="off">
+      <h3 id="${id}t">${esc(T('inv.csv.title'))}</h3><p>${esc(T('inv.csv.lead'))}</p>
+      <fieldset class="sh-views"><label class="sh-chk"><input type="radio" name="k" value="csv" checked>${esc(T('inv.csv.one'))}</label><label class="sh-chk"><input type="radio" name="k" value="csv-all">${esc(T('inv.csv.all'))}</label></fieldset>
+      <div class="cf-actions"><button type="button" class="btn" data-iv="no">${esc(T('ver.cf.cancel'))}</button><button type="submit" class="btn primary">${esc(T('inv.csv.go'))}</button></div></form>`;
+    const form = back.querySelector('form'), close = () => { document.removeEventListener('keydown', key, true); back.remove(); prev?.focus?.(); };
+    const key = ev => { if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); close(); } };
+    form.addEventListener('click', ev => { if (ev.target.closest('[data-iv="no"]')) close(); });
+    back.addEventListener('mousedown', ev => { if (ev.target === back) close(); });
+    form.addEventListener('submit', ev => { ev.preventDefault(); const k = form.elements.k.value; close(); exportInventory(k); });
+    document.addEventListener('keydown', key, true);
+    document.body.appendChild(back);
+    form.querySelector('input[name="k"]:checked').focus();
+  }
+
   // Importa un diagrama de Diagramon (JSON) o infraestructura como código (iac.js).
   // Acepta File del navegador o { name, text }.
   async function importFiles(list) {
@@ -6745,6 +7292,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     lineage: ds => { const r = showLineage(ds); return r ? { origins: [...r.origins], consumers: [...r.consumers], hops: r.hops, nodes: [...r.nodes], edges: [...r.edges] } : null; },
     datasets: () => datasetList().map(d => ({ ...d })),
     saveVersion, openVersion, compareVersion, deleteVersion,
+    costBreakdown: (by = 'team') => costBreakdown(S.model, by), compareCosts: (a = null, b = null) => { const A = cstSource(a || null), B = cstSource(b || null); return A && B ? cstCompare(A, B) : null; }, openCosts,
     setFilter, clearFilter, get filter() { return clone(S.filter); },
     crossBorder: () => { const byId = new Map(S.model.nodes.map(n => [n.id, n])); return S.model.edges.map(e => ({ e, cb: crossBorder(e, byId) })).filter(x => x.cb)
       .map(({ e, cb }) => ({ edge: clone(e), from: cb.from, to: cb.to, fromRegion: cb.from.region, toRegion: cb.to.region, fromJur: cb.from.jur.short, toJur: cb.to.jur.short, classes: [...cb.classes], approved: cb.approved })); },
@@ -6753,9 +7301,11 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     compliance: () => complianceReport(), exportCompliance: (kind = 'wide') => exportCompliance(kind === 'long' ? 'long' : 'wide'),
     setView, get view() { return S.viewKey; }, get views() { return [...VIEW_KEYS]; },
     owners: () => govTeamList(),
+    availability: (a, b) => availability(a, b), spofs: () => spofList().map(x => ({ ...x })),
     findings: (opts = {}) => apiFindings(opts), dismissFinding: (id, reason) => dismissFinding(id, reason), restoreFinding: id => restoreFinding(id),
     threats: () => strideAll().map(t => ({ edge: t.e.id, from: t.e.from, to: t.e.to, zones: t.zones.map(z => z.id), category: t.cat, severity: t.severity, status: t.status, note: t.note })),
     exportThreats, exportReport,
+    inventory: () => inventoryRows(S.model).map(r => ({ ...r })), exportInventory: (kind = 'xlsx') => exportInventory(['csv', 'csv-all'].includes(kind) ? kind : 'xlsx'),
     decisions: () => clone(S.model.decisions || []), addDecision, updateDecision, removeDecision, exportDecisions,
     setScope: id => setScope(id), get scope() { return S.scope; }, scopes: () => scopeList().map(x => ({ ...x, path: [...x.path] })), exportLevels,
     exportSVG, exportPNG, exportViews, exportJSON, shareEncrypted, exportOther, exportCtx, toggleRouting, importFiles, config: C, icons: ICONS

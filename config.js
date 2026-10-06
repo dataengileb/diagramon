@@ -286,6 +286,13 @@ window.DIAGRAMON_CONFIG = {
      defaultYears: años por defecto del periodo "Multianual". */
   cost: { currency: 'USD', locale: 'en-US', hoursPerMonth: 730, defaultYears: 3 },
 
+  /* Disponibilidad y resiliencia (campos sla, rpo, rto, replicas de cada componente; vista Resiliencia; hallazgos «sla»).
+     entryTypes: tipos que se consideran puntos de entrada (también lo es un nodo sin conexiones entrantes).
+     dataStoreTypes / dataStoreIconCategories: qué es un almacén de datos para el aviso de «instancia única».
+     spofSeverity / singleStoreSeverity: gravedad de los hallazgos · defaultTarget: SLA (%) que se espera de un almacén de datos. */
+  resilience: { entryTypes: ['user', 'web', 'mobile', 'external', 'client'], dataStoreTypes: ['db', 'nosql', 'storage'], dataStoreIconCategories: ['Bases de datos', 'Almacenamiento'],
+    spofSeverity: 'high', singleStoreSeverity: 'medium', defaultTarget: 99.9 },
+
   /* Nodos. sameSize: true = todos miden `width` y los nombres largos usan 2 líneas.
      sameSize: false = cada nodo crece con su texto, entre `width` y `maxWidth`. */
   node:  { width: 232, sameSize: true, maxWidth: 300, height: 64, radius: 14 },
@@ -294,10 +301,10 @@ window.DIAGRAMON_CONFIG = {
   view:  { minZoom: 0.2, maxZoom: 2.5 },
 
   /* Vistas: filtros de presentación del MISMO modelo (no cambian datos ni posiciones).
-     Clave = nombre de la vista (atajos 1…8 en este orden). Cada regla es opcional; lo que falte vale como en `full`.
+     Clave = nombre de la vista (atajos 1…9 en este orden). Cada regla es opcional; lo que falte vale como en `full`.
      - groups: 'all' (todos) · 'logical' (oculta los grupos físicos) · 'collapse-top' (cajas cerradas de primer nivel)
      - nodeDetail: 'full' | 'min' (sin detalle `sub`) · edgeLabels / dataTags / locks / cost / zones / notes / review: true | false
-     - emphasis: null | 'security' | 'data' | 'cost' | 'owner' (resalta lo relevante y atenúa el resto)
+     - emphasis: null | 'security' | 'data' | 'cost' | 'owner' | 'resilience' (resalta lo relevante y atenúa el resto)
      - layers: true | false (capas del data lake: franja, etiqueta y borde de grupo)
      - legendGroups: true añade a la leyenda una fila que indica qué grupos se ven (ya sale sola si `groups` no es 'all')
      - icon: contenido SVG de 24×24 a trazo para el selector de vistas de la barra superior (su descripción está en i18n.js › view.desc.<clave>) */
@@ -309,7 +316,8 @@ window.DIAGRAMON_CONFIG = {
     security: { label: { en: 'Security', es: 'Seguridad' }, icon: '<path d="M12 3 4.5 6v5.5c0 4.5 3.2 8 7.5 9.5 4.3-1.5 7.5-5 7.5-9.5V6z"/><path d="m9 12 2 2 4-4"/>', groups: 'all', nodeDetail: 'full', edgeLabels: true, dataTags: true, locks: true, cost: false, zones: true, notes: true, review: true, emphasis: 'security', layers: true },
     data:     { label: { en: 'Data', es: 'Datos' }, icon: '<ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/>', groups: 'all', nodeDetail: 'full', edgeLabels: true, dataTags: true, locks: false, cost: false, zones: true, notes: true, review: true, emphasis: 'data', layers: true },
     cost:     { label: { en: 'Cost', es: 'Costo' }, icon: '<circle cx="12" cy="12" r="9"/><path d="M14.8 9.2c-.4-1-1.4-1.6-2.8-1.6-1.6 0-2.8.8-2.8 2s1 1.7 2.8 2.1 2.8.9 2.8 2.1-1.2 2-2.8 2c-1.4 0-2.4-.6-2.8-1.6M12 6v1.6M12 16.4V18"/>', groups: 'all', nodeDetail: 'full', edgeLabels: true, dataTags: false, locks: false, cost: true, zones: false, notes: true, review: true, emphasis: 'cost', layers: false },
-    governance: { label: { en: 'Governance', es: 'Gobierno' }, icon: '<circle cx="9" cy="7.5" r="3.5"/><path d="M2.5 20c0-3.8 2.9-6 6.5-6s6.5 2.2 6.5 6"/><rect x="15" y="12" width="7" height="8.5" rx="1.5"/><path d="M17 15.5h3M17 18h3"/>', groups: 'all', nodeDetail: 'full', edgeLabels: true, dataTags: true, locks: false, cost: false, zones: false, notes: true, review: true, emphasis: 'owner', layers: true }
+    governance: { label: { en: 'Governance', es: 'Gobierno' }, icon: '<circle cx="9" cy="7.5" r="3.5"/><path d="M2.5 20c0-3.8 2.9-6 6.5-6s6.5 2.2 6.5 6"/><rect x="15" y="12" width="7" height="8.5" rx="1.5"/><path d="M17 15.5h3M17 18h3"/>', groups: 'all', nodeDetail: 'full', edgeLabels: true, dataTags: true, locks: false, cost: false, zones: false, notes: true, review: true, emphasis: 'owner', layers: true },
+    resilience: { label: { en: 'Resilience', es: 'Resiliencia' }, icon: '<path d="M12 3 4.5 6v5.5c0 4.5 3.2 8 7.5 9.5 4.3-1.5 7.5-5 7.5-9.5V6z"/><path d="M7.5 12.5h2.2l1.4-3 2 6 1.4-3h2"/>', groups: 'all', nodeDetail: 'full', edgeLabels: false, dataTags: false, locks: false, cost: false, zones: true, notes: true, review: false, emphasis: 'resilience', layers: false }
   },
   /* Vista por defecto al abrir si el navegador no recuerda otra (el diagrama puede traer `meta.view`). */
   defaultView: 'full',

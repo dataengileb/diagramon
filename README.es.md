@@ -140,6 +140,27 @@ Con varios servicios elegidos, el panel muestra el costo de la selección.
 
 > Diagramon no consulta precios en internet (por privacidad). Los costos los escribes tú.
 
+#### Desglose y escenarios
+
+Abre **Costos…** desde el menú *Exportar*, o con el botón **Costos** de la pastilla de la vista **Costo** (tecla `7`).
+
+- Pestaña **Desglose**: agrupa el costo mensual por **Equipo**, **Centro de costo**, **Dueño**, **Grupo** (de primer nivel), **Tipo**, **Proveedor**, **Región** o **Capa**. Cada fila muestra los componentes, el costo mensual y anual (mensual × 12) y su parte del total con una barra. Los componentes sin valor van a **Sin asignar**. Un clic en una fila filtra el lienzo por ella (no disponible para *Tipo*).
+- Pestaña **Comparar escenarios**: elige **A** y **B** entre el lienzo y cada versión guardada. Se usan las fotos de las versiones tal como se guardaron; el lienzo no se toca. Verás los totales, el cambio (importe y %), por mes y por año, una tabla por componente (nuevo en verde, cambiado en amarillo, eliminado en rojo; un clic en el encabezado ordena, *Solo cambios* oculta los que no cambian) y el cambio por equipo, centro de costo, dueño…
+- **Actual vs propuesto**: guarda como versión la arquitectura de hoy (p. ej. *Aprobada*), convierte el lienzo en la propuesta y abre el diálogo: A es la última versión aprobada y B el lienzo. **Guardar el lienzo como escenario propuesto** guarda una versión llamada *Propuesto* y la elige como B. En la pestaña **Versiones**, **Comparar costos** en cualquier versión abre el diálogo con esa versión como A y el lienzo como B.
+- **CSV** exporta la tabla que se ve (`<diagrama>-costs.csv` o `<diagrama>-cost-compare.csv`).
+- La leyenda de la vista Costo lista los 5 equipos que más cuestan, el panel de un grupo muestra su total mensual, al comparar una versión en el lienzo se añade una línea *Costo: $A → $B*, y el informe de arquitectura suma *Costo por equipo* y *Costo por centro de costo*.
+- Desde la consola: `Diagramon.costBreakdown(by)` devuelve `[{ key, label, monthly, nodes }]`; `Diagramon.compareCosts(idVersionA, idVersionB)` (`null` = lienzo) devuelve `{ a: { label, monthly }, b: { label, monthly }, delta, deltaPct, rows: [{ id, label, a, b, delta, status }] }`; `Diagramon.openCosts('breakdown' | 'compare')` abre el diálogo.
+
+### Disponibilidad, RPO/RTO y puntos únicos de fallo
+
+1. Selecciona un componente y rellena **Disponibilidad**: el objetivo **SLA %** (elige un nivel como 99,9 o 99,99, o escribe `99.95`), **RPO** y **RTO** (`15m`, `4h`, `1d`, `0`) y **Réplicas / instancias**.
+2. El panel muestra la disponibilidad efectiva, suponiendo instancias paralelas independientes: `1 − (1 − SLA)^réplicas`; por ejemplo *99,9% con 2 réplicas = 99,9999%*, y la parada esperada (*≈ 32 s/año*). Con varios componentes elegidos, los campos se aplican a todos.
+3. Selecciona dos componentes y muestra el camino entre ellos: la barra del camino añade la **disponibilidad compuesta** de la ruta más corta (el producto de todos sus componentes; si hay varias rutas cortas, la peor), el eslabón más débil y el mayor RPO y RTO del recorrido. Los componentes sin SLA se cuentan y se dejan fuera del producto.
+4. Diagramon marca los **puntos únicos de fallo**: un componente sin réplicas cuya caída deja incomunicado un punto de entrada (usuarios, web, móvil, externo o un componente sin flujos entrantes) del resto. Los almacenes de datos de una sola instancia sin un SLA de 99,9% o mejor, y los almacenes sin RPO/RTO (solo si el diagrama los usa en algún sitio), salen también en la pestaña *Revisión* como *Disponibilidad y resiliencia*. Estos hallazgos solo aparecen cuando el diagrama ya usa SLA, RPO, RTO o réplicas en algún componente, así que un diagrama de servicios gestionados sin datos de disponibilidad no genera avisos; la vista **Resiliencia** siempre muestra los puntos únicos de fallo topológicos.
+5. La tecla **`9`** abre la vista **Resiliencia**: los componentes se colorean por disponibilidad efectiva (≥ 99,99%, ≥ 99,9%, ≥ 99%, menos, o sin SLA), los puntos únicos de fallo llevan borde rojo discontinuo y una pastilla bajo cada componente dice *99,95% · RPO 15 min · RTO 1 h · ×2*.
+
+Desde la consola: `Diagramon.availability(origen, destino)` devuelve `{ availability, downtimeYear, nodes, unknown, worst, rpo, rto }` (RPO y RTO en segundos) y `Diagramon.spofs()` devuelve `[{ id, label, reason }]`. El *Informe de arquitectura* tiene una sección **Resiliencia**.
+
 ### 6. Clasificación de datos y cifrado
 
 1. Selecciona un componente. En **Clasificación de datos**, pulsa las etiquetas de los datos que guarda o maneja: **PUB**, **INT**, **CONF**, **PII**, **PCI**, **PHI**. Puedes elegir varias.
@@ -200,7 +221,7 @@ Diagramon revisa el diagrama en busca de problemas de seguridad habituales y **s
 | Público con datos sensibles | alta | Un componente público guarda datos sensibles |
 | Almacén sin respaldo | media | Una base de datos o almacenamiento no tiene componente ni conexión de respaldo |
 | Transferencia entre fronteras sin autorizar | alta | Datos sensibles cruzan jurisdicciones sin transferencia autorizada |
-| Datos sensibles sin dueño | baja | Un componente con datos sensibles no tiene dueño ni responsable |
+| Datos sensibles sin dueño | baja | Un componente con datos sensibles no tiene dueño ni responsable (solo cuando el diagrama ya asigna dueños en algún sitio) |
 | Almacén público | alta | Un almacén de datos es público o lo alcanzan directamente usuarios o un servicio externo |
 
 - **La exposición y el respaldo se deducen.** Un componente es *público* si está en un área pública (un grupo con el icono de subred pública de AWS, o llamado *pública*, *DMZ*, *internet*…) o si recibe una conexión de usuarios, una app web o móvil o un servicio externo. Un almacén *tiene respaldo* si está conectado a un componente de respaldo (AWS Backup, Recovery Services, un nombre con *backup*, *respaldo*, *snapshot*, *réplica*…) o por una conexión llamada *backup*, *snapshot*, *réplica*… En el panel del componente, **Seguridad** muestra el valor deducido y por qué; elige **Pública / Interna** o **Sí / No** para anularlo.
@@ -315,14 +336,23 @@ Algunas zonas son **fronteras de confianza** en vez de zonas de riesgo: abre una
 
 - **Formato**: **PDF** (abre el diálogo de impresión del navegador con un documento A4 listo para imprimir: elige *Guardar como PDF*), **Markdown** (`.md`) o **HTML** (`.html`, un único archivo autocontenido, el mismo documento que el PDF y sin peticiones externas).
 - **Secciones** (todas activas por defecto, se recuerdan): Resumen · Diagrama · Componentes · Conexiones · Clasificación y residencia de datos · Dueños · Capas del data lake · Costos · Hallazgos de seguridad · Cumplimiento · Modelo de amenazas · Decisiones (ADR) · Historial de versiones · Notas y zonas de riesgo. Una sección sin datos se omite y aparece como *(ninguno)*.
-- **Diagrama**: elige cuáles de las 8 vistas incluir (la activa, más Seguridad y Datos cuando aportan algo). Si el diagrama tiene diagramas internos (niveles C4), **Incluir diagramas internos** dibuja cada uno. Las imágenes usan el tema claro por defecto (ideal para imprimir); **Usar el tema actual** mantiene el de la pantalla.
+- **Diagrama**: elige cuáles de las 9 vistas incluir (la activa, más Seguridad y Datos cuando aportan algo). Si el diagrama tiene diagramas internos (niveles C4), **Incluir diagramas internos** dibuja cada uno. Las imágenes usan el tema claro por defecto (ideal para imprimir); **Usar el tema actual** mantiene el de la pantalla.
 - **Imágenes en Markdown**: van incrustadas como PNG `data:`. Algunos visores de Markdown las bloquean, así que marca **Guardar las imágenes como archivos aparte** para descargar los PNG junto al `.md` y referenciarlos por nombre.
 - Los textos salen en el idioma actual de la interfaz, con fechas y dinero en sus formatos, y todo va escapado.
 - Desde la consola: `Diagramon.exportReport({ format: 'pdf' | 'md' | 'html', sections?: [...], views?: [...], scopes?: true | false, theme?: 'light' | 'current', separateImages?: boolean })` devuelve una promesa con el HTML o Markdown generado tras iniciar la descarga o el diálogo de impresión. Claves de sección: `summary diagram components connections data owners layers costs findings compliance threats decisions versions notes`.
 
+#### Inventario (CSV / Excel)
+
+**Exportar › Inventario (Excel)** e **Inventario (CSV)…** convierten el diagrama en una tabla para una CMDB o una auditoría, sin conexión y sin librerías.
+
+- **Componentes** (una fila por componente, todos los niveles C4): ID, nombre, detalle, tipo, proveedor, servicio, categoría, tipo C4 y ruta de nivel, ruta de grupos, dueño, responsable de datos, equipo y centro de costo (el valor efectivo, más una columna *Heredado de* cuando lo aporta un grupo), región y jurisdicción, clases de datos, sensible (sí/no), capa del data lake, exposición y respaldo (efectivos), conexiones cifradas entrantes y salientes, conexiones sensibles sin cifrar, SLA, RPO, RTO, réplicas, costo como se ingresó, periodo, costo por mes y por año, estado de revisión, hallazgos abiertos, ADR vinculados, un resumen de cumplimiento (por ejemplo *ISO 27001: 3 cumple / 1 brecha*) y la descripción.
+- **Excel** (`.xlsx`) trae una hoja por tabla: Componentes, Conexiones (cifrado, clases de datos, datasets, cruza fronteras, transferencia aprobada, amenazas STRIDE abiertas), Grupos, Dueños (por equipo), Decisiones, Hallazgos (con los descartados y su motivo) y Versiones. Las tablas vacías se omiten. La fila de títulos va en negrita, inmovilizada y con filtro; las columnas se ajustan al contenido, los costos usan formato de moneda y el SLA conserva tres decimales.
+- **CSV** abre un diálogo pequeño: *Solo componentes* (`<diagrama>-inventory.csv`) o *Todas las tablas como CSV separados* (una descarga por tabla, con nombre `<diagrama>-inventory-<tabla>.csv`). Los archivos llevan BOM para que Excel respete las tildes.
+- Desde la consola: `Diagramon.inventory()` devuelve las filas de componentes y `Diagramon.exportInventory('xlsx' | 'csv' | 'csv-all')` inicia la descarga.
+
 ### Vistas
 
-Una **vista** es una forma de mirar el mismo diagrama: solo decide qué se ve, con cuánto detalle y qué destaca. Nunca cambia tus componentes ni posiciones. Elígela en el selector **Vista** de la barra superior, con las teclas **`1`**–**`8`**, o desde la consola (`Diagramon.setView('security')`). Cuando la vista no es *Completa*, una pastilla sobre el lienzo la nombra, cuenta lo que oculta o atenúa y tiene una **×** para volver. La ficha del documento y la leyenda de las exportaciones siguen la vista activa.
+Una **vista** es una forma de mirar el mismo diagrama: solo decide qué se ve, con cuánto detalle y qué destaca. Nunca cambia tus componentes ni posiciones. Elígela en el selector **Vista** de la barra superior, con las teclas **`1`**–**`9`**, o desde la consola (`Diagramon.setView('security')`). Cuando la vista no es *Completa*, una pastilla sobre el lienzo la nombra, cuenta lo que oculta o atenúa y tiene una **×** para volver. La ficha del documento y la leyenda de las exportaciones siguen la vista activa.
 
 | Tecla | Vista | Qué ves |
 |---|---|---|
@@ -334,6 +364,7 @@ Una **vista** es una forma de mirar el mismo diagrama: solo decide qué se ve, c
 | `6` | **Datos** | Almacenes y flujos de datos, coloreados por su clasificación más sensible |
 | `7` | **Costo** | Costo mensual como mapa de calor, con el total |
 | `8` | **Gobierno** | Quién es dueño de qué: componentes coloreados por equipo (o dueño), con una etiqueta de equipo bajo cada uno; los que no tienen ninguno se atenúan |
+| `9` | **Resiliencia** | Niveles de disponibilidad (SLA efectivo), pastilla con RPO/RTO bajo cada componente y puntos únicos de fallo con borde rojo discontinuo |
 
 Las reglas de cada vista están en `config.js` › `views`; en el inspector puedes marcar un grupo como `lógico` o `físico`.
 
@@ -372,7 +403,7 @@ Desde la consola: `Diagramon.setScope('api')`, `Diagramon.scope`, `Diagramon.sco
 | `L` | Cambiar entre inglés y español |
 | `E` | Cambiar entre conectores curvos y en ángulo recto |
 | `G` | Abrir el panel de filtros (`Esc` lo cierra) |
-| `1`–`8` | Cambiar de vista: Completa, Contexto, Lógica, Física, Seguridad, Datos, Costo, Gobierno |
+| `1`–`9` | Cambiar de vista: Completa, Contexto, Lógica, Física, Seguridad, Datos, Costo, Gobierno, Resiliencia |
 | `Intro` | Abrir el diagrama interno del componente elegido (niveles C4) |
 | `Esc` | Cancelar o quitar la selección; sin selección, subir un nivel C4 |
 | `Alt`+`↑` | Subir un nivel C4 |
@@ -443,6 +474,7 @@ api ~> cola : eventos
 | `id: Nombre [tipo] "detalle"` | Nodo. `[tipo]` es un tipo genérico (`db`, `user`…) o un icono oficial (`aws/lambda`, `rds`) |
 | `color=… badge=… desc="…"` | Opciones del nodo |
 | `costo=120/mes` · `0.1/hora` · `1400/año` · `5000/3años` | Costo en USD (sin periodo = mensual) |
+| `sla=99.95` · `rpo=15m` · `rto=4h` · `réplicas=2` | Objetivo de disponibilidad en % (también `99.95%` o `99,95`), objetivos de punto y tiempo de recuperación (`s`, `m`, `h`, `d`) e instancias en paralelo; en inglés: `replicas=` |
 | `datos=pii,pci` | Clasificación de datos de un nodo o una conexión |
 | `a -> b : TLS cifrado=sí` | Cifrado en tránsito (`sí` o `no`) |
 | `dueño="Ana Pérez" responsable=… equipo="Ing. de datos" centro=CC-100` | Responsables de un nodo o grupo (en inglés: `owner=` `steward=` `team=` `costcenter=`); los nodos heredan del grupo |
@@ -508,6 +540,7 @@ Todo lo personalizable está en **`config.js`**. Guarda y recarga `index.html`.
 - **Revisión de seguridad automática**: `securityRules` en `config.js` tiene una entrada por regla (`sec.unencrypted-sensitive`, `sec.unstated-encryption`, `sec.public-sensitive`, `sec.datastore-backup`, `sec.cross-border`, `sec.sensitive-no-owner`, `sec.public-datastore`) con `enabled` (pon `false` para apagarla) y `severity` (`low`, `medium`, `high`, `critical`). Lo demás son parámetros de la regla: `clientTypes`, `publicGroupIcons` y `publicGroupName` (qué cuenta como público), `dataStoreTypes` y `dataStoreIconCategories`, `backupIcons`, `backupName` y `backupEdgeLabel` (qué cuenta como respaldo). Los patrones de texto son RegExp sin distinguir mayúsculas.
 - **Cumplimiento**: `compliance.frameworks` es un mapa ordenado `clave → { label, short, url?, controls: { '<id>': { label: { en, es } } } }`. Añade un control con una línea en su marco, o un marco (NIST CSF, ENS, DORA…) copiando un bloque; el JSON y el Texto aceptan cualquier `marco:id`, aunque no esté en el catálogo. `compliance.suggest` asocia cada clase de datos (y `crossBorder`) con los controles que se ofrecen como fichas; el primero de cada lista es el que espera la revisión.
 - **Decisiones de arquitectura**: `adr.staleDays` (por defecto `30`) son los días que una decisión *propuesta* puede esperar antes de aparecer como hallazgo bajo en la pestaña *Revisión*; `0` lo desactiva.
+- **Resiliencia**: `resilience` en `config.js` define `entryTypes` (tipos de componente que cuentan como puntos de entrada, además de cualquier nodo sin flujos entrantes), `dataStoreTypes` y `dataStoreIconCategories` (qué es un almacén de datos), `spofSeverity` y `singleStoreSeverity` (gravedad de los hallazgos) y `defaultTarget` (SLA en % que se espera de un almacén de datos, por defecto `99.9`).
 - **Ambientes**: `environments` define los botones de la pestaña *Versiones* (nombre, texto corto y color). Añade o quita los que necesites.
 - **Tamaño de los nodos**: con `node.sameSize: true` (por defecto) todos miden `node.width` y los nombres largos usan 2 líneas.
   Con `false`, cada nodo crece con su texto.
@@ -545,7 +578,7 @@ Todo lo personalizable está en **`config.js`**. Guarda y recarga `index.html`.
 <summary><b>API para extensiones</b></summary>
 
 `window.Diagramon` expone `model`, `load()`, `addNode()`, `addEdge()`, `select()`, `align()`, `relayout()`,
-`fitView()`, `togglePlay()`, `toggleTheme()`, `toggleLang()`, `lang`, `saveVersion()`, `openVersion()`, `compareVersion()`, `deleteVersion()`, `exportSVG()`, `exportPNG()`, `exportJSON()`, `lineage()`, `datasets()`, `owners()`, `crossBorder()`, `layers()`, `setLayerNames()`, `compliance()`, `exportCompliance()`, `decisions()`, `addDecision()`, `updateDecision()`, `removeDecision()`, `exportDecisions()`, `config` e `icons`.
+`fitView()`, `togglePlay()`, `toggleTheme()`, `toggleLang()`, `lang`, `saveVersion()`, `openVersion()`, `compareVersion()`, `deleteVersion()`, `exportSVG()`, `exportPNG()`, `exportJSON()`, `lineage()`, `datasets()`, `owners()`, `crossBorder()`, `layers()`, `setLayerNames()`, `compliance()`, `exportCompliance()`, `inventory()`, `exportInventory()`, `decisions()`, `addDecision()`, `updateDecision()`, `removeDecision()`, `exportDecisions()`, `config` e `icons`.
 Además: `setScope(id | null)`, `scope`, `scopes()` y `exportLevels(formato)` para los niveles C4.
 El lenguaje de texto está en `window.DiagramonText` (`parse` y `stringify`).
 
@@ -564,6 +597,7 @@ El lenguaje de texto está en `window.DiagramonText` (`parse` y `stringify`).
 | `text-lang.js` | Lenguaje de texto (diagrama como código) |
 | `examples.js` | Plantillas |
 | `export-mermaid.js`, `export-plantuml.js`, `export-drawio.js` | Exportadores a Mermaid, PlantUML y draw.io |
+| `export-xlsx.js` | Generador mínimo de ZIP y Excel (`.xlsx`) sin librerías (lo usa la exportación del inventario) |
 | `share.js` | Visor HTML cifrado y autosuficiente para compartir |
 | `iac.js` | Importación de infraestructura como código (Terraform, CloudFormation, Kubernetes, Compose) |
 | `samples/` | Archivos de IaC de ejemplo para probar la importación |
@@ -594,9 +628,14 @@ Cosas que funcionan pero aún no se han revisado a fondo. Probablemente necesite
 - **Pestaña Texto**: las notas de las decisiones STRIDE, las fronteras de confianza y los hallazgos descartados no forman parte del formato de texto, así que una ida y vuelta por la pestaña *Texto* conserva los estados pero pierde las notas.
 - Los campos de revisión de seguridad, cumplimiento y STRIDE (`exposure`, `backup`, `controls`, `threats`, zonas de confianza, hallazgos descartados) no se exportan a Mermaid, PlantUML ni draw.io.
 - Las **decisiones de arquitectura** (ADR) no forman parte del formato de texto, no se exportan a Mermaid, PlantUML ni draw.io y no se comparan entre versiones. La etiqueta ADR del lienzo y la exportación a Markdown no se han revisado visualmente en todos los temas.
+- **Historial de estados de los ADR (por hacer)**: una decisión solo guarda su estado y fecha actuales. Debería registrar cada cambio de estado (propuesta → aceptada → reemplazada…) con su fecha y quién lo hizo, y mostrar esa línea de tiempo en el editor de ADR, en la exportación a Markdown y en el informe de arquitectura.
 - El catálogo de cumplimiento es un subconjunto práctico de cada norma con títulos parafraseados; revísalo antes de usarlo en una auditoría.
+- **Puntos únicos de fallo**: se detectan solo por la topología del diagrama (puntos de articulación del grafo sin dirección): Diagramon no conoce la redundancia interna de un balanceador o de un servicio gestionado salvo que indiques `réplicas`. La disponibilidad efectiva supone instancias independientes (sin fallos compartidos ni tiempo de conmutación) y la compuesta multiplica los componentes de una sola ruta corta, así que ignora las rutas alternativas más largas.
 - **Informe de arquitectura**: aún no se ha probado el diálogo de impresión a PDF (sí el HTML y el Markdown). El PDF depende del diálogo de impresión del navegador (los encabezados y números de página solo salen donde el navegador admite los márgenes `@page` de CSS). Los visores de Markdown que bloquean imágenes `data:` no muestran los diagramas salvo que guardes las imágenes aparte. Los diagramas grandes con muchas vistas y niveles internos pueden tardar unos segundos. No se han revisado tablas muy anchas al imprimir, y la matriz de cumplimiento se lista por control y por componente, no como cuadrícula.
 - **Niveles C4**: se probaron en el navegador entrar y salir de niveles (`Intro`, `Esc`, `Alt+↑`, ruta de navegación), el marco de límite, las tarjetas fantasma, añadir componentes dentro de un nivel, deshacer, *Exportar todos los niveles* y el informe con diagramas internos; falta probar *Mover dentro de…* / *Subir un nivel*, borrar un componente con diagrama interno, doble clic en la tarjeta frente al nombre y el orden automático dentro de un nivel. Las etiquetas de las conexiones fantasma pueden solaparse cuando varias salen del límite muy juntas. *Duplicar* no copia el diagrama interno de un componente duplicado, y Mermaid, PlantUML y draw.io exportan el modelo plano completo (sin niveles; `in` y `c4` se ignoran). Pestaña Texto: los nodos sin `dentro=` van al nivel superior, así que para editar un nivel desde la pestaña Texto escribe `dentro=` en sus nodos. Las tarjetas fantasma son como máximo 8 por lado. Lo que cruza niveles (una conexión entre dos niveles distintos) solo se dibuja como fantasma y no se puede seleccionar en el lienzo; llega a ello desde los enlaces del inspector.
+- **Desglose de costos y escenarios**: se probaron en el navegador el desglose por equipo y la comparación entre una versión y el lienzo (API y texto del diálogo); falta probar el aspecto del diálogo en los temas claro y negro, el clic en una fila que filtra el lienzo y el botón *Comparar costos* de las versiones. Los escenarios comparan solo el precio mensual equivalente de los componentes (no conexiones ni grupos), y *Grupo* agrupa solo por el grupo de primer nivel. El desglose no se exporta a Mermaid, PlantUML ni draw.io.
+- **Vista Resiliencia y campos de disponibilidad**: probados en el tema oscuro (vista, barra del camino, puntos únicos de fallo, pestaña Texto); falta probar la sección *Disponibilidad* del inspector con varios componentes seleccionados y los temas claro y negro.
+- **Inventario (Excel)**: el `.xlsx` lo escribe un generador mínimo propio (un ZIP sin compresión), así que pesa más que uno guardado por Excel. No tiene fórmulas (los totales no se calculan en el archivo), cadenas compartidas ni gráficos. Se comprobó que es un ZIP válido con partes XML bien formadas, pero aún no se ha abierto en Excel, Numbers ni LibreOffice. Varias descargas CSV seguidas pueden activar el aviso de «descargar varios archivos» en algunos navegadores.
 
 ---
 
