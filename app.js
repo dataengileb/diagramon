@@ -43,6 +43,17 @@
   for (const [k, f] of Object.entries(FONTS)) { f.faces = window.DIAGRAMON_FONTS?.[k]?.faces || []; f.family = window.DIAGRAMON_FONTS?.[k]?.family; }
   const fontKey = k => FONTS[k] ? k : FONTS[C.fonts.default] ? C.fonts.default : 'system';
 
+  /* ---------- vistas: filtros de presentación del mismo modelo (reglas en config.js › views) ---------- */
+  const VIEW_DEFAULTS = { groups: 'all', nodeDetail: 'full', edgeLabels: true, dataTags: true, locks: true, cost: true, zones: true, notes: true, review: true, emphasis: null };
+  const VIEWS = {};
+  for (const [k, v] of Object.entries(C.views || {})) if (v && typeof v === 'object') VIEWS[k] = { ...VIEW_DEFAULTS, ...v };
+  if (!VIEWS.full) VIEWS.full = { label: { en: 'Full', es: 'Completa' }, ...VIEW_DEFAULTS };
+  const VIEW_KEYS = Object.keys(VIEWS);
+  const VR = { dataTypes: [], dataIconCategories: [], costHeat: ['var(--sev-low)', 'var(--sev-medium)', 'var(--sev-high)', 'var(--sev-critical)'], physicalGroupIcons: [], physicalGroupName: /$^/, ...C.viewRules };
+  // Vista válida: la pedida, la de config.js o `full`
+  const viewKey = k => (VIEWS[k] ? k : VIEWS[C.defaultView] ? C.defaultView : 'full');
+  const viewLabel = k => loc(VIEWS[k]?.label) || k;
+
   /* ---------- estado ---------- */
   const S = {
     model: null,
@@ -55,13 +66,18 @@
     sel: null, hover: null, connecting: null, drag: null, play: null, lastDown: null,
     history: [], future: [], lastType: 'compute', lastExtra: {},
     provider: store.get('provider', 'generic'),
-    compare: null, verNote: '', verEdit: null
+    compare: null, verNote: '', verEdit: null,
+    viewKey: viewKey(store.get('view')),  // vista activa (S.view es la cámara); viewChosen: el usuario ya eligió una en esta sesión
+    viewChosen: false, flow: null         // flow: conexión agregada elegida en la vista Contexto
   };
   // Referencias a elementos SVG y medidas calculadas (nunca se guardan en el modelo)
   const R = { nodes: new Map(), edges: new Map(), groups: new Map(), width: new Map(), gbox: new Map(), notes: new Map(), zones: new Map() };
+  // Lo que la vista activa oculta o resume (se recalcula en applyViewMode / updateContext) y el último resaltado
+  const VW = { hideNodes: new Set(), hideEdges: new Set(), hideGroups: new Set(), flows: new Map(), ctxBoxes: new Map(), ctxEdges: new Map(), gcost: null };
+  const HL = { f: null, fr: null };
 
   const svg = $('#canvas'), viewport = $('#viewport'), stage = $('#stage');
-  const L = { zones: $('#l-zones'), groups: $('#l-groups'), edges: $('#l-edges'), ghosts: $('#l-ghosts'), nodes: $('#l-nodes'), zoneTop: $('#l-zone-top'), notes: $('#l-notes'), guides: $('#l-guides') };
+  const L = { zones: $('#l-zones'), groups: $('#l-groups'), edges: $('#l-edges'), ctx: $('#l-ctx'), ghosts: $('#l-ghosts'), nodes: $('#l-nodes'), zoneTop: $('#l-zone-top'), notes: $('#l-notes'), guides: $('#l-guides') };
 
   const ICON = {
     x: '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>',
@@ -206,7 +222,7 @@
 
   /* ---------- medidas de texto ---------- */
   const mctx = document.createElement('canvas').getContext('2d');
-  const FONT = { dtag: '800 9.5px', label: '600 13.5px', sub: '400 11.5px', tag: '700 11px', edge: '500 11px', badge: '800 10.5px', cost: '700 10.5px', note: '500 12.5px' };
+  const FONT = { dtag: '800 9.5px', label: '600 13.5px', sub: '400 11.5px', tag: '700 11px', edge: '500 11px', badge: '800 10.5px', cost: '700 10.5px', note: '500 12.5px', ctx: '700 16px' };
   const textW = (t, f) => { mctx.font = `${f} ${fontCss()}`; return mctx.measureText(String(t ?? '')).width; };
   const fitText = (t, f, max) => {
     t = String(t ?? '');
@@ -245,6 +261,7 @@
     if (raw.meta && typeof raw.meta === 'object') {
       const meta = {};
       ['author', 'version'].forEach(k => { if (raw.meta[k] != null && String(raw.meta[k]).trim()) meta[k] = String(raw.meta[k]).trim(); });
+      if (VIEWS[raw.meta.view]) meta.view = raw.meta.view;  // vista por defecto al abrir
       if (Object.keys(meta).length) m.meta = meta;
     }
     const used = new Set();
@@ -259,6 +276,10 @@
     list(raw.groups).forEach((g, i) => m.groups.push({ ...g, id: take(g.id, 'g', i), label: String(g.label ?? g.id ?? T('model.group')) }));
     const gids = new Set(m.groups.map(g => g.id));
     m.groups.forEach(g => { if (typeof g.icon !== 'string' || !g.icon.includes('/')) delete g.icon; }); // icono opcional 'proveedor/clave'
+    m.groups.forEach(g => { // tipo opcional: lógico o físico (sin él se deduce, ver groupKind)
+      const k = fold(g.kind);
+      if (/^(physical|fisic)/.test(k)) g.kind = 'physical'; else if (/^(logical|logic)/.test(k)) g.kind = 'logical'; else delete g.kind;
+    });
     m.groups.forEach(g => {
       if (g.parent == null || g.parent === '') return void delete g.parent;
       g.parent = String(g.parent);
@@ -387,6 +408,9 @@
   }
 
   const groupById = id => S.model.groups.find(g => g.id === id);
+  // Tipo de grupo deducido (físico si su icono o su nombre son de red, cuenta o región) y tipo efectivo
+  const groupKindAuto = g => (VR.physicalGroupIcons.includes(g.icon) || VR.physicalGroupName.test(String(g.label ?? '')) ? 'physical' : 'logical');
+  const groupKind = g => (g.kind === 'logical' || g.kind === 'physical' ? g.kind : groupKindAuto(g));
   function groupDepth(g, m = S.model) {
     let d = 0, p = g.parent;
     while (p && d < 50) { d++; p = m.groups.find(x => x.id === p)?.parent; }
@@ -587,11 +611,13 @@
     for (const k in L) L[k].textContent = '';
     R.nodes.clear(); R.edges.clear(); R.groups.clear(); R.width.clear();
     m.nodes.forEach(n => R.width.set(n.id, nodeWidth(n)));
+    viewPrep();
     drawItems();
     [...m.groups].sort((a, b) => groupDepth(a) - groupDepth(b)).forEach(g => buildGroup(g, animate));
     const base = m.nodes.length * C.animation.enterStagger * 0.6;
     m.edges.forEach((e, i) => buildEdge(e, animate ? base + i * 30 : -1));
     m.nodes.forEach((n, i) => buildNode(n, animate ? i * C.animation.enterStagger : -1));
+    applyViewMode();
     updateGeometry();
     applyCompare();
     applyFilter();
@@ -600,9 +626,9 @@
   }
 
   // Etiqueta de color con el texto corto de una clasificación (PII, PCI…)
-  function dataTag(parent, x, y, t, h) {
+  function dataTag(parent, x, y, t, h, cls = '') {
     const w = Math.ceil(textW(t.short, FONT.dtag)) + 12;
-    const g = el('g', { class: 'data-tag', style: `--tc:${t.color}` }, parent);
+    const g = el('g', { class: `data-tag${cls ? ' ' + cls : ''}`, style: `--tc:${t.color}` }, parent);
     el('rect', { x, y, width: w, height: h, rx: h / 2 }, g);
     el('text', { x: x + w / 2, y: y + h / 2 + 3.4, 'text-anchor': 'middle' }, g).textContent = t.short;
     return w;
@@ -620,13 +646,20 @@
     if (animate) endEnter(root);
     const box = el('rect', { class: 'group-box', rx: C.group.radius }, root);
     const tag = el('g', { class: 'group-tag' }, root);
-    // Icono de grupo opcional (16 px) a la izquierda de la etiqueta; el CSS añade .04em de espaciado entre letras
-    const info = iconInfo(g.icon), ix = info ? 18 : 0;
-    const tw = Math.ceil(textW(g.label, FONT.tag) + String(g.label).length * 0.44 + 22 + ix);
-    el('rect', { width: tw, height: 22, rx: 7 }, tag);
-    if (info) el('image', { href: info.src, x: 6, y: 3, width: 16, height: 16 }, tag);
-    el('text', { x: 10 + ix, y: 15 }, tag).textContent = g.label;
-    R.groups.set(g.id, { g: root, box, tag, tw });
+    const r = { g: root, box, tag, tw: 0 };
+    drawTag(g, r);
+    R.groups.set(g.id, r);
+  }
+  // Etiqueta del grupo: icono opcional (16 px) a la izquierda; la vista Costo añade el total mensual
+  function drawTag(g, r) {
+    r.tag.textContent = '';
+    const info = iconInfo(g.icon), ix = info ? 18 : 0, total = VW.gcost?.get(g.id);
+    const label = total ? `${g.label} · ${money(round2(total))}${T('cost.mo')}` : g.label;
+    // El CSS añade .04em de espaciado entre letras
+    r.tw = Math.ceil(textW(label, FONT.tag) + String(label).length * 0.44 + 22 + ix);
+    el('rect', { width: r.tw, height: 22, rx: 7 }, r.tag);
+    if (info) el('image', { href: info.src, x: 6, y: 3, width: 16, height: 16 }, r.tag);
+    el('text', { x: 10 + ix, y: 15 }, r.tag).textContent = label;
   }
 
   /* ---------- notas adhesivas y zonas de riesgo ---------- */
@@ -736,29 +769,34 @@
     const arrow = el('path', { class: 'edge-arrow' }, g);
     // Con punta en ambos extremos las partículas van y vienen (al menos dos, alternando sentido)
     const parts = Array.from({ length: cfg.particles ? (e.both ? Math.max(2, cfg.particles) : cfg.particles) : 0 }, () => el('circle', { class: 'particle', r: st === 'data' ? 2.4 : 3, cx: -9999, cy: -9999 }, g));
-    // Etiqueta: candado de cifrado, texto y clasificaciones de los datos que viajan
-    let label = null;
-    const tags = dataTags(e), lock = e.encrypted != null;
     const byId = id => S.model.nodes.find(n => n.id === id);
     if (isInsecure(e, byId)) g.classList.add('insecure');
-    if (e.label || tags.length || lock) {
-      label = el('g', { class: 'edge-label' }, g);
-      const items = [];
-      if (lock) items.push({ w: 10, draw: x => lockIcon(label, x, e.encrypted) });
-      // La etiqueta puede tener varias líneas (\n): se centran y la píldora crece con ellas
-      const lines = e.label ? String(e.label).split('\n') : [], LH = 14;
-      if (e.label) items.push({ w: Math.max(...lines.map(l => textW(l, FONT.edge))), draw: (x, w) => {
-        const tx = el('text', { x: x + w / 2, y: 4 - (lines.length - 1) * LH / 2, 'text-anchor': 'middle' }, label);
-        lines.forEach((l, i) => { el('tspan', i ? { x: x + w / 2, dy: LH } : null, tx).textContent = l; });
-      } });
-      tags.forEach(t => items.push({ w: Math.ceil(textW(t.short, FONT.dtag)) + 12, draw: x => dataTag(label, x, -7, t, 14) }));
-      const gap = 5, w = items.reduce((sum, it) => sum + it.w, 0) + gap * (items.length - 1) + 16;
-      const ph = Math.max(20, lines.length * LH + 6);
-      el('rect', { x: -w / 2, y: -ph / 2, width: w, height: ph, rx: Math.min(10, ph / 2) }, label);
-      let x = -w / 2 + 8;
-      items.forEach(it => { it.draw(x, it.w); x += it.w + gap; });
-    }
-    R.edges.set(e.id, { g, e, hit, line, arrow, label, parts, len: 0, phase: Math.random() });
+    const r = { g, e, hit, line, arrow, label: null, parts, len: 0, phase: Math.random() };
+    R.edges.set(e.id, r);
+    edgeLabel(r);
+  }
+  // Etiqueta: candado de cifrado, texto y clasificaciones de los datos que viajan (según lo que la vista muestre)
+  function edgeLabel(r) {
+    const e = r.e, v = vc();
+    r.label?.remove(); r.label = null;
+    const tags = v.dataTags ? dataTags(e) : [], lock = v.locks && e.encrypted != null, text = v.edgeLabels && e.label;
+    if (!text && !tags.length && !lock) return;
+    const label = el('g', { class: 'edge-label' }, r.g);
+    const items = [];
+    if (lock) items.push({ w: 10, draw: x => lockIcon(label, x, e.encrypted) });
+    // La etiqueta puede tener varias líneas (\n): se centran y la píldora crece con ellas
+    const lines = text ? String(e.label).split('\n') : [], LH = 14;
+    if (text) items.push({ w: Math.max(...lines.map(l => textW(l, FONT.edge))), draw: (x, w) => {
+      const tx = el('text', { x: x + w / 2, y: 4 - (lines.length - 1) * LH / 2, 'text-anchor': 'middle' }, label);
+      lines.forEach((l, i) => { el('tspan', i ? { x: x + w / 2, dy: LH } : null, tx).textContent = l; });
+    } });
+    tags.forEach(t => items.push({ w: Math.ceil(textW(t.short, FONT.dtag)) + 12, draw: x => dataTag(label, x, -7, t, 14) }));
+    const gap = 5, w = items.reduce((sum, it) => sum + it.w, 0) + gap * (items.length - 1) + 16;
+    const ph = Math.max(20, lines.length * LH + 6);
+    el('rect', { x: -w / 2, y: -ph / 2, width: w, height: ph, rx: Math.min(10, ph / 2) }, label);
+    let x = -w / 2 + 8;
+    items.forEach(it => { it.draw(x, it.w); x += it.w + gap; });
+    r.label = label;
   }
 
   function buildNode(n, delay) {
@@ -780,16 +818,21 @@
     const max = w - 64 - 16;
     // Nombre en 1 o 2 líneas y detalle debajo, todo centrado en vertical
     const lines = C.node.sameSize !== false ? wrapText(n.label, FONT.label, max) : [fitText(n.label, FONT.label, max)];
-    const top = (H - lines.length * 16 - (n.sub ? 15 : 0)) / 2;
-    lines.forEach((l, i) => { el('text', { class: 'node-label', x: 64, y: top + 12 + i * 16 }, b).textContent = l; });
-    if (n.sub) el('text', { class: 'node-sub', x: 64, y: top + lines.length * 16 + 12 }, b).textContent = fitText(n.sub, FONT.sub, max);
+    // Con detalle se dibujan dos variantes (completa y mínima, centradas cada una): la vista elige cuál se ve
+    const sub = n.sub ? fitText(n.sub, FONT.sub, max) : '';
+    const paint = (withSub, cls) => {
+      const top = (H - lines.length * 16 - (withSub && sub ? 15 : 0)) / 2;
+      lines.forEach((l, i) => { el('text', { class: `node-label${cls}`, x: 64, y: top + 12 + i * 16 }, b).textContent = l; });
+      if (withSub && sub) el('text', { class: `node-sub${cls}`, x: 64, y: top + lines.length * 16 + 12 }, b).textContent = sub;
+    };
+    if (sub) { paint(true, ' nd-full'); paint(false, ' nd-min'); } else paint(false, '');
     // Arriba a la izquierda: la observación de revisión (si hay) y las clasificaciones de datos
-    const dt = [...(n.review ? [reviewTag(n.review)] : []), ...dataTags(n)];
+    const dt = [...(n.review ? [{ ...reviewTag(n.review), cls: 'dt-review' }] : []), ...dataTags(n).map(t => ({ ...t, cls: 'dt-data' }))];
     el('title', null, g).textContent = [n.sub ? `${n.label} · ${n.sub}` : n.label, ...dt.map(t => t.label)].join('\n');
     if (dt.length) {
       const dg = el('g', { class: 'node-data' }, b);
       let x = 14;
-      dt.forEach(t => { x += dataTag(dg, x, -8, t, 16) + 4; });
+      dt.forEach(t => { x += dataTag(dg, x, -8, t, 16, t.cls) + 4; });
     }
     if (n.badge != null && n.badge !== '') {
       const bw = Math.max(22, textW(n.badge, FONT.badge) + 12);
@@ -903,6 +946,21 @@
 
   const loopPath = a => `M${a.x + a.w - 34},${a.y} C${a.x + a.w - 34},${a.y - 56} ${a.x + a.w + 52},${a.y - 30} ${a.x + a.w},${a.y + a.h / 2 - 6}`;
 
+  // Punta de flecha al final de la línea (y al inicio si es bidireccional)
+  function arrowD(line, len, both) {
+    const p = line.getPointAtLength(len), q = line.getPointAtLength(Math.max(0, len - 9));
+    const ang = Math.atan2(p.y - q.y, p.x - q.x), c = Math.cos(ang), s = Math.sin(ang);
+    const bx = p.x - 10 * c, by = p.y - 10 * s;
+    let ad = `M${p.x},${p.y} L${bx - 5 * s},${by + 5 * c} L${bx + 5 * s},${by - 5 * c} Z`;
+    if (both) { // segunda punta en el origen, mirando hacia fuera
+      const p0 = line.getPointAtLength(0), q0 = line.getPointAtLength(Math.min(len, 9));
+      const a0 = Math.atan2(p0.y - q0.y, p0.x - q0.x), c0 = Math.cos(a0), s0 = Math.sin(a0);
+      const bx0 = p0.x - 10 * c0, by0 = p0.y - 10 * s0;
+      ad += ` M${p0.x},${p0.y} L${bx0 - 5 * s0},${by0 + 5 * c0} L${bx0 + 5 * s0},${by0 - 5 * c0} Z`;
+    }
+    return ad;
+  }
+
   function updateGeometry() {
     const m = S.model, byId = new Map(m.nodes.map(n => [n.id, n]));
     const rect = id => { const n = byId.get(id); return { x: n.x, y: n.y, w: R.width.get(id), h: H }; };
@@ -919,17 +977,7 @@
       r.hit.setAttribute('d', d);
       r.line.setAttribute('d', d);
       r.len = r.line.getTotalLength();
-      const p = r.line.getPointAtLength(r.len), q = r.line.getPointAtLength(Math.max(0, r.len - 9));
-      const ang = Math.atan2(p.y - q.y, p.x - q.x), c = Math.cos(ang), s = Math.sin(ang);
-      const bx = p.x - 10 * c, by = p.y - 10 * s;
-      let ad = `M${p.x},${p.y} L${bx - 5 * s},${by + 5 * c} L${bx + 5 * s},${by - 5 * c} Z`;
-      if (e.both) { // segunda punta en el origen, mirando hacia fuera
-        const p0 = r.line.getPointAtLength(0), q0 = r.line.getPointAtLength(Math.min(r.len, 9));
-        const a0 = Math.atan2(p0.y - q0.y, p0.x - q0.x), c0 = Math.cos(a0), s0 = Math.sin(a0);
-        const bx0 = p0.x - 10 * c0, by0 = p0.y - 10 * s0;
-        ad += ` M${p0.x},${p0.y} L${bx0 - 5 * s0},${by0 + 5 * c0} L${bx0 + 5 * s0},${by0 - 5 * c0} Z`;
-      }
-      r.arrow.setAttribute('d', ad);
+      r.arrow.setAttribute('d', arrowD(r.line, r.len, e.both));
       if (r.label) {
         const mp = r.line.getPointAtLength(r.len / 2);
         r.label.setAttribute('transform', `translate(${mp.x} ${mp.y})`);
@@ -954,6 +1002,7 @@
       r.box.setAttribute('width', box.w); r.box.setAttribute('height', box.h);
       r.tag.setAttribute('transform', `translate(${box.x + 12} ${box.y + 10})`);
     });
+    updateContext();
     if (S.compare?.diff) drawGhosts();
   }
 
@@ -1012,6 +1061,7 @@
   }
 
   function showPath(a, b) {
+    if (vc().groups === 'collapse-top') { toast(T('ctx.noPath')); return null; }
     const m = S.model;
     if (!m.nodes.some(n => n.id === a) || !m.nodes.some(n => n.id === b) || a === b) return null;
     let directed = true, res = shortestPaths(m, a, b, true);
@@ -1055,6 +1105,15 @@
     animateView({ k, x: (r.width - shift - w * k) / 2 - x0 * k, y: top + (r.height - top - pad - h * k) / 2 - y0 * k });
   }
 
+  // Encuadra un rectángulo del mundo (suave); no aleja más de lo necesario
+  function fitBox(b, maxK = 1.25) {
+    const r = svg.getBoundingClientRect();
+    if (!b || !r.width) return;
+    const pad = 80, top = 90, shift = r.width > 900 ? 300 : 0;
+    const k = clamp(Math.min((r.width - shift - pad * 2) / b.w, (r.height - pad - top) / b.h), C.view.minZoom, maxK);
+    animateView({ k, x: (r.width - shift - b.w * k) / 2 - b.x * k, y: top + (r.height - top - pad - b.h * k) / 2 - b.y * k });
+  }
+
   function applyHighlight() {
     if (S.play) return;
     if (P) { if (P.sl) presentDim(P.sl.lit, P.sl.gin); return; }
@@ -1074,6 +1133,7 @@
       f = { nodes: ns, edges: new Set(m.edges.filter(e => ns.has(e.from) && ns.has(e.to)).map(e => e.id)) };
       mode = 'focusing';
     } else if (S.hover && !S.connecting) { f = reach(S.hover, 'direct'); mode = 'hovering'; }
+    HL.f = f;
     svg.classList.toggle('focusing', mode === 'focusing');
     svg.classList.toggle('hovering', mode === 'hovering');
     svg.classList.toggle('connecting', !!S.connecting);
@@ -1087,7 +1147,258 @@
       r.g.classList.toggle('sel', s?.kind === 'edge' && s.id === id);
     });
     R.groups.forEach((r, id) => r.g.classList.toggle('sel', s?.kind === 'group' && s.id === id));
+    ctxMark();
     markItems();
+  }
+
+  /* ---------- vistas ---------- */
+  // Una vista no toca el modelo: decide qué se ve, con cuánto detalle y qué se resalta.
+  // applyViewMode pone clases en el SVG (vw-*, data-view) y en cada elemento (v-*); el CSS está en #diagram-css,
+  // así que las exportaciones SVG/PNG y el HTML cifrado se ven igual que el lienzo.
+  const vc = () => VIEWS[S.viewKey] || VIEWS.full;
+  const VCLS = ['v-hide', 'v-hl', 'v-dim', 'v-heat', 'v-crit', 'v-high', 'v-warn', 'v-hlc'];
+  // De menos a más costo: tramos de VR.costHeat mezclados con color-mix
+  const heatColor = t => {
+    const st = VR.costHeat;
+    if (st.length < 2) return st[0] || 'var(--accent)';
+    const pos = clamp(t, 0, 1) * (st.length - 1), i = Math.min(st.length - 2, Math.floor(pos)), f = pos - i;
+    return f < 0.02 ? st[i] : f > 0.98 ? st[i + 1] : `color-mix(in srgb, ${st[i + 1]} ${Math.round(f * 100)}%, ${st[i]})`;
+  };
+  // Total mensual de cada grupo (recursivo) para su etiqueta en la vista Costo
+  function viewPrep() {
+    VW.gcost = null;
+    if (vc().emphasis !== 'cost') return;
+    const tot = new Map(), gmap = new Map(S.model.groups.map(g => [g.id, g]));
+    S.model.nodes.forEach(n => {
+      if (!hasCost(n)) return;
+      const pm = perMonth(n);
+      let g = n.group, i = 0;
+      while (g && gmap.has(g) && i++ < 50) { tot.set(g, (tot.get(g) || 0) + pm); g = gmap.get(g).parent; }
+    });
+    VW.gcost = tot;
+  }
+  function applyViewMode() {
+    const m = S.model, v = vc(), key = S.viewKey, emph = v.emphasis, collapse = v.groups === 'collapse-top';
+    [...svg.classList].filter(c => c.startsWith('vw-')).forEach(c => svg.classList.remove(c));
+    svg.classList.add(...[`vw-${key}`, collapse && 'vw-collapse', v.nodeDetail === 'min' && 'vw-min', !v.dataTags && 'vw-no-dtags', !v.cost && 'vw-no-cost',
+      !v.zones && 'vw-no-zones', !v.notes && 'vw-no-notes', !v.review && 'vw-no-review', emph && 'vw-emph'].filter(Boolean));
+    svg.dataset.view = key;
+    const byId = new Map(m.nodes.map(n => [n.id, n]));
+    const hideN = new Set(), hideE = new Set(), hideG = new Set(), top = new Set();
+    const nodeCls = new Map(), edgeCls = new Map(), nodeVar = new Map(), edgeVar = new Map();
+    if (collapse) { // cajas cerradas: dentro de un grupo todo se oculta; las conexiones reales se sustituyen por las agregadas
+      m.nodes.forEach(n => { if (n.group) hideN.add(n.id); });
+      m.edges.forEach(e => hideE.add(e.id));
+      m.groups.forEach(g => (g.parent ? hideG : top).add(g.id));
+    } else if (v.groups === 'logical') m.groups.forEach(g => { if (groupKind(g) === 'physical') hideG.add(g.id); });
+
+    if (emph === 'security') {
+      m.nodes.forEach(n => nodeCls.set(n.id, isSensitive(n) ? 'v-hl' : 'v-dim'));
+      m.edges.forEach(e => {
+        const sens = isSensitive(e) || isSensitive(byId.get(e.from)) || isSensitive(byId.get(e.to));
+        // Sin cifrar: alta (crítica si lleva datos sensibles) · sin indicar con datos sensibles: aviso · cifrada: normal con su candado
+        edgeCls.set(e.id, e.encrypted === false ? (sens ? 'v-hl v-crit' : 'v-hl v-high') : e.encrypted == null ? (sens ? 'v-hl v-warn' : 'v-dim') : '');
+      });
+    } else if (emph === 'data') {
+      const rank = k => Object.keys(DATA).indexOf(k);
+      const isData = n => VR.dataTypes.includes(n.type) || VR.dataIconCategories.includes(iconInfo(n.icon)?.category);
+      m.nodes.forEach(n => nodeCls.set(n.id, isData(n) || n.data?.length ? 'v-hl' : 'v-dim'));
+      m.edges.forEach(e => {
+        if (e.style !== 'data' && !e.data?.length) return edgeCls.set(e.id, 'v-dim');
+        // Color de la clasificación más sensible que lleva (la propia, o la de sus extremos)
+        const ks = e.data?.length ? e.data : [...(byId.get(e.from)?.data || []), ...(byId.get(e.to)?.data || [])];
+        const best = ks.filter(k => DATA[k]).sort((a, b) => rank(b) - rank(a))[0];
+        edgeCls.set(e.id, best ? 'v-hl v-hlc' : 'v-hl');
+        if (best) edgeVar.set(e.id, colorVar(DATA[best].color));
+      });
+    } else if (emph === 'cost') {
+      const max = Math.max(0, ...m.nodes.filter(hasCost).map(perMonth));
+      m.nodes.forEach(n => {
+        if (!hasCost(n)) return nodeCls.set(n.id, 'v-dim');
+        nodeCls.set(n.id, 'v-hl v-heat');
+        nodeVar.set(n.id, heatColor(max > 0 ? perMonth(n) / max : 0));
+      });
+      m.edges.forEach(e => edgeCls.set(e.id, 'v-dim'));
+    }
+
+    const paint = (g, id, hide, cls, vars, prop) => {
+      g.classList.remove(...VCLS);
+      g.style.removeProperty(prop);
+      if (hide.has(id)) return g.classList.add('v-hide');
+      if (cls.get(id)) g.classList.add(...cls.get(id).split(' '));
+      if (vars.has(id)) g.style.setProperty(prop, vars.get(id));
+    };
+    R.nodes.forEach((g, id) => paint(g, id, hideN, nodeCls, nodeVar, '--heat'));
+    R.edges.forEach((r, id) => paint(r.g, id, hideE, edgeCls, edgeVar, '--vc'));
+    R.groups.forEach((r, id) => r.g.classList.toggle('v-hide', hideG.has(id) || top.has(id)));
+    VW.hideNodes = hideN; VW.hideEdges = hideE; VW.hideGroups = hideG;
+  }
+  // La selección no puede apuntar a algo que esta vista oculta
+  function visibleSel(sel) {
+    const v = vc();
+    if (!sel) return sel;
+    if (sel.kind === 'node') return VW.hideNodes.has(sel.id) ? null : sel;
+    if (sel.kind === 'multi') return normSel({ kind: 'multi', ids: sel.ids.filter(id => !VW.hideNodes.has(id)) });
+    if (sel.kind === 'edge') return VW.hideEdges.has(sel.id) ? null : sel;
+    if (sel.kind === 'group') return VW.hideGroups.has(sel.id) ? null : sel;
+    if (sel.kind === 'note') return v.notes ? sel : null;
+    if (sel.kind === 'zone') return v.zones ? sel : null;
+    return sel;
+  }
+  // Vuelve a pintar todo con la vista activa (sin reconstruir el lienzo)
+  function refreshView() {
+    viewPrep();
+    R.groups.forEach((r, id) => { const g = groupById(id); if (g) drawTag(g, r); });
+    R.edges.forEach(r => edgeLabel(r));
+    applyViewMode();
+    updateGeometry();
+    S.sel = visibleSel(S.sel);
+    applyFilter();
+    applyHighlight();
+    renderInspector();
+  }
+  function setView(key, opts = {}) {
+    if (!VIEWS[key]) return false;
+    S.viewChosen = true;
+    store.set('view', key);
+    if (key !== S.viewKey) {
+      S.viewKey = key;
+      stopPlay(); clearPath();
+      S.flow = null;
+      refreshView();
+    }
+    if (opts.toast !== false) toast(T('view.toast', { name: viewLabel(key) }));
+    return key;
+  }
+  // Al abrir un diagrama (plantilla, archivo, nuevo): si trae meta.view y el usuario no ha elegido otra vista en esta sesión, se respeta;
+  // si no, la última que eligió (guardada) o la de config.js. Deshacer, versiones y editores no la cambian.
+  const adoptMetaView = m => { if (!S.viewChosen) S.viewKey = viewKey(m.meta?.view || store.get('view')); };
+
+  /* ---------- vista Contexto: cajas cerradas y conexiones agregadas (solo dibujo; el modelo no cambia) ---------- */
+  function updateContext() {
+    L.ctx.textContent = '';
+    VW.ctxBoxes = new Map(); VW.ctxEdges = new Map(); VW.flows = new Map();
+    if (vc().groups !== 'collapse-top') { S.flow = null; return; }
+    const m = S.model, gmap = new Map(m.groups.map(g => [g.id, g])), byId = new Map(m.nodes.map(n => [n.id, n]));
+    const topOf = gid => { let g = gmap.get(gid), i = 0; while (g?.parent && gmap.has(g.parent) && i++ < 50) g = gmap.get(g.parent); return g; };
+    // Representante visible de cada nodo: la caja cerrada de su grupo de primer nivel, o él mismo
+    const reps = new Map(), repOf = new Map();
+    m.nodes.forEach(n => {
+      const tg = n.group && topOf(n.group), b = tg && R.gbox.get(tg.id), k = b ? `g:${tg.id}` : `n:${n.id}`;
+      // La caja cerrada es una tarjeta compacta centrada en el centro del grupo (no del tamaño del grupo)
+      const card = b && { w: Math.min(b.w, 300), h: Math.min(b.h, 128) };
+      if (card) { card.x = b.x + (b.w - card.w) / 2; card.y = b.y + (b.h - card.h) / 2; }
+      if (!reps.has(k)) reps.set(k, b ? { k, g: tg, r: card, ids: [], color: colorVar(tg.color) || 'var(--muted)', name: tg.label } : { k, n, r: { x: n.x, y: n.y, w: R.width.get(n.id), h: H }, ids: [], color: nodeColor(n), name: n.label });
+      reps.get(k).ids.push(n.id);
+      repOf.set(n.id, reps.get(k));
+    });
+    reps.forEach(rp => {
+      if (!rp.g) return;
+      const b = rp.r, g = rp.g, root = el('g', { class: 'group ctx-box', 'data-id': g.id }, L.ctx);
+      root.style.setProperty('--c', rp.color);
+      el('rect', { class: 'ctx-rect', x: b.x, y: b.y, width: b.w, height: b.h, rx: C.group.radius }, root);
+      // Tipos principales de lo que contiene (los más frecuentes), si caben
+      const cnt = new Map();
+      rp.ids.forEach(id => { const t = typeLabel(byId.get(id).type); cnt.set(t, (cnt.get(t) || 0) + 1); });
+      const types = b.h >= 120 ? fitText([...cnt].sort((x, y) => y[1] - x[1]).slice(0, 3).map(x => x[0]).join(' · '), FONT.sub, b.w - 24) : '';
+      const info = iconInfo(g.icon), lines = wrapText(g.label, FONT.ctx, b.w - 32), LH = 20, ih = info && b.h >= 100 ? 46 : 0;
+      const y0 = b.y + (b.h - (ih + lines.length * LH + 18 + (types ? 16 : 0))) / 2, cx = b.x + b.w / 2;
+      if (ih) {
+        el('rect', { class: 'node-icon-tile', x: cx - 20, y: y0, width: 40, height: 40, rx: 10 }, root);
+        el('image', { href: info.src, x: cx - 16, y: y0 + 4, width: 32, height: 32 }, root);
+      }
+      lines.forEach((l, i) => { el('text', { class: 'ctx-name', x: cx, y: y0 + ih + 15 + i * LH }, root).textContent = l; });
+      el('text', { class: 'ctx-count', x: cx, y: y0 + ih + lines.length * LH + 12 }, root).textContent = T('ctx.components', rp.ids.length);
+      if (types) el('text', { class: 'ctx-count ctx-types', x: cx, y: y0 + ih + lines.length * LH + 28 }, root).textContent = types;
+      el('title', null, root).textContent = `${g.label} · ${T('ctx.components', rp.ids.length)}`;
+      VW.ctxBoxes.set(g.id, { g: root, ids: rp.ids, card: b });
+    });
+    // Una conexión por par de representantes: las internas de una caja se ocultan; ida y vuelta = bidireccional
+    const agg = new Map();
+    m.edges.forEach(e => {
+      const P = repOf.get(e.from), Q = repOf.get(e.to);
+      if (!P || !Q || P === Q) return;
+      const fwd = P.k < Q.k, key = fwd ? `${P.k}|${Q.k}` : `${Q.k}|${P.k}`;
+      let x = agg.get(key);
+      if (!x) agg.set(key, x = { key, a: fwd ? P : Q, b: fwd ? Q : P, ab: 0, ba: 0, edges: [] });
+      x.edges.push(e);
+      if (fwd) x.ab++; else x.ba++;
+      if (e.both) { if (fwd) x.ba++; else x.ab++; }
+    });
+    const rects = [...reps.values()].map(rp => rp.r);
+    agg.forEach(x => {
+      const both = x.ab > 0 && x.ba > 0, [A, B] = x.ab ? [x.a, x.b] : [x.b, x.a], list = x.edges, one = list.length === 1;
+      const sts = new Set(list.map(e => (C.edgeStyles[e.style] ? e.style : 'sync'))), st = sts.size === 1 ? [...sts][0] : 'sync', cfg = C.edgeStyles[st];
+      const insecure = list.some(e => isInsecure(e, id => byId.get(id)));
+      const g = el('g', { class: `edge ctx-edge edge-${st}${cfg.dash ? ' edge-dashed' : ''}${insecure ? ' insecure' : ''}`, 'data-key': x.key }, L.ctx);
+      g.style.setProperty('--c', (one && colorVar(list[0].color)) || A.color);
+      g.style.setProperty('--w', `${cfg.width + (one ? 0 : Math.min(2.4, Math.log2(list.length) * 0.7))}px`);
+      const d = m.routing === 'elbow' ? elbowPath(A.r, B.r, 0, rects.filter(o => o !== A.r && o !== B.r), 0) : curvePath(A.r, B.r, 0);
+      const hit = el('path', { class: 'edge-hit', d }, g), line = el('path', { class: 'edge-line', d }, g);
+      if (cfg.dash) {
+        line.setAttribute('stroke-dasharray', cfg.dash);
+        const dist = cfg.dash.split(/[\s,]+/).reduce((sum, q) => sum + (+q || 0), 0) * 4;
+        g.style.setProperty('--dash-to', `${-dist}px`);
+        g.style.setProperty('--dash-dur', `${(dist / (C.animation.particleSpeed * 0.5)).toFixed(2)}s`);
+      }
+      const len = line.getTotalLength();
+      el('path', { class: 'edge-arrow', d: arrowD(line, len, both) }, g);
+      const txt = one ? list[0].label : T('ctx.flows', list.length);
+      if (txt) {
+        const lines = String(txt).split('\n'), LH = 14, lw = Math.max(...lines.map(l => textW(l, FONT.edge))) + 16, ph = Math.max(20, lines.length * LH + 6), mp = line.getPointAtLength(len / 2);
+        const lab = el('g', { class: 'edge-label', transform: `translate(${mp.x} ${mp.y})` }, g);
+        el('rect', { x: -lw / 2, y: -ph / 2, width: lw, height: ph, rx: Math.min(10, ph / 2) }, lab);
+        const tx = el('text', { x: 0, y: 4 - (lines.length - 1) * LH / 2, 'text-anchor': 'middle' }, lab);
+        lines.forEach((l, i) => { el('tspan', i ? { x: 0, dy: LH } : null, tx).textContent = l; });
+      }
+      VW.flows.set(x.key, { A, B, both, edges: list });
+      VW.ctxEdges.set(x.key, { g, ids: list.map(e => e.id), hit });
+    });
+    if (S.flow && !VW.flows.has(S.flow)) { S.flow = null; renderInspector(); }
+    ctxMark();
+  }
+  // Estado de las cajas y conexiones agregadas: foco, selección, filtro y comparación (como los elementos reales)
+  function ctxMark() {
+    const f = HL.f, r = HL.fr, s = S.sel, d = S.compare?.diff;
+    const chg = d ? new Set([...d.nodes.added, ...d.nodes.changed.map(c => c.item)].map(n => n.id)) : null;
+    VW.ctxBoxes.forEach((b, id) => {
+      b.g.classList.toggle('lit', !!f && b.ids.some(x => f.nodes.has(x)));
+      b.g.classList.toggle('sel', s?.kind === 'group' && s.id === id);
+      b.g.classList.toggle('fdim', !!r && !r.groups.has(id));
+      b.g.classList.toggle('diff-chg', !!chg && b.ids.some(x => chg.has(x)));
+    });
+    VW.ctxEdges.forEach((e, key) => {
+      e.g.classList.toggle('lit', !!f && e.ids.some(x => f.edges.has(x)));
+      e.g.classList.toggle('sel', S.flow === key);
+      e.g.classList.toggle('fdim', !!r && !e.ids.some(x => r.edges.has(x)));
+    });
+  }
+  // Una conexión agregada se "selecciona" sin tocar S.sel: el inspector es de solo lectura
+  function selectFlow(key) {
+    S.sel = null; S.flow = key;
+    if (S.path) clearPath();
+    applyHighlight();
+    renderInspector();
+  }
+  function flowInspector(box) {
+    const fl = VW.flows.get(S.flow), wasHidden = box.hidden, nm = id => S.model.nodes.find(x => x.id === id), arrow = fl.both ? '↔' : '→';
+    const rows = fl.edges.map(e => {
+      const a = nm(e.from), b = nm(e.to);
+      const info = [e.label ? String(e.label).replace(/\n/g, ' ') : '', dataTags(e).map(t => t.short).join(' '), e.encrypted === true ? T('enc.yes') : e.encrypted === false ? T('enc.no') : ''].filter(Boolean).join(' · ');
+      return `<div class="conn" style="--c:${nodeColor(a)};cursor:default"><span class="dot"></span>${esc(a.label)} ${e.both ? '↔' : '→'} ${esc(b.label)}${info ? `<em>${esc(info)}</em>` : ''}</div>`;
+    }).join('');
+    box.innerHTML = head(fl.A.color, '', T('ctx.flow'), `${fl.A.name} ${arrow} ${fl.B.name}`) + `
+      <p class="note">${T('ctx.flowNote')}</p>
+      <div class="conns"><div class="conn-title">${T('ctx.flows', fl.edges.length)}</div>${rows}</div>
+      <div class="insp-actions"><button class="btn" data-act="ctxfull">${T('ctx.flowFull')}</button></div>`;
+    box.hidden = false;
+    box.style.animation = wasHidden ? '' : 'none';
+  }
+  // Doble clic en una caja cerrada: pasa a la vista Completa y encuadra ese grupo
+  function openGroupFull(gid) {
+    setView('full');
+    select({ kind: 'group', id: gid });
+    fitBox(R.gbox.get(gid));
   }
 
   /* ---------- partículas (bucle de animación) ---------- */
@@ -1149,9 +1460,15 @@
   function contentBox() {
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     const add = (x, y, w, h) => { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x + w); y1 = Math.max(y1, y + h); };
+    if (vc().groups === 'collapse-top') { // Contexto: solo lo visible (tarjetas, nodos sueltos y conexiones agregadas)
+      S.model.nodes.forEach(n => { if (!VW.hideNodes.has(n.id)) add(n.x, n.y, R.width.get(n.id) || C.node.width, H); });
+      VW.ctxBoxes.forEach(b => { const q = b.card; add(q.x, q.y, q.w, q.h); });
+      VW.ctxEdges.forEach(e => { try { const q = e.g.getBBox(); add(q.x, q.y, q.width, q.height); } catch { /* sin medir */ } });
+    } else {
     S.model.nodes.forEach(n => add(n.x, n.y, R.width.get(n.id) || C.node.width, nodeBoxH(n)));
-    R.gbox.forEach(b => add(b.x, b.y, b.w, b.h));
-    [...S.model.notes, ...S.model.zones].forEach(o => add(o.x, o.y, o.w, o.h));
+    R.gbox.forEach((b, id) => { if (!VW.hideGroups.has(id)) add(b.x, b.y, b.w, b.h); });
+    }
+    [...(vc().notes ? S.model.notes : []), ...(vc().zones ? S.model.zones : [])].forEach(o => add(o.x, o.y, o.w, o.h));
     return x0 === Infinity ? null : { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
   }
   function fitView(smooth = true) {
@@ -1216,7 +1533,7 @@
   const save = debounce(() => { store.set('model', S.model); updateMeta(); renderVersions(); }, 250);
 
   const ORDER = {
-    group: ['id', 'label', 'icon', 'color', 'parent'],
+    group: ['id', 'label', 'icon', 'color', 'parent', 'kind'],
     node: ['id', 'label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'x', 'y', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc'],
     edge: ['id', 'from', 'to', 'label', 'style', 'route', 'both', 'color', 'data', 'encrypted'],
     note: ['id', 'x', 'y', 'w', 'h', 'text', 'color'],
@@ -1291,11 +1608,13 @@
     }
     S.model = normalize(raw);
     ensurePositions(S.model);
+    if (opts.animate) { adoptMetaView(S.model); S.flow = null; }
     S.sel = normSel(S.sel);
     if (S.sel && !selTarget()) S.sel = null;
     if (S.connecting && !S.model.nodes.some(n => n.id === S.connecting)) cancelConnect();
     render(!!opts.animate);
     S.model.nodes.forEach(n => posCache.set(n.id, { x: n.x, y: n.y }));
+    if (S.sel && visibleSel(S.sel) !== S.sel) { S.sel = visibleSel(S.sel); applyHighlight(); }
     updateRouteButton();
     writeEditors(opts.fromEditor, !opts.fromEditor);
     renderInspector();
@@ -1418,10 +1737,12 @@
     S.filter = cleanFilter(S.filter);
     store.set('filter', S.filter);
     const r = filterResult();
+    HL.fr = r;
     svg.classList.toggle('filtering', !!r);
     R.nodes.forEach((g, id) => g.classList.toggle('fdim', !!r && !r.nodes.has(id)));
     R.edges.forEach((e, id) => e.g.classList.toggle('fdim', !!r && !r.edges.has(id)));
     R.groups.forEach((e, id) => e.g.classList.toggle('fdim', !!r && !r.groups.has(id)));
+    ctxMark();
     $('#btn-filter').classList.toggle('has-dot', !!r);
     fltPill.hidden = !r;
     if (r) {
@@ -1476,7 +1797,8 @@
     select({ kind: 'multi', ids: ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id] });
   }
   function select(sel, opts = {}) {
-    S.sel = normSel(sel);
+    S.flow = null;
+    S.sel = visibleSel(normSel(sel));
     if (S.sel && !selTarget()) S.sel = null;
     if (S.path) clearPath();
     applyHighlight();
@@ -1511,6 +1833,8 @@
     });
     if (best) n.group = best;
     S.model.nodes.push(n);
+    // En la vista Contexto un nodo dentro de una caja cerrada no se vería: se pasa a la Completa
+    if (best && vc().groups === 'collapse-top') { setView('full', { toast: false }); toast(T('view.auto'), 2600); }
     changed(true);
     const body = R.nodes.get(n.id)?.firstChild;
     if (body) { body.classList.add('enter'); endEnter(body); }
@@ -1765,6 +2089,7 @@
   function togglePlay() {
     if (S.play) return stopPlay();
     if (!S.model.nodes.length) return;
+    if (vc().groups === 'collapse-top') return toast(T('ctx.noPlay'));
     cancelConnect();
     select(null);
     const ranks = computeRanks(S.model), max = Math.max(0, ...ranks.values());
@@ -2061,7 +2386,7 @@
   const DIFF_FIELDS = {
     node: ['label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc'],
     edge: ['label', 'style', 'route', 'both', 'color', 'data', 'encrypted'],
-    group: ['label', 'icon', 'color', 'parent']
+    group: ['label', 'icon', 'color', 'parent', 'kind']
   };
   function diffModels(a, b) {
     const val = (f, x) => (f === 'style' ? x || 'sync' : x == null ? '' : typeof x === 'object' ? JSON.stringify(x) : String(x));
@@ -2201,7 +2526,7 @@
     if (!(d.count.a + d.count.r + d.count.c)) return `<p class="ver-sum">${esc(T('ver.same'))}</p>`;
     const FIELD = { label: 'insp.name', sub: 'insp.detail', type: 'insp.type', icon: 'insp.icon', group: 'insp.group', color: 'insp.color', badge: 'field.badge',
       cost: 'cost.label', costPeriod: 'cost.period', costYears: 'cost.yearsAria', desc: 'insp.desc', style: 'insp.style', parent: 'insp.parent',
-      data: 'data.label', encrypted: 'enc.label', route: 'insp.route', both: 'insp.dir', review: 'rev.label' };
+      data: 'data.label', encrypted: 'enc.label', route: 'insp.route', both: 'insp.dir', review: 'rev.label', kind: 'gkind.label' };
     const fields = (fs, kind) => fs.map(f => T(kind === 'edge' && f === 'label' ? 'insp.label' : FIELD[f] || f).toLowerCase()).join(', ');
     const names = new Map([...S.compare.base.nodes, ...S.model.nodes].map(n => [n.id, n.label]));
     const edgeName = e => `${names.get(e.from) || e.from} ${e.both ? '↔' : '→'} ${names.get(e.to) || e.to}`;
@@ -2589,6 +2914,7 @@
   }
   function renderInspector() {
     const box = $('#inspector'), t = selTarget(), m = S.model;
+    if (!t && S.flow && VW.flows.has(S.flow)) return flowInspector(box);
     if (!t) { box.hidden = true; box.innerHTML = ''; return; }
     const wasHidden = box.hidden;
     const kind = S.sel.kind;
@@ -2690,6 +3016,7 @@
         <p class="note">${T('insp.groupNote', count)}</p>
         <label>${T('insp.name')}<input data-field="label" value="${esc(t.label)}"></label>
         ${allIcons().some(i => i.group) ? iconPicker(t, true) : ''}
+        <label>${T('gkind.label')}<select data-field="kind"><option value=""${t.kind ? '' : ' selected'}>${esc(T('gkind.auto', { k: T(`gkind.${groupKindAuto(t)}`) }))}</option>${['logical', 'physical'].map(k => `<option value="${k}"${t.kind === k ? ' selected' : ''}>${T(`gkind.${k}`)}</option>`).join('')}</select></label>
         <label>${T('insp.parent')}<select data-field="parent"><option value="">${T('insp.none')}</option>${m.groups.filter(g => !blocked.has(g.id)).map(g => `<option value="${esc(g.id)}"${g.id === t.parent ? ' selected' : ''}>${esc(g.label)}</option>`).join('')}</select></label>
         <div class="field">${T('insp.color')}${swatches(t.color)}</div>
         <div class="insp-actions"><button class="btn danger" data-act="delete">${T('insp.deleteGroup')}</button></div>`;
@@ -2829,9 +3156,18 @@
       $$('.seg button', inspector).forEach(x => x.classList.toggle('on', x === b));
       applyHighlight();
     } else if (b.dataset.goto) {
+      if (VW.hideNodes.has(b.dataset.goto)) return toast(T('view.hiddenHere'));
       select({ kind: 'node', id: b.dataset.goto }, { center: true });
     } else switch (b.dataset.act) {
       case 'close': select(null); break;
+      case 'ctxfull': {
+        const fl = VW.flows.get(S.flow);
+        if (!fl) break;
+        const a = fl.A.r, b = fl.B.r, x0 = Math.min(a.x, b.x), y0 = Math.min(a.y, b.y);
+        setView('full');
+        fitBox({ x: x0, y: y0, w: Math.max(a.x + a.w, b.x + b.w) - x0, h: Math.max(a.y + a.h, b.y + b.h) - y0 });
+        break;
+      }
       case 'connect': startConnect(t.id); break;
       case 'dup': duplicateSelection(); break;
       case 'mkzone': markZone(); break;
@@ -2961,6 +3297,7 @@
     types: Object.fromEntries(Object.entries(C.types).map(([k, t]) => [k.toLowerCase(), { ...t, label: loc(t.label) }])),
     providers: Object.keys(ICONS),
     dataClasses: Object.keys(DATA),
+    views: VIEW_KEYS,
     lang: I.lang
   });
   codeBox($('#text-src'), box => {
@@ -3312,7 +3649,7 @@
     out.insertBefore(el('rect', { width: W, height: Ht, fill: t.bg }), style.nextSibling);
     const title = el('text', { x: pad, y: pad + 10, fill: t.text, 'font-size': 20, 'font-weight': 700, 'font-family': fontCss() });
     const av = activeVersion();
-    title.textContent = av ? `${S.model.title}  ·  ${verLabel(av)}` : S.model.title;
+    title.textContent = (av ? `${S.model.title}  ·  ${verLabel(av)}` : S.model.title) + (S.viewKey !== 'full' ? `  ·  ${T('view.export', { name: viewLabel(S.viewKey) })}` : '');
     out.insertBefore(title, vp);
     if (lg) {
       placeLegend(lg, W - pad * 2);
@@ -3483,10 +3820,11 @@
     if (ev.button !== 0 && ev.button !== 1) return;
     if (P) { if (ev.button === 0) presentGo(1); return; }
     if (S.play) stopPlay();
-    const nodeEl = ev.target.closest('.node'), tagEl = ev.target.closest('.group-tag'), edgeEl = ev.target.closest('.edge');
+    const nodeEl = ev.target.closest('.node'), tagEl = ev.target.closest('.group-tag'), edgeEl = ev.target.closest('.edge:not(.ctx-edge)');
+    const ctxEl = ev.target.closest('.ctx-box'), flowEl = ev.target.closest('.ctx-edge');
     const p = toWorld(ev.clientX, ev.clientY), now = performance.now();
     const item = !S.connecting && ev.button === 0 ? itemOf(ev.target) || (ev.altKey ? zoneAt(p) : null) : null;
-    const key = item ? 'i:' + item.id : nodeEl ? 'n:' + nodeEl.dataset.id : tagEl ? 'g:' + tagEl.parentNode.dataset.id : edgeEl ? 'e:' + edgeEl.dataset.id : 'bg';
+    const key = item ? 'i:' + item.id : nodeEl ? 'n:' + nodeEl.dataset.id : tagEl ? 'g:' + tagEl.parentNode.dataset.id : edgeEl ? 'e:' + edgeEl.dataset.id : ctxEl ? 'c:' + ctxEl.dataset.id : flowEl ? 'f:' + flowEl.dataset.key : 'bg';
     const last = S.lastDown;
     const dbl = ev.button === 0 && last && last.key === key && now - last.t < 350 && Math.hypot(ev.clientX - last.x, ev.clientY - last.y) < 6;
     S.lastDown = dbl ? null : { key, t: now, x: ev.clientX, y: ev.clientY };
@@ -3501,12 +3839,20 @@
       return;
     }
     const multiKey = ev.metaKey || ev.ctrlKey;
-    if (ev.button === 1 || (!nodeEl && !tagEl && !edgeEl)) {
+    if (ev.button === 1 || (!nodeEl && !tagEl && !edgeEl && !ctxEl && !flowEl)) {
       if (dbl) { addNode(S.lastType, p.x, p.y, S.lastExtra); return; }
       if (ev.button === 0 && (ev.shiftKey || multiKey) && !S.connecting) {
         // Selección por área: suma lo que ya estaba elegido
         S.drag = { kind: 'box', start: p, base: selIds(), moved: false, rect: el('rect', { class: 'marquee', x: p.x, y: p.y, width: 0, height: 0 }, L.guides) };
       } else S.drag = { kind: 'pan', cx: ev.clientX, cy: ev.clientY, vx: S.view.x, vy: S.view.y, moved: false };
+    } else if (ctxEl) { // caja cerrada de la vista Contexto: clic elige el grupo, arrastrar lo mueve entero, doble clic lo abre
+      const gid = ctxEl.dataset.id;
+      if (dbl) { openGroupFull(gid); return; }
+      S.drag = { kind: 'move', start: p, orig: S.model.nodes.filter(n => inGroup(n, gid)).map(n => ({ n, x: n.x, y: n.y })), moved: false, click: { kind: 'group', id: gid } };
+    } else if (flowEl) { // conexión agregada: solo lectura
+      cancelConnect();
+      selectFlow(flowEl.dataset.key);
+      return;
     } else if (nodeEl) {
       const id = nodeEl.dataset.id;
       if (dbl) { renameNode(id); return; }
@@ -3545,7 +3891,7 @@
       d.moved = true;
       const x = Math.min(d.start.x, p.x), y = Math.min(d.start.y, p.y), w = Math.abs(dx), h = Math.abs(dy);
       Object.entries({ x, y, width: w, height: h }).forEach(([k, v]) => d.rect.setAttribute(k, v));
-      const hits = S.model.nodes.filter(n => n.x < x + w && n.x + R.width.get(n.id) > x && n.y < y + h && n.y + H > y).map(n => n.id);
+      const hits = S.model.nodes.filter(n => !VW.hideNodes.has(n.id) && n.x < x + w && n.x + R.width.get(n.id) > x && n.y < y + h && n.y + H > y).map(n => n.id);
       S.sel = normSel({ kind: 'multi', ids: [...d.base, ...hits] });
       applyHighlight();
       return;
@@ -3574,7 +3920,7 @@
     S.drag = null;
     svg.classList.remove('panning', 'dragging');
     if (d.kind === 'pan') {
-      if (!d.moved) { if (S.connecting) cancelConnect(); else if (S.sel) select(null); }
+      if (!d.moved) { if (S.connecting) cancelConnect(); else if (S.sel || S.flow) select(null); }
       return;
     }
     if (d.kind === 'box') { d.rect.remove(); select(S.sel); return; }
@@ -3641,11 +3987,12 @@
     if (mod && k === 'z') { ev.preventDefault(); ev.shiftKey ? redo() : undo(); }
     else if (mod && k === 'y') { ev.preventDefault(); redo(); }
     else if (mod && k === 'd') { ev.preventDefault(); duplicateSelection(); }
-    else if (mod && k === 'a') { ev.preventDefault(); select({ kind: 'multi', ids: S.model.nodes.map(n => n.id) }); }
+    else if (mod && k === 'a') { ev.preventDefault(); select({ kind: 'multi', ids: S.model.nodes.map(n => n.id) }); }  // visibleSel descarta los ocultos
     else if (mod) return;
     else if (ev.key === 'Delete' || ev.key === 'Backspace') { if (S.sel) { ev.preventDefault(); deleteSelection(); } }
     else if (ev.key === 'Escape' && filterMenu.open) filterMenu.open = false;
     else if (ev.key === 'Escape') { if (S.play) stopPlay(); else if (S.path) clearPath(); else if (S.connecting) cancelConnect(); else if (!S.sel && S.compare) compareVersion(null); else select(null); }
+    else if (/^[1-9]$/.test(k) && VIEW_KEYS[+k - 1]) setView(VIEW_KEYS[+k - 1]);
     else if (k === 'f') fitView();
     else if (k === 'p') togglePlay();
     else if (k === 'r' && selIds().length === 2) showPath(...selIds());
@@ -3779,6 +4126,7 @@
     showPath, clearPath,
     saveVersion, openVersion, compareVersion, deleteVersion,
     setFilter, clearFilter, get filter() { return clone(S.filter); },
+    setView, get view() { return S.viewKey; }, get views() { return [...VIEW_KEYS]; },
     exportSVG, exportPNG, exportJSON, shareEncrypted, exportOther, exportCtx, toggleRouting, importFiles, config: C, icons: ICONS
   };
 

@@ -128,6 +128,36 @@ window.DIAGRAMON_CONFIG = {
   group: { padding: 24, labelSpace: 22, radius: 18 },
   view:  { minZoom: 0.2, maxZoom: 2.5 },
 
+  /* Vistas: filtros de presentación del MISMO modelo (no cambian datos ni posiciones).
+     Clave = nombre de la vista (atajos 1…7 en este orden). Cada regla es opcional; lo que falte vale como en `full`.
+     - groups: 'all' (todos) · 'logical' (oculta los grupos físicos) · 'collapse-top' (cajas cerradas de primer nivel)
+     - nodeDetail: 'full' | 'min' (sin detalle `sub`) · edgeLabels / dataTags / locks / cost / zones / notes / review: true | false
+     - emphasis: null | 'security' | 'data' | 'cost' (resalta lo relevante y atenúa el resto) */
+  views: {
+    full:     { label: { en: 'Full', es: 'Completa' }, groups: 'all', nodeDetail: 'full', edgeLabels: true, dataTags: true, locks: true, cost: true, zones: true, notes: true, review: true, emphasis: null },
+    context:  { label: { en: 'Context', es: 'Contexto' }, groups: 'collapse-top', nodeDetail: 'min', edgeLabels: false, dataTags: false, locks: false, cost: false, zones: false, notes: false, review: false, emphasis: null },
+    logical:  { label: { en: 'Logical', es: 'Lógica' }, groups: 'logical', nodeDetail: 'full', edgeLabels: true, dataTags: false, locks: false, cost: false, zones: false, notes: true, review: true, emphasis: null },
+    physical: { label: { en: 'Physical', es: 'Física' }, groups: 'all', nodeDetail: 'full', edgeLabels: false, dataTags: false, locks: true, cost: false, zones: true, notes: true, review: true, emphasis: null },
+    security: { label: { en: 'Security', es: 'Seguridad' }, groups: 'all', nodeDetail: 'full', edgeLabels: true, dataTags: true, locks: true, cost: false, zones: true, notes: true, review: true, emphasis: 'security' },
+    data:     { label: { en: 'Data', es: 'Datos' }, groups: 'all', nodeDetail: 'full', edgeLabels: true, dataTags: true, locks: false, cost: false, zones: true, notes: true, review: true, emphasis: 'data' },
+    cost:     { label: { en: 'Cost', es: 'Costo' }, groups: 'all', nodeDetail: 'full', edgeLabels: true, dataTags: false, locks: true, cost: true, zones: false, notes: true, review: true, emphasis: 'cost' }
+  },
+  /* Vista por defecto al abrir si el navegador no recuerda otra (el diagrama puede traer `meta.view`). */
+  defaultView: 'full',
+
+  /* Datos que usan las vistas. */
+  viewRules: {
+    /* Nodos de datos (vista Datos): por tipo propio o por la categoría de su icono oficial */
+    dataTypes: ['db', 'nosql', 'cache', 'storage', 'analytics', 'queue', 'stream'],
+    dataIconCategories: ['Bases de datos', 'Almacenamiento', 'Analítica', 'Tiempo real', 'Ingeniería de datos', 'Power BI'],
+    /* Mapa de calor de la vista Costo: de menos a más costo mensual (variables de severidad) */
+    costHeat: ['var(--sev-low)', 'var(--sev-medium)', 'var(--sev-high)', 'var(--sev-critical)'],
+    /* Tipo de grupo cuando no se indica `kind`: físico si su icono o su nombre coinciden; si no, lógico */
+    physicalGroupIcons: ['aws/group-account', 'aws/group-region', 'aws/group-vpc', 'aws/group-publicsubnet', 'aws/group-privatesubnet', 'aws/group-cloud', 'aws/group-datacenter', 'aws/group-autoscaling',
+      'azure/group-subscription', 'azure/group-resourcegroup', 'azure/group-managementgroup', 'azure/vnet', 'azure/subnet', 'gcp/vpc', 'azure/logo', 'gcp/logo', 'sap/logo'],
+    physicalGroupName: /vpc|vnet|subnet|subred|regi[oó]n|region|\baz\b|availability zone|zona de disponibilidad|account|cuenta|subscription|suscripci[oó]n|resource group|grupo de recursos|tenant|datacenter|centro de datos/i
+  },
+
   /* Orden automático. direction: 'LR' (izquierda→derecha) o 'TB' (arriba→abajo). */
   layout: { direction: 'LR', colGap: 110, rowGap: 40, groupGap: 70, rankGapTB: 90 },
 

@@ -650,7 +650,7 @@ window.DiagramonIaC = (() => {
         const id = 'cloud-' + p;
         const name = { aws: 'AWS', azure: 'Azure', gcp: 'Google Cloud' }[p];
         const icon = groupIcon('cloud', p);
-        groups.push({ id, label: p === 'aws' && region ? `${name} · ${region}` : name, ...(icon ? { icon } : {}), color: 'melocoton' });
+        groups.push({ id, label: p === 'aws' && region ? `${name} · ${region}` : name, ...(icon ? { icon } : {}), color: 'melocoton', kind: 'physical' });
         provGroup.set(p, id);
       }
       return provGroup.get(p);
@@ -664,7 +664,7 @@ window.DiagramonIaC = (() => {
       gid.set(r.key, id);
       const label = r.name + (r.cidr ? ` · ${r.cidr}` : '');
       const icon = groupIcon(r.role, provOf(r.type), r.public === true);
-      groups.push({ id, label, ...(icon ? { icon } : {}), color: r.public === true ? 'menta' : r.role === 'subnet' ? 'lavanda' : COLORS[r.role], _r: r });
+      groups.push({ id, label, ...(icon ? { icon } : {}), color: r.public === true ? 'menta' : r.role === 'subnet' ? 'lavanda' : COLORS[r.role], kind: 'physical', _r: r });
     });
     groups.forEach(g => {
       const r = g._r;
@@ -690,7 +690,7 @@ window.DiagramonIaC = (() => {
           const id = safeId('g-subnets-' + multi.size);
           const label = subnets.map(s => s.name).join(' + ');
           const icon = groupIcon('subnet', provOf(r.type), subnets.every(s => s.public === true));
-          groups.push({ id, label, ...(icon ? { icon } : {}), color: subnets.every(s => s.public === true) ? 'menta' : 'lavanda', parent: vpcs.length === 1 ? gid.get(vpcs[0].key) : providerGroup(provOf(r.type)), _subnets: subnets });
+          groups.push({ id, label, ...(icon ? { icon } : {}), color: subnets.every(s => s.public === true) ? 'menta' : 'lavanda', kind: 'physical', parent: vpcs.length === 1 ? gid.get(vpcs[0].key) : providerGroup(provOf(r.type)), _subnets: subnets });
           multi.set(k, id);
         }
         return multi.get(k);
@@ -1198,7 +1198,7 @@ window.DiagramonIaC = (() => {
     const nets = new Map();
     const netsOf = s => (Array.isArray(s.networks) ? s.networks : isObj(s.networks) ? Object.keys(s.networks) : []).map(String);
     const allNets = [...new Set(svcs.flatMap(([, s]) => netsOf(s)))];
-    if (allNets.length > 1) allNets.forEach(n => { const id = safeId('net-' + n); nets.set(n, id); groups.push({ id, label: `network: ${n}`, color: 'lavanda', parent: 'compose' }); });
+    if (allNets.length > 1) allNets.forEach(n => { const id = safeId('net-' + n); nets.set(n, id); groups.push({ id, label: `network: ${n}`, color: 'lavanda', kind: 'physical', parent: 'compose' }); });
     const edge = (a, b, extra = {}) => {
       if (!a || !b || a === b || seen.has(a + '\0' + b)) return;
       seen.add(a + '\0' + b);

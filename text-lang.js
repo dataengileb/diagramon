@@ -18,7 +18,9 @@
 
    Nodo:     id: Nombre [tipo o icono] "detalle" color=… badge=… costo=120/mes desc="…"
              costo: número en USD + /hora, /mes, /año o /3años (sin periodo = mensual)
-   Grupo:    grupo id "Nombre" icon=aws/group-vpc color=… { … }   (se pueden anidar; icon = icono de grupo, opcional)
+   Grupo:    grupo id "Nombre" icon=aws/group-vpc color=… kind=physical { … }   (se pueden anidar; icon = icono de grupo, opcional;
+             kind=logical|physical / tipo=lógico|físico, opcional: sin él se deduce del icono y del nombre)
+   Vista:    view: security   (vista con la que se abre: full, context, logical, physical, security, data, cost; opcional)
    Conexión: a -> b -> c : etiqueta color=…   (la etiqueta va en la última flecha)
    Datos:    nodo … data=pii,pci · conexión a -> b : SQL data=pii encrypted=yes
    Comentario: líneas que empiezan por # o //
@@ -49,9 +51,9 @@
 
   // Palabras que escribe stringify y mensajes de error, por idioma
   const WORDS = {
-    en: { title: 'title', direction: 'direction', group: 'group', cost: 'cost', hour: 'hour', month: 'month', year: 'year', years: 'years', data: 'data', encrypted: 'encrypted', both: 'both', yes: 'yes', no: 'no', lines: 'lines', line: 'line', elbow: 'elbow', curved: 'curved', elbowOne: 'elbow', curvedOne: 'curved', author: 'author', version: 'version',
+    en: { title: 'title', direction: 'direction', group: 'group', cost: 'cost', hour: 'hour', month: 'month', year: 'year', years: 'years', data: 'data', encrypted: 'encrypted', both: 'both', yes: 'yes', no: 'no', lines: 'lines', line: 'line', elbow: 'elbow', curved: 'curved', elbowOne: 'elbow', curvedOne: 'curved', author: 'author', version: 'version', view: 'view', kind: 'kind', physical: 'physical', logical: 'logical',
       review: 'review', by: 'by', raised: 'raised', due: 'due', status: 'status', closed: 'closed', resolved: 'resolved' },
-    es: { title: 'título', direction: 'dirección', group: 'grupo', cost: 'costo', hour: 'hora', month: 'mes', year: 'año', years: 'años', data: 'datos', encrypted: 'cifrado', both: 'ambos', yes: 'sí', no: 'no', lines: 'líneas', line: 'línea', elbow: 'codos', curved: 'curvas', elbowOne: 'codo', curvedOne: 'curva', author: 'autor', version: 'versión',
+    es: { title: 'título', direction: 'dirección', group: 'grupo', cost: 'costo', hour: 'hora', month: 'mes', year: 'año', years: 'años', data: 'datos', encrypted: 'cifrado', both: 'ambos', yes: 'sí', no: 'no', lines: 'líneas', line: 'línea', elbow: 'codos', curved: 'curvas', elbowOne: 'codo', curvedOne: 'curva', author: 'autor', version: 'versión', view: 'vista', kind: 'tipo', physical: 'físico', logical: 'lógico',
       review: 'revisión', by: 'por', raised: 'levantada', due: 'compromiso', status: 'estado', closed: 'cerrada', resolved: 'resuelta' }
   };
   const MSG = {
@@ -63,6 +65,7 @@
       data: v => `unknown data class “${v}” (e.g. pii, pci, confidential)`, enc: v => `invalid encrypted value “${v}” (use yes or no)`,
       route: v => `invalid line style “${v}” (use curved or elbow)`,
       day: v => `invalid date “${v}” (use YYYY-MM-DD)`, status: v => `invalid status “${v}” (use open or resolved)`,
+      view: v => `unknown view “${v}”`, gkind: v => `invalid group type “${v}” (use logical or physical)`,
       line: 'cannot understand this line', open: n => `missing } to close ${n === 1 ? 'a group' : `${n} groups`}`
     },
     es: {
@@ -73,6 +76,7 @@
       data: v => `clasificación de datos desconocida «${v}» (ej.: pii, pci, confidential)`, enc: v => `valor de cifrado no válido «${v}» (usa sí o no)`,
       route: v => `estilo de línea no válido «${v}» (usa curvas o codos)`,
       day: v => `fecha no válida «${v}» (usa AAAA-MM-DD)`, status: v => `estado no válido «${v}» (usa abierta o resuelta)`,
+      view: v => `vista desconocida «${v}»`, gkind: v => `tipo de grupo no válido «${v}» (usa lógico o físico)`,
       line: 'no se entiende esta línea', open: n => `falta cerrar ${n === 1 ? 'un grupo' : `${n} grupos`} con }`
     }
   };
@@ -164,6 +168,11 @@
       }
       if ((m = line.match(/^(autor|author)\s*:\s*(.*)$/i))) { if (m[2].trim()) (model.meta ||= {}).author = m[2].trim(); return; }
       if ((m = line.match(/^(versi[oó]n|version)\s*:\s*(.*)$/i))) { if (m[2].trim()) (model.meta ||= {}).version = m[2].trim(); return; }
+      if ((m = line.match(/^(view|vista)\s*:\s*(\S+)\s*$/i))) {
+        const v = m[2].toLowerCase();
+        if (!ctx.views || ctx.views.includes(v)) (model.meta ||= {}).view = v; else err(ln, msg.view(m[2]));
+        return;
+      }
       if ((m = line.match(/^(review|revisi[oó]n)\s+([^\s:]+)\s*:\s*(.*)$/i))) {
         if (!ID.test(m[2])) return err(ln, msg.id(m[2]));
         const tk = tokens(m[3], Object.keys(REVIEW_KEYS)), r = { status: 'open' };
@@ -184,11 +193,16 @@
         const id = m[2];
         if (!ID.test(id)) return err(ln, msg.groupId(id));
         if (groups.has(id)) return err(ln, msg.groupDup(id));
-        const tk = tokens(m[3], ['color', 'icon', 'icono']);
+        const tk = tokens(m[3], ['color', 'icon', 'icono', 'kind', 'tipo']);
         const g = { id, label: tk.quotes[0] ?? (tk.words.join(' ') || id) };
         if (tk.kv.color) g.color = tk.kv.color;
         const gi = (tk.kv.icon ?? tk.kv.icono)?.trim().toLowerCase();
         if (gi) { if (ctx.icons[gi] && gi.includes('/')) g.icon = gi; else err(ln, msg.icon(gi)); } // icono de grupo: proveedor/clave
+        const gk = tk.kv.kind ?? tk.kv.tipo;
+        if (gk != null) { // lógico / físico (también en inglés o español, con o sin tilde)
+          const f = gk.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+          if (/^(physical|fisic[oa]?)$/.test(f)) g.kind = 'physical'; else if (/^(logical|logic[oa]?)$/.test(f)) g.kind = 'logical'; else err(ln, msg.gkind(gk));
+        }
         if (stack.length) g.parent = stack[stack.length - 1];
         groups.add(id);
         model.groups.push(g);
@@ -268,6 +282,7 @@
     if (m.routing === 'elbow') out.push(`${w.lines}: ${w.elbow}`);
     if (m.meta?.author) out.push(`${w.author}: ${m.meta.author}`);
     if (m.meta?.version) out.push(`${w.version}: ${m.meta.version}`);
+    if (m.meta?.view) out.push(`${w.view}: ${m.meta.view}`);
     out.push('');
     const nodeLine = n => {
       const p = [`${n.id}: ${n.label}`];
@@ -282,7 +297,7 @@
     };
     const groupIds = new Set(m.groups.map(g => g.id));
     const writeGroup = (g, ind) => {
-      out.push(`${ind}${w.group} ${g.id} ${quote(g.label)}${g.icon ? ` icon=${bare(g.icon)}` : ''}${g.color ? ` color=${bare(g.color)}` : ''} {`);
+      out.push(`${ind}${w.group} ${g.id} ${quote(g.label)}${g.icon ? ` icon=${bare(g.icon)}` : ''}${g.color ? ` color=${bare(g.color)}` : ''}${g.kind ? ` ${w.kind}=${w[g.kind]}` : ''} {`);
       m.nodes.filter(n => n.group === g.id).forEach(n => out.push(`${ind}  ${nodeLine(n)}`));
       m.groups.filter(c => c.parent === g.id).forEach(c => writeGroup(c, ind + '  '));
       out.push(`${ind}}`);
