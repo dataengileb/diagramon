@@ -4618,7 +4618,7 @@
     const b = ev.target.closest('[data-export]');
     if (!b) return;
     exportMenu.open = false;
-    const f = { svg: exportSVG, png: exportPNG, 'svg-all': () => exportViews('svg'), 'png-all': () => exportViews('png'), json: exportJSON, copy: copyJSON, share: shareEncrypted, stride: exportThreats, compliance: openCompMatrix }[b.dataset.export];
+    const f = { svg: exportSVG, png: exportPNG, 'svg-all': () => exportViews('svg'), 'png-all': () => exportViews('png'), json: exportJSON, copy: copyJSON, share: shareEncrypted, stride: exportThreats, compliance: openCompMatrix, report: openReportDialog }[b.dataset.export];
     if (f) f(); else exportOther(b.dataset.export);
   });
 
@@ -5035,6 +5035,397 @@
     document.body.appendChild(back);
     pw.focus();
   }
+  /* ---------- informe de arquitectura (PDF por impresión, Markdown, HTML) ---------- */
+  // reportData() arma un modelo plano (secciones de bloques) y dos dibujantes lo pintan: reportMarkdown y reportHTML, así que los dos formatos no se desincronizan.
+  // Bloques: { k: 'h3', t } · { k: 'p', t, muted? } · { k: 'kv', items: [[k, v]] } · { k: 'cards', items: [{ label, value, tone? }] }
+  //          { k: 'table', head: [], rows: [[celda]], cls? } (celda = texto | { t, tone }) · { k: 'text', label, t } · { k: 'ul', items } · { k: 'img', alt, caption, svg?, uri?, file? }
+  const REP_SECS = ['summary', 'diagram', 'components', 'connections', 'data', 'owners', 'layers', 'costs', 'findings', 'compliance', 'threats', 'decisions', 'versions', 'notes'];
+  const REP_PAGE = ['diagram', 'components', 'findings', 'decisions']; // secciones que empiezan página al imprimir
+  const repT = (k, v) => T(`rep.${k}`, v);
+  const repSleep = ms => new Promise(r => setTimeout(r, ms));
+  // base64 de un texto UTF-8 y de un Blob (por trozos, para no reventar la pila con SVG grandes)
+  const repB64 = s => { const b = new TextEncoder().encode(s); let o = ''; for (let i = 0; i < b.length; i += 0x8000) o += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000)); return btoa(o); };
+  const repBlobUri = async blob => { const b = new Uint8Array(await blob.arrayBuffer()); let o = ''; for (let i = 0; i < b.length; i += 0x8000) o += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000)); return `data:${blob.type || 'image/png'};base64,${btoa(o)}`; };
+  // Nodos con interior (C4): solo si el modelo y la app lo soportan
+  const repScopes = (m = S.model) => {
+    if (typeof scopePath !== 'function' || typeof setScope !== 'function') return [];
+    const ids = new Set([...m.nodes, ...m.groups, ...(m.notes || []), ...(m.zones || [])].map(x => x.in).filter(Boolean));
+    return m.nodes.filter(n => ids.has(n.id)).map(n => n.id);
+  };
+  const repScopeName = id => (id == null ? '' : (typeof scopePath === 'function' ? scopePath(id) : [id]).map(i => S.model.nodes.find(n => n.id === i)?.label || i).join(' › '));
+  // Qué secciones tienen datos (las demás se saltan y el diálogo las muestra «(ninguno)»)
+  function repAvail(m = S.model) {
+    return {
+      summary: true, diagram: m.nodes.length > 0, components: m.nodes.length > 0, connections: m.edges.length > 0,
+      data: m.nodes.some(n => dataClassesOf(n, m).length || regionOf(n, m).value), owners: govTeamList(m).length > 0,
+      layers: m.nodes.some(n => layerOf(n).value), costs: m.nodes.some(hasCost), findings: findingsOf(m).length > 0,
+      compliance: cmpModel(m).keys.length > 0, threats: strideAll(m).length > 0, decisions: !!m.decisions?.length,
+      versions: m.versions.length > 0, notes: (m.notes || []).length > 0 || (m.zones || []).some(z => z.kind !== 'trust')
+    };
+  }
+  const repDefaultViews = () => {
+    const ok = k => VIEWS[k] && viewWorth(k);
+    const l = [S.viewKey, ...['security', 'data'].filter(ok)].filter((k, i, a) => VIEWS[k] && a.indexOf(k) === i);
+    return l.length ? l : ['full'];
+  };
+
+  async function reportData(o) {
+    const m = S.model, av = repAvail(m), want = k => av[k] && (!o.sections || o.sections.includes(k));
+    const byId = new Map(m.nodes.map(n => [n.id, n])), nm = id => byId.get(id)?.label || id;
+    const edgeName = e => `${nm(e.from)} ${e.both ? '↔' : '→'} ${nm(e.to)}`;
+    const gpath = x => { const out = []; let g = 'type' in x ? x.group : x.parent, i = 0; while (g && i++ < 50) { const gg = groupById(g); if (!gg) break; out.unshift(gg.label); g = gg.parent; } return out.join(' › '); };
+    const dShort = ks => (ks || []).map(k => loc(DATA[k]?.short) || String(k).toUpperCase()).join(' ');
+    const dLabel = k => loc(DATA[k]?.label) || String(k);
+    const sevCell = s => ({ t: sevLabel(s), tone: `sev-${s}` });
+    const yn = v => T(v ? 'sec.yes' : 'sec.no');
+    const hasScopes = typeof scopePath === 'function' && m.nodes.some(n => n.in);
+    const av0 = activeVersion(), find = findingsOf(m), open = find.filter(f => !f.dismissed), dis = find.filter(f => f.dismissed);
+    const D = { lang: I.lang, title: m.title, author: m.meta?.author || av0?.author || '', version: m.meta?.version || '', active: av0 ? { label: verLabel(av0), status: T(`ver.st.${av0.status}`) } : null,
+      date: fmtDay(today()), desc: m.meta?.desc ? String(m.meta.desc) : '', sections: [], files: [] };
+    const sec = (id, blocks) => D.sections.push({ id, title: repT(`s.${id}`), blocks });
+
+    /* diagrama: una imagen por vista (y por interior C4); es lo único lento, así que se cede el hilo entre imágenes */
+    const imgs = [];
+    if (want('diagram')) {
+      const keys = (o.views || []).filter(k => VIEWS[k]), scopes = [null, ...(o.scopes ? repScopes(m) : [])], total = keys.length * scopes.length, theme = o.theme === 'current' ? S.theme : 'light';
+      const oldScope = typeof S.scope !== 'undefined' ? S.scope : null, oldTheme = S.theme;
+      let n = 0;
+      try {
+        for (const sc of scopes) {
+          if (scopes.length > 1) setScope(sc);
+          await eachView(keys, async key => {
+            o.progress?.(++n, total, [repScopeName(sc), viewLabel(key)].filter(Boolean).join(' · '));
+            let out;
+            S.theme = theme; try { out = buildSVG(); } finally { S.theme = oldTheme; }
+            const im = { key, label: viewLabel(key), scope: sc, scopeLabel: repScopeName(sc), svg: out.str };
+            if (o.format === 'md') {
+              const blob = await pngBlob(out);
+              if (!blob) im.uri = 'data:image/svg+xml;base64,' + repB64(out.str);
+              else if (o.separateImages) { im.file = fileName('png', `report-${String(n).padStart(2, '0')}-${key}`); D.files.push({ name: im.file, blob }); } else im.uri = await repBlobUri(blob);
+            } else im.uri = 'data:image/svg+xml;base64,' + repB64(out.str);
+            imgs.push(im);
+            await repSleep(0);
+          });
+        }
+      } finally { if (scopes.length > 1) setScope(oldScope ?? null); }
+    }
+
+    /* resumen */
+    if (want('summary')) {
+      const mt = monthlyTotal(m.nodes), cards = [{ label: repT('k.components'), value: m.nodes.length }, { label: repT('k.connections'), value: m.edges.length }, { label: repT('k.groups'), value: m.groups.length },
+        { label: repT('k.views'), value: VIEW_KEYS.length }];
+      if (m.nodes.some(hasCost)) cards.push({ label: repT('k.cost'), value: money(round2(mt)) });
+      cards.push({ label: repT('k.findings'), value: open.length, tone: open.some(f => f.severity === 'critical' || f.severity === 'high') ? 'sev-high' : '' });
+      if (m.decisions?.length) cards.push({ label: repT('k.decisions'), value: m.decisions.length });
+      const kv = [[repT('author'), D.author], [repT('version'), D.version], [repT('active'), D.active ? `${D.active.label} · ${D.active.status}` : ''], [repT('date'), D.date]].filter(r => r[1]);
+      const blocks = [];
+      if (D.desc) blocks.push({ k: 'p', t: D.desc });
+      if (kv.length) blocks.push({ k: 'kv', items: kv });
+      blocks.push({ k: 'cards', items: cards });
+      if (find.length) {
+        blocks.push({ k: 'h3', t: repT('sum.findings') });
+        blocks.push({ k: 'table', cls: 'compact', head: [...SEVERITY.slice().reverse().map(sevLabel), repT('dismissed')], rows: [[...SEVERITY.slice().reverse().map(s => String(open.filter(f => f.severity === s).length)), String(dis.length)]] });
+      }
+      if (m.decisions?.length) {
+        const st = [...new Set(m.decisions.map(d => d.status))];
+        blocks.push({ k: 'h3', t: repT('sum.decisions') });
+        blocks.push({ k: 'table', cls: 'compact', head: st.map(s => repT(`adr.${s}`)), rows: [st.map(s => String(m.decisions.filter(d => d.status === s).length))] });
+      }
+      sec('summary', blocks);
+    }
+
+    if (want('diagram')) {
+      const blocks = [];
+      imgs.forEach(im => {
+        blocks.push({ k: 'h3', t: [im.scopeLabel, im.label].filter(Boolean).join(' · ') });
+        blocks.push({ k: 'img', alt: `${m.title} — ${[im.scopeLabel, im.label].filter(Boolean).join(' · ')}`, svg: im.svg, uri: im.uri, file: im.file });
+      });
+      if (!blocks.length) blocks.push({ k: 'p', t: repT('noViews'), muted: true });
+      sec('diagram', blocks);
+    }
+
+    if (want('components')) {
+      const head = [repT('h.component'), repT('h.type'), repT('h.group'), ...(hasScopes ? [repT('h.scope')] : []), repT('h.data'), repT('h.region'), repT('h.owner'), repT('h.layer'), repT('h.cost'), repT('h.review')];
+      const rows = m.nodes.map(n => {
+        const ic = iconInfo(n.icon), rv = n.review ? { t: T(`rev.tag.${reviewState(n.review)}`), tone: `rev-${reviewState(n.review)}` } : '';
+        const gov = [govOf(n, 'team').value, govOf(n, 'owner').value].filter(Boolean).join(' · '), ly = layerOf(n).value;
+        return [[n.label, n.sub].filter(Boolean).join('\n'), ic ? `${ic.providerLabel} · ${ic.label}` : typeLabel(n.type), gpath(n), ...(hasScopes ? [n.in ? repScopeName(n.in) : ''] : []),
+          dShort(dataClassesOf(n, m)), regionOf(n, m).value, gov, ly ? layerInfo(ly).label : '', hasCost(n) ? money(round2(perMonth(n))) : '', rv];
+      });
+      sec('components', [{ k: 'table', head, rows, cls: 'wide' }]);
+    }
+
+    if (want('connections')) {
+      const rows = m.edges.map(e => {
+        const cb = crossBorder(e, byId);
+        return [nm(e.from), nm(e.to) + (e.both ? ' ↔' : ''), e.label || '', loc((C.edgeStyles[e.style] || C.edgeStyles.sync).label), e.encrypted === true ? T('enc.yes') : e.encrypted === false ? { t: T('enc.no'), tone: 'sev-high' } : T('enc.unset'),
+          dShort(e.data), (e.datasets || []).join(', '), cb ? { t: `${cb.from.region} → ${cb.to.region}${cb.approved ? ' ✓' : ''}`, tone: cb.approved ? '' : 'sev-high' } : ''];
+      });
+      sec('connections', [{ k: 'table', head: [repT('h.from'), repT('h.to'), repT('h.label'), repT('h.style'), repT('h.enc'), repT('h.data'), repT('h.datasets'), repT('h.xb')], rows, cls: 'wide' }]);
+    }
+
+    if (want('data')) {
+      const blocks = [], used = Object.keys(DATA).filter(k => m.nodes.some(n => dataClassesOf(n, m).includes(k)) || m.edges.some(e => e.data?.includes(k)));
+      if (used.length) blocks.push({ k: 'table', head: [repT('h.class'), repT('h.sens'), repT('h.nodes'), repT('h.edges')], rows: used.map(k => [`${loc(DATA[k].short) || k.toUpperCase()} · ${dLabel(k)}`, yn(DATA[k].sensitive),
+        m.nodes.filter(n => dataClassesOf(n, m).includes(k)).map(n => n.label).join(', '), m.edges.filter(e => e.data?.includes(k)).map(edgeName).join(', ')]) });
+      const regs = new Map();
+      m.nodes.forEach(n => { const r = regionOf(n, m).value; if (r) (regs.get(r) || regs.set(r, []).get(r)).push(n.label); });
+      if (regs.size) { blocks.push({ k: 'h3', t: repT('h.residency') }); blocks.push({ k: 'table', head: [repT('h.region'), repT('h.jur'), repT('h.nodes')], rows: [...regs].map(([r, ns]) => [r, jurOf(r)?.label || '', ns.join(', ')]) }); }
+      const xb = m.edges.map(e => ({ e, cb: crossBorder(e, byId) })).filter(x => x.cb);
+      if (xb.length) { blocks.push({ k: 'h3', t: repT('h.transfers') }); blocks.push({ k: 'table', head: [repT('h.connection'), repT('h.region'), repT('h.class'), repT('h.status')],
+        rows: xb.map(({ e, cb }) => [edgeName(e), `${cb.from.region} (${cb.from.jur.short}) → ${cb.to.region} (${cb.to.jur.short})`, classShorts(cb.classes).join(' '), cb.approved ? repT('approved') : { t: repT('pending'), tone: 'sev-high' }]) }); }
+      sec('data', blocks);
+    }
+
+    if (want('owners')) {
+      sec('owners', [{ k: 'table', head: [repT('h.team'), repT('h.owners'), repT('h.stewards'), repT('h.nodes')], rows: govTeamList(m).map(t => [t.team || repT('noTeam'), t.owners.join(', '), t.stewards.join(', '), t.nodes.map(nm).join(', ')]) }]);
+    }
+
+    if (want('layers')) {
+      sec('layers', [{ k: 'table', head: [repT('h.layer'), repT('h.nodes')], rows: Object.keys(DL).map(k => [layerInfo(k).label, m.nodes.filter(n => layerOf(n).value === k).map(n => n.label).join(', ')]).filter(r => r[1]) }]);
+    }
+
+    if (want('costs')) {
+      const cn = m.nodes.filter(hasCost), blocks = [{ k: 'table', head: [repT('h.component'), repT('h.group'), repT('h.price'), repT('h.cost')], rows: [...cn.map(n => [n.label, gpath(n), costText(n), money(round2(perMonth(n)))]), [{ t: repT('total'), tone: 'total' }, '', '', { t: money(round2(monthlyTotal(m.nodes))), tone: 'total' }]] }];
+      const gr = m.groups.map(g => ({ g, sum: monthlyTotal(nodesUnder(g, m)), n: nodesUnder(g, m).filter(hasCost).length })).filter(x => x.n);
+      if (gr.length) { blocks.push({ k: 'h3', t: repT('h.perGroup') }); blocks.push({ k: 'table', head: [repT('h.group'), repT('h.nodes'), repT('h.cost')], rows: gr.map(x => [[gpath(x.g), x.g.label].filter(Boolean).join(' › '), String(x.n), money(round2(x.sum))]) }); }
+      const per = [...new Set(cn.map(periodOf))];
+      blocks.push({ k: 'p', muted: true, t: repT('costNote', { h: COST.hoursPerMonth, p: per.map(p => T(PERIODS[p].label)).join(', ') }) });
+      sec('costs', blocks);
+    }
+
+    if (want('findings')) {
+      const row = f => [sevCell(f.severity), srcLabel(f.source), f.title, findingTargetLabel(f.target), [f.detail, f.fix].filter(Boolean).join('\n')];
+      const head = [repT('h.severity'), repT('h.source'), repT('h.finding'), repT('h.target'), repT('h.detail')], blocks = [];
+      blocks.push({ k: 'table', cls: 'compact', head: [...SEVERITY.slice().reverse().map(sevLabel), repT('dismissed')], rows: [[...SEVERITY.slice().reverse().map(s => String(open.filter(f => f.severity === s).length)), String(dis.length)]] });
+      if (open.length) blocks.push({ k: 'table', head, rows: open.map(row), cls: 'wide' });
+      if (dis.length) { blocks.push({ k: 'h3', t: repT('dismissed') }); blocks.push({ k: 'table', cls: 'wide', head: [...head, repT('h.reason')], rows: dis.map(f => [...row(f), [f.dismissed.reason, f.dismissed.by, f.dismissed.date ? fmtDay(f.dismissed.date) : ''].filter(Boolean).join(' · ')]) }); }
+      sec('findings', blocks);
+    }
+
+    if (want('compliance')) {
+      const { rows, keys, stats } = cmpModel(m), blocks = [];
+      cmpFrameworks(keys).forEach(fw => {
+        const ks = keys.filter(k => ctlSplit(k)[0] === fw), ci = ctlInfo(`${fw}:x`);
+        blocks.push({ k: 'h3', t: ci.fwLabel });
+        blocks.push({ k: 'table', head: [repT('h.control'), repT('h.title'), ...CTL_STATUS.map(s => T(`cmp.${s}`)), T('cmp.unmapped'), T('cmp.mx.cov')], rows: ks.map(k => {
+          const s = stats.get(k), d = rows.length - s.na;
+          return [ctlSplit(k)[1], ctlInfo(k).title, ...CTL_STATUS.map(x => String(s[x])), String(s.unmapped), d > 0 ? Math.round(s.met / d * 100) + '%' : '—'];
+        }) });
+        const st = rows.flatMap(r => ks.filter(k => r.eff.has(k)).map(k => [r.n.label, ctlSplit(k)[1], { t: `${CTL_SYM[r.eff.get(k).status]} ${T(`cmp.${r.eff.get(k).status}`)}`, tone: `st-${r.eff.get(k).status}` }, r.eff.get(k).from ? T('cmp.inh', groupById(r.eff.get(k).from)?.label || r.eff.get(k).from) : '']));
+        if (st.length) blocks.push({ k: 'table', cls: 'compact', head: [repT('h.component'), repT('h.control'), repT('h.status'), ''], rows: st });
+      });
+      blocks.push({ k: 'p', muted: true, t: T('cmp.mx.note') });
+      sec('compliance', blocks);
+    }
+
+    if (want('threats')) {
+      sec('threats', [{ k: 'table', cls: 'wide', head: [repT('h.zones'), repT('h.connection'), repT('h.cat'), repT('h.severity'), repT('h.status'), repT('h.note'), repT('h.mitigation')],
+        rows: strideAll(m).map(t => [t.zones.map(trustName).join(' | '), `${t.from} → ${t.to}${t.e.label ? ` (${t.e.label})` : ''}`, `${t.cat} ${loc(STR.categories[t.cat].label)}`, sevCell(t.severity), T(`stride.st.${t.status}`), t.note, t.mitigation]) }]);
+    }
+
+    if (want('decisions')) {
+      const ds = m.decisions, link = l => [...(l?.nodes || []).map(nm), ...(l?.edges || []).map(id => { const e = m.edges.find(x => x.id === id); return e ? edgeName(e) : id; }),
+        ...(l?.groups || []).map(id => groupById(id)?.label || id), ...(l?.versions || []).map(id => { const v = findVersion(id); return v ? verLabel(v) : id; })];
+      const blocks = [{ k: 'table', head: [repT('h.id'), repT('h.title'), repT('h.status'), repT('h.date'), repT('h.deciders')], rows: ds.map(d => [d.id, d.title, repT(`adr.${d.status}`), fmtDay(d.date), d.deciders || '']) }];
+      ds.forEach(d => {
+        blocks.push({ k: 'h3', t: `${d.id} · ${d.title}` });
+        blocks.push({ k: 'kv', items: [[repT('h.status'), repT(`adr.${d.status}`)], [repT('h.date'), fmtDay(d.date)], [repT('h.deciders'), d.deciders || ''], [repT('h.supersededBy'), d.supersededBy ? (ds.find(x => x.id === d.supersededBy)?.title ? `${d.supersededBy} · ${ds.find(x => x.id === d.supersededBy).title}` : d.supersededBy) : ''], [repT('h.links'), link(d.links).join(', ')]].filter(r => r[1]) });
+        [['context', d.context], ['decision', d.decision], ['consequences', d.consequences]].forEach(([k, t]) => { if (t && String(t).trim()) blocks.push({ k: 'text', label: repT(`adr.${k}`), t: String(t) }); });
+      });
+      sec('decisions', blocks);
+    }
+
+    if (want('versions')) {
+      const blocks = [{ k: 'table', cls: 'wide', head: [repT('h.version'), repT('h.env'), repT('h.status'), repT('h.author'), repT('h.created'), repT('h.updated'), repT('h.decided'), repT('h.note')], rows: m.versions.map(v => [
+        verLabel(v) + (v.id === m.active ? ` ★ ${repT('activeMark')}` : ''), v.kind === 'env' ? loc(C.environments?.[v.env]?.label) || v.env : '', { t: T(`ver.st.${v.status}`), tone: `vs-${v.status}` }, v.author || '', fmtDay(v.created), fmtDay(v.updated),
+        [v.decidedBy, fmtDay(v.decidedOn)].filter(Boolean).join(' · '), [v.reason, v.note].filter(Boolean).join('\n')]) }];
+      const hist = m.versions.flatMap(v => (v.history || []).map(h => [verLabel(v), fmtDay(h.date), T(`ver.st.${h.status}`), h.by || '', h.reason || '']));
+      if (hist.length) { blocks.push({ k: 'h3', t: T('ver.history') }); blocks.push({ k: 'table', cls: 'compact', head: [repT('h.version'), repT('h.date'), repT('h.status'), repT('h.by'), repT('h.reason')], rows: hist }); }
+      sec('versions', blocks);
+    }
+
+    if (want('notes')) {
+      const blocks = [], zs = (m.zones || []).filter(z => z.kind !== 'trust');
+      if (zs.length) { blocks.push({ k: 'h3', t: repT('h.zones2') }); blocks.push({ k: 'table', head: [repT('h.label'), repT('h.severity'), repT('h.detail')], rows: zs.map(z => [z.label || T('zone.new'), sevCell(z.severity), z.desc || '']) }); }
+      if ((m.notes || []).length) { blocks.push({ k: 'h3', t: repT('h.notes') }); blocks.push({ k: 'ul', items: m.notes.map(n => n.text).filter(t => String(t).trim()) }); }
+      sec('notes', blocks);
+    }
+    return D;
+  }
+
+  /* Markdown: texto escapado (tablas con barras, # al inicio, etc.) */
+  const mdEsc = s => String(s ?? '').replace(/[\\`*_\[\]<>|]/g, '\\$&').replace(/^(\s*)(#|>|[-+]\s|\d+[.)]\s)/gm, '$1\\$2');
+  const mdCell = c => (mdEsc(typeof c === 'object' && c ? c.t : c).replace(/\r?\n/g, '<br>').trim() || ' ');
+  const mdLines = s => mdEsc(s).replace(/\r?\n/g, '  \n');
+  function reportMarkdown(D) {
+    const o = [`# ${mdEsc(D.title)}`, '', `*${mdEsc([D.author, D.version, D.active?.label, D.date].filter(Boolean).join(' · '))}*`, ''];
+    D.sections.forEach(s => {
+      o.push(`## ${mdEsc(s.title)}`, '');
+      s.blocks.forEach(b => {
+        if (b.k === 'h3') o.push(`### ${mdEsc(b.t)}`, '');
+        else if (b.k === 'p') o.push(b.muted ? `*${mdEsc(b.t)}*` : mdLines(b.t), '');
+        else if (b.k === 'kv') o.push(...b.items.map(([k, v]) => `- **${mdEsc(k)}:** ${mdEsc(v).replace(/\r?\n/g, ' ')}`), '');
+        else if (b.k === 'ul') o.push(...b.items.map(t => `- ${mdEsc(t).replace(/\r?\n/g, ' ')}`), '');
+        else if (b.k === 'text') o.push(`**${mdEsc(b.label)}**`, '', mdLines(b.t), '');
+        else if (b.k === 'cards') o.push(`| ${b.items.map(c => mdCell(c.label)).join(' | ')} |`, `|${b.items.map(() => ' --- |').join('')}`, `| ${b.items.map(c => mdCell(String(c.value))).join(' | ')} |`, '');
+        else if (b.k === 'table') {
+          if (!b.rows.length) return;
+          o.push(`| ${b.head.map(mdCell).join(' | ')} |`, `|${b.head.map(() => ' --- |').join('')}`, ...b.rows.map(r => `| ${r.map(mdCell).join(' | ')} |`), '');
+        } else if (b.k === 'img') o.push(`![${mdEsc(b.alt)}](${b.file ? encodeURI(b.file) : b.uri})`, '');
+      });
+    });
+    o.push('---', '', `*${mdEsc(repT('footer', { app: C.app.name, date: D.date }))}*`, '');
+    return o.join('\n');
+  }
+
+  /* HTML autocontenido (también el que se imprime a PDF): sin red, sin scripts, imágenes como data URI */
+  const REP_CSS = `*{box-sizing:border-box}html{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+body{margin:0;padding:24px 20px;background:#fff;color:#1b1a22;font:10.5pt/1.5 __FONT__;}
+main,header,nav{max-width:1000px;margin:0 auto}
+h1{margin:0 0 4px;font-size:26pt;line-height:1.15}h2{margin:30px 0 10px;padding-bottom:5px;border-bottom:2px solid #6b5bd2;font-size:15pt}h3{margin:18px 0 6px;font-size:11.5pt}h4{margin:10px 0 2px;font-size:9.5pt;text-transform:uppercase;letter-spacing:.05em;color:#6b6778}
+p{margin:0 0 8px}.muted{color:#6b6778;font-size:9.5pt}.sub{margin:0 0 14px;color:#6b6778;font-size:11pt}
+nav ol{margin:6px 0 0;padding-left:20px;columns:2;font-size:10pt}nav a{color:#4b3fb5;text-decoration:none}
+dl{display:grid;grid-template-columns:max-content 1fr;gap:3px 14px;margin:0 0 12px}dt{font-weight:700;color:#4a4757}dd{margin:0}
+.cards{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 12px}.card{min-width:110px;padding:8px 12px;border:1px solid #d6d3e0;border-radius:8px;background:#f6f5fb}.card b{display:block;font-size:16pt;line-height:1.2}.card span{font-size:8.5pt;color:#6b6778;text-transform:uppercase;letter-spacing:.04em}
+table{width:100%;border-collapse:collapse;margin:6px 0 14px;font-size:8.5pt}table.compact{width:auto;min-width:50%}th,td{padding:4px 6px;border:1px solid #d6d3e0;text-align:left;vertical-align:top;overflow-wrap:anywhere}th{background:#efedf8;font-weight:700}
+thead{display:table-header-group}tr{break-inside:avoid}table.wide{font-size:8pt}
+.txt p{white-space:pre-wrap;margin:0 0 6px}ul{margin:0 0 10px;padding-left:20px}
+figure{margin:6px 0 14px;break-inside:avoid}figure img{display:block;max-width:100%;height:auto;border:1px solid #d6d3e0;border-radius:6px}
+.sev-low{color:#2f7d4f;font-weight:700}.sev-medium{color:#9a6b00;font-weight:700}.sev-high{color:#b4361f;font-weight:700}.sev-critical{color:#fff;background:#b4361f;font-weight:700}
+.st-met{color:#2f7d4f}.st-partial{color:#9a6b00}.st-gap{color:#b4361f;font-weight:700}.st-na{color:#6b6778}.rev-open{color:#9a6b00}.rev-overdue{color:#b4361f;font-weight:700}.rev-resolved{color:#2f7d4f}
+.vs-approved{color:#2f7d4f;font-weight:700}.vs-rejected{color:#b4361f;font-weight:700}.vs-review{color:#9a6b00}.total{font-weight:700;background:#f6f5fb}
+footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid #d6d3e0;color:#6b6778;font-size:8.5pt}
+@page{size:A4;margin:18mm 14mm 18mm;@top-left{content:__TITLE__;font:8pt sans-serif;color:#6b6778}@bottom-right{content:counter(page) " / " counter(pages);font:8pt sans-serif;color:#6b6778}}
+@media print{body{padding:0}h2,h3{break-after:avoid}.pb{break-before:page}}`;
+  function reportHTML(D) {
+    const cell = c => { const t = typeof c === 'object' && c ? c.t : c, tone = typeof c === 'object' && c?.tone ? ` class="${esc(c.tone)}"` : ''; return `<td${tone}>${esc(t).replace(/\r?\n/g, '<br>')}</td>`; };
+    const css = REP_CSS.replace('__FONT__', fontCss().replace(/"/g, "'")).replace('__TITLE__', `"${String(D.title).replace(/[\\"]/g, '\\$&').replace(/[\r\n]+/g, ' ')}"`);
+    const blk = b => {
+      if (b.k === 'h3') return `<h3>${esc(b.t)}</h3>`;
+      if (b.k === 'p') return `<p${b.muted ? ' class="muted"' : ''}>${esc(b.t).replace(/\r?\n/g, '<br>')}</p>`;
+      if (b.k === 'kv') return `<dl>${b.items.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v).replace(/\r?\n/g, '<br>')}</dd>`).join('')}</dl>`;
+      if (b.k === 'ul') return `<ul>${b.items.map(t => `<li>${esc(t).replace(/\r?\n/g, '<br>')}</li>`).join('')}</ul>`;
+      if (b.k === 'text') return `<div class="txt"><h4>${esc(b.label)}</h4><p>${esc(b.t)}</p></div>`;
+      if (b.k === 'cards') return `<div class="cards">${b.items.map(c => `<div class="card"><b${c.tone ? ` class="${esc(c.tone)}"` : ''}>${esc(c.value)}</b><span>${esc(c.label)}</span></div>`).join('')}</div>`;
+      if (b.k === 'table') return b.rows.length ? `<table${b.cls ? ` class="${esc(b.cls)}"` : ''}><thead><tr>${b.head.map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${b.rows.map(r => `<tr>${r.map(cell).join('')}</tr>`).join('')}</tbody></table>` : '';
+      if (b.k === 'img') return `<figure><img src="${esc(b.uri || '')}" alt="${esc(b.alt)}"></figure>`;
+      return '';
+    };
+    const csp = "default-src 'none'; img-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'";
+    return `<!doctype html>
+<html lang="${esc(D.lang)}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="${csp}">
+<title>${esc(D.title)}</title><style>${css}</style></head><body>
+<header><h1>${esc(D.title)}</h1><p class="sub">${esc([D.author, D.version, D.active?.label, D.date].filter(Boolean).join(' · '))}</p></header>
+<nav aria-label="${esc(repT('toc'))}"><ol>${D.sections.map(s => `<li><a href="#rep-${esc(s.id)}">${esc(s.title)}</a></li>`).join('')}</ol></nav>
+<main>${D.sections.map(s => `<section id="rep-${esc(s.id)}"${REP_PAGE.includes(s.id) ? ' class="pb"' : ''}><h2>${esc(s.title)}</h2>${s.blocks.map(blk).join('')}</section>`).join('\n')}</main>
+<footer>${esc(repT('footer', { app: C.app.name, date: D.date }))}</footer></body></html>`;
+  }
+
+  // PDF: sin biblioteca; el documento se imprime desde un iframe oculto y el navegador ofrece «Guardar como PDF»
+  function repPrint(html) {
+    return new Promise((res, rej) => {
+      const f = document.createElement('iframe');
+      f.setAttribute('aria-hidden', 'true'); f.setAttribute('tabindex', '-1');
+      f.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden';
+      f.onload = async () => {
+        try {
+          const w = f.contentWindow, d = f.contentDocument;
+          for (let i = 0; i < 100 && ![...d.images].every(im => im.complete); i++) await repSleep(100);
+          w.focus();
+          w.addEventListener('afterprint', () => setTimeout(() => f.remove(), 300), { once: true });
+          setTimeout(() => f.remove(), 600000);
+          w.print();
+          res();
+        } catch (err) { f.remove(); rej(err); }
+      };
+      f.srcdoc = html;
+      document.body.appendChild(f);
+    });
+  }
+  let repBusy = false;
+  // API: Promise con el texto generado (HTML o Markdown) tras lanzar la descarga o la impresión; '' si no se pudo
+  async function exportReport(o = {}) {
+    if (repBusy || viewBusy || P) return '';
+    const format = ['pdf', 'md', 'html'].includes(o.format) ? o.format : 'pdf';
+    const opts = { format, sections: Array.isArray(o.sections) ? o.sections : REP_SECS, views: Array.isArray(o.views) ? o.views : repDefaultViews(), scopes: o.scopes !== false && repScopes().length > 0,
+      theme: o.theme === 'current' ? 'current' : 'light', separateImages: format === 'md' && !!o.separateImages, progress: o.progress };
+    repBusy = true;
+    try {
+      const D = await reportData(opts);
+      if (format === 'md') {
+        const md = reportMarkdown(D);
+        download(md, fileName('md', 'report'), 'text/markdown;charset=utf-8');
+        for (const f of D.files) { await repSleep(350); download(f.blob, f.name); }
+        return md;
+      }
+      const html = reportHTML(D);
+      if (format === 'html') download(html, fileName('html', 'report'), 'text/html;charset=utf-8'); else await repPrint(html);
+      return html;
+    } finally { repBusy = false; }
+  }
+  function openReportDialog() {
+    if (viewBusy || repBusy || P) return;
+    const prev = document.activeElement, id = `rp${Date.now()}`, av = repAvail(), scopes = repScopes();
+    const saved = store.get('report', {}) || {}, fmt0 = ['pdf', 'md', 'html'].includes(saved.format) ? saved.format : 'pdf';
+    const secOn = k => av[k] && (!Array.isArray(saved.sections) || saved.sections.includes(k));
+    const defViews = repDefaultViews();
+    const back = document.createElement('div');
+    back.className = 'cf-back';
+    back.innerHTML = `<form class="cf share rep" role="dialog" aria-modal="true" aria-labelledby="${id}t" autocomplete="off">
+      <h3 id="${id}t">${esc(repT('title'))}</h3>
+      <p>${esc(repT('lead'))}</p>
+      <fieldset class="sh-views"><legend>${esc(repT('format'))}</legend>${['pdf', 'md', 'html'].map(k => `<label class="sh-chk"><input type="radio" name="fmt" value="${k}"${k === fmt0 ? ' checked' : ''}>${esc(repT(`fmt.${k}`))}</label>`).join('')}<small class="sh-size" data-rep="hint"></small></fieldset>
+      <fieldset class="sh-views"><legend>${esc(repT('sections'))}</legend>${REP_SECS.map(k => `<label class="sh-chk rep-sec${av[k] ? '' : ' rep-none'}"><input type="checkbox" name="sec" value="${k}"${secOn(k) ? ' checked' : ''}${av[k] ? '' : ' disabled'}>${esc(repT(`s.${k}`))}${av[k] ? '' : ` <small>${esc(repT('none'))}</small>`}</label>`).join('')}</fieldset>
+      <fieldset class="sh-views" data-rep="views"><legend>${esc(repT('views'))}</legend>${VIEW_KEYS.map(k => `<label class="sh-chk"><input type="checkbox" name="views" value="${esc(k)}"${defViews.includes(k) ? ' checked' : ''}>${esc(viewLabel(k))}</label>`).join('')}
+        ${scopes.length ? `<label class="sh-chk"><input type="checkbox" name="scopes"${saved.scopes === false ? '' : ' checked'}>${esc(repT('scopes'))}</label>` : ''}</fieldset>
+      <label>${esc(repT('theme'))}<select name="theme"><option value="light">${esc(repT('theme.light'))}</option><option value="current"${saved.theme === 'current' ? ' selected' : ''}>${esc(repT('theme.current'))}</option></select></label>
+      <label class="sh-chk" data-rep="sep"><input type="checkbox" name="sep"${saved.sep ? ' checked' : ''}>${esc(repT('sep'))}</label>
+      <p class="sh-err" role="alert" data-rep="msg"></p>
+      <div class="cf-actions"><button type="button" class="btn" data-rep="no">${esc(T('ver.cf.cancel'))}</button><button type="submit" class="btn primary">${esc(repT('create'))}</button></div>
+    </form>`;
+    const form = back.querySelector('form'), msg = form.querySelector('[data-rep="msg"]'), hint = form.querySelector('[data-rep="hint"]');
+    const close = () => { document.removeEventListener('keydown', key, true); back.remove(); prev?.focus?.(); };
+    const key = ev => { if (ev.key === 'Escape' && !form.classList.contains('busy')) { ev.preventDefault(); ev.stopPropagation(); close(); } };
+    const fmtNow = () => form.elements.fmt.value;
+    const sync = () => {
+      form.querySelector('[data-rep="sep"]').hidden = fmtNow() !== 'md';
+      hint.textContent = repT(`hint.${fmtNow()}`);
+      const dia = form.querySelector('input[name="sec"][value="diagram"]').checked;
+      form.querySelectorAll('[data-rep="views"] input, select[name="theme"]').forEach(i => { i.disabled = !dia; });
+      msg.textContent = '';
+    };
+    form.addEventListener('change', sync);
+    form.addEventListener('click', ev => { if (ev.target.closest('[data-rep="no"]')) close(); });
+    back.addEventListener('mousedown', ev => { if (ev.target === back && !form.classList.contains('busy')) close(); });
+    form.addEventListener('submit', async ev => {
+      ev.preventDefault();
+      if (form.classList.contains('busy')) return;
+      const sections = [...form.querySelectorAll('input[name="sec"]:checked')].map(i => i.value), views = [...form.querySelectorAll('input[name="views"]:checked')].map(i => i.value);
+      if (!sections.length) { msg.textContent = repT('noSec'); return; }
+      if (sections.includes('diagram') && !views.length) { msg.textContent = repT('noViews'); return; }
+      const opts = { format: fmtNow(), sections, views, scopes: !!form.elements.scopes?.checked, theme: form.elements.theme.value, separateImages: !!form.elements.sep.checked };
+      store.set('report', { format: opts.format, sections, scopes: scopes.length ? opts.scopes : saved.scopes, theme: opts.theme, sep: opts.separateImages });
+      const btn = form.querySelector('[type="submit"]');
+      form.classList.add('busy'); btn.textContent = repT('busy');
+      opts.progress = (i, n, name) => { msg.style.color = 'var(--muted)'; msg.textContent = repT('progress', { i, n, name }); toast(repT('progress', { i, n, name }), 60000); };
+      try {
+        const out = await exportReport(opts);
+        if (!out) throw new Error('report');
+        close();
+        toast(repT(opts.format === 'pdf' ? 'donePdf' : 'done'), 4200);
+      } catch (err) {
+        console.error('report', err);
+        form.classList.remove('busy'); btn.textContent = repT('create');
+        msg.style.color = ''; msg.textContent = repT('fail'); toast(repT('fail'), 3000);
+      }
+    });
+    document.addEventListener('keydown', key, true);
+    document.body.appendChild(back);
+    sync();
+    form.querySelector('[type="submit"]').focus();
+  }
+
   /* ---------- exportar a otras herramientas (export-*.js) ----------
      Cada exportador recibe una copia del diagrama y este contexto, y devuelve { text, ext, mime }. */
   const hexOf = k => {
@@ -5655,7 +6046,7 @@
     owners: () => govTeamList(),
     findings: (opts = {}) => apiFindings(opts), dismissFinding: (id, reason) => dismissFinding(id, reason), restoreFinding: id => restoreFinding(id),
     threats: () => strideAll().map(t => ({ edge: t.e.id, from: t.e.from, to: t.e.to, zones: t.zones.map(z => z.id), category: t.cat, severity: t.severity, status: t.status, note: t.note })),
-    exportThreats,
+    exportThreats, exportReport,
     exportSVG, exportPNG, exportViews, exportJSON, shareEncrypted, exportOther, exportCtx, toggleRouting, importFiles, config: C, icons: ICONS
   };
 

@@ -312,6 +312,17 @@ Some zones are **trust boundaries** instead of risk zones: open a zone and switc
   SVG and PNG files then get a panel at the bottom with only what the diagram uses (connection styles, padlocks,
   component colors, data classes) and a title block with title, author, version, date and estimated cost.
 
+#### Architecture report
+
+**Export › Architecture report…** builds the document architecture review boards ask for, with no libraries and no network:
+
+- **Format**: **PDF** (opens your browser's print dialog on a print-ready A4 document: choose *Save as PDF*), **Markdown** (`.md`) or **HTML** (`.html`, one self-contained file, the same document as the PDF with no external requests).
+- **Sections** (all on by default, remembered): Summary · Diagram · Components · Connections · Data classification & residency · Owners · Data lake layers · Costs · Security findings · Compliance · Threat model · Decisions (ADR) · Version history · Notes & risk zones. A section with no data is skipped and shown as *(none)*.
+- **Diagram**: pick which of the 8 views to include (the active view, plus Security and Data when they add something). If the diagram has internal diagrams (C4 levels), **Include internal diagrams** renders each one. Images use the light theme by default (good for print); **Use current theme** keeps the one on screen.
+- **Markdown images** are embedded as `data:` PNGs. Some Markdown viewers block them, so tick **Save images as separate files** to download the PNGs next to the `.md` and reference them by file name.
+- Texts come out in the current interface language, dates and money in the document's formats, and everything is escaped.
+- From the console: `Diagramon.exportReport({ format: 'pdf' | 'md' | 'html', sections?: [...], views?: [...], scopes?: true | false, theme?: 'light' | 'current', separateImages?: boolean })` returns a promise with the generated HTML or Markdown after starting the download or the print dialog. Section keys: `summary diagram components connections data owners layers costs findings compliance threats decisions versions notes`.
+
 ### Views
 
 A **view** is a way of looking at the same diagram: it only decides what is shown, how much detail and what stands out. It never changes your components or positions. Pick one from the **View** selector in the top bar, with keys **`1`**–**`8`**, or from the console (`Diagramon.setView('security')`). When the view is not *Full*, a pill above the canvas names it, counts what it hides or dims, and has an **×** to go back. The document card and the legend of exports follow the active view.
@@ -567,6 +578,7 @@ Things that work but have not been checked in depth yet. They probably need some
 - **Text tab**: notes on STRIDE decisions, trust boundaries and dismissed findings are not part of the text format, so a round trip through the *Text* tab keeps the statuses but loses the notes.
 - Security review, compliance and STRIDE fields (`exposure`, `backup`, `controls`, `threats`, trust zones, dismissed findings) are not exported to Mermaid, PlantUML or draw.io.
 - The compliance catalog is a practical subset of each standard with paraphrased titles; check it before relying on it for an audit.
+- **Architecture report**: the PDF depends on the browser print dialog (page headers and numbers appear only where the browser supports CSS `@page` margin boxes). Markdown viewers that block `data:` images show nothing for the diagrams unless you save the images as separate files. Large diagrams with many views and internal levels can take several seconds. The report has not been checked on very wide tables in print, and the Compliance matrix is listed per control and per component rather than as a grid.
 
 ---
 
