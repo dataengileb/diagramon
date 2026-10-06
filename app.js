@@ -102,7 +102,9 @@
     return 0.2126 * r + 0.7152 * g + 0.0722 * b;
   };
   const themeSafe = c => { const L = hexLum(c); return L == null ? c : L > 0.6 ? `color-mix(in srgb, ${c}, #000 var(--cfix-light, 0%))` : L < 0.04 ? `color-mix(in srgb, ${c}, #fff var(--cfix-dark, 0%))` : c; };
-  const colorVar = k => !k ? null : paletteKeys().includes(k) ? `var(--p-${k})` : COLOR_ALIAS[k] ? `var(--p-${COLOR_ALIAS[k]})` : themeSafe(k);
+  // Un color de un modelo importado acaba dentro de atributos style="…": solo se aceptan hex o nombres CSS simples
+  const SAFE_COLOR = /^(#[0-9a-f]{3,8}|[a-z]{3,20})$/i;
+  const colorVar = k => !k ? null : paletteKeys().includes(k) ? `var(--p-${k})` : COLOR_ALIAS[k] ? `var(--p-${COLOR_ALIAS[k]})` : SAFE_COLOR.test(String(k).trim()) ? themeSafe(String(k).trim()) : null;
   const typeOf = n => C.types[n.type] || C.types.generic;
   const typeLabel = type => loc((C.types[type] || C.types.generic).label);
   const nodeColor = n => colorVar(n && n.color) || colorVar(typeOf(n || {}).color) || 'var(--accent)';
@@ -4569,7 +4571,7 @@
       const st = Object.entries(e.threats || {});
       if (!st.length) return '';
       return `<div class="field stride-box">${T('stride.label')}<span class="cost-hint">${T('stride.stored')}</span>${st.map(([k, d]) =>
-        `<div class="th-ro"><b class="th-badge">${k}</b><span>${esc(loc(STR.categories[k]?.label) || k)} · ${esc(T(`stride.st.${d.status}`))}${d.note ? ` — ${esc(d.note)}` : ''}</span></div>`).join('')}
+        `<div class="th-ro"><b class="th-badge">${esc(k)}</b><span>${esc(loc(STR.categories[k]?.label) || k)} · ${esc(T(`stride.st.${d.status}`))}${d.note ? ` — ${esc(d.note)}` : ''}</span></div>`).join('')}
         <button class="btn small" data-th-clear="1">${T('stride.clear')}</button></div>`;
     }
     const ts = strideFor(e, c, info);
