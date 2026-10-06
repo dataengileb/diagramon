@@ -77,6 +77,7 @@ around 290 official cloud icons, and the browser itself blocks every network req
 - ⌨️ **Diagram as code**: a small text language, with errors shown by line number.
 - 🗂️ **Versions and environments**: save the canvas as *Version 1, 2, 3…* or as *Development, QA, Production*, open any of them, and compare it with the canvas: new items in green, changed in yellow, removed as red ghosts.
 - ⚑ **Review findings**: raise a finding on any component by hand, with what must be fixed, who raised it, when, and the due date. Tags show *IN REVIEW*, *OVERDUE* or *RESOLVED*, and open findings are listed in the export.
+- 🧭 **Data governance**: datasets on each connection with their **lineage** from origin to consumption, **owner, steward, team and cost center** per component (inherited from groups) with a **Governance** view, **region and jurisdiction** with a warning when sensitive data leaves it (*PII leaves the EU → US*), and **bronze / silver / gold** data lake layers with their own style and legend.
 - 📐 **Elbow connectors**: switch between curves and right-angle lines that route around the nodes, for the whole diagram or one connection.
 - 🧾 **Legend and title block** in SVG and PNG exports: connection styles, component colors, data classes, author, version, date and estimated cost. Ready to hand in.
 - 🔦 **Flow highlighting** for any component: neighbors, targets, sources or everything.
@@ -204,7 +205,7 @@ The component gets a tag: **IN REVIEW** (orange), **OVERDUE** (red, once the due
 The panel shows how many days are left or how late it is, and the summary above the canvas counts open and overdue findings.
 Diagramon remembers the last reviewer name. Exports with the legend list the open findings with their due date.
 
-### Owners and stewards
+#### Owners and stewards
 
 Say who is responsible for each component.
 
@@ -466,7 +467,7 @@ Set `"icons": { "enabled": false }` in `config.js` to turn them off.
 <summary><b>Extension API</b></summary>
 
 `window.Diagramon` exposes `model`, `load()`, `addNode()`, `addEdge()`, `select()`, `align()`, `relayout()`,
-`fitView()`, `togglePlay()`, `toggleTheme()`, `toggleLang()`, `lang`, `saveVersion()`, `openVersion()`, `compareVersion()`, `deleteVersion()`, `exportSVG()`, `exportPNG()`, `exportJSON()`, `crossBorder()`, `config` and `icons`.
+`fitView()`, `togglePlay()`, `toggleTheme()`, `toggleLang()`, `lang`, `saveVersion()`, `openVersion()`, `compareVersion()`, `deleteVersion()`, `exportSVG()`, `exportPNG()`, `exportJSON()`, `lineage()`, `datasets()`, `owners()`, `crossBorder()`, `layers()`, `setLayerNames()`, `config` and `icons`.
 The text language is in `window.DiagramonText` (`parse` and `stringify`). UI translations are in `window.DiagramonI18n`.
 
 </details>
@@ -506,6 +507,8 @@ Things that work but have not been checked in depth yet. They probably need some
 - **Text tab round trip** for bidirectional connections (`both=yes`) and multi-line labels: writing works, editing and reading back has not been fully tested.
 - Bidirectional connections are followed one way only by *Play flow* and presentation mode.
 - Notes and risk zones are not exported to Mermaid, PlantUML or draw.io.
+- **Data governance** fields (datasets, owners, regions, layers) are not exported to Mermaid, PlantUML or draw.io. Lineage is not available in the *Context* view, and IaC import sets the region only for AWS (not yet from Azure `location` or Google Cloud regions).
+- Region detection from a group's name covers the usual AWS, Azure and Google Cloud codes; other names need the **Region** field.
 
 ---
 

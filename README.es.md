@@ -64,6 +64,7 @@ de verdad. Ese tipo de información no debería viajar a un servicio de terceros
 - ⌨️ **Diagrama como código**: escribe en texto y el lienzo se actualiza al momento. Texto, JSON y lienzo siempre sincronizados.
 - 🗂️ **Versiones y ambientes**: guarda el lienzo como *Versión 1, 2, 3…* o como *Desarrollo, Calidad, Producción*, ábrelos cuando quieras y compáralos con el lienzo: lo nuevo en verde, lo cambiado en amarillo y lo eliminado como fantasma rojo.
 - ⚑ **Observaciones de revisión**: levanta a mano una observación en cualquier componente, con qué hay que corregir, quién la levantó, cuándo y la fecha compromiso. Las etiquetas muestran *EN REVISIÓN*, *VENCIDA* o *RESUELTA*, y las abiertas salen listadas en la exportación.
+- 🧭 **Gobierno de datos**: tablas en cada conexión con su **linaje** de origen a consumo, **dueño, responsable del dato, equipo y centro de costo** por componente (heredados del grupo) con una vista **Gobierno**, **región y jurisdicción** con aviso cuando datos sensibles salen de ella (*Datos PII salen de la UE → EE. UU.*), y capas **bronce / plata / oro** del data lake con estilo y leyenda propios.
 - 📐 **Conectores en ángulo recto**: cambia entre curvas y líneas en ángulo recto que esquivan los nodos, para todo el diagrama o para una sola conexión.
 - 🧾 **Leyenda y cajetín** en las exportaciones SVG y PNG: estilos de conexión, colores de los componentes, clasificaciones de datos, autor, versión, fecha y costo estimado. Listo para entregar.
 - 🔦 **Resaltar el flujo** de un componente: vecinos, destinos, orígenes o todo.
@@ -148,6 +149,36 @@ Las etiquetas salen arriba de cada nodo y en la etiqueta de la conexión, junto 
 Si una conexión *Sin cifrar* lleva datos sensibles, o une un componente con datos sensibles, se pone roja y aparece un aviso arriba del lienzo.
 Con varios componentes elegidos, las etiquetas se aplican a todos.
 
+#### Linaje de datos
+
+Marca qué tablas o conjuntos de datos viajan por cada conexión y sigue uno desde su origen hasta donde se consume.
+
+1. Selecciona una conexión. En **Conjuntos de datos** escribe el nombre de una tabla y pulsa `Intro` o `,` para añadirla (el campo sugiere los nombres que ya usa el diagrama). La **×** de cada ficha la quita.
+2. Pulsa una ficha (o la tecla `D` y elige de la lista, o una fila de la leyenda **Conjuntos de datos** de la ficha del documento) para ver su linaje: se resalta todo el recorrido y cada componente lleva un número (su profundidad). Los orígenes salen en verde y los consumos en naranja.
+3. La barra sobre el lienzo lo resume (*orígenes → consumos · saltos*). `Esc` lo quita.
+
+Al seleccionar un componente se listan los conjuntos de sus conexiones. En la vista **Datos** los nombres se dibujan bajo la etiqueta de cada conexión y salen en las exportaciones. Las conexiones con flecha en los dos extremos cuentan en ambos sentidos.
+
+#### Residencia de datos
+
+1. Selecciona un componente o un grupo y escribe su **Región** (una región cloud como `eu-west-1`, `westeurope`, `europe-west1`, o un código de país como `ES`, `US`). El campo sugiere las regiones que ya usa el diagrama. Los componentes heredan la región del grupo más cercano que la tenga; un grupo con la región en el nombre (`Región eu-west-1 (Irlanda)`) se detecta solo, y el panel dice *heredada de…* o *deducida de…*.
+2. Diagramon asigna a cada región una jurisdicción (UE, Reino Unido, EE. UU., Canadá, Brasil, Latinoamérica, Asia-Pacífico, Medio Oriente, África) y la muestra junto al campo. Las regiones desconocidas se ignoran.
+3. Si una conexión une dos regiones de jurisdicciones distintas y lleva datos sensibles (sus propias clases o, si no tiene, las de su origen), el inspector muestra `eu-west-1 (UE) → us-east-1 (EE. UU.)` y un aviso en rojo como *Datos PII salen de la UE → EE. UU.*. Si la transferencia está cubierta (cláusulas tipo, decisión de adecuación…), activa **Transferencia autorizada**: sigue listada pero deja de avisar.
+
+Las vistas **Seguridad** y **Física** muestran la región en cada componente. En **Seguridad**, las transferencias no autorizadas son críticas (rojo, con un globo) y sus extremos se resaltan; la leyenda añade *Datos sensibles fuera de su jurisdicción* y el resumen sobre el lienzo las cuenta. El filtro tiene la ficha **Fuera de su jurisdicción** (en *Datos*) y una sección **Región** (una ficha por jurisdicción y *Región desconocida*). Desde la consola: `Diagramon.crossBorder()`.
+
+#### Capas del data lake
+
+Indica en qué capa de un data lake tipo medallón está cada componente.
+
+1. Selecciona un componente o un grupo. En **Capa del data lake** elige **Bronce**, **Plata** u **Oro** (o *Ninguna*).
+2. Los componentes heredan la capa de su grupo, así que basta con marcar la zona una vez. El botón *Ninguna* pasa a decir *Heredada (Oro)* y una nota indica de qué grupo viene.
+3. Bajo los botones puedes cambiar los nombres de todo el documento entre **Bronce · Plata · Oro** y **Crudo · Curado · Consumo** (raw / curated / serving). Se aplica a etiquetas, leyenda y filtros.
+
+Un componente con capa lleva una franja de color en su borde izquierdo y una etiqueta pequeña en la esquina inferior izquierda. Un grupo con capa propia tiene el borde más grueso y teñido, y una etiqueta junto al título.
+La leyenda **Capas** (exportaciones y ficha del documento, tecla **I**) lista las capas en uso; en la ficha del documento, una fila filtra por esa capa. El menú **Filtrar** tiene una sección *Capa* y la vista **Datos** resalta los componentes con capa.
+Las vistas *Contexto* y *Costo* ocultan las capas. Desde la consola: `Diagramon.layers()` y `Diagramon.setLayerNames('zones')`.
+
 ### 7. Observaciones de revisión
 
 1. Selecciona un componente y pulsa **⚑ Levantar una observación**.
@@ -158,9 +189,21 @@ El componente lleva una etiqueta: **EN REVISIÓN** (naranja), **VENCIDA** (roja,
 El panel dice cuántos días faltan o cuántos lleva vencida, y el resumen sobre el lienzo cuenta las abiertas y las vencidas.
 Diagramon recuerda el último nombre de revisor. Las exportaciones con leyenda listan las observaciones abiertas con su fecha compromiso.
 
+#### Dueños y responsables
+
+Indica quién responde por cada componente.
+
+1. Selecciona un componente (o un grupo) y abre la sección **Responsables** del panel (se abre sola cuando ya tiene algún valor).
+2. Rellena **Dueño**, **Responsable de datos**, **Equipo** y **Centro de costo**. Cada campo sugiere los valores ya usados en el diagrama para que los nombres coincidan.
+3. Los componentes **heredan** cada campo del grupo más cercano que lo tenga: pon el equipo una vez en el grupo y todo lo de dentro lo recibe. Un valor heredado aparece en gris con *heredado de <grupo>*; si escribes uno propio, lo sustituye.
+4. Con varios componentes seleccionados, los cuatro campos se aplican a todos (*Varios* cuando difieren; vaciar un campo lo borra en todos).
+
+La descripción emergente de un componente muestra dueño, responsable, equipo y centro de costo. El panel **Filtrar** añade fichas de **Equipo**, **Dueño**, **Responsable** y **Centro de costo** (y *Sin asignar* para dueño y equipo). La ficha del documento (**`I`**) lista los **Equipos** con sus dueños y cuántos componentes tienen; al pulsar uno se filtra por él.
+La tecla **`8`** abre la vista **Gobierno**: cada componente toma el color de su equipo (o de su dueño si no tiene equipo), lleva debajo una etiqueta con el equipo, y la leyenda y las exportaciones listan todos los equipos. Desde la consola: `Diagramon.owners()` devuelve `[{ team, owners, stewards, nodes }]`.
+
 ### Filtros
 
-**Filtrar** (o **`G`**) abre un panel de fichas: **Datos** (cada clase del diagrama, más *Flujos sensibles sin cifrar*), **Revisión**, **Proveedor**, **Categoría**, **Grupo** y **Costo**.
+**Filtrar** (o **`G`**) abre un panel de fichas: **Datos** (cada clase del diagrama, más *Flujos sensibles sin cifrar*), **Revisión**, **Proveedor**, **Categoría**, **Grupo**, **Costo** y, cuando el diagrama los usa, **Equipo**, **Dueño**, **Responsable**, **Centro de costo**, **Región** y **Capa**.
 Las fichas de una misma sección suman (O); las secciones distintas se combinan (Y). Lo que no coincide se atenúa, incluidos los grupos vacíos y las conexiones cuyos extremos no coinciden ambos; seleccionar un componente sigue funcionando encima.
 Una etiqueta sobre el lienzo muestra el filtro activo (`Filtro: PII · AWS · 7 de 20`) con una **×** para quitarlo. Se recuerda por navegador y nunca altera las exportaciones. Desde la consola: `Diagramon.setFilter({ data: ['pii'], provider: ['aws'] })` y `Diagramon.clearFilter()`.
 
@@ -209,7 +252,7 @@ Usa los dos botones junto al zoom (abajo a la derecha del lienzo).
 
 ### Vistas
 
-Una **vista** es una forma de mirar el mismo diagrama: solo decide qué se ve, con cuánto detalle y qué destaca. Nunca cambia tus componentes ni posiciones. Elígela en el selector **Vista** de la barra superior, con las teclas **`1`**–**`7`**, o desde la consola (`Diagramon.setView('security')`). Cuando la vista no es *Completa*, una pastilla sobre el lienzo la nombra, cuenta lo que oculta o atenúa y tiene una **×** para volver. La ficha del documento y la leyenda de las exportaciones siguen la vista activa.
+Una **vista** es una forma de mirar el mismo diagrama: solo decide qué se ve, con cuánto detalle y qué destaca. Nunca cambia tus componentes ni posiciones. Elígela en el selector **Vista** de la barra superior, con las teclas **`1`**–**`8`**, o desde la consola (`Diagramon.setView('security')`). Cuando la vista no es *Completa*, una pastilla sobre el lienzo la nombra, cuenta lo que oculta o atenúa y tiene una **×** para volver. La ficha del documento y la leyenda de las exportaciones siguen la vista activa.
 
 | Tecla | Vista | Qué ves |
 |---|---|---|
@@ -220,6 +263,7 @@ Una **vista** es una forma de mirar el mismo diagrama: solo decide qué se ve, c
 | `5` | **Seguridad** | Datos sensibles y cifrado en tránsito resaltados (sin cifrar, o sin indicar, con datos sensibles); el resto se atenúa |
 | `6` | **Datos** | Almacenes y flujos de datos, coloreados por su clasificación más sensible |
 | `7` | **Costo** | Costo mensual como mapa de calor, con el total |
+| `8` | **Gobierno** | Quién es dueño de qué: componentes coloreados por equipo (o dueño), con una etiqueta de equipo bajo cada uno; los que no tienen ninguno se atenúan |
 
 Las reglas de cada vista están en `config.js` › `views`; en el inspector puedes marcar un grupo como `lógico` o `físico`.
 
@@ -236,6 +280,7 @@ Las reglas de cada vista están en `config.js` › `views`; en el inspector pued
 | `Z` / `⇧Z` | Seleccionar la zona de riesgo siguiente / anterior |
 | `C` | Conectar |
 | `R` | Ver el camino entre dos nodos seleccionados |
+| `D` | Elegir un conjunto de datos para ver su linaje (escribe para filtrar, `↑` `↓` `Intro`, `Esc` cierra) |
 | `F` | Ajustar a la vista |
 | `P` | Reproducir el flujo |
 | `V` | Presentar a pantalla completa (`→` `←` `Espacio` `Inicio` `Fin` `1`–`9`, `Esc` para salir) |
@@ -243,7 +288,7 @@ Las reglas de cada vista están en `config.js` › `views`; en el inspector pued
 | `L` | Cambiar entre inglés y español |
 | `E` | Cambiar entre conectores curvos y en ángulo recto |
 | `G` | Abrir el panel de filtros (`Esc` lo cierra) |
-| `1`–`7` | Cambiar de vista: Completa, Contexto, Lógica, Física, Seguridad, Datos, Costo |
+| `1`–`8` | Cambiar de vista: Completa, Contexto, Lógica, Física, Seguridad, Datos, Costo, Gobierno |
 | `Esc` | Cancelar o quitar la selección |
 
 ---
@@ -314,6 +359,12 @@ api ~> cola : eventos
 | `costo=120/mes` · `0.1/hora` · `1400/año` · `5000/3años` | Costo en USD (sin periodo = mensual) |
 | `datos=pii,pci` | Clasificación de datos de un nodo o una conexión |
 | `a -> b : TLS cifrado=sí` | Cifrado en tránsito (`sí` o `no`) |
+| `dueño="Ana Pérez" responsable=… equipo="Ing. de datos" centro=CC-100` | Responsables de un nodo o grupo (en inglés: `owner=` `steward=` `team=` `costcenter=`); los nodos heredan del grupo |
+| `a -> b : SQL tablas=pedidos,clientes` | Conjuntos de datos de una conexión (también `datasets=` o `conjuntos=`); con espacios, entre comillas: `tablas="ventas pedidos,crm.clientes"` |
+| `región=eu-west-1` | Región de un nodo o grupo (también `region=`, `país=`, `country=`); los nodos la heredan del grupo |
+| `a -> b : x datos=pii transferencia=ok` | Transferencia entre jurisdicciones autorizada (`transfer=ok` en inglés) |
+| `capa=oro` (`bronce`, `plata`, `oro`; también `crudo`, `curado`, `consumo` y los nombres en inglés) | Capa del data lake de un nodo o grupo (en inglés: `layer=gold`); los nodos la heredan del grupo |
+| `capas: zonas` | Muestra Crudo / Curado / Consumo en vez de Bronce / Plata / Oro (en inglés: `layers: zones`) |
 | `grupo id "Nombre" color=… { … }` | Grupo; se pueden anidar |
 | `a -> b` · `a => b` · `a ~> b` · `a ..> b` | Petición · datos · evento · opcional |
 | `a -> b -> c : etiqueta` | Cadena; la etiqueta va en la última flecha |
@@ -361,6 +412,8 @@ Todo lo personalizable está en **`config.js`**. Guarda y recarga `index.html`.
 - **Tema por defecto**: `app.defaultTheme: 'dark' | 'light' | 'black'`. La tecla `T` y el botón de tema alternan claro → oscuro → negro.
 - **Idioma por defecto**: `app.defaultLang: 'en' | 'es'`. Los textos de la interfaz están en `i18n.js`; los de `config.js` y `examples.js` pueden ser `{ en: '…', es: '…' }`.
 - **Clasificaciones de datos**: `dataClasses` define las etiquetas (nombre, texto corto y color). `sensitive: true` activa el aviso rojo en flujos sin cifrar.
+- **Jurisdicciones (residencia de datos)**: `residency.jurisdictions` en `config.js` es un mapa ordenado `clave → { label: { en, es }, short, match }`. `match` es una expresión regular (sin distinguir mayúsculas) que se prueba contra el texto de la región (`eu-west-1`, `westeurope`, `ES`…); gana la primera que coincide, así que pon las específicas (`uk`, `ch`) antes que las amplias (`eu`). Para añadir una, copia una línea y cambia clave, etiquetas y `match`. `of` es el texto opcional del aviso (*salen de **la UE***). Con `residency.warnSameJurisdiction: true` también avisa cuando cambian de región dentro de una misma jurisdicción.
+- **Capas del data lake**: `dataLayers` define las capas en orden (`label` para los nombres medallón, `alt` para Crudo/Curado/Consumo, letras cortas y `color`). Los colores usan `--layer-bronze`, `--layer-silver` y `--layer-gold`, definidos por tema en `index.html`; cámbialos ahí o pon un color fijo en `config.js`. `layerAliases` lista otras palabras aceptadas al leer JSON y texto. La opción `layers` de cada vista las muestra u oculta.
 - **Ambientes**: `environments` define los botones de la pestaña *Versiones* (nombre, texto corto y color). Añade o quita los que necesites.
 - **Tamaño de los nodos**: con `node.sameSize: true` (por defecto) todos miden `node.width` y los nombres largos usan 2 líneas.
   Con `false`, cada nodo crece con su texto.
@@ -398,7 +451,7 @@ Todo lo personalizable está en **`config.js`**. Guarda y recarga `index.html`.
 <summary><b>API para extensiones</b></summary>
 
 `window.Diagramon` expone `model`, `load()`, `addNode()`, `addEdge()`, `select()`, `align()`, `relayout()`,
-`fitView()`, `togglePlay()`, `toggleTheme()`, `toggleLang()`, `lang`, `saveVersion()`, `openVersion()`, `compareVersion()`, `deleteVersion()`, `exportSVG()`, `exportPNG()`, `exportJSON()`, `config` e `icons`.
+`fitView()`, `togglePlay()`, `toggleTheme()`, `toggleLang()`, `lang`, `saveVersion()`, `openVersion()`, `compareVersion()`, `deleteVersion()`, `exportSVG()`, `exportPNG()`, `exportJSON()`, `lineage()`, `datasets()`, `owners()`, `crossBorder()`, `layers()`, `setLayerNames()`, `config` e `icons`.
 El lenguaje de texto está en `window.DiagramonText` (`parse` y `stringify`).
 
 </details>
@@ -438,6 +491,8 @@ Cosas que funcionan pero aún no se han revisado a fondo. Probablemente necesite
 - **Ida y vuelta en la pestaña Texto** de conexiones bidireccionales (`ambos=sí`) y etiquetas con saltos de línea: escribirlas funciona; editarlas y volver a leerlas no se ha probado del todo.
 - *Reproducir flujo* y el modo presentación siguen las conexiones bidireccionales solo en un sentido.
 - Las notas y las zonas de riesgo no se exportan a Mermaid, PlantUML ni draw.io.
+- Los campos de **gobierno de datos** (conjuntos, responsables, regiones y capas) no se exportan a Mermaid, PlantUML ni draw.io. El linaje no está disponible en la vista *Contexto*, y la importación de infraestructura como código solo asigna la región en AWS (aún no desde `location` de Azure ni desde las regiones de Google Cloud).
+- La región se deduce del nombre de un grupo con los códigos habituales de AWS, Azure y Google Cloud; para otros nombres hay que usar el campo **Región**.
 
 ---
 

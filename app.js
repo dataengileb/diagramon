@@ -547,7 +547,9 @@
   const govKey = n => govOf(n, 'team').value || govOf(n, 'owner').value;
   // Equipos (o dueños, si el nodo no tiene equipo) en orden alfabético; cada uno con un color estable de la paleta
   function govTeams(m = S.model, ids = null) {
-    const by = new Map(), keys = paletteKeys();
+    // Colores en un orden que alterna tonos lejanos (dos equipos seguidos no quedan casi iguales)
+    const pk = paletteKeys(), keys = [...['cielo', 'melocoton', 'menta', 'lila', 'limon', 'coral', 'lavanda', 'rosa'].filter(k => pk.includes(k)), ...pk.filter(k => !['cielo', 'melocoton', 'menta', 'lila', 'limon', 'coral', 'lavanda', 'rosa'].includes(k))];
+    const by = new Map();
     m.nodes.forEach(n => {
       const k = govKey(n);
       if (!k || (ids && !ids.has(n.id))) return;
@@ -1362,10 +1364,12 @@
     r.ds?.remove(); r.ds = null;
     const ds = r.e.datasets;
     if (!ds?.length) return;
-    const lines = r.e.label ? String(r.e.label).split('\n').length : 0, dy = (lines ? Math.max(20, lines * 14 + 6) / 2 : 0) + 11;
+    // Debajo de la etiqueta o, si no hay, de las fichas de datos / el candado que ocupan su sitio
+    const lines = r.e.label ? String(r.e.label).split('\n').length : 0, tags = r.e.data?.length || r.e.encrypted != null;
+    const dy = (lines ? Math.max(20, lines * 14 + 6) / 2 : tags ? 10 : 0) + 11;
     const txt = ds.slice(0, 3).join(' · ') + (ds.length > 3 ? ` +${ds.length - 3}` : '');
     const g = el('g', { class: 'edge-ds' }, r.g);
-    el('text', { y: dy, 'text-anchor': 'middle' }, g).textContent = fitText(txt, '400 9.5px', 240);
+    el('text', { y: dy, 'text-anchor': 'middle' }, g).textContent = fitText(txt, '600 10px', 240);
     r.ds = g;
   }
   // Selector de conjuntos (tecla D): ventana pequeña con filtro, ↑↓ y Intro
@@ -1520,7 +1524,7 @@
       const isData = n => VR.dataTypes.includes(n.type) || VR.dataIconCategories.includes(iconInfo(n.icon)?.category);
       m.nodes.forEach(n => nodeCls.set(n.id, isData(n) || n.data?.length || layerOf(n).value ? 'v-hl' : 'v-dim'));
       m.edges.forEach(e => {
-        if (e.style !== 'data' && !e.data?.length) return edgeCls.set(e.id, 'v-dim');
+        if (e.style !== 'data' && !e.data?.length && !e.datasets?.length) return edgeCls.set(e.id, 'v-dim');
         // Color de la clasificación más sensible que lleva (la propia, o la de sus extremos)
         const ks = e.data?.length ? e.data : [...(byId.get(e.from)?.data || []), ...(byId.get(e.to)?.data || [])];
         const best = ks.filter(k => DATA[k]).sort((a, b) => rank(b) - rank(a))[0];
