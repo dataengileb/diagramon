@@ -156,6 +156,16 @@ With several services selected, the panel shows the cost of the selection.
 
 > Diagramon never looks up prices online (privacy first). You type the costs yourself.
 
+### Availability, RPO/RTO and single points of failure
+
+1. Select a component and fill **Availability**: the **SLA %** target (pick a tier such as 99.9 or 99.99, or type `99.95`), **RPO** and **RTO** (`15m`, `4h`, `1d`, `0`) and **Replicas / instances**.
+2. The panel shows the effective availability, assuming independent parallel instances: `1 − (1 − SLA)^replicas`, for example *99.9% with 2 replicas = 99.9999%*, plus the expected downtime (*≈ 32 s/year*). With several components selected, the fields apply to all of them.
+3. Select two components and show the path between them: the path bar adds the **composite availability** of the shortest route (the product of every component on it; with several shortest routes, the worst one), the weakest link, and the largest RPO and RTO along it. Components without an SLA are counted and left out of the product.
+4. Diagramon marks **single points of failure**: a component without replicas whose failure cuts an entry point (users, web, mobile, external or a component with no incoming flow) off from the rest. Single-instance data stores without an SLA of 99.9% or better, and data stores missing RPO/RTO (only when the diagram uses them anywhere), also show up in the *Review* tab under *Availability & resilience*.
+5. Press **`9`** for the **Resilience** view: components are colored by effective availability (≥ 99.99%, ≥ 99.9%, ≥ 99%, below, or no SLA), single points of failure get a red dashed border, and a chip under each component reads *99.95% · RPO 15 min · RTO 1 h · ×2*.
+
+From the console: `Diagramon.availability(fromId, toId)` returns `{ availability, downtimeYear, nodes, unknown, worst, rpo, rto }` (RPO and RTO in seconds) and `Diagramon.spofs()` returns `[{ id, label, reason }]`. The *Architecture report* has a **Resilience** section.
+
 ### 6. Data classification and encryption
 
 1. Select a component. Under **Data classification**, click the tags for the data it stores or handles: **PUB**, **INT**, **CONF**, **PII**, **PCI**, **PHI**. You can pick several.
@@ -331,14 +341,14 @@ Some zones are **trust boundaries** instead of risk zones: open a zone and switc
 
 - **Format**: **PDF** (opens your browser's print dialog on a print-ready A4 document: choose *Save as PDF*), **Markdown** (`.md`) or **HTML** (`.html`, one self-contained file, the same document as the PDF with no external requests).
 - **Sections** (all on by default, remembered): Summary · Diagram · Components · Connections · Data classification & residency · Owners · Data lake layers · Costs · Security findings · Compliance · Threat model · Decisions (ADR) · Version history · Notes & risk zones. A section with no data is skipped and shown as *(none)*.
-- **Diagram**: pick which of the 8 views to include (the active view, plus Security and Data when they add something). If the diagram has internal diagrams (C4 levels), **Include internal diagrams** renders each one. Images use the light theme by default (good for print); **Use current theme** keeps the one on screen.
+- **Diagram**: pick which of the 9 views to include (the active view, plus Security and Data when they add something). If the diagram has internal diagrams (C4 levels), **Include internal diagrams** renders each one. Images use the light theme by default (good for print); **Use current theme** keeps the one on screen.
 - **Markdown images** are embedded as `data:` PNGs. Some Markdown viewers block them, so tick **Save images as separate files** to download the PNGs next to the `.md` and reference them by file name.
 - Texts come out in the current interface language, dates and money in the document's formats, and everything is escaped.
 - From the console: `Diagramon.exportReport({ format: 'pdf' | 'md' | 'html', sections?: [...], views?: [...], scopes?: true | false, theme?: 'light' | 'current', separateImages?: boolean })` returns a promise with the generated HTML or Markdown after starting the download or the print dialog. Section keys: `summary diagram components connections data owners layers costs findings compliance threats decisions versions notes`.
 
 ### Views
 
-A **view** is a way of looking at the same diagram: it only decides what is shown, how much detail and what stands out. It never changes your components or positions. Pick one from the **View** selector in the top bar, with keys **`1`**–**`8`**, or from the console (`Diagramon.setView('security')`). When the view is not *Full*, a pill above the canvas names it, counts what it hides or dims, and has an **×** to go back. The document card and the legend of exports follow the active view.
+A **view** is a way of looking at the same diagram: it only decides what is shown, how much detail and what stands out. It never changes your components or positions. Pick one from the **View** selector in the top bar, with keys **`1`**–**`9`**, or from the console (`Diagramon.setView('security')`). When the view is not *Full*, a pill above the canvas names it, counts what it hides or dims, and has an **×** to go back. The document card and the legend of exports follow the active view.
 
 | Key | View | What you see |
 |---|---|---|
@@ -350,6 +360,7 @@ A **view** is a way of looking at the same diagram: it only decides what is show
 | `6` | **Data** | Data stores and flows, colored by their most sensitive classification |
 | `7` | **Cost** | Monthly cost as a heat map, with the total |
 | `8` | **Governance** | Who owns what: components colored by team (or owner), with a team chip under each; components with neither fade |
+| `9` | **Resilience** | Availability tiers (effective SLA), RPO/RTO chip under each component and single points of failure with a red dashed border |
 
 The rules of each view live in `config.js` › `views`; groups can be marked `logical` or `physical` in the inspector.
 
@@ -388,7 +399,7 @@ From the console: `Diagramon.setScope('api')`, `Diagramon.scope`, `Diagramon.sco
 | `L` | Switch English / Spanish |
 | `E` | Switch curved / elbow connectors |
 | `G` | Open the filter panel (`Esc` closes it) |
-| `1`–`8` | Switch view: Full, Context, Logical, Physical, Security, Data, Cost, Governance |
+| `1`–`9` | Switch view: Full, Context, Logical, Physical, Security, Data, Cost, Governance, Resilience |
 | `Enter` | Open the internal diagram of the selected component (C4 levels) |
 | `Esc` | Cancel or clear the selection; with nothing selected, go up one C4 level |
 | `Alt`+`↑` | Go up one C4 level |
@@ -459,6 +470,7 @@ api ~> queue : events
 | `id: Name [type] "detail"` | Node. `[type]` is a generic type (`db`, `user`…) or an official icon (`aws/lambda`, `rds`) |
 | `color=… badge=… desc="…"` | Node options |
 | `cost=120/month` · `0.1/hour` · `1400/year` · `5000/3years` | Cost in USD (no period = monthly) |
+| `sla=99.95` · `rpo=15m` · `rto=4h` · `replicas=2` | Availability target in % (also `99.95%` or `99,95`), recovery point and time objectives (`s`, `m`, `h`, `d`) and parallel instances; Spanish: `réplicas=` |
 | `data=pii,pci` | Data classification of a node or a connection |
 | `owner="Ana Pérez" steward=… team="Data Eng" costcenter=CC-100` | Ownership of a node or group (Spanish: `dueño=` `responsable=` `equipo=` `centro=`); nodes inherit from their group |
 | `a -> b : TLS encrypted=yes` | Encryption in transit (`yes` or `no`) |
@@ -524,6 +536,7 @@ Everything you can customize is in **`config.js`**. Save and reload `index.html`
 - **Automatic security review**: `securityRules` in `config.js` has one entry per rule (`sec.unencrypted-sensitive`, `sec.unstated-encryption`, `sec.public-sensitive`, `sec.datastore-backup`, `sec.cross-border`, `sec.sensitive-no-owner`, `sec.public-datastore`) with `enabled` (set `false` to turn a rule off) and `severity` (`low`, `medium`, `high`, `critical`). The rest are the rule's parameters: `clientTypes`, `publicGroupIcons` and `publicGroupName` (what counts as public), `dataStoreTypes` and `dataStoreIconCategories`, `backupIcons`, `backupName` and `backupEdgeLabel` (what counts as a backup). Text patterns are case-insensitive RegExps.
 - **Compliance**: `compliance.frameworks` is an ordered map `key → { label, short, url?, controls: { '<id>': { label: { en, es } } } }`. Add a control by adding a line in its framework, or a framework (NIST CSF, ENS, DORA…) by copying a block; JSON and Text accept any `framework:id`, even without a catalog entry. `compliance.suggest` maps each data class (and `crossBorder`) to the controls offered as chips; the first one of each list is the one the review expects.
 - **Architecture decisions**: `adr.staleDays` (default `30`) is how many days a *proposed* decision can wait before it shows as a low finding in the *Review* tab; `0` turns it off.
+- **Resilience**: `resilience` in `config.js` sets `entryTypes` (component types treated as entry points, besides any node with no incoming flow), `dataStoreTypes` and `dataStoreIconCategories` (what counts as a data store), `spofSeverity` and `singleStoreSeverity` (severity of the findings) and `defaultTarget` (SLA in % expected from a data store, default `99.9`).
 - **Environments**: `environments` sets the buttons of the *Versions* tab (name, short label and color). Add or remove as many as you need.
 - **Node size**: with `node.sameSize: true` (default) every node is `node.width` wide and long names wrap to 2 lines.
   With `false`, each node grows with its text.
@@ -612,6 +625,7 @@ Things that work but have not been checked in depth yet. They probably need some
 - **Architecture decisions** (ADR) are not part of the text format and are not exported to Mermaid, PlantUML or draw.io; they are not compared between versions. The ADR tag on the canvas and the Markdown export have not been reviewed visually in every theme.
 - **ADR status history (to do)**: a decision keeps only its current status and date. It should record each status change (proposed → accepted → superseded…) with its date and who made it, and show that timeline in the ADR editor, the Markdown export and the architecture report.
 - The compliance catalog is a practical subset of each standard with paraphrased titles; check it before relying on it for an audit.
+- **Single points of failure** are detected from the diagram topology only (articulation points of the undirected graph): Diagramon does not know about the internal redundancy of a load balancer or a managed service unless you set `replicas`. Effective availability assumes independent instances (no shared failures, no failover time), and the composite availability multiplies the components of one shortest route, so it ignores alternative longer routes.
 - **Architecture report**: the PDF print dialog itself has not been tried yet (HTML and Markdown were checked). The PDF depends on the browser print dialog (page headers and numbers appear only where the browser supports CSS `@page` margin boxes). Markdown viewers that block `data:` images show nothing for the diagrams unless you save the images as separate files. Large diagrams with many views and internal levels can take several seconds. The report has not been checked on very wide tables in print, and the Compliance matrix is listed per control and per component rather than as a grid.
 - **C4 levels**: entering and leaving levels (`Enter`, `Esc`, `Alt+↑`, breadcrumb), the boundary frame, ghost cards, adding components inside a level, undo, *Export all levels* and the report with internal diagrams were checked in the browser; *Move into…* / *Move up a level*, deleting a component with an internal diagram, double-click on the card vs the name, and Auto layout inside a level have not been tried yet. Ghost edge labels can overlap when several connections leave the boundary close together. *Duplicate* does not copy the internal diagram of a duplicated component, and Mermaid, PlantUML and draw.io export the whole flat model (no levels, `in` and `c4` are ignored). Text tab: nodes without `in=` go to the top level, so edit a level from the Text tab by writing `in=` on its nodes. Ghost cards show at most 8 per side. Elements that cross levels (an edge between two different levels) are only drawn as ghosts, they cannot be selected on the canvas; reach them from the inspector links.
 

@@ -577,6 +577,8 @@
       { const l = cleanLayer(o.layer); if (l) o.layer = l; else delete o.layer; }
       { const ex = cleanExposure(o.exposure); if (ex) o.exposure = ex; else delete o.exposure; const bk = cleanBackup(o.backup); if (bk != null) o.backup = bk; else delete o.backup; }
       { const c = cleanControls(o.controls); if (c) o.controls = c; else delete o.controls; }
+      { const sl = cleanSla(o.sla); if (sl != null) o.sla = sl; else delete o.sla; const rp = cleanReplicas(o.replicas); if (rp != null) o.replicas = rp; else delete o.replicas;
+        ['rpo', 'rto'].forEach(k => { const d = normDur(o[k]); if (d != null) o[k] = d; else delete o[k]; }); }
       if (o.in == null || o.in === '') delete o.in; else o.in = String(o.in);
       { const k = cleanC4(o.c4); if (k) o.c4 = k; else delete o.c4; }
       m.nodes.push(o);
@@ -960,6 +962,168 @@
       const l = d.links || {}, tk = l.nodes?.[0] ? 'node' : l.edges?.[0] ? 'edge' : l.groups?.[0] ? 'group' : 'node', tid = l.nodes?.[0] || l.edges?.[0] || l.groups?.[0] || '';
       return [{ id: `adr:stale:${d.id}`, source: 'adr', rule: 'stale', severity: 'low', target: { kind: tk, id: tid }, title: T('adr.find.stale', { id: d.id, n: age }), detail: d.title, fix: T('adr.find.fix') }];
     });
+  });
+
+  /* ---------- disponibilidad (SLA), RPO/RTO, réplicas y puntos únicos de fallo ---------- */
+  const RSL = { entryTypes: ['user', 'web', 'mobile', 'external', 'client'], dataStoreTypes: ['db', 'nosql', 'storage'], dataStoreIconCategories: ['Bases de datos', 'Almacenamiento'],
+    spofSeverity: 'high', singleStoreSeverity: 'medium', defaultTarget: 99.9, ...C.resilience };
+  const DUR_UNITS = { s: 1, sec: 1, seg: 1, m: 60, min: 60, h: 3600, hr: 3600, hora: 3600, horas: 3600, hour: 3600, hours: 3600, d: 86400, dia: 86400, dias: 86400, day: 86400, days: 86400 };
+  // Duración «15m», «4 h», «1d», «0» → segundos (o null si no es válida)
+  const parseDur = v => {
+    if (typeof v === 'number') return Number.isFinite(v) && v === 0 ? 0 : null;
+    const mt = String(v ?? '').trim().toLowerCase().match(/^(\d+(?:[.,]\d+)?)\s*([a-záéíóú]*)$/);
+    if (!mt) return null;
+    const num = +mt[1].replace(',', '.');
+    if (!mt[2]) return num === 0 ? 0 : null;
+    const u = DUR_UNITS[fold(mt[2])];
+    return u ? num * u : null;
+  };
+  // Texto normalizado para guardar: «15m», «4h», «1d», «30s», «0»
+  const normDur = v => {
+    const s = parseDur(v);
+    if (s == null) return null;
+    if (s === 0) return '0';
+    const [u, k] = s % 86400 === 0 ? ['d', 86400] : s % 3600 === 0 ? ['h', 3600] : s % 60 === 0 ? ['m', 60] : ['s', 1];
+    return `${+(s / k).toFixed(3)}${u}`;
+  };
+  const numFmt = (v, d = 2) => new Intl.NumberFormat(I.lang, { maximumFractionDigits: d }).format(v);
+  // 900 → «15 min», 14400 → «4 h», 86400 → «1 d»
+  const fmtDur = s => {
+    if (s == null || !Number.isFinite(s)) return '';
+    if (s === 0) return '0';
+    const [k, u] = s >= 86400 ? [86400, 'd'] : s >= 3600 ? [3600, 'h'] : s >= 60 ? [60, 'min'] : [1, 's'];
+    return `${numFmt(s / k, 1)} ${T(`res.u.${u}`)}`;
+  };
+  const cleanSla = v => {
+    const x = typeof v === 'number' ? v : typeof v === 'string' ? parseFloat(v.replace('%', '').replace(',', '.').trim()) : NaN;
+    return Number.isFinite(x) && x > 0 && x <= 100 ? +x.toFixed(6) : null;
+  };
+  const cleanReplicas = v => { const x = Math.round(+v); return v != null && v !== '' && Number.isFinite(+v) && x >= 2 ? x : null; };
+  const hasSla = n => cleanSla(n.sla) != null;
+  const replicasOf = n => cleanReplicas(n.replicas) || 1;
+  const hasRes = n => hasSla(n) || n.rpo != null || n.rto != null || cleanReplicas(n.replicas) != null;
+  // Disponibilidad efectiva (fracción 0–1) con réplicas en paralelo; null sin SLA
+  const availOf = n => (hasSla(n) ? 1 - Math.pow(1 - cleanSla(n.sla) / 100, replicasOf(n)) : null);
+  const fmtPct = a => `${numFmt(+(a * 100).toFixed(6), 6)}%`;
+  // Tiempo aproximado: «4.4 h», «22 min», «32 s»
+  const fmtApprox = s => {
+    if (s < 1) return `<1 ${T('res.u.s')}`;
+    const [k, u] = s >= 86400 ? [86400, 'd'] : s >= 3600 ? [3600, 'h'] : s >= 60 ? [60, 'min'] : [1, 's'], v = s / k;
+    return `${numFmt(v, v < 10 ? 1 : 0)} ${T(`res.u.${u}`)}`;
+  };
+  // Parada esperada por año y por mes a partir de una disponibilidad (fracción)
+  const downtime = a => {
+    const year = Math.max(0, 1 - a) * 31557600, month = year / 12;
+    return { year, month, text: `≈ ${fmtApprox(year)}${T('res.perYear')} · ${fmtApprox(month)}${T('res.perMonth')}` };
+  };
+  const resTip = n => {
+    if (!hasRes(n)) return '';
+    const a = availOf(n), r = replicasOf(n);
+    return [a != null ? `${T('res.title')}: ${numFmt(cleanSla(n.sla), 6)}%${r > 1 ? ` ×${r} → ${fmtPct(a)}` : ''}` : '', n.rpo != null ? `RPO ${fmtDur(parseDur(n.rpo))}` : '', n.rto != null ? `RTO ${fmtDur(parseDur(n.rto))}` : ''].filter(Boolean).join(' · ');
+  };
+  // Texto de la pastilla bajo el nodo: «99.95% · RPO 15 min · RTO 1 h · ×2»
+  const resChip = n => [hasSla(n) ? `${numFmt(cleanSla(n.sla), 6)}%` : '', n.rpo != null ? `RPO ${fmtDur(parseDur(n.rpo))}` : '', n.rto != null ? `RTO ${fmtDur(parseDur(n.rto))}` : '', cleanReplicas(n.replicas) ? `×${n.replicas}` : ''].filter(Boolean).join(' · ');
+  const isEntryNode = (n, m) => RSL.entryTypes.includes(n.type) || !m.edges.some(e => e.from !== e.to && (e.to === n.id || (e.both && e.from === n.id)));
+  const isResStore = n => RSL.dataStoreTypes.includes(n.type) || RSL.dataStoreIconCategories.includes(iconInfo(n.icon)?.category);
+  // Puntos únicos de fallo: puntos de articulación (Tarjan) del grafo sin dirección que separan una entrada del resto y no tienen réplicas
+  function spofList(m = S.model) {
+    const ids = m.nodes.map(n => n.id), byId = new Map(m.nodes.map(n => [n.id, n])), adj = new Map(ids.map(id => [id, new Set()]));
+    m.edges.forEach(e => { if (e.from !== e.to && adj.has(e.from) && adj.has(e.to)) { adj.get(e.from).add(e.to); adj.get(e.to).add(e.from); } });
+    const disc = new Map(), low = new Map(), art = new Set();
+    let t = 0;
+    const dfs = (u, parent) => { // recursivo: los diagramas son pequeños
+      disc.set(u, ++t); low.set(u, t);
+      let kids = 0;
+      adj.get(u).forEach(v => {
+        if (!disc.has(v)) {
+          kids++; dfs(v, u);
+          low.set(u, Math.min(low.get(u), low.get(v)));
+          if (parent != null && low.get(v) >= disc.get(u)) art.add(u);
+        } else if (v !== parent) low.set(u, Math.min(low.get(u), disc.get(v)));
+      });
+      if (parent == null && kids > 1) art.add(u);
+    };
+    ids.forEach(id => { if (!disc.has(id)) dfs(id, null); });
+    const entries = new Set(m.nodes.filter(n => isEntryNode(n, m) && adj.get(n.id).size).map(n => n.id));
+    const out = [];
+    art.forEach(id => {
+      const n = byId.get(id);
+      if (replicasOf(n) > 1 || isEntryNode(n, m)) return;
+      // Componentes que quedan al quitarlo
+      const comp = new Map(), comps = [];
+      ids.forEach(s => {
+        if (s === id || comp.has(s)) return;
+        const c = [s]; comp.set(s, comps.length);
+        for (let i = 0; i < c.length; i++) adj.get(c[i]).forEach(v => { if (v !== id && !comp.has(v)) { comp.set(v, comps.length); c.push(v); } });
+        comps.push(c);
+      });
+      const ent = comps.length > 1 && [...entries].find(e => e !== id && comp.has(e));
+      if (!ent) return;
+      const cut = ids.filter(x => x !== id && comp.get(x) !== comp.get(ent)).length;
+      out.push({ id, label: n.label, reason: T('res.spof.reason', { entry: byId.get(ent).label, n: cut }) });
+    });
+    return out.sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id));
+  }
+  // Disponibilidad compuesta del camino más corto entre a y b (en serie; el peor camino si hay varios)
+  function pathAvailability(m, b, res) {
+    if (!res || !res.nodes.size) return null;
+    const byId = new Map(m.nodes.map(n => [n.id, n])), dist = res.dist, preds = new Map();
+    m.edges.forEach(e => {
+      if (!res.edges.has(e.id)) return;
+      [[e.from, e.to], [e.to, e.from]].forEach(([u, v]) => { if (dist.get(u) + 1 === dist.get(v)) (preds.get(v) || preds.set(v, new Set()).get(v)).add(u); });
+    });
+    const fac = id => availOf(byId.get(id)) ?? 1, best = new Map();
+    [...res.nodes].sort((x, y) => dist.get(x) - dist.get(y)).forEach(id => {
+      let bp = null, bv = 1;
+      (preds.get(id) || []).forEach(p => { const v = best.get(p)?.val ?? 1; if (bp == null || v < bv) { bp = p; bv = v; } });
+      best.set(id, { val: bv * fac(id), prev: bp });
+    });
+    const order = [];
+    for (let id = b, i = 0; id != null && i++ < 1000; id = best.get(id)?.prev) order.unshift(id);
+    const ns = order.map(id => byId.get(id)), known = ns.filter(n => availOf(n) != null);
+    const worst = known.reduce((w, n) => (!w || availOf(n) < availOf(w) ? n : w), null);
+    const mx = k => { const v = ns.map(n => (n[k] != null ? parseDur(n[k]) : null)).filter(x => x != null); return v.length ? Math.max(...v) : null; };
+    const av = known.length ? best.get(b).val : null;
+    return { availability: av, downtimeYear: av == null ? null : downtime(av).year, nodes: order, unknown: ns.length - known.length, routes: res.count,
+      worst: worst ? { id: worst.id, label: worst.label, availability: availOf(worst) } : null, rpo: mx('rpo'), rto: mx('rto') };
+  }
+  function availability(a, b) {
+    const m = S.model;
+    const res = shortestPaths(m, a, b, true) || shortestPaths(m, a, b, false);
+    const r = pathAvailability(m, b, res);
+    if (!r) return null;
+    const { routes, ...rest } = r;
+    return rest;
+  }
+  // Fragmento HTML para la barra del camino
+  function pathResText(b, res) {
+    const r = pathAvailability(S.model, b, res);
+    if (!r) return '';
+    const parts = [];
+    if (r.availability != null) {
+      parts.push(T('res.path.comp', { a: fmtPct(r.availability), d: fmtApprox(r.downtimeYear) }) + (r.worst ? ` · ${T('res.path.worst', { n: esc(r.worst.label), a: fmtPct(r.worst.availability) })}` : ''));
+      if (r.routes > 1) parts.push(T('res.path.routes', r.routes));
+      if (r.unknown) parts.push(T('res.path.unknown', r.unknown));
+    }
+    if (r.rpo != null) parts.push(`RPO ${esc(fmtDur(r.rpo))}`);
+    if (r.rto != null) parts.push(`RTO ${esc(fmtDur(r.rto))}`);
+    return parts.length ? ` · ${parts.join(' · ')}` : '';
+  }
+  // Peldaño de disponibilidad efectiva para colorear (vista Resiliencia)
+  const RES_TIERS = [{ k: 't4', min: 0.9999, color: 'var(--p-menta)' }, { k: 't3', min: 0.999, color: 'var(--p-limon)' }, { k: 't2', min: 0.99, color: 'var(--p-melocoton)' }, { k: 't1', min: 0, color: 'var(--p-coral)' }];
+  const resTier = n => { const a = availOf(n); return a == null ? null : RES_TIERS.find(t => a >= t.min - 1e-12); };
+  addFindingSource('sla', m => {
+    const out = [], sp = spofList(m), spIds = new Set(sp.map(x => x.id)), sev = (k, d) => (SEVERITY.includes(RSL[k]) ? RSL[k] : d);
+    const usesRto = m.nodes.some(n => n.rpo != null || n.rto != null);
+    sp.forEach(x => out.push({ id: `sla:spof:node:${x.id}`, source: 'sla', rule: 'spof', severity: sev('spofSeverity', 'high'), target: { kind: 'node', id: x.id }, title: T('res.f.spof.t', x.label), detail: x.reason, fix: T('res.f.spof.fix') }));
+    m.nodes.forEach(n => {
+      if (!isResStore(n) || isBackupNode(n)) return;
+      if (!spIds.has(n.id) && replicasOf(n) <= 1 && !(hasSla(n) && cleanSla(n.sla) >= RSL.defaultTarget))
+        out.push({ id: `sla:single-store:node:${n.id}`, source: 'sla', rule: 'single-store', severity: sev('singleStoreSeverity', 'medium'), target: { kind: 'node', id: n.id }, title: T('res.f.store.t', n.label), fix: T('res.f.store.fix') });
+      if (usesRto && (n.rpo == null || n.rto == null))
+        out.push({ id: `sla:rpo-rto:node:${n.id}`, source: 'sla', rule: 'rpo-rto', severity: 'low', target: { kind: 'node', id: n.id }, title: T('res.f.rto.t', n.label), fix: T('res.f.rto.fix') });
+    });
+    return out;
   });
 
   function uniqueId(prefix) {
@@ -1518,7 +1682,7 @@
     const dt = [...(n.review ? [{ ...reviewTag(n.review), cls: 'dt-review' }] : []), ...dataTags(n).map(t => ({ ...t, cls: 'dt-data' })), ...adrTags(n)];
     const rg = regionOf(n).value;
     const ly = layerOf(n), li = ly.value ? layerInfo(ly.value) : null;
-    el('title', null, g).textContent = [n.sub ? `${n.label} · ${n.sub}` : n.label, n.c4 ? `${T('c4.label')}: ${c4Label(n.c4)}` : '', inn ? T('c4.inner.tip', inn) : '', ...dt.map(t => t.label), govTip(n), cmpTip(n), li ? T('layer.tip', { l: li.label }) : '', rg ? T('res.tip', regionLabel(rg)) : ''].filter(Boolean).join('\n');
+    el('title', null, g).textContent = [n.sub ? `${n.label} · ${n.sub}` : n.label, n.c4 ? `${T('c4.label')}: ${c4Label(n.c4)}` : '', inn ? T('c4.inner.tip', inn) : '', ...dt.map(t => t.label), govTip(n), cmpTip(n), li ? T('layer.tip', { l: li.label }) : '', resTip(n), rg ? T('res.tip', regionLabel(rg)) : ''].filter(Boolean).join('\n');
     if (dt.length) {
       const dg = el('g', { class: 'node-data' }, b);
       let x = 14;
@@ -1549,6 +1713,12 @@
       const og = el('g', { class: 'node-own', transform: `translate(${(w - ow) / 2} ${H + 6})` }, b);
       el('rect', { width: ow, height: 20, rx: 10 }, og);
       el('text', { x: ow / 2, y: 14, 'text-anchor': 'middle' }, og).textContent = ot;
+    }
+    if (hasRes(n)) { // Resiliencia: pastilla «99.95% · RPO 15 min · RTO 1 h · ×2» bajo el nodo; solo se ve en la vista Resiliencia
+      const rt = fitText(resChip(n), FONT.cost, w - 20), rw = Math.ceil(textW(rt, FONT.cost) + 20);
+      const rgx = el('g', { class: 'node-res', transform: `translate(${(w - rw) / 2} ${H + 6})` }, b);
+      el('rect', { width: rw, height: 20, rx: 10 }, rgx);
+      el('text', { x: rw / 2, y: 14, 'text-anchor': 'middle' }, rgx).textContent = rt;
     }
     if (li) drawNodeLayer(b, li);
     if (inn) {
@@ -1793,7 +1963,7 @@
     const lab = id => m.nodes.find(n => n.id === id).label;
     const name = `${esc(lab(a))} → ${esc(lab(b))}`;
     const txt = !res ? T('path.none', { name })
-      : (directed ? '' : T('path.undirected') + ' · ') + T('path.summary', { name, hops: res.hops, count: res.count });
+      : (directed ? '' : T('path.undirected') + ' · ') + T('path.summary', { name, hops: res.hops, count: res.count }) + pathResText(b, res);
     const bar = $('#path-bar');
     $('#path-text').innerHTML = txt;
     bar.style.top = S.compare ? '54px' : '';
@@ -2008,7 +2178,7 @@
     const sens = isSensitive(e) || isSensitive(byId.get(e.from)) || isSensitive(byId.get(e.to));
     return e.encrypted === false ? (sens ? 'v-hl v-crit' : 'v-hl v-high') : e.encrypted == null ? (sens ? 'v-hl v-warn' : 'v-dim') : '';
   };
-  const VCLS = ['v-hide', 'v-hl', 'v-dim', 'v-heat', 'v-crit', 'v-high', 'v-warn', 'v-hlc', 'v-own', 'v-xb'];
+  const VCLS = ['v-hide', 'v-hl', 'v-dim', 'v-heat', 'v-crit', 'v-high', 'v-warn', 'v-hlc', 'v-own', 'v-xb', 'v-spof'];
   // De menos a más costo: tramos de VR.costHeat mezclados con color-mix
   const heatColor = t => {
     const st = VR.costHeat;
@@ -2074,6 +2244,15 @@
         if (!hasCost(n)) return nodeCls.set(n.id, 'v-dim');
         nodeCls.set(n.id, 'v-hl v-heat');
         nodeVar.set(n.id, heatColor(max > 0 ? perMonth(n) / max : 0));
+      });
+      m.edges.forEach(e => edgeCls.set(e.id, 'v-dim'));
+    } else if (emph === 'resilience') { // color por disponibilidad efectiva; los puntos únicos de fallo, resaltados
+      const sp = new Set(spofList(m).map(x => x.id));
+      m.nodes.forEach(n => {
+        const tr = resTier(n), bad = sp.has(n.id);
+        if (!tr) return nodeCls.set(n.id, bad ? 'v-hl v-spof' : 'v-dim');
+        nodeCls.set(n.id, `v-hl v-heat${bad ? ' v-spof' : ''}`);
+        nodeVar.set(n.id, tr.color);
       });
       m.edges.forEach(e => edgeCls.set(e.id, 'v-dim'));
     } else if (emph === 'owner') { // color por equipo efectivo (o dueño); sin ninguno, atenuado
@@ -2711,7 +2890,7 @@
 
   const ORDER = {
     group: ['id', 'label', 'icon', 'color', 'parent', 'kind', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'controls', 'in'],
-    node: ['id', 'label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'x', 'y', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'exposure', 'backup', 'controls', 'in', 'c4'],
+    node: ['id', 'label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'x', 'y', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'exposure', 'backup', 'controls', 'in', 'c4', 'sla', 'rpo', 'rto', 'replicas'],
     edge: ['id', 'from', 'to', 'label', 'style', 'route', 'both', 'color', 'data', 'encrypted', 'datasets', 'transferOk', 'threats'],
     note: ['id', 'x', 'y', 'w', 'h', 'text', 'color', 'in'],
     zone: ['id', 'x', 'y', 'w', 'h', 'label', 'severity', 'desc', 'kind', 'trust', 'in'],
@@ -3660,7 +3839,7 @@
 
   // Diferencias entre lo guardado (a) y el lienzo (b). La posición no cuenta como cambio.
   const DIFF_FIELDS = {
-    node: ['label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'exposure', 'backup', 'controls', 'in', 'c4'],
+    node: ['label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'exposure', 'backup', 'controls', 'in', 'c4', 'sla', 'rpo', 'rto', 'replicas'],
     edge: ['label', 'style', 'route', 'both', 'color', 'data', 'encrypted', 'datasets', 'transferOk', 'threats'],
     group: ['label', 'icon', 'color', 'parent', 'kind', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'controls', 'in']
   };
@@ -3807,7 +3986,7 @@
     if (!(d.count.a + d.count.r + d.count.c)) return `<p class="ver-sum">${esc(T('ver.same'))}</p>`;
     const FIELD = { label: 'insp.name', sub: 'insp.detail', type: 'insp.type', icon: 'insp.icon', group: 'insp.group', color: 'insp.color', badge: 'field.badge',
       cost: 'cost.label', costPeriod: 'cost.period', costYears: 'cost.yearsAria', desc: 'insp.desc', style: 'insp.style', parent: 'insp.parent',
-      data: 'data.label', encrypted: 'enc.label', route: 'insp.route', both: 'insp.dir', review: 'rev.label', kind: 'gkind.label', exposure: 'sec.expo.label', backup: 'sec.backup.label', controls: 'cmp.title', in: 'c4.in', c4: 'c4.label' };
+      data: 'data.label', encrypted: 'enc.label', route: 'insp.route', both: 'insp.dir', review: 'rev.label', kind: 'gkind.label', exposure: 'sec.expo.label', backup: 'sec.backup.label', controls: 'cmp.title', in: 'c4.in', c4: 'c4.label', sla: 'res.sla', rpo: 'res.rpo', rto: 'res.rto', replicas: 'res.replicas' };
     const fields = (fs, kind) => fs.map(f => T(kind === 'edge' && f === 'label' ? 'insp.label' : FIELD[f] || f).toLowerCase()).join(', ');
     const names = new Map([...S.compare.base.nodes, ...S.model.nodes].map(n => [n.id, n.label]));
     const edgeName = e => `${names.get(e.from) || e.from} ${e.both ? '↔' : '→'} ${names.get(e.to) || e.to}`;
@@ -4278,6 +4457,26 @@
     return `<details class="gov-box" data-gov-open="${kind}"${open ? ' open' : ''}><summary>${T('gov.title')}</summary><div class="row2">${cells[0]}${cells[1]}</div><div class="row2">${cells[2]}${cells[3]}</div></details>`;
   };
 
+  /* ---------- disponibilidad: campos del inspector ---------- */
+  const SLA_TIERS = [99, 99.5, 99.9, 99.95, 99.99, 99.999], DUR_TIERS = ['0', '15m', '1h', '4h', '24h'];
+  // Pista bajo los campos: disponibilidad efectiva, tiempo de parada esperado y aviso de punto único de fallo
+  const resHintHtml = list => {
+    if (list.length !== 1) return '';
+    const n = list[0], a = availOf(n), r = replicasOf(n), sp = spofList().find(x => x.id === n.id);
+    const h = a == null ? T('res.hint.empty') : `${T('res.hint.eff', { a: fmtPct(a), n: r })} · ${downtime(a).text}`;
+    return `<span class="cost-hint">${esc(h)}</span>${sp ? `<span class="enc-warn">⚠ ${esc(T('res.spof'))} · ${esc(sp.reason)}</span>` : ''}`;
+  };
+  const resField = items => {
+    const list = [].concat(items), cell = (k, lab, extra) => {
+      const vals = list.map(x => (x[k] == null ? '' : String(x[k]))), same = vals.every(v => v === vals[0]);
+      return `<label>${lab}<input data-res="${k}" ${extra} value="${esc(same ? vals[0] : '')}" placeholder="${esc(same ? '' : T('insp.mixed'))}" autocomplete="off"></label>`;
+    };
+    return `<div class="field res-field">${T('res.title')}
+      <div class="row2">${cell('sla', T('res.sla'), 'list="dl-sla" inputmode="decimal"')}${cell('replicas', T('res.replicas'), 'type="number" min="1" step="1" inputmode="numeric"')}</div>
+      <div class="row2">${cell('rpo', T('res.rpo'), 'list="dl-dur"')}${cell('rto', T('res.rto'), 'list="dl-dur"')}</div>
+      <datalist id="dl-sla">${SLA_TIERS.map(v => `<option value="${v}"></option>`).join('')}</datalist><datalist id="dl-dur">${DUR_TIERS.map(v => `<option value="${v}"></option>`).join('')}</datalist>
+      <div id="res-hint">${resHintHtml(list)}</div></div>`;
+  };
   // Sección "Camino" con exactamente dos nodos: el orden de selección define A y B
   function pathField() {
     const [a, b] = S.sel.ids.map(id => S.model.nodes.find(n => n.id === id).label);
@@ -4309,6 +4508,7 @@
         ${c4Field(t)}
         ${dataField(t)}
         ${govField(t, 'multi')}
+        ${resField(t)}
         ${regionField(t)}
         ${layerField(t)}
         ${cmpField(t, 'multi')}
@@ -4339,6 +4539,7 @@
         ${costField(t)}
         ${dataField(t)}
         ${govField(t, 'node')}
+        ${resField(t)}
         ${regionField(t)}
         ${layerField(t)}
         ${secField(t)}
@@ -4522,6 +4723,19 @@
     const v = f.value.trim();
     (Array.isArray(t) ? t : [t]).forEach(x => { if (v) x[f.dataset.gov] = v; else delete x[f.dataset.gov]; });
     changed(true);
+  });
+  /* ---------- disponibilidad: escribir en el inspector ---------- */
+  inspector.addEventListener('focusin', ev => { if (ev.target.matches('input[data-res]')) beginEdit(); });
+  inspector.addEventListener('input', ev => {
+    const f = ev.target, t = selTarget();
+    if (!f.matches('input[data-res]') || !t) return;
+    markEdit();
+    const k = f.dataset.res, v = f.value.trim(), list = Array.isArray(t) ? t : [t];
+    const val = !v ? null : k === 'sla' ? cleanSla(v) : k === 'replicas' ? cleanReplicas(v) : normDur(v);
+    list.forEach(x => { if (val != null) x[k] = val; else delete x[k]; });
+    changed(true);
+    const h = $('#res-hint');
+    if (h) h.innerHTML = resHintHtml(list);
   });
   /* ---------- STRIDE: nota de cada decisión ---------- */
   inspector.addEventListener('focusin', ev => { if (ev.target.matches('input[data-th-note]')) beginEdit(); });
@@ -5122,6 +5336,14 @@
       const vals = m.nodes.filter(hasCost).map(perMonth);
       if (vals.length) r.heat = { min: `${money(round2(Math.min(...vals)))}${T('cost.mo')}`, max: `${money(round2(Math.max(...vals)))}${T('cost.mo')}`, total: `≈ ${money(round2(monthlyTotal(m.nodes)))}${T('cost.mo')}`, stops: VR.costHeat };
     }
+    else if (v.emphasis === 'resilience') {
+      const vn = visNodes(), sp = new Set(spofList(m).map(x => x.id)), cnt = k => vn.filter(n => resTier(n)?.k === k).length;
+      RES_TIERS.forEach(t => { if (cnt(t.k)) r.owners = [...(r.owners || []), { color: t.color, label: T(`res.leg.${t.k}`), n: cnt(t.k) }]; });
+      r.ownersHead = T('res.leg.head');
+      const unk = vn.filter(n => !resTier(n)).length, nsp = vn.filter(n => sp.has(n.id)).length;
+      if (unk) r.owners = [...(r.owners || []), { color: 'var(--muted)', label: T('res.leg.none'), n: unk }];
+      if (nsp) r.owners = [...(r.owners || []), { color: 'var(--sev-critical)', label: T('res.leg.spof'), n: nsp }];
+    }
     else if (v.emphasis === 'owner') {
       const vis = new Set(visNodes().map(n => n.id));
       r.owners = [...govTeams(m, vis).values()].map(t => ({ color: t.color, label: [t.key, t.owners.join(', ')].filter(Boolean).join(' · '), n: t.ids.length }));
@@ -5198,7 +5420,7 @@
         el('circle', { cx: x + 6, cy: y, r: 6, style: `fill:${r.color}` }, g);
         textRow(x + 22, y, txt);
       } }; });
-      for (let i = 0; i < own.length; i += 8) col(i ? '' : T('leg.teams'), own.slice(i, i + 8));
+      for (let i = 0; i < own.length; i += 8) col(i ? '' : ex.ownersHead || T('leg.teams'), own.slice(i, i + 8));
     }
     // Escala de calor de la vista Costo
     if (ex.heat) {
@@ -5356,6 +5578,7 @@
     if (key === 'context') return m.groups.length > 0;
     if (em === 'cost') return m.nodes.some(hasCost);
     if (em === 'owner') return m.nodes.some(n => govKey(n));
+    if (em === 'resilience') return m.nodes.some(hasRes) || spofList(m).length > 0;
     if (em === 'security') return m.nodes.some(n => n.data?.length) || m.edges.some(e => e.data?.length || e.encrypted != null);
     if (em === 'data') return m.nodes.some(n => n.data?.length || VR.dataTypes.includes(n.type) || VR.dataIconCategories.includes(iconInfo(n.icon)?.category)) || m.edges.some(e => e.style === 'data' || e.data?.length);
     return true;
@@ -5491,7 +5714,7 @@
   // reportData() arma un modelo plano (secciones de bloques) y dos dibujantes lo pintan: reportMarkdown y reportHTML, así que los dos formatos no se desincronizan.
   // Bloques: { k: 'h3', t } · { k: 'p', t, muted? } · { k: 'kv', items: [[k, v]] } · { k: 'cards', items: [{ label, value, tone? }] }
   //          { k: 'table', head: [], rows: [[celda]], cls? } (celda = texto | { t, tone }) · { k: 'text', label, t } · { k: 'ul', items } · { k: 'img', alt, caption, svg?, uri?, file? }
-  const REP_SECS = ['summary', 'diagram', 'components', 'connections', 'data', 'owners', 'layers', 'costs', 'findings', 'compliance', 'threats', 'decisions', 'versions', 'notes'];
+  const REP_SECS = ['summary', 'diagram', 'components', 'connections', 'data', 'owners', 'layers', 'costs', 'resilience', 'findings', 'compliance', 'threats', 'decisions', 'versions', 'notes'];
   const REP_PAGE = ['diagram', 'components', 'findings', 'decisions']; // secciones que empiezan página al imprimir
   const repT = (k, v) => T(`rep.${k}`, v);
   const repSleep = ms => new Promise(r => setTimeout(r, ms));
@@ -5510,7 +5733,7 @@
     return {
       summary: true, diagram: m.nodes.length > 0, components: m.nodes.length > 0, connections: m.edges.length > 0,
       data: m.nodes.some(n => dataClassesOf(n, m).length || regionOf(n, m).value), owners: govTeamList(m).length > 0,
-      layers: m.nodes.some(n => layerOf(n).value), costs: m.nodes.some(hasCost), findings: findingsOf(m).length > 0,
+      layers: m.nodes.some(n => layerOf(n).value), costs: m.nodes.some(hasCost), resilience: m.nodes.some(hasRes) || spofList(m).length > 0, findings: findingsOf(m).length > 0,
       compliance: cmpModel(m).keys.length > 0, threats: strideAll(m).length > 0, decisions: !!m.decisions?.length,
       versions: m.versions.length > 0, notes: (m.notes || []).length > 0 || (m.zones || []).some(z => z.kind !== 'trust')
     };
@@ -5644,6 +5867,15 @@
       const per = [...new Set(cn.map(periodOf))];
       blocks.push({ k: 'p', muted: true, t: repT('costNote', { h: COST.hoursPerMonth, p: per.map(p => T(PERIODS[p].label)).join(', ') }) });
       sec('costs', blocks);
+    }
+
+    if (want('resilience')) { // Resiliencia: SLA, RPO/RTO, réplicas y puntos únicos de fallo
+      const rn = m.nodes.filter(hasRes), sp = spofList(m), blocks = [];
+      if (rn.length) blocks.push({ k: 'table', cls: 'wide', head: [repT('h.component'), repT('h.group'), repT('h.sla'), repT('h.replicas'), repT('h.eff'), repT('h.down'), 'RPO', 'RTO'],
+        rows: rn.map(n => { const a = availOf(n); return [n.label, gpath(n), hasSla(n) ? `${numFmt(cleanSla(n.sla), 6)}%` : '', cleanReplicas(n.replicas) ? String(n.replicas) : '', a != null ? fmtPct(a) : '', a != null ? `${fmtApprox(downtime(a).year)}${T('res.perYear')}` : '', n.rpo != null ? fmtDur(parseDur(n.rpo)) : '', n.rto != null ? fmtDur(parseDur(n.rto)) : '']; }) });
+      if (sp.length) { blocks.push({ k: 'h3', t: repT('h.spof') }); blocks.push({ k: 'table', head: [repT('h.component'), repT('h.detail')], rows: sp.map(x => [x.label, x.reason]) }); }
+      blocks.push({ k: 'p', muted: true, t: repT('resNote') });
+      sec('resilience', blocks);
     }
 
     if (want('findings')) {
@@ -6753,6 +6985,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     compliance: () => complianceReport(), exportCompliance: (kind = 'wide') => exportCompliance(kind === 'long' ? 'long' : 'wide'),
     setView, get view() { return S.viewKey; }, get views() { return [...VIEW_KEYS]; },
     owners: () => govTeamList(),
+    availability: (a, b) => availability(a, b), spofs: () => spofList().map(x => ({ ...x })),
     findings: (opts = {}) => apiFindings(opts), dismissFinding: (id, reason) => dismissFinding(id, reason), restoreFinding: id => restoreFinding(id),
     threats: () => strideAll().map(t => ({ edge: t.e.id, from: t.e.from, to: t.e.to, zones: t.zones.map(z => z.id), category: t.cat, severity: t.severity, status: t.status, note: t.note })),
     exportThreats, exportReport,
