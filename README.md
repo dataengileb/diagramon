@@ -184,9 +184,21 @@ The component gets a tag: **IN REVIEW** (orange), **OVERDUE** (red, once the due
 The panel shows how many days are left or how late it is, and the summary above the canvas counts open and overdue findings.
 Diagramon remembers the last reviewer name. Exports with the legend list the open findings with their due date.
 
+### Owners and stewards
+
+Say who is responsible for each component.
+
+1. Select a component (or a group) and open the **Ownership** section of the panel (it opens by itself once a value is set).
+2. Fill in **Owner**, **Data steward**, **Team** and **Cost center**. Each field suggests the values already used in the diagram, so names stay consistent.
+3. Components **inherit** each field from the nearest group that has it: set the team once on a group and everything inside gets it. An inherited value shows as a gray placeholder with *inherited from <group>*; typing your own overrides it.
+4. With several components selected the same four fields apply to all of them (*Mixed* when they differ; clearing a field clears it on all).
+
+The tooltip of a component lists its owner, steward, team and cost center. The **Filter** panel gets **Team**, **Owner**, **Steward** and **Cost center** chips (plus *Unassigned* for owner and team). The document card (**`I`**) lists the **Teams** with their owners and component counts; click one to filter by it.
+Press **`8`** for the **Governance** view: each component is colored by its team (or by its owner when it has no team), shows a small team chip underneath, and the exports and the legend list every team. From the console: `Diagramon.owners()` returns `[{ team, owners, stewards, nodes }]`.
+
 ### Filters
 
-**Filter** (or **`G`**) opens a panel of chips: **Data** (each class in the diagram, plus *Unencrypted sensitive flows*), **Review**, **Provider**, **Category**, **Group** and **Cost**.
+**Filter** (or **`G`**) opens a panel of chips: **Data** (each class in the diagram, plus *Unencrypted sensitive flows*), **Review**, **Provider**, **Category**, **Group**, **Cost**, and **Team**, **Owner**, **Steward** and **Cost center** when they are set.
 Chips in the same section add up (OR); different sections combine (AND). What does not match fades out, including empty groups and connections whose ends do not both match, and selecting a component still works on top.
 A pill above the canvas shows the active filter (`Filter: PII · AWS · 7 of 20`) with an **×** to clear it. The filter is remembered per browser and never changes the exports. From the console: `Diagramon.setFilter({ data: ['pii'], provider: ['aws'] })` and `Diagramon.clearFilter()`.
 
@@ -235,7 +247,7 @@ Use the two buttons next to the zoom controls (bottom right of the canvas).
 
 ### Views
 
-A **view** is a way of looking at the same diagram: it only decides what is shown, how much detail and what stands out. It never changes your components or positions. Pick one from the **View** selector in the top bar, with keys **`1`**–**`7`**, or from the console (`Diagramon.setView('security')`). When the view is not *Full*, a pill above the canvas names it, counts what it hides or dims, and has an **×** to go back. The document card and the legend of exports follow the active view.
+A **view** is a way of looking at the same diagram: it only decides what is shown, how much detail and what stands out. It never changes your components or positions. Pick one from the **View** selector in the top bar, with keys **`1`**–**`8`**, or from the console (`Diagramon.setView('security')`). When the view is not *Full*, a pill above the canvas names it, counts what it hides or dims, and has an **×** to go back. The document card and the legend of exports follow the active view.
 
 | Key | View | What you see |
 |---|---|---|
@@ -246,6 +258,7 @@ A **view** is a way of looking at the same diagram: it only decides what is show
 | `5` | **Security** | Sensitive data and encryption in transit highlighted (unencrypted, or not stated, with sensitive data); the rest fades |
 | `6` | **Data** | Data stores and flows, colored by their most sensitive classification |
 | `7` | **Cost** | Monthly cost as a heat map, with the total |
+| `8` | **Governance** | Who owns what: components colored by team (or owner), with a team chip under each; components with neither fade |
 
 The rules of each view live in `config.js` › `views`; groups can be marked `logical` or `physical` in the inspector.
 
@@ -270,7 +283,7 @@ The rules of each view live in `config.js` › `views`; groups can be marked `lo
 | `L` | Switch English / Spanish |
 | `E` | Switch curved / elbow connectors |
 | `G` | Open the filter panel (`Esc` closes it) |
-| `1`–`7` | Switch view: Full, Context, Logical, Physical, Security, Data, Cost |
+| `1`–`8` | Switch view: Full, Context, Logical, Physical, Security, Data, Cost, Governance |
 | `Esc` | Cancel or clear the selection |
 
 ---
@@ -340,6 +353,7 @@ api ~> queue : events
 | `color=… badge=… desc="…"` | Node options |
 | `cost=120/month` · `0.1/hour` · `1400/year` · `5000/3years` | Cost in USD (no period = monthly) |
 | `data=pii,pci` | Data classification of a node or a connection |
+| `owner="Ana Pérez" steward=… team="Data Eng" costcenter=CC-100` | Ownership of a node or group (Spanish: `dueño=` `responsable=` `equipo=` `centro=`); nodes inherit from their group |
 | `a -> b : TLS encrypted=yes` | Encryption in transit (`yes` or `no`) |
 | `a -> b : SQL datasets=orders,customers` | Datasets carried by a connection (Spanish: `tablas=`); quote names with spaces: `datasets="sales orders,crm.customers"` |
 | `group id "Name" color=… { … }` | Group; groups can be nested |
@@ -372,6 +386,7 @@ The text does not store positions: existing nodes stay where they are, and new n
 - `costPeriod`: `hour`, `year` or `multi` (with `costYears`). Without `costPeriod` the cost is monthly.
 - `routing: "elbow"` sets elbow lines for the diagram; `route` (`curved` or `elbow`) overrides it on one edge. `meta` holds `author` and `version`.
 - `review` on a node: `{ "status": "open" | "resolved", "note", "by", "raised", "due", "closed" }`, dates as `YYYY-MM-DD`.
+- `owner`, `steward`, `team` and `costCenter` (strings) on nodes and groups; a node without one inherits it from the nearest group that has it.
 - `data` is a list of data classes (`["pii", "pci"]`) on nodes and edges. `encrypted` (`true` or `false`) is the encryption in transit of an edge.
 - Exported files also carry `versions` (each with `kind`: `version` or `env`, and its own `diagram`) and `active`.
 - `color` takes a palette key (`rosa`, `coral`, `melocoton`, `limon`, `menta`, `cielo`, `lavanda`, `lila`),

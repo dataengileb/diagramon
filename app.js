@@ -306,6 +306,7 @@
       if (cleanReview(o.review)) o.review = cleanReview(o.review); else delete o.review;
       m.nodes.push(o);
     });
+    [...m.groups, ...m.nodes].forEach(cleanGov);
     const nids = new Set(m.nodes.map(n => n.id));
     list(raw.edges).forEach((e, i) => {
       const from = String(e.from), to = String(e.to);
@@ -422,6 +423,39 @@
     while (g && i++ < 50) { if (g === gid) return true; g = groupById(g)?.parent; }
     return false;
   }
+  /* ---------- dueños y responsables: dueño, responsable de datos, equipo y centro de costo (heredan del grupo) ---------- */
+  const GOV_FIELDS = ['owner', 'steward', 'team', 'costCenter'];
+  const cleanGov = o => GOV_FIELDS.forEach(f => { const v = o[f] == null ? '' : String(o[f]).trim(); if (v) o[f] = v; else delete o[f]; });
+  // Valor efectivo de un campo: el propio o el del grupo ancestro más cercano que lo tenga ({ value, from: id del grupo | null })
+  function govOf(x, f, m = S.model) {
+    const own = String(x?.[f] ?? '').trim();
+    if (own) return { value: own, from: null };
+    let gid = x?.group || x?.parent, i = 0;
+    while (gid && i++ < 50) {
+      const g = m.groups.find(y => y.id === gid), v = String(g?.[f] ?? '').trim();
+      if (v) return { value: v, from: g.id };
+      gid = g?.parent;
+    }
+    return { value: '', from: null };
+  }
+  const govKey = n => govOf(n, 'team').value || govOf(n, 'owner').value;
+  // Equipos (o dueños, si el nodo no tiene equipo) en orden alfabético; cada uno con un color estable de la paleta
+  function govTeams(m = S.model, ids = null) {
+    const by = new Map(), keys = paletteKeys();
+    m.nodes.forEach(n => {
+      const k = govKey(n);
+      if (!k || (ids && !ids.has(n.id))) return;
+      if (!by.has(k)) by.set(k, { key: k, kind: govOf(n, 'team').value ? 'team' : 'owner', owners: new Set(), ids: [] });
+      const t = by.get(k), o = govOf(n, 'owner').value;
+      if (o && o !== k) t.owners.add(o);
+      t.ids.push(n.id);
+    });
+    const order = [...new Set(m.nodes.map(govKey).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+    by.forEach(t => { t.color = `var(--p-${keys[order.indexOf(t.key) % keys.length]})`; t.owners = [...t.owners].sort((a, b) => a.localeCompare(b)); });
+    return new Map([...by].sort((a, b) => a[0].localeCompare(b[0])));
+  }
+  const govTip = n => GOV_FIELDS.map(f => { const v = govOf(n, f).value; return v ? `${T(`gov.${f}`)}: ${v}` : ''; }).filter(Boolean).join(' · ');
+
   function uniqueId(prefix) {
     const used = new Set([...S.model.nodes, ...S.model.edges, ...S.model.groups, ...S.model.notes, ...S.model.zones].map(x => x.id));
     let i = 1;
@@ -831,7 +865,7 @@
     if (sub) { paint(true, ' nd-full'); paint(false, ' nd-min'); } else paint(false, '');
     // Arriba a la izquierda: la observación de revisión (si hay) y las clasificaciones de datos
     const dt = [...(n.review ? [{ ...reviewTag(n.review), cls: 'dt-review' }] : []), ...dataTags(n).map(t => ({ ...t, cls: 'dt-data' }))];
-    el('title', null, g).textContent = [n.sub ? `${n.label} · ${n.sub}` : n.label, ...dt.map(t => t.label)].join('\n');
+    el('title', null, g).textContent = [n.sub ? `${n.label} · ${n.sub}` : n.label, ...dt.map(t => t.label), govTip(n)].filter(Boolean).join('\n');
     if (dt.length) {
       const dg = el('g', { class: 'node-data' }, b);
       let x = 14;
@@ -848,6 +882,14 @@
       const cg = el('g', { class: 'node-cost', transform: `translate(${(w - cw) / 2} ${H + 6})` }, b);
       el('rect', { width: cw, height: 20, rx: 10 }, cg);
       el('text', { x: cw / 2, y: 14, 'text-anchor': 'middle' }, cg).textContent = ct;
+    }
+    // Gobierno: pastilla de equipo (o dueño) bajo el nodo; solo se ve en la vista Gobierno
+    const gt = govOf(n, 'team').value || govOf(n, 'owner').value;
+    if (gt) {
+      const ot = fitText(gt, FONT.cost, w - 20), ow = Math.ceil(textW(ot, FONT.cost) + 20);
+      const og = el('g', { class: 'node-own', transform: `translate(${(w - ow) / 2} ${H + 6})` }, b);
+      el('rect', { width: ow, height: 20, rx: 10 }, og);
+      el('text', { x: ow / 2, y: 14, 'text-anchor': 'middle' }, og).textContent = ot;
     }
     R.nodes.set(n.id, g);
   }
@@ -1286,7 +1328,7 @@
     const sens = isSensitive(e) || isSensitive(byId.get(e.from)) || isSensitive(byId.get(e.to));
     return e.encrypted === false ? (sens ? 'v-hl v-crit' : 'v-hl v-high') : e.encrypted == null ? (sens ? 'v-hl v-warn' : 'v-dim') : '';
   };
-  const VCLS = ['v-hide', 'v-hl', 'v-dim', 'v-heat', 'v-crit', 'v-high', 'v-warn', 'v-hlc'];
+  const VCLS = ['v-hide', 'v-hl', 'v-dim', 'v-heat', 'v-crit', 'v-high', 'v-warn', 'v-hlc', 'v-own'];
   // De menos a más costo: tramos de VR.costHeat mezclados con color-mix
   const heatColor = t => {
     const st = VR.costHeat;
@@ -1315,7 +1357,7 @@
     svg.dataset.view = key;
     const byId = new Map(m.nodes.map(n => [n.id, n]));
     const hideN = new Set(), hideE = new Set(), hideG = new Set(), top = new Set();
-    const nodeCls = new Map(), edgeCls = new Map(), nodeVar = new Map(), edgeVar = new Map();
+    const nodeCls = new Map(), edgeCls = new Map(), nodeVar = new Map(), edgeVar = new Map(), ownVar = new Map();
     if (collapse) { // cajas cerradas: dentro de un grupo todo se oculta; las conexiones reales se sustituyen por las agregadas
       m.nodes.forEach(n => { if (n.group) hideN.add(n.id); });
       m.edges.forEach(e => hideE.add(e.id));
@@ -1345,6 +1387,14 @@
         nodeVar.set(n.id, heatColor(max > 0 ? perMonth(n) / max : 0));
       });
       m.edges.forEach(e => edgeCls.set(e.id, 'v-dim'));
+    } else if (emph === 'owner') { // color por equipo efectivo (o dueño); sin ninguno, atenuado
+      const tm = govTeams(m);
+      m.nodes.forEach(n => {
+        const k = govKey(n);
+        if (!k) return nodeCls.set(n.id, 'v-dim');
+        nodeCls.set(n.id, 'v-hl v-own');
+        ownVar.set(n.id, tm.get(k).color);
+      });
     }
 
     const paint = (g, id, hide, cls, vars, prop) => {
@@ -1355,6 +1405,7 @@
       if (vars.has(id)) g.style.setProperty(prop, vars.get(id));
     };
     R.nodes.forEach((g, id) => paint(g, id, hideN, nodeCls, nodeVar, '--heat'));
+    R.nodes.forEach((g, id) => { g.style.removeProperty('--own'); if (ownVar.has(id) && !hideN.has(id)) g.style.setProperty('--own', ownVar.get(id)); });
     R.edges.forEach((r, id) => paint(r.g, id, hideE, edgeCls, edgeVar, '--vc'));
     R.groups.forEach((r, id) => r.g.classList.toggle('v-hide', hideG.has(id) || top.has(id)));
     VW.hideNodes = hideN; VW.hideEdges = hideE; VW.hideGroups = hideG;
@@ -1734,8 +1785,8 @@
   const save = debounce(() => { store.set('model', S.model); updateMeta(); renderVersions(); }, 250);
 
   const ORDER = {
-    group: ['id', 'label', 'icon', 'color', 'parent', 'kind'],
-    node: ['id', 'label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'x', 'y', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc'],
+    group: ['id', 'label', 'icon', 'color', 'parent', 'kind', 'owner', 'steward', 'team', 'costCenter'],
+    node: ['id', 'label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'x', 'y', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter'],
     edge: ['id', 'from', 'to', 'label', 'style', 'route', 'both', 'color', 'data', 'encrypted', 'datasets'],
     note: ['id', 'x', 'y', 'w', 'h', 'text', 'color'],
     zone: ['id', 'x', 'y', 'w', 'h', 'label', 'severity', 'desc']
@@ -1870,12 +1921,22 @@
     // Leyenda compacta de la vista (solo si aporta algo): niveles, escala de calor, grupos visibles
     const vrows = ex ? [...ex.conn.map(r => `<li class="sw" style="--c:${esc(r.lock ? 'var(--muted)' : sw(r.color))}"><i></i>${esc(r.label)}</li>`),
       ...(ex.heat ? [`<li><i class="heat" style="background:linear-gradient(90deg,${esc(ex.heat.stops.join(','))})"></i>${esc(`${ex.heat.min} – ${ex.heat.max}`)}</li>`, `<li>${esc(`${T('leg.total')}: ${ex.heat.total}`)}</li>`] : []),
+      ...(ex.owners || []).map(o => `<li style="--c:${esc(o.color)}"><i></i>${esc(o.label)} <small>(${o.n})</small></li>`),
       ...(ex.groups ? [`<li class="sw" style="--c:var(--muted)"><i></i>${esc(ex.groups)}</li>`] : [])] : [];
     // Conjuntos de datos del diagrama: cada fila es un botón que muestra su linaje
     const dsRows = open ? datasetList().map(d => `<li><button class="ds-row" data-lin="${esc(d.name)}" title="${esc(T('lin.show', { name: d.name }))}"><span>${esc(d.name)}</span><small>${d.edges}</small></button></li>`) : [];
+    // Equipos del diagrama (fuera de la vista Gobierno, que ya los muestra): al pulsar uno se filtra por él
+    const teams = open && vc().emphasis !== 'owner' ? [...govTeams().values()] : [];
     const det = (k, head, rows) => `<details class="docbar-leg" data-k="${k}"${store.get(k, false) ? ' open' : ''}><summary>${esc(head)} · ${rows.length}</summary><ul>${rows.join('')}</ul></details>`;
-    $('#docbar-body').innerHTML = open ? `<dl>${d.info.map(([k, x]) => `<dt>${esc(k)}</dt><dd>${esc(x)}</dd>`).join('')}</dl>${types.length ? det('docbarLeg', T('leg.components'), types.map(r => `<li style="--c:${esc(r.color)}"><i></i>${esc(r.label)}</li>`)) : ''}${vrows.length ? det('docbarLegV', `${T('leg.view')}: ${viewLabel(S.viewKey)}`, vrows) : ''}${dsRows.length ? det('docbarLegD', T('lin.leg'), dsRows) : ''}` : '';
+    $('#docbar-body').innerHTML = open ? `<dl>${d.info.map(([k, x]) => `<dt>${esc(k)}</dt><dd>${esc(x)}</dd>`).join('')}</dl>${types.length ? det('docbarLeg', T('leg.components'), types.map(r => `<li style="--c:${esc(r.color)}"><i></i>${esc(r.label)}</li>`)) : ''}${vrows.length ? det('docbarLegV', `${T('leg.view')}: ${viewLabel(S.viewKey)}`, vrows) : ''}${teams.length ? det('docbarLegT', T('leg.teams'), teams.map(t => `<li data-gov="${esc(t.kind)}" data-k="${esc(t.key)}" style="--c:${esc(t.color)}" title="${esc(T('flt.pill'))}"><i></i>${esc([t.key, t.owners.join(', ')].filter(Boolean).join(' · '))} <small>(${t.ids.length})</small></li>`)) : ''}${dsRows.length ? det('docbarLegD', T('lin.leg'), dsRows) : ''}` : '';
   }
+  // Clic en un equipo de la leyenda: filtra por él (otro clic lo quita)
+  $('#docbar-body').addEventListener('click', ev => {
+    const li = ev.target.closest('li[data-gov]');
+    if (!li) return;
+    const s = li.dataset.gov, k = li.dataset.k, cur = S.filter[s] || [];
+    setFilter(cur.length === 1 && cur[0] === k ? { ...S.filter, [s]: [] } : { ...S.filter, [s]: [k] });
+  });
   function toggleDocbar() { store.set('docbar', !store.get('docbar', true)); renderDocbar(); }
   $('#docbar-toggle').addEventListener('click', toggleDocbar);
   $('#docbar-body').addEventListener('click', ev => { const b = ev.target.closest('button[data-lin]'); if (b) showLineage(b.dataset.lin); });
@@ -1884,7 +1945,7 @@
   /* ---------- filtros ("lentes"): atenúan lo que no coincide ---------- */
   // Filtro: { data: [clase | '@insecure'], review: ['open','overdue'], provider, category, group, cost: ['cost'] }
   // Dentro de una sección las fichas suman (O); entre secciones se combinan (Y)
-  const FLT_SECTIONS = ['data', 'review', 'provider', 'category', 'group', 'cost'];
+  const FLT_SECTIONS = ['data', 'review', 'provider', 'category', 'group', 'cost', 'team', 'owner', 'steward', 'costCenter'];
   const providerOf = n => { const p = String(n.icon || '').split('/')[0]; return n.icon && ICONS[p] ? p : 'generic'; };
   const topGroups = m => m.groups.filter(g => !g.parent || !m.groups.some(x => x.id === g.parent));
   // Fichas disponibles en el diagrama actual: { sección: [{ k, label }] }
@@ -1898,8 +1959,15 @@
       provider: [...Object.keys(ICONS), 'generic'].filter(p => provs.has(p)).map(p => ({ k: p, label: p === 'generic' ? T('flt.generic') : ICONS[p].label })),
       category: categories().filter(c => cats.has(c)).map(c => ({ k: c, label: I.category(c) })),
       group: topGroups(m).map(g => ({ k: g.id, label: g.label })),
-      cost: [{ k: 'cost', label: T('flt.cost') }]
+      cost: [{ k: 'cost', label: T('flt.cost') }],
+      ...Object.fromEntries(GOV_FIELDS.map(f => [f, govFilterOpts(m, f)]))
     };
+  }
+  // Fichas de dueño / equipo…: valores efectivos (heredados) usados, y «Sin asignar» (solo dueño y equipo) si a algún nodo le falta
+  function govFilterOpts(m, f) {
+    const vals = m.nodes.map(n => govOf(n, f, m).value), set = [...new Set(vals.filter(Boolean))].sort((a, b) => a.localeCompare(b));
+    const none = (f === 'owner' || f === 'team') && set.length && vals.some(v => !v);
+    return [...set.map(v => ({ k: v, label: v })), ...(none ? [{ k: '@none', label: T('flt.unassigned') }] : [])];
   }
   // Deja solo fichas que existen; `insecure: true` y `cost: true` son atajos para la API
   function cleanFilter(raw, m = S.model) {
@@ -1923,6 +1991,7 @@
       if (s === 'provider') return v.includes(providerOf(n));
       if (s === 'category') return v.includes(typeOf(n).category || 'Otros');
       if (s === 'group') return v.some(g => inGroup(n, g));
+      if (GOV_FIELDS.includes(s)) { const e = govOf(n, s).value; return v.some(k => (k === '@none' ? !e : k === e)); }
       return hasCost(n);
     });
   }
@@ -2605,9 +2674,9 @@
 
   // Diferencias entre lo guardado (a) y el lienzo (b). La posición no cuenta como cambio.
   const DIFF_FIELDS = {
-    node: ['label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc'],
+    node: ['label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter'],
     edge: ['label', 'style', 'route', 'both', 'color', 'data', 'encrypted', 'datasets'],
-    group: ['label', 'icon', 'color', 'parent', 'kind']
+    group: ['label', 'icon', 'color', 'parent', 'kind', 'owner', 'steward', 'team', 'costCenter']
   };
   function diffModels(a, b) {
     const val = (f, x) => (f === 'style' ? x || 'sync' : x == null ? '' : typeof x === 'object' ? JSON.stringify(x) : String(x));
@@ -3138,6 +3207,22 @@
     </div>`;
   };
 
+  // Dueños y responsables: sección plegable con 4 campos; sugiere los valores ya usados y muestra lo heredado del grupo
+  const govField = (items, kind) => {
+    const list = [].concat(items), m = S.model, one = list.length === 1 && list[0];
+    const own = (x, f) => String(x[f] ?? '').trim();
+    const any = list.some(x => GOV_FIELDS.some(f => own(x, f)));
+    const open = store.get(`govOpen.${kind}`, any);
+    const cells = GOV_FIELDS.map(f => {
+      const vals = list.map(x => own(x, f)), same = vals.every(v => v === vals[0]), inh = one && !vals[0] ? govOf(one, f) : null;
+      const ph = !same ? T('insp.mixed') : inh?.value || '';
+      const used = [...new Set([...m.nodes, ...m.groups].map(x => own(x, f)).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+      const gl = inh?.from ? m.groups.find(g => g.id === inh.from)?.label : '';
+      return `<label>${T(`gov.${f}`)}<input data-gov="${f}" list="dl-gov-${f}" value="${esc(same ? vals[0] : '')}" placeholder="${esc(ph)}" autocomplete="off"><datalist id="dl-gov-${f}">${used.map(v => `<option value="${esc(v)}"></option>`).join('')}</datalist>${gl ? `<span class="cost-hint">${esc(T('gov.inherited', { name: gl }))}</span>` : ''}</label>`;
+    });
+    return `<details class="gov-box" data-gov-open="${kind}"${open ? ' open' : ''}><summary>${T('gov.title')}</summary><div class="row2">${cells[0]}${cells[1]}</div><div class="row2">${cells[2]}${cells[3]}</div></details>`;
+  };
+
   // Sección "Camino" con exactamente dos nodos: el orden de selección define A y B
   function pathField() {
     const [a, b] = S.sel.ids.map(id => S.model.nodes.find(n => n.id === id).label);
@@ -3167,6 +3252,7 @@
         <div class="field">${T('insp.color')}${swatches(colorsOf.size === 1 ? [...colorsOf][0] : '__mixed')}</div>
         ${t.length === 2 ? pathField() : ''}
         ${dataField(t)}
+        ${govField(t, 'multi')}
         ${priced.length ? `<p class="cost-sum">${T('insp.selCost')} <b>≈ ${money(round2(monthlyTotal(t)))}${T('cost.mo')}</b><span>${T('insp.withCost', { a: priced.length, b: t.length })}</span></p>` : ''}
         <p class="note">${T('insp.multiNote')}</p>
         <div class="insp-actions">
@@ -3191,6 +3277,7 @@
         <div class="field">${T('insp.color')}${swatches(t.color)}</div>
         ${costField(t)}
         ${dataField(t)}
+        ${govField(t, 'node')}
         ${reviewField(t)}
         <label>${T('insp.desc')}<textarea data-field="desc" rows="3" placeholder="${esc(T('insp.desc.ph'))}">${esc(t.desc || '')}</textarea></label>
         <div class="field">${T('insp.reach')}<div class="seg">${modes.map(([k, l]) => `<button data-reach="${k}" class="${S.reach === k ? 'on' : ''}">${l}</button>`).join('')}</div></div>
@@ -3254,6 +3341,7 @@
         <label>${T('gkind.label')}<select data-field="kind"><option value=""${t.kind ? '' : ' selected'}>${esc(T('gkind.auto', { k: T(`gkind.${groupKindAuto(t)}`) }))}</option>${['logical', 'physical'].map(k => `<option value="${k}"${t.kind === k ? ' selected' : ''}>${T(`gkind.${k}`)}</option>`).join('')}</select></label>
         <label>${T('insp.parent')}<select data-field="parent"><option value="">${T('insp.none')}</option>${m.groups.filter(g => !blocked.has(g.id)).map(g => `<option value="${esc(g.id)}"${g.id === t.parent ? ' selected' : ''}>${esc(g.label)}</option>`).join('')}</select></label>
         <div class="field">${T('insp.color')}${swatches(t.color)}</div>
+        ${govField(t, 'group')}
         <div class="insp-actions"><button class="btn danger" data-act="delete">${T('insp.deleteGroup')}</button></div>`;
     }
 
@@ -3342,6 +3430,17 @@
     box.querySelector('.rev-head em').textContent = reviewHint(n.review);
   });
   inspector.addEventListener('focusout', endEdit);
+  /* ---------- dueños y responsables: escribir en el inspector ---------- */
+  inspector.addEventListener('focusin', ev => { if (ev.target.matches('input[data-gov]')) beginEdit(); });
+  inspector.addEventListener('toggle', ev => { if (ev.target.matches('details[data-gov-open]')) store.set(`govOpen.${ev.target.dataset.govOpen}`, ev.target.open); }, true);
+  inspector.addEventListener('input', ev => {
+    const f = ev.target, t = selTarget();
+    if (!f.matches('input[data-gov]') || !t) return;
+    markEdit();
+    const v = f.value.trim();
+    (Array.isArray(t) ? t : [t]).forEach(x => { if (v) x[f.dataset.gov] = v; else delete x[f.dataset.gov]; });
+    changed(true);
+  });
   inspector.addEventListener('input', ev => { if (ev.target.matches('input[data-field], textarea[data-field]')) onField(ev.target); });
   inspector.addEventListener('change', ev => { if (ev.target.matches('select[data-field]')) onField(ev.target); });
   // Añadir conjuntos de datos a la conexión elegida (Intro o coma; también al elegir de la lista o salir del campo)
@@ -3778,7 +3877,7 @@
   const visEdges = () => (vc().groups === 'collapse-top' ? [...VW.flows.values()].flatMap(f => f.edges) : S.model.edges.filter(e => !VW.hideEdges.has(e.id)));
   // Filas de leyenda propias de la vista activa, según sus reglas en config.js (emphasis, groups, legendGroups)
   function viewLegend() {
-    const v = vc(), m = S.model, byId = new Map(m.nodes.map(n => [n.id, n])), es = visEdges(), r = { conn: [], groups: '', heat: null };
+    const v = vc(), m = S.model, byId = new Map(m.nodes.map(n => [n.id, n])), es = visEdges(), r = { conn: [], groups: '', heat: null, owners: null };
     if (v.emphasis === 'security') {
       const cls = new Set(es.map(e => secClass(e, byId)));
       r.conn.push({ color: 'var(--sev-critical)', label: T('leg.sec.crit') });
@@ -3791,6 +3890,10 @@
     } else if (v.emphasis === 'cost') {
       const vals = m.nodes.filter(hasCost).map(perMonth);
       if (vals.length) r.heat = { min: `${money(round2(Math.min(...vals)))}${T('cost.mo')}`, max: `${money(round2(Math.max(...vals)))}${T('cost.mo')}`, total: `≈ ${money(round2(monthlyTotal(m.nodes)))}${T('cost.mo')}`, stops: VR.costHeat };
+    }
+    else if (v.emphasis === 'owner') {
+      const vis = new Set(visNodes().map(n => n.id));
+      r.owners = [...govTeams(m, vis).values()].map(t => ({ color: t.color, label: [t.key, t.owners.join(', ')].filter(Boolean).join(' · '), n: t.ids.length }));
     }
     if (m.groups.length && (v.groups !== 'all' || v.legendGroups)) r.groups = T(v.groups === 'collapse-top' ? 'leg.g.collapse' : v.groups === 'logical' ? 'leg.g.logical' : 'leg.g.all');
     return r;
@@ -3858,6 +3961,14 @@
       el('rect', { x, y: y - 6, width: 20, height: 14, rx: 3, style: 'fill:none;stroke:var(--muted);stroke-width:1.3', 'stroke-dasharray': '4 3' }, g);
       textRow(x + 30, y, ex.groups);
     } }]);
+    // Equipos de la vista Gobierno: un punto de color por equipo, con sus dueños y cuántos componentes
+    if (ex.owners?.length) {
+      const own = ex.owners.map(r => { const txt = fitText(`${r.label} (${r.n})`, '400 12px', 300); return { w: 22 + textW(txt, '400 12px'), draw: (x, y) => {
+        el('circle', { cx: x + 6, cy: y, r: 6, style: `fill:${r.color}` }, g);
+        textRow(x + 22, y, txt);
+      } }; });
+      for (let i = 0; i < own.length; i += 8) col(i ? '' : T('leg.teams'), own.slice(i, i + 8));
+    }
     // Escala de calor de la vista Costo
     if (ex.heat) {
       const hc = ex.heat, n = hc.stops.length, tot = `${T('leg.total')}: ${hc.total}`, BW = 104;
@@ -3994,6 +4105,7 @@
     const m = S.model, em = VIEWS[key]?.emphasis;
     if (key === 'context') return m.groups.length > 0;
     if (em === 'cost') return m.nodes.some(hasCost);
+    if (em === 'owner') return m.nodes.some(n => govKey(n));
     if (em === 'security') return m.nodes.some(n => n.data?.length) || m.edges.some(e => e.data?.length || e.encrypted != null);
     if (em === 'data') return m.nodes.some(n => n.data?.length || VR.dataTypes.includes(n.type) || VR.dataIconCategories.includes(iconInfo(n.icon)?.category)) || m.edges.some(e => e.style === 'data' || e.data?.length);
     return true;
@@ -4506,6 +4618,21 @@
     requestAnimationFrame(tick);
   }
 
+  // API: equipos con sus dueños, responsables y nodos (valores efectivos, con herencia); los nodos sin equipo salen con team ''
+  function govTeamList(m = S.model) {
+    const by = new Map();
+    m.nodes.forEach(n => {
+      const [team, owner, steward] = ['team', 'owner', 'steward'].map(f => govOf(n, f, m).value);
+      if (!team && !owner && !steward) return;
+      if (!by.has(team)) by.set(team, { team, owners: new Set(), stewards: new Set(), nodes: [] });
+      const t = by.get(team);
+      if (owner) t.owners.add(owner);
+      if (steward) t.stewards.add(steward);
+      t.nodes.push(n.id);
+    });
+    return [...by.values()].sort((a, b) => (!a.team - !b.team) || a.team.localeCompare(b.team)).map(t => ({ ...t, owners: [...t.owners].sort(), stewards: [...t.stewards].sort() }));
+  }
+
   // API para extensiones futuras (consola o scripts propios)
   window.Diagramon = {
     get model() { return clone(S.model); },
@@ -4519,6 +4646,7 @@
     saveVersion, openVersion, compareVersion, deleteVersion,
     setFilter, clearFilter, get filter() { return clone(S.filter); },
     setView, get view() { return S.viewKey; }, get views() { return [...VIEW_KEYS]; },
+    owners: () => govTeamList(),
     exportSVG, exportPNG, exportViews, exportJSON, shareEncrypted, exportOther, exportCtx, toggleRouting, importFiles, config: C, icons: ICONS
   };
 
