@@ -635,7 +635,7 @@ window.DiagramonIaC = (() => {
     const region = list.map(r => r.region).find(Boolean) || '';
     // Icono de grupo (esquina del recuadro) según el papel del recurso y su nube; sin icono oficial no se pone ninguno
     const groupIcon = (role, prov, pub) => ({
-      cloud: { aws: 'aws/group-cloud' },
+      cloud: { aws: 'aws/group-cloud', azure: 'azure/logo', gcp: 'gcp/logo' },
       vpc: { aws: 'aws/group-vpc', azure: 'azure/vnet', gcp: 'gcp/vpc' },
       subnet: { aws: pub ? 'aws/group-publicsubnet' : 'aws/group-privatesubnet', azure: 'azure/subnet' },
       rg: { azure: 'azure/group-resourcegroup' }

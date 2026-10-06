@@ -1485,7 +1485,10 @@
       wy = c.y + (Math.random() * 80 - 40);
     }
     pushHistory();
-    const n = { id: uniqueId(`${extra.icon ? extra.icon.split('/')[1] : S.lastType}-`), label: extra.label || typeLabel(type), type: S.lastType };
+    // Con un logotipo de marca (sap/logo) el id sale del nombre: s4hana-1 en vez de logo-1
+    const base = extra.icon && !extra.icon.endsWith('/logo') ? extra.icon.split('/')[1]
+      : extra.icon ? (fold(extra.label || '').replace(/^sap\s+/, '').replace(/[^a-z0-9]+/g, '') || extra.icon.split('/')[0]) : S.lastType;
+    const n = { id: uniqueId(`${base}-`), label: extra.label || typeLabel(type), type: S.lastType };
     if (extra.icon) n.icon = extra.icon;
     if (extra.sub) n.sub = extra.sub;
     n.x = snap(wx - nodeWidth(n) / 2);
@@ -2860,7 +2863,7 @@
         items.sort((a, b) => r(a) - r(b));
       }
       $('#palette-list').innerHTML = [...groups].map(([cat, items]) => `<div class="cat">${esc(I.category(cat))}</div><div class="chips">${items.map(([k, it]) => k == null
-        ? chip(`data-type="${esc(it.type)}" data-label="${esc(it.label)}" data-sub="${esc(it.sub || '')}"`, colorVar(it.color || (C.types[it.type] || C.types.generic).color), typeIcon(it.type), it.label)
+        ? chip(`data-type="${esc(it.type)}" data-label="${esc(it.label)}" data-sub="${esc(it.sub || '')}"${iconInfo(it.icon) ? ` data-icon="${esc(it.icon)}"` : ''}`, colorVar(it.color || (C.types[it.type] || C.types.generic).color), nodeIconHtml(it), it.label, !!iconInfo(it.icon))
         : chip(`data-type="${it.type}" data-icon="${S.provider}/${k}" data-label="${esc(it.label)}"`, colorVar((C.types[it.type] || C.types.generic).color), `<img src="${set.files[it.file]}" alt="">`, it.label, true)).join('')}</div>`).join('')
         || `<p class="empty-list">${T('side.none')}</p>`;
       return;
@@ -2874,7 +2877,7 @@
     $('#palette-list').innerHTML = html || `<p class="empty-list">${T('side.none.types')}</p>`;
   }
   $('#search').addEventListener('input', renderPalette);
-  const chipExtra = c => (c.dataset.icon ? { icon: c.dataset.icon, label: c.dataset.label }
+  const chipExtra = c => (c.dataset.icon ? { icon: c.dataset.icon, label: c.dataset.label, sub: c.dataset.sub || undefined }
     : c.dataset.label ? { label: c.dataset.label, sub: c.dataset.sub || undefined } : {});
   $('#palette-list').addEventListener('click', ev => { const c = ev.target.closest('.chip'); if (c) addNode(c.dataset.type, null, null, chipExtra(c)); });
   $('#palette-list').addEventListener('dragstart', ev => {

@@ -117,7 +117,7 @@ Prefer Spanish? Click the 🌐 **EN** button in the top bar, or press **`L`**.
 3. In **Components**, open the **Provider** list and pick **Generic**, **AWS**, **Azure**, **Google Cloud**, **SAP BTP** or **Microsoft Fabric**.
    Only that provider's components are shown. Use the search box: `lambda`, `s3`, `hana`…
    It also matches synonyms and equivalents, in English and Spanish: `sql` finds RDS, Cloud SQL and Azure SQL; `k8s` finds EKS, AKS and GKE; `cola` finds SQS and Service Bus.
-   For **SAP**, the **SAP systems** without an official icon (S/4HANA, ECC, TM, EWM…) appear at the top.
+   For **SAP**, the **SAP business systems** (S/4HANA, ECC, TM, EWM…) appear at the top, with the SAP logo.
 4. **Click** a component to add it to the center, or **drag** it onto the canvas.
    Double-click an empty spot on the canvas to add another one like the last.
 
@@ -417,8 +417,23 @@ The text language is in `window.DiagramonText` (`parse` and `stringify`). UI tra
 | `samples/` | Sample IaC files to try the import |
 | `icons/*.js` | Embedded official icons for AWS, Azure, Google Cloud, SAP BTP and Microsoft Fabric |
 | `tools/build-icons.py` | Builds `icons/*.js` from the official packs |
+| `icons/logos.js`, `tools/build-logos.py` | Azure, Google Cloud and SAP logos for groups, built from `tools/logos/` |
 | `fonts/` | Bundled fonts (`.woff2`, OFL licenses) and the generated `fonts.js` |
 | `tools/build-fonts.py` | Builds `fonts/fonts.js` from `fonts/*.woff2` |
+
+---
+
+## 🧭 Known gaps
+
+Things that work but have not been checked in depth yet. They probably need some debugging; reports and pull requests are welcome.
+
+- **IaC import for Azure and Google Cloud**: the icon mapping exists, but it has not been tried with real Azure or Google Cloud files.
+- **Mermaid, PlantUML and draw.io exports**: they cover the main cases, but complex diagrams may lose details or need fixes.
+  Group icons in the draw.io export have not been opened in draw.io yet.
+- **Light and black themes** with group icons and custom colors have not been reviewed. A very light custom color may be hard to read in the light theme, since custom colors do not adapt to the theme.
+- **Text tab round trip** for bidirectional connections (`both=yes`) and multi-line labels: writing works, editing and reading back has not been fully tested.
+- Bidirectional connections are followed one way only by *Play flow* and presentation mode.
+- Notes and risk zones are not exported to Mermaid, PlantUML or draw.io.
 
 ---
 
@@ -456,8 +471,10 @@ SAP BTP icons come from [SAP/btp-solution-diagrams](https://github.com/SAP/btp-s
 under the Apache 2.0 license (copy in [`icons/LICENSE-SAP.txt`](icons/LICENSE-SAP.txt)).
 Microsoft Fabric icons come from Microsoft's official `@fabric-msft/svg-icons` package, under the MIT license
 (copy in [`icons/LICENSE-FABRIC.txt`](icons/LICENSE-FABRIC.txt)), and follow the same usage rules as Azure icons.
-SAP only publishes icons for its BTP services. Its business applications (S/4HANA, ECC, TM, EWM…) have no official icon:
-SAP's guidelines draw them as named boxes, and Diagramon does the same with its own generic icon.
+SAP only publishes icons for its BTP services. Its business applications (S/4HANA, ECC, TM, EWM…) have no official icon,
+so Diagramon shows them with the SAP logo.
+The Azure, Google Cloud and SAP **logos** offered as group icons (an Azure subscription, a Google Cloud project, an SAP BTP account)
+are trademarks of their owners, used only to identify the service. Sources and terms in [`icons/LICENSE-LOGOS.txt`](icons/LICENSE-LOGOS.txt).
 Diagramon shows the icons unchanged: do not crop, rotate or distort them, and do not use them to represent your own product.
 AWS, Azure, Microsoft Fabric, Google Cloud and SAP are trademarks of their respective owners. Diagramon is not affiliated with any of them.
 
