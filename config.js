@@ -202,6 +202,44 @@ window.DIAGRAMON_CONFIG = {
     physicalGroupName: /vpc|vnet|subnet|subred|regi[oó]n|region|\baz\b|availability zone|zona de disponibilidad|account|cuenta|subscription|suscripci[oó]n|resource group|grupo de recursos|tenant|datacenter|centro de datos/i
   },
 
+  /* Revisión de seguridad automática (panel «Revisión»): reglas que solo AVISAN, nunca bloquean nada.
+     Cada regla: { enabled: true|false, severity: 'low'|'medium'|'high'|'critical', …parámetros }.
+     Para apagar una regla pon `enabled: false`; para cambiar su gravedad, cambia `severity`.
+     El resto de claves son parámetros de esa regla (listas de tipos, iconos o expresiones regulares; las RegExp se prueban sin
+     distinguir mayúsculas). Un nodo puede anular lo deducido con `exposure: 'public'|'internal'` y `backup: true|false`.
+     - sec.unencrypted-sensitive: conexión marcada «sin cifrar» que lleva datos sensibles.
+     - sec.unstated-encryption: conexión con datos sensibles sin indicar si va cifrada.
+     - sec.public-sensitive: componente público con datos sensibles propios. Es público si queda dentro de un grupo (o ancestro)
+       cuyo icono está en `publicGroupIcons` o cuyo nombre coincide con `publicGroupName`, o si recibe una conexión de un nodo
+       de `clientTypes`.
+     - sec.datastore-backup: almacén de datos sin respaldo. Almacén = tipo en `dataStoreTypes` o icono de una categoría de
+       `dataStoreIconCategories`. Tiene respaldo si está conectado a un nodo que coincide con `backupIcons` / `backupName`
+       o por una conexión cuya etiqueta coincide con `backupEdgeLabel`.
+     - sec.cross-border: transferencia entre jurisdicciones sin aprobar (ver `residency`).
+     - sec.sensitive-no-owner: datos sensibles sin dueño ni responsable (propio o heredado del grupo).
+     - sec.public-datastore: almacén de datos público o que recibe una conexión directa de un cliente / servicio externo. */
+  securityRules: {
+    'sec.unencrypted-sensitive': { enabled: true, severity: 'critical' },
+    'sec.unstated-encryption':   { enabled: true, severity: 'medium' },
+    'sec.public-sensitive': {
+      enabled: true, severity: 'high',
+      clientTypes: ['user', 'web', 'mobile', 'external'],
+      publicGroupIcons: ['aws/group-publicsubnet'],
+      publicGroupName: /public|p[uú]blica|dmz|internet|edge|per[ií]metro/i
+    },
+    'sec.datastore-backup': {
+      enabled: true, severity: 'medium',
+      dataStoreTypes: ['db', 'nosql', 'storage'],
+      dataStoreIconCategories: ['Bases de datos', 'Almacenamiento'],
+      backupIcons: ['aws/backup', 'azure/recovery'],
+      backupName: /backup|respaldo|snapshot|(recovery|backup)\s*vault|b[oó]veda de (respaldo|backup)|replica|r[eé]plica/i,
+      backupEdgeLabel: /backup|snapshot|crr|replica|r[eé]plica|copy|copia/i
+    },
+    'sec.cross-border':      { enabled: true, severity: 'high' },
+    'sec.sensitive-no-owner': { enabled: true, severity: 'low' },
+    'sec.public-datastore':  { enabled: true, severity: 'high' }
+  },
+
   /* Orden automático. direction: 'LR' (izquierda→derecha) o 'TB' (arriba→abajo). */
   layout: { direction: 'LR', colGap: 110, rowGap: 40, groupGap: 70, rankGapTB: 90 },
 

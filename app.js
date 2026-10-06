@@ -372,6 +372,7 @@
     if (raw.direction === 'LR' || raw.direction === 'TB') m.direction = raw.direction;
     if (raw.routing === 'elbow') m.routing = 'elbow';
     if (raw.layerNames === 'zones') m.layerNames = 'zones';
+    { const dm = cleanDismissed(raw.dismissed); if (dm) m.dismissed = dm; }
     if (raw.meta && typeof raw.meta === 'object') {
       const meta = {};
       ['author', 'version'].forEach(k => { if (raw.meta[k] != null && String(raw.meta[k]).trim()) meta[k] = String(raw.meta[k]).trim(); });
@@ -422,6 +423,7 @@
       if (cleanReview(o.review)) o.review = cleanReview(o.review); else delete o.review;
       if (cleanRegion(o.region)) o.region = cleanRegion(o.region); else delete o.region;
       { const l = cleanLayer(o.layer); if (l) o.layer = l; else delete o.layer; }
+      { const ex = cleanExposure(o.exposure); if (ex) o.exposure = ex; else delete o.exposure; const bk = cleanBackup(o.backup); if (bk != null) o.backup = bk; else delete o.backup; }
       m.nodes.push(o);
     });
     [...m.groups, ...m.nodes].forEach(cleanGov);
@@ -576,6 +578,90 @@
     return new Map([...by].sort((a, b) => a[0].localeCompare(b[0])));
   }
   const govTip = n => GOV_FIELDS.map(f => { const v = govOf(n, f).value; return v ? `${T(`gov.${f}`)}: ${v}` : ''; }).filter(Boolean).join(' · ');
+
+  /* ---------- revisión de seguridad automática: reglas que avisan (config.js › securityRules) ---------- */
+  // Solo avisan, nunca bloquean. Una regla se apaga con `enabled: false`; el nodo puede anular lo deducido con `exposure` y `backup`.
+  const SR = C.securityRules || {};
+  const SR_SEV = { 'sec.unencrypted-sensitive': 'critical', 'sec.unstated-encryption': 'medium', 'sec.public-sensitive': 'high', 'sec.datastore-backup': 'medium', 'sec.cross-border': 'high', 'sec.sensitive-no-owner': 'low', 'sec.public-datastore': 'high' };
+  const srOn = id => !!SR[id] && SR[id].enabled !== false;
+  const srSev = id => (SEVERITY.includes(SR[id]?.severity) ? SR[id].severity : SR_SEV[id] || 'medium');
+  const srRx = (re, s) => { try { return re instanceof RegExp && new RegExp(re.source, 'i').test(String(s ?? '')); } catch { return false; } };
+  const cleanExposure = v => { const k = fold(v); return /^(public|publico|publica|external|externa?)$/.test(k) ? 'public' : /^(internal|interno|interna|private|privado|privada)$/.test(k) ? 'internal' : ''; };
+  const cleanBackup = v => (v === true || v === false ? v : typeof v === 'string' ? (/^(yes|true|si|sí)$/i.test(v.trim()) ? true : /^(no|false)$/i.test(v.trim()) ? false : null) : null);
+  // Hallazgos descartados: { [id]: { reason, by?, date } }; no se poda nada (un id viejo no estorba)
+  const cleanDismissed = v => {
+    if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
+    const out = {};
+    Object.entries(v).forEach(([id, d]) => {
+      if (!id || !d || typeof d !== 'object') return;
+      const o = { reason: String(d.reason ?? '').trim().slice(0, 300) };
+      if (d.by != null && String(d.by).trim()) o.by = String(d.by).trim();
+      if (isDay(d.date)) o.date = d.date;
+      out[id] = o;
+    });
+    return Object.keys(out).length ? out : null;
+  };
+  // Grupos de un nodo, del más cercano al más lejano
+  const groupChain = (n, m) => { const out = []; let g = n.group, i = 0; while (g && i++ < 50) { const gg = m.groups.find(x => x.id === g); if (!gg) break; out.push(gg); g = gg.parent; } return out; };
+  // Exposición: { value: 'public' | 'internal', auto, why }. Lo explícito gana; si no, se deduce del grupo o de quién le envía tráfico
+  function exposureOf(n, m = S.model) {
+    if (n.exposure === 'public' || n.exposure === 'internal') return { value: n.exposure, auto: false, why: T('sec.why.manual') };
+    const P = SR['sec.public-sensitive'] || {}, clients = P.clientTypes || [];
+    const g = groupChain(n, m).find(x => (P.publicGroupIcons || []).includes(x.icon) || srRx(P.publicGroupName, x.label));
+    if (g) return { value: 'public', auto: true, why: T('sec.why.group', g.label) };
+    const src = m.edges.filter(e => e.to === n.id || (e.both && e.from === n.id)).map(e => m.nodes.find(x => x.id === (e.to === n.id ? e.from : e.to))).find(x => x && x.id !== n.id && clients.includes(x.type));
+    return src ? { value: 'public', auto: true, why: T('sec.why.client', src.label) } : { value: 'internal', auto: true, why: T('sec.why.none') };
+  }
+  const isClientNode = n => (SR['sec.public-sensitive']?.clientTypes || []).includes(n.type);
+  const isDataStore = n => { const D = SR['sec.datastore-backup'] || {}; return (D.dataStoreTypes || []).includes(n.type) || (D.dataStoreIconCategories || []).includes(iconInfo(n.icon)?.category); };
+  const isBackupNode = n => { const D = SR['sec.datastore-backup'] || {}; return (D.backupIcons || []).includes(n.icon) || srRx(D.backupName, n.label); };
+  // Respaldo: { value: true | false, auto, why }. Lo explícito gana; si no, se deduce de un nodo de respaldo vecino o de una conexión «backup»
+  function backupOf(n, m = S.model) {
+    if (typeof n.backup === 'boolean') return { value: n.backup, auto: false, why: T('sec.why.manual') };
+    const D = SR['sec.datastore-backup'] || {};
+    for (const e of m.edges) {
+      if (e.from !== n.id && e.to !== n.id) continue;
+      const o = m.nodes.find(x => x.id === (e.from === n.id ? e.to : e.from));
+      if (o && o.id !== n.id && isBackupNode(o)) return { value: true, auto: true, why: T('sec.why.bknode', o.label) };
+      if (srRx(D.backupEdgeLabel, e.label)) return { value: true, auto: true, why: T('sec.why.bkedge', String(e.label).replace(/\s+/g, ' ')) };
+    }
+    return { value: false, auto: true, why: T('sec.why.nobk') };
+  }
+  // Clases sensibles de una conexión: las suyas y las de sus extremos (como secClass), en el orden de config.js
+  const edgeSens = (e, get) => {
+    const ks = [...(e.data || []), ...(get(e.from)?.data || []), ...(get(e.to)?.data || [])];
+    return [...new Set(ks)].filter(k => DATA[k]?.sensitive).sort((a, b) => Object.keys(DATA).indexOf(a) - Object.keys(DATA).indexOf(b));
+  };
+  const nodeSens = n => [...new Set(n.data || [])].filter(k => DATA[k]?.sensitive).sort((a, b) => Object.keys(DATA).indexOf(a) - Object.keys(DATA).indexOf(b));
+  function ruleFindings(m) {
+    const out = [], byId = new Map(m.nodes.map(n => [n.id, n])), get = id => byId.get(id);
+    const add = (rule, kind, o, title, detail, fix) => out.push({ id: `rule:${rule}:${kind}:${o.id}`, source: 'rule', rule, severity: srSev(rule), target: { kind, id: o.id }, title, ...(detail ? { detail } : {}), fix });
+    m.edges.forEach(e => {
+      const a = get(e.from), b = get(e.to);
+      if (!a || !b) return;
+      const cls = edgeSens(e, get), ends = { a: a.label, b: b.label }, shorts = () => classShorts(cls).join(', ');
+      if (srOn('sec.unencrypted-sensitive') && isInsecure(e, get)) add('sec.unencrypted-sensitive', 'edge', e, T('sec.f.unenc.t', { cls: shorts(), n: cls.length, ...ends }), T('sec.f.unenc.d'), T('sec.f.unenc.fix'));
+      if (srOn('sec.unstated-encryption') && e.encrypted == null && cls.length) add('sec.unstated-encryption', 'edge', e, T('sec.f.unst.t', { cls: shorts(), n: cls.length, ...ends }), T('sec.f.unst.d'), T('sec.f.unst.fix'));
+      if (srOn('sec.cross-border')) {
+        const cb = crossBorder(e, get);
+        if (cb && !cb.approved) add('sec.cross-border', 'edge', e, T('sec.f.xb.t', { cls: classShorts(cb.classes).join(', '), n: cb.classes.length, fromR: cb.from.region, toR: cb.to.region, ...ends }), xbWarn(cb), T('sec.f.xb.fix'));
+      }
+    });
+    m.nodes.forEach(n => {
+      const ns = nodeSens(n), ds = isDataStore(n) && !isBackupNode(n), ex = exposureOf(n, m);
+      if (srOn('sec.public-sensitive') && ns.length && !isClientNode(n) && ex.value === 'public') add('sec.public-sensitive', 'node', n, T('sec.f.pubsens.t', { n: n.label, cls: classShorts(ns).join(', '), c: ns.length }), ex.why, T('sec.f.pubsens.fix'));
+      if (srOn('sec.datastore-backup') && ds && !backupOf(n, m).value) add('sec.datastore-backup', 'node', n, T('sec.f.bk.t', n.label), T('sec.f.bk.d'), T('sec.f.bk.fix'));
+      if (srOn('sec.sensitive-no-owner') && ns.length && !govOf(n, 'owner', m).value && !govOf(n, 'steward', m).value) add('sec.sensitive-no-owner', 'node', n, T('sec.f.owner.t', { n: n.label, cls: classShorts(ns).join(', '), c: ns.length }), '', T('sec.f.owner.fix'));
+      if (srOn('sec.public-datastore') && ds && ex.value === 'public') add('sec.public-datastore', 'node', n, T('sec.f.pubds.t', n.label), ex.why, T('sec.f.pubds.fix'));
+    });
+    return out;
+  }
+  addFindingSource('rule', ruleFindings);
+  // Observaciones de revisión manuales (abiertas o vencidas): se resuelven en el inspector, no se descartan aquí
+  addFindingSource('review', m => m.nodes.filter(n => n.review && n.review.status !== 'resolved').map(n => {
+    const late = reviewState(n.review) === 'overdue';
+    return { id: `review:observation:node:${n.id}`, source: 'review', rule: 'observation', severity: late ? 'high' : 'medium', target: { kind: 'node', id: n.id }, title: n.review.note || T('find.rev.untitled', n.label), detail: reviewHint(n.review), fix: T('find.rev.fix') };
+  }));
 
   function uniqueId(prefix) {
     const used = new Set([...S.model.nodes, ...S.model.edges, ...S.model.groups, ...S.model.notes, ...S.model.zones].map(x => x.id));
@@ -773,6 +859,7 @@
     const base = m.nodes.length * C.animation.enterStagger * 0.6;
     m.edges.forEach((e, i) => buildEdge(e, animate ? base + i * 30 : -1));
     m.nodes.forEach((n, i) => buildNode(n, animate ? i * C.animation.enterStagger : -1));
+    refreshFindings(true);
     applyViewMode();
     updateGeometry();
     applyCompare();
@@ -1951,7 +2038,7 @@
 
   const ORDER = {
     group: ['id', 'label', 'icon', 'color', 'parent', 'kind', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer'],
-    node: ['id', 'label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'x', 'y', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer'],
+    node: ['id', 'label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'x', 'y', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'exposure', 'backup'],
     edge: ['id', 'from', 'to', 'label', 'style', 'route', 'both', 'color', 'data', 'encrypted', 'datasets', 'transferOk'],
     note: ['id', 'x', 'y', 'w', 'h', 'text', 'color'],
     zone: ['id', 'x', 'y', 'w', 'h', 'label', 'severity', 'desc']
@@ -1969,6 +2056,7 @@
     if (m.direction) head.push(`  "direction": ${JSON.stringify(m.direction)}`);
     if (m.routing) head.push(`  "routing": ${JSON.stringify(m.routing)}`);
     if (m.layerNames === 'zones') head.push(`  "layerNames": "zones"`);
+    if (m.dismissed && Object.keys(m.dismissed).length) head.push(`  "dismissed": ${JSON.stringify(m.dismissed)}`);
     if (m.meta) head.push(`  "meta": ${JSON.stringify(m.meta)}`);
     const body = [...head, arr('groups', m.groups, ORDER.group), arr('nodes', m.nodes, ORDER.node), arr('edges', m.edges, ORDER.edge)];
     if (m.notes?.length) body.push(arr('notes', m.notes, ORDER.note));
@@ -2023,6 +2111,7 @@
     if (opts.fromEditor && S.model && raw && typeof raw === 'object') {
       if (!Array.isArray(raw.notes)) raw = { ...raw, notes: S.model.notes };
       if (!Array.isArray(raw.zones)) raw = { ...raw, zones: S.model.zones };
+      if (opts.fromEditor === 'text' && raw.dismissed === undefined && S.model.dismissed) raw = { ...raw, dismissed: S.model.dismissed }; // el texto no trae los hallazgos descartados
     }
     S.model = normalize(raw);
     ensurePositions(S.model);
@@ -2060,7 +2149,9 @@
     const zc = m.zones.filter(z => z.severity === 'critical').length;
     const zones = m.zones.length ? T('meta.zones', { n: m.zones.length, c: zc }) : '';
     const reviews = open.length ? T('meta.review', { n: open.length, o: overdue }) : '';
-    $('#stage-meta').textContent = [T('meta.nodes', m.nodes.length), T('meta.edges', m.edges.length), m.groups.length ? T('meta.groups', m.groups.length) : '', costs, insecure ? T('meta.insecure', insecure) : '', xb ? T('meta.xborder', xb) : '', zones, reviews].filter(Boolean).join(' · ');
+    refreshFindings();
+    const nFind = FC.open.filter(f => f.source === 'rule').length;
+    $('#stage-meta').textContent = [T('meta.nodes', m.nodes.length), T('meta.edges', m.edges.length), m.groups.length ? T('meta.groups', m.groups.length) : '', costs, insecure ? T('meta.insecure', insecure) : '', xb ? T('meta.xborder', xb) : '', zones, reviews, nFind ? T('meta.findings', nFind) : ''].filter(Boolean).join(' · ');
     const t = $('#title');
     if (document.activeElement !== t) t.value = m.title;
     $('#empty').hidden = m.nodes.length > 0;
@@ -2755,7 +2846,7 @@
   const findVersion = id => S.model.versions.find(v => v.id === id);
   // Solo lo que se dibuja: sin versiones y con posiciones redondeadas
   const snapshotOf = m => {
-    const d = clone({ title: m.title, ...(m.direction ? { direction: m.direction } : {}), ...(m.routing ? { routing: m.routing } : {}), ...(m.layerNames ? { layerNames: m.layerNames } : {}), groups: m.groups, nodes: m.nodes, edges: m.edges, ...(m.notes?.length ? { notes: m.notes } : {}), ...(m.zones?.length ? { zones: m.zones } : {}) });
+    const d = clone({ title: m.title, ...(m.direction ? { direction: m.direction } : {}), ...(m.routing ? { routing: m.routing } : {}), ...(m.layerNames ? { layerNames: m.layerNames } : {}), ...(m.dismissed ? { dismissed: m.dismissed } : {}), groups: m.groups, nodes: m.nodes, edges: m.edges, ...(m.notes?.length ? { notes: m.notes } : {}), ...(m.zones?.length ? { zones: m.zones } : {}) });
     d.nodes.forEach(n => { n.x = Math.round(n.x); n.y = Math.round(n.y); });
     return d;
   };
@@ -2864,7 +2955,7 @@
 
   // Diferencias entre lo guardado (a) y el lienzo (b). La posición no cuenta como cambio.
   const DIFF_FIELDS = {
-    node: ['label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer'],
+    node: ['label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'exposure', 'backup'],
     edge: ['label', 'style', 'route', 'both', 'color', 'data', 'encrypted', 'datasets', 'transferOk'],
     group: ['label', 'icon', 'color', 'parent', 'kind', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer']
   };
@@ -3006,7 +3097,7 @@
     if (!(d.count.a + d.count.r + d.count.c)) return `<p class="ver-sum">${esc(T('ver.same'))}</p>`;
     const FIELD = { label: 'insp.name', sub: 'insp.detail', type: 'insp.type', icon: 'insp.icon', group: 'insp.group', color: 'insp.color', badge: 'field.badge',
       cost: 'cost.label', costPeriod: 'cost.period', costYears: 'cost.yearsAria', desc: 'insp.desc', style: 'insp.style', parent: 'insp.parent',
-      data: 'data.label', encrypted: 'enc.label', route: 'insp.route', both: 'insp.dir', review: 'rev.label', kind: 'gkind.label' };
+      data: 'data.label', encrypted: 'enc.label', route: 'insp.route', both: 'insp.dir', review: 'rev.label', kind: 'gkind.label', exposure: 'sec.expo.label', backup: 'sec.backup.label' };
     const fields = (fs, kind) => fs.map(f => T(kind === 'edge' && f === 'label' ? 'insp.label' : FIELD[f] || f).toLowerCase()).join(', ');
     const names = new Map([...S.compare.base.nodes, ...S.model.nodes].map(n => [n.id, n.label]));
     const edgeName = e => `${names.get(e.from) || e.from} ${e.both ? '↔' : '→'} ${names.get(e.to) || e.to}`;
@@ -3519,6 +3610,7 @@
         ${govField(t, 'node')}
         ${regionField(t)}
         ${layerField(t)}
+        ${secField(t)}
         ${reviewField(t)}
         <label>${T('insp.desc')}<textarea data-field="desc" rows="3" placeholder="${esc(T('insp.desc.ph'))}">${esc(t.desc || '')}</textarea></label>
         <div class="field">${T('insp.reach')}<div class="seg">${modes.map(([k, l]) => `<button data-reach="${k}" class="${S.reach === k ? 'on' : ''}">${l}</button>`).join('')}</div></div>
@@ -3748,6 +3840,11 @@
       pushHistory();
       (Array.isArray(t) ? t : [t]).forEach(x => { if (b.dataset.layer && DL[b.dataset.layer]) x.layer = b.dataset.layer; else delete x.layer; });
       changed(true); renderInspector();
+    } else if ((b.dataset.expo != null || b.dataset.bak != null) && t && !Array.isArray(t)) {
+      pushHistory();
+      if (b.dataset.expo != null) { if (b.dataset.expo) t.exposure = b.dataset.expo; else delete t.exposure; }
+      else if (b.dataset.bak) t.backup = b.dataset.bak === 'yes'; else delete t.backup;
+      changed(true); renderInspector();
     } else if (b.dataset.lnames && t) {
       setLayerNames(b.dataset.lnames);
     } else if (b.dataset.dir != null && t && !Array.isArray(t)) {
@@ -3874,6 +3971,7 @@
     $$('.tab').forEach(x => x.classList.toggle('on', x === t));
     $$('.pane').forEach(p => p.classList.toggle('on', p.dataset.pane === t.dataset.tab));
     store.set('tab', t.dataset.tab);
+    if (t.dataset.tab === 'review') renderFindings();
   }));
 
   function codeBox(box, apply) {
@@ -4036,6 +4134,7 @@
     renderVersions();
     applyCompare();
     updateMeta();
+    renderFindings();
     writeEditors(null, true);
   }
   function toggleLang() {
@@ -4795,6 +4894,209 @@
     }
   });
 
+  /* ---------- panel «Revisión»: hallazgos de todas las fuentes, descartes y marcadores en el lienzo ---------- */
+  // FC = { all, open, dismissed, byId, fresh }: se recalcula al dibujar y al guardar (updateMeta); el panel solo se pinta si su pestaña está a la vista
+  let FC = { all: [], open: [], dismissed: [], byId: new Map(), fresh: false };
+  const FP = { sev: '', src: '', dis: false }; // filtros del panel: gravedad, fuente y «mostrar descartados»
+  const SRC_ORDER = ['rule', 'compliance', 'stride', 'review'];
+  const srcRank = k => (SRC_ORDER.includes(k) ? SRC_ORDER.indexOf(k) : SRC_ORDER.length);
+  const srcLabel = k => { const key = `find.src.${k}`; const t = T(key); return t === key || !t ? k : t; };
+  const sevRank = k => SEVERITY.indexOf(k);
+  const findingsOf = m => {
+    const dm = m.dismissed || {};
+    return allFindings(m).map(f => { const d = f.source !== 'review' && dm[f.id]; return d ? { ...f, dismissed: { ...d } } : { ...f }; })
+      .sort((a, b) => srcRank(a.source) - srcRank(b.source) || sevRank(b.severity) - sevRank(a.severity) || String(a.title).localeCompare(String(b.title)));
+  };
+  function refreshFindings(fromRender = false) {
+    if (!fromRender && FC.fresh) { FC.fresh = false; return; } // render() ya lo calculó para este mismo updateMeta
+    const all = S.model ? findingsOf(S.model) : [];
+    FC = { all, open: all.filter(f => !f.dismissed), dismissed: all.filter(f => f.dismissed), byId: new Map(all.map(f => [f.id, f])), fresh: fromRender };
+    syncSecMarkers();
+    const worst = FC.open.reduce((w, f) => (sevRank(f.severity) > sevRank(w) ? f.severity : w), 'low'), bd = $('#review-badge');
+    if (bd) { bd.hidden = !FC.open.length; bd.textContent = FC.open.length > 99 ? '99+' : FC.open.length; bd.style.setProperty('--b', `var(--sev-${worst})`); bd.title = T('find.badge', FC.open.length); }
+    renderFindings();
+  }
+  // Pastilla «⚠ n» arriba a la derecha de cada nodo con hallazgos abiertos de reglas (solo se ve en la vista Seguridad); evita la insignia
+  function syncSecMarkers() {
+    const per = new Map();
+    FC.open.forEach(f => { if (f.source === 'rule' && f.target.kind === 'node') { const p = per.get(f.target.id) || { n: 0, sev: 'low', t: [] }; p.n++; p.t.push(f.title); if (sevRank(f.severity) > sevRank(p.sev)) p.sev = f.severity; per.set(f.target.id, p); } });
+    S.model?.nodes.forEach(n => {
+      const g = R.nodes.get(n.id), body = g?.querySelector('.node-body'), cur = body?.querySelector(':scope > .node-sec'), p = per.get(n.id);
+      if (!body) return;
+      if (!p) return void cur?.remove();
+      const key = `${p.sev}|${p.n}|${R.width.get(n.id)}|${n.badge ?? ''}`;
+      if (cur?.dataset.k === key) return;
+      cur?.remove();
+      const w = R.width.get(n.id), txt = `⚠ ${p.n}`, pw = Math.max(30, Math.ceil(textW(txt, FONT.badge) + 12));
+      const bw = n.badge != null && n.badge !== '' ? Math.max(22, textW(n.badge, FONT.badge) + 12) : 0;
+      const x = bw ? w - 14 - bw / 2 - 5 - pw : w - 6 - pw;
+      const sg = el('g', { class: `node-sec sev-${p.sev}`, transform: `translate(${x} 0)`, 'data-k': key }, body);
+      el('title', null, sg).textContent = p.t.join('\n');
+      el('rect', { y: -9, width: pw, height: 18, rx: 9 }, sg);
+      el('text', { x: pw / 2, y: 4, 'text-anchor': 'middle' }, sg).textContent = txt;
+    });
+  }
+  const findingTarget = t => {
+    const m = S.model;
+    if (t.kind === 'node') return m.nodes.find(n => n.id === t.id);
+    if (t.kind === 'edge') return m.edges.find(e => e.id === t.id);
+    if (t.kind === 'group') return m.groups.find(g => g.id === t.id);
+    if (t.kind === 'zone') return m.zones.find(z => z.id === t.id);
+    return null;
+  };
+  const findingTargetLabel = t => {
+    const o = findingTarget(t), m = S.model;
+    if (!o) return t.id;
+    if (t.kind === 'edge') return `${m.nodes.find(n => n.id === o.from)?.label || o.from} ${o.both ? '↔' : '→'} ${m.nodes.find(n => n.id === o.to)?.label || o.to}`;
+    return t.kind === 'zone' ? o.label || T('zone.new') : o.label;
+  };
+  // Selecciona el objetivo y encuadra la vista sobre él
+  function goToFinding(id) {
+    const f = FC.byId.get(id), o = f && findingTarget(f.target);
+    if (!o) return;
+    const k = f.target.kind;
+    select({ kind: k, id: o.id });
+    if (!S.sel) return toast(T('view.hiddenHere'));
+    if (k === 'node') fitBox({ x: o.x, y: o.y, w: R.width.get(o.id) || nodeWidth(o), h: H }, 1);
+    else if (k === 'edge') {
+      const a = S.model.nodes.find(n => n.id === o.from), b = S.model.nodes.find(n => n.id === o.to);
+      if (a && b) { const x0 = Math.min(a.x, b.x), y0 = Math.min(a.y, b.y); fitBox({ x: x0, y: y0, w: Math.max(a.x + R.width.get(a.id), b.x + R.width.get(b.id)) - x0, h: Math.max(a.y, b.y) + H - y0 }, 1); }
+    } else if (k === 'group') { const bx = R.gbox.get(o.id); if (bx) fitBox({ x: bx.x, y: bx.y, w: bx.w, h: bx.h }, 1); }
+    else if (k === 'zone') fitBox({ x: o.x, y: o.y, w: o.w, h: o.h }, 1);
+  }
+  function dismissFinding(id, reason = '') {
+    const f = FC.byId.get(id) || findingsOf(S.model).find(x => x.id === id);
+    if (!f || f.source === 'review' || !S.model) return false;
+    pushHistory();
+    const by = S.model.meta?.author || store.get('reviewer', '');
+    S.model.dismissed = { ...(S.model.dismissed || {}), [id]: { reason: String(reason ?? '').trim().slice(0, 300), ...(by ? { by } : {}), date: today() } };
+    changed(false); refreshFindings(true); FC.fresh = false;
+    return true;
+  }
+  function restoreFinding(id) {
+    if (!S.model?.dismissed?.[id]) return false;
+    pushHistory();
+    delete S.model.dismissed[id];
+    if (!Object.keys(S.model.dismissed).length) delete S.model.dismissed;
+    changed(false); refreshFindings(true); FC.fresh = false;
+    return true;
+  }
+  const apiFindings = (opts = {}) => {
+    const all = findingsOf(S.model), list = opts.dismissed === false ? all.filter(f => !f.dismissed) : opts.dismissed === true ? all.filter(f => f.dismissed) : all;
+    return clone(list);
+  };
+  // Cuadro con un campo de texto (motivo): Promise<string | null>; Esc cancela, Enter acepta
+  function reasonBox({ title, text, placeholder = '', ok = 'OK', cancel = 'Cancel' }) {
+    return new Promise(done => {
+      const prev = document.activeElement, id = `cf${Date.now()}`;
+      const back = document.createElement('div');
+      back.className = 'cf-back';
+      back.innerHTML = `<div class="cf" role="dialog" aria-modal="true" aria-labelledby="${id}t" aria-describedby="${id}d">
+        <h3 id="${id}t">${esc(title)}</h3>
+        <div id="${id}d">${text ? `<p>${esc(text)}</p>` : ''}</div>
+        <input class="cf-type" type="text" maxlength="300" placeholder="${esc(placeholder)}" aria-labelledby="${id}t" autocomplete="off">
+        <div class="cf-actions"><button class="btn" data-cf="no">${esc(cancel)}</button><button class="btn primary" data-cf="ok">${esc(ok)}</button></div></div>`;
+      const input = back.querySelector('input');
+      const close = r => { document.removeEventListener('keydown', key, true); back.remove(); prev?.focus?.(); done(r ? input.value.trim() : null); };
+      const key = ev => {
+        if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); close(false); }
+        else if (ev.key === 'Enter') { ev.preventDefault(); ev.stopPropagation(); close(document.activeElement?.dataset?.cf !== 'no'); }
+        else if (ev.key === 'Tab') { ev.preventDefault(); const b = [input, ...back.querySelectorAll('button')]; b[(b.indexOf(document.activeElement) + (ev.shiftKey ? b.length - 1 : 1)) % b.length].focus(); }
+      };
+      back.addEventListener('mousedown', ev => { if (ev.target === back) close(false); });
+      back.addEventListener('click', ev => { const b = ev.target.closest('[data-cf]'); if (b) close(b.dataset.cf === 'ok'); });
+      document.addEventListener('keydown', key, true);
+      document.body.appendChild(back);
+      input.focus();
+    });
+  }
+  function renderFindings() {
+    const box = $('#review-panel');
+    if (!box || !S.model || !$('.pane[data-pane="review"]')?.classList.contains('on')) return;
+    // Los chips cuentan los abiertos; un filtro que ya no tiene hallazgos se suelta solo
+    const sevN = k => FC.open.filter(f => f.severity === k).length, srcs = [...new Set(FC.all.map(f => f.source))].sort((a, b) => srcRank(a) - srcRank(b));
+    if (FP.sev && !sevN(FP.sev)) FP.sev = '';
+    if (FP.src && !srcs.includes(FP.src)) FP.src = '';
+    if (FP.dis && !FC.dismissed.length) FP.dis = false;
+    const list = (FP.dis ? FC.all : FC.open).filter(f => (!FP.sev || f.severity === FP.sev) && (!FP.src || f.source === FP.src));
+    const chip = (attr, val, on, color, label, n) => `<button class="fnd-chip${on ? ' on' : ''}" ${attr}="${esc(val)}" aria-pressed="${on}" style="--s:${color}">${esc(label)} <b>${n}</b></button>`;
+    const sevChips = SEVERITY.slice().reverse().map(k => chip('data-f-sev', k, FP.sev === k, `var(--sev-${k})`, sevLabel(k), sevN(k))).join('');
+    const srcChips = srcs.length > 1 ? srcs.map(k => chip('data-f-src', k, FP.src === k, 'var(--accent)', srcLabel(k), FC.open.filter(f => f.source === k).length)).join('') : '';
+    const card = f => {
+      const o = findingTarget(f.target), node = f.target.kind === 'node' && o, d = f.dismissed;
+      return `<div class="fnd${d ? ' dis' : ''}" style="--s:var(--sev-${f.severity})" data-fid="${esc(f.id)}">
+        <div class="fnd-head"><span class="fnd-sev">${esc(sevLabel(f.severity))}</span><span class="fnd-title">${esc(f.title)}</span></div>
+        ${o ? `<button class="fnd-target" data-f-go="${esc(f.id)}" title="${esc(T('find.go'))}">${esc(T(`find.kind.${f.target.kind}`))}: ${esc(findingTargetLabel(f.target))}</button>` : ''}
+        ${f.detail ? `<div class="fnd-detail">${esc(f.detail)}</div>` : ''}
+        ${f.fix ? `<div class="fnd-fix">${esc(f.fix)}</div>` : ''}
+        ${d ? `<div class="fnd-reason">${esc(T('find.dismissedBy', { reason: d.reason || T('find.noReason'), date: d.date ? fmtDay(d.date) : '', by: d.by || '' }))}</div>` : ''}
+        <div class="fnd-actions">${d ? `<button class="btn small" data-f-restore="${esc(f.id)}">${esc(T('find.restore'))}</button>`
+          : `${f.source !== 'review' ? `<button class="btn small" data-f-dis="${esc(f.id)}">${esc(T('find.dismiss'))}</button>` : ''}${f.source === 'rule' && node && !node.review ? `<button class="btn small" data-f-raise="${esc(f.id)}">${esc(T('find.raise'))}</button>` : ''}`}</div>
+      </div>`;
+    };
+    let body = '';
+    if (!FC.all.length || (!FC.open.length && !FP.dis)) body = `<p class="fnd-empty">${esc(T(FC.all.length ? 'find.allDismissed' : 'find.empty'))}</p>`;
+    else if (!list.length) body = `<p class="fnd-empty">${esc(T('find.noMatch'))} <button class="btn small" data-f-clear="1">${esc(T('ver.f.clear'))}</button></p>`;
+    else {
+      const groups = [...new Set(list.map(f => f.source))];
+      body = groups.map(src => `<div class="cat">${esc(srcLabel(src))} · ${list.filter(f => f.source === src).length}</div>${list.filter(f => f.source === src).map(card).join('')}`).join('');
+    }
+    const keepScroll = box.parentElement.scrollTop;
+    box.innerHTML = `<div class="fnd-chips" role="group" aria-label="${esc(T('find.filter'))}">${sevChips}</div>
+      ${srcChips ? `<div class="fnd-chips" role="group" aria-label="${esc(T('find.bySource'))}">${srcChips}</div>` : ''}
+      <div class="fnd-bar">${FC.dismissed.length ? `<button class="btn small fnd-toggle${FP.dis ? ' on' : ''}" data-f-toggle="1" aria-pressed="${FP.dis}">${esc(T(FP.dis ? 'find.hideDismissed' : 'find.showDismissed', FC.dismissed.length))}</button>` : ''}
+        <button class="btn small" data-f-csv="1"${FC.all.length ? '' : ' disabled'}>${esc(T('find.csv'))}</button></div>
+      <div class="fnd-list">${body}</div>`;
+    box.parentElement.scrollTop = keepScroll;
+  }
+  function exportFindingsCSV() {
+    const rows = [['severity', 'source', 'rule', 'title', 'targetKind', 'targetLabel', 'detail', 'fix', 'dismissed', 'reason'].map(k => T(`find.col.${k}`))];
+    FC.all.forEach(f => rows.push([sevLabel(f.severity), srcLabel(f.source), f.rule, f.title, T(`find.kind.${f.target.kind}`), findingTargetLabel(f.target), f.detail || '', f.fix || '', f.dismissed ? T('sec.yes') : T('sec.no'), f.dismissed?.reason || '']));
+    download(toCSV(rows), `${(S.model.title || 'diagram').replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-+|-+$/g, '') || 'diagram'}-findings.csv`, 'text/csv;charset=utf-8');
+  }
+  $('#review-panel').addEventListener('click', async ev => {
+    const b = ev.target.closest('button');
+    if (!b) return;
+    const d = b.dataset;
+    if (d.fSev != null) FP.sev = FP.sev === d.fSev ? '' : d.fSev;
+    else if (d.fSrc != null) FP.src = FP.src === d.fSrc ? '' : d.fSrc;
+    else if (d.fToggle != null) FP.dis = !FP.dis;
+    else if (d.fClear != null) { FP.sev = ''; FP.src = ''; }
+    else if (d.fCsv != null) return exportFindingsCSV();
+    else if (d.fGo != null) return goToFinding(d.fGo);
+    else if (d.fDis != null) {
+      const f = FC.byId.get(d.fDis);
+      if (!f) return;
+      const r = await reasonBox({ title: T('find.dismissTitle'), text: f.title, placeholder: T('find.reason.ph'), ok: T('find.dismiss'), cancel: T('ver.cf.cancel') });
+      if (r != null) { dismissFinding(f.id, r); toast(T('find.toast.dismissed')); }
+      return;
+    } else if (d.fRestore != null) { restoreFinding(d.fRestore); toast(T('find.toast.restored')); return; }
+    else if (d.fRaise != null) {
+      const f = FC.byId.get(d.fRaise), n = f && S.model.nodes.find(x => x.id === f.target.id);
+      if (!n || n.review) return;
+      pushHistory();
+      n.review = { status: 'open', raised: today(), note: f.title, ...(store.get('reviewer', '') ? { by: store.get('reviewer', '') } : {}) };
+      changed(true); renderInspector(); refreshFindings(true); FC.fresh = false;
+      toast(T('toast.revAdded'));
+      return;
+    }
+    renderFindings();
+  });
+  // Inspector del nodo: exposición y respaldo (automáticos o a mano) y sus hallazgos abiertos
+  const secField = n => {
+    const ex = exposureOf(n), bk = backupOf(n), curE = n.exposure === 'public' || n.exposure === 'internal' ? n.exposure : '', curB = typeof n.backup === 'boolean' ? (n.backup ? 'yes' : 'no') : '';
+    const seg = (attr, cur, items) => `<div class="seg">${items.map(([k, l]) => `<button ${attr}="${k}" class="${cur === k ? 'on' : ''}">${esc(l)}</button>`).join('')}</div>`;
+    const mine = FC.open.filter(f => f.target.kind === 'node' && f.target.id === n.id);
+    const exL = v => T(v === 'public' ? 'sec.expo.public' : 'sec.expo.internal'), bkL = v => T(v ? 'sec.yes' : 'sec.no');
+    return `<div class="field sec-field">${T('sec.label')}
+      <div class="sec-row"><span>${T('sec.expo.label')}</span>${seg('data-expo', curE, [['', T('sec.auto', { v: exL(ex.value) })], ['public', exL('public')], ['internal', exL('internal')]])}
+        <span class="cost-hint">${esc(ex.auto ? ex.why : T('sec.why.manual'))}</span></div>
+      <div class="sec-row"><span>${T('sec.backup.label')}</span>${seg('data-bak', curB, [['', T('sec.auto', { v: bkL(bk.value) })], ['yes', T('sec.yes')], ['no', T('sec.no')]])}
+        <span class="cost-hint">${esc(bk.auto ? bk.why : T('sec.why.manual'))}</span></div>
+      ${mine.length ? `<div class="sec-list">${mine.map(f => `<div style="--s:var(--sev-${f.severity})"><i></i><span><b>${esc(sevLabel(f.severity))}</b> · ${esc(f.title)}</span></div>`).join('')}</div>` : ''}
+    </div>`;
+  };
+
   /* ---------- avisos ---------- */
   let toastTimer;
   // Diálogo de confirmación propio: Promise<boolean>; Esc cancela, Enter acepta, foco en lo seguro
@@ -4922,6 +5224,7 @@
     setLayerNames,
     setView, get view() { return S.viewKey; }, get views() { return [...VIEW_KEYS]; },
     owners: () => govTeamList(),
+    findings: (opts = {}) => apiFindings(opts), dismissFinding: (id, reason) => dismissFinding(id, reason), restoreFinding: id => restoreFinding(id),
     exportSVG, exportPNG, exportViews, exportJSON, shareEncrypted, exportOther, exportCtx, toggleRouting, importFiles, config: C, icons: ICONS
   };
 

@@ -30,6 +30,7 @@
              conexión a -> b : SQL data=pii transfer=ok (transferencia=ok: transferencia entre jurisdicciones autorizada)
    Capas:    nodo o grupo … layer=gold (capa=oro): bronze|silver|gold · bronce|plata|oro · raw|curated|serving · crudo|curado|consumo
              (los nodos heredan la capa de su grupo) · línea `layers: zones` / `capas: zonas` muestra Raw/Curated/Serving en vez de Bronze/Silver/Gold
+   Seguridad: nodo … exposure=public|internal (exposición=pública|interna: sustituye a la deducida) · backup=yes|no (respaldo=sí|no)
    Comentario: líneas que empiezan por # o //
 
    Acepta las palabras clave en inglés y en español (title/título, group/grupo,
@@ -44,7 +45,7 @@
   const ARROW_SPLIT = /\s*(\.\.>|~>|=>|->)\s*/;
   const HAS_ARROW = /\.\.>|~>|=>|->/;
   const ID = /^[^\s:[\]"{}]+$/;
-  const NODE_KEYS = ['color', 'badge', 'desc', 'sub', 'x', 'y', 'costo', 'cost', 'data', 'datos', 'region', 'región', 'country', 'pais', 'país', 'layer', 'capa'];
+  const NODE_KEYS = ['color', 'badge', 'desc', 'sub', 'x', 'y', 'costo', 'cost', 'data', 'datos', 'region', 'región', 'country', 'pais', 'país', 'layer', 'capa', 'exposure', 'exposición', 'exposicion', 'backup', 'respaldo'];
   /* ---------- gobierno: dueño, responsable, equipo, centro de costo ---------- */
   const GOV_KEYS = { owner: 'owner', dueño: 'owner', dueno: 'owner', steward: 'steward', responsable: 'steward', team: 'team', equipo: 'team',
     costcenter: 'costCenter', centro: 'costCenter', centrocosto: 'costCenter', centrodecosto: 'costCenter' };
@@ -71,11 +72,11 @@
     en: { title: 'title', direction: 'direction', group: 'group', cost: 'cost', hour: 'hour', month: 'month', year: 'year', years: 'years', data: 'data', encrypted: 'encrypted', both: 'both', yes: 'yes', no: 'no', lines: 'lines', line: 'line', region: 'region', transfer: 'transfer', ok: 'ok', elbow: 'elbow', curved: 'curved', elbowOne: 'elbow', curvedOne: 'curved', author: 'author', version: 'version', view: 'view', kind: 'kind', physical: 'physical', logical: 'logical',
       review: 'review', by: 'by', raised: 'raised', due: 'due', status: 'status', closed: 'closed', resolved: 'resolved', layer: 'layer', layers: 'layers', zones: 'zones',
       owner: 'owner', steward: 'steward', team: 'team', costCenter: 'costcenter',
-      layerOf: { bronze: 'bronze', silver: 'silver', gold: 'gold' } },
+      layerOf: { bronze: 'bronze', silver: 'silver', gold: 'gold' }, exposure: 'exposure', backup: 'backup', expoOf: { public: 'public', internal: 'internal' } },
     es: { title: 'título', direction: 'dirección', group: 'grupo', cost: 'costo', hour: 'hora', month: 'mes', year: 'año', years: 'años', data: 'datos', encrypted: 'cifrado', both: 'ambos', yes: 'sí', no: 'no', lines: 'líneas', line: 'línea', region: 'región', transfer: 'transferencia', ok: 'ok', elbow: 'codos', curved: 'curvas', elbowOne: 'codo', curvedOne: 'curva', author: 'autor', version: 'versión', view: 'vista', kind: 'tipo', physical: 'físico', logical: 'lógico',
       review: 'revisión', by: 'por', raised: 'levantada', due: 'compromiso', status: 'estado', closed: 'cerrada', resolved: 'resuelta', layer: 'capa', layers: 'capas', zones: 'zonas',
       owner: 'dueño', steward: 'responsable', team: 'equipo', costCenter: 'centro',
-      layerOf: { bronze: 'bronce', silver: 'plata', gold: 'oro' } }
+      layerOf: { bronze: 'bronce', silver: 'plata', gold: 'oro' }, exposure: 'exposición', backup: 'respaldo', expoOf: { public: 'pública', internal: 'interna' } }
   };
   const MSG = {
     en: {
@@ -87,6 +88,7 @@
       route: v => `invalid line style “${v}” (use curved or elbow)`, transfer: v => `invalid transfer value “${v}” (use ok)`,
       day: v => `invalid date “${v}” (use YYYY-MM-DD)`, status: v => `invalid status “${v}” (use open or resolved)`,
       layer: v => `unknown layer “${v}” (use bronze, silver or gold; also raw, curated or serving)`, lnames: v => `invalid layer naming “${v}” (use medallion or zones)`,
+      expo: v => `invalid exposure “${v}” (use public or internal)`, backup: v => `invalid backup value “${v}” (use yes or no)`,
       view: v => `unknown view “${v}”`, gkind: v => `invalid group type “${v}” (use logical or physical)`,
       line: 'cannot understand this line', open: n => `missing } to close ${n === 1 ? 'a group' : `${n} groups`}`
     },
@@ -99,6 +101,7 @@
       route: v => `estilo de línea no válido «${v}» (usa curvas o codos)`, transfer: v => `valor de transferencia no válido «${v}» (usa ok)`,
       day: v => `fecha no válida «${v}» (usa AAAA-MM-DD)`, status: v => `estado no válido «${v}» (usa abierta o resuelta)`,
       layer: v => `capa desconocida «${v}» (usa bronce, plata u oro; también crudo, curado o consumo)`, lnames: v => `nombres de capa no válidos «${v}» (usa medallón o zonas)`,
+      expo: v => `exposición no válida «${v}» (usa pública o interna)`, backup: v => `valor de respaldo no válido «${v}» (usa sí o no)`,
       view: v => `vista desconocida «${v}»`, gkind: v => `tipo de grupo no válido «${v}» (usa lógico o físico)`,
       line: 'no se entiende esta línea', open: n => `falta cerrar ${n === 1 ? 'un grupo' : `${n} grupos`} con }`
     }
@@ -317,6 +320,10 @@
         if (nr) n.region = nr.trim();
         const lv = tk.kv.layer ?? tk.kv.capa;
         if (lv != null) { const l = checkLayer(lv, ln); if (l) n.layer = l; }
+        const ev = tk.kv.exposure ?? tk.kv.exposición ?? tk.kv.exposicion;
+        if (ev != null) { if (/^(public|publico|público|pública|publica|external|externa?)$/i.test(ev.trim())) n.exposure = 'public'; else if (/^(internal|interno|interna|private|privado|privada)$/i.test(ev.trim())) n.exposure = 'internal'; else err(ln, msg.expo(ev)); }
+        const bv = tk.kv.backup ?? tk.kv.respaldo;
+        if (bv != null) { const b = parseBool(bv.trim()); if (b == null) err(ln, msg.backup(bv)); else n.backup = b; }
         if (stack.length) n.group = stack[stack.length - 1];
         return;
       }
@@ -348,6 +355,8 @@
       GOV_WORDS.forEach(k => { if (n[k]) p.push(`${w[k]}=${bare(n[k])}`); });
       if (n.region) p.push(`${w.region}=${bare(n.region)}`);
       if (n.layer) p.push(`${w.layer}=${w.layerOf[n.layer] || n.layer}`);
+      if (n.exposure) p.push(`${w.exposure}=${w.expoOf[n.exposure] || n.exposure}`);
+      if (typeof n.backup === 'boolean') p.push(`${w.backup}=${n.backup ? w.yes : w.no}`);
       if (n.desc) p.push(`desc=${quote(n.desc)}`);
       return p.join(' ');
     };

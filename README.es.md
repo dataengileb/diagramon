@@ -189,6 +189,27 @@ El componente lleva una etiqueta: **EN REVISIÓN** (naranja), **VENCIDA** (roja,
 El panel dice cuántos días faltan o cuántos lleva vencida, y el resumen sobre el lienzo cuenta las abiertas y las vencidas.
 Diagramon recuerda el último nombre de revisor. Las exportaciones con leyenda listan las observaciones abiertas con su fecha compromiso.
 
+#### Revisión de seguridad automática
+
+Diagramon revisa el diagrama en busca de problemas de seguridad habituales y **solo avisa, nunca bloquea nada**. La pestaña **Revisión** (junto a *Versiones*) lista todos los hallazgos, agrupados por fuente y gravedad; su etiqueta muestra cuántos hay abiertos con el color del peor. El mismo número aparece en la línea sobre el lienzo (*⚑ N hallazgos*) y, en la vista **Seguridad**, cada componente con hallazgos lleva una pastilla *⚠ n*.
+
+| Regla | Gravedad | Salta cuando |
+|---|---|---|
+| Datos sensibles sin cifrar | crítica | Una conexión marcada *Sin cifrar* lleva PII, PCI, PHI o datos confidenciales |
+| Cifrado sin indicar | media | Una conexión lleva datos sensibles pero no se indica si va cifrada |
+| Público con datos sensibles | alta | Un componente público guarda datos sensibles |
+| Almacén sin respaldo | media | Una base de datos o almacenamiento no tiene componente ni conexión de respaldo |
+| Transferencia entre fronteras sin autorizar | alta | Datos sensibles cruzan jurisdicciones sin transferencia autorizada |
+| Datos sensibles sin dueño | baja | Un componente con datos sensibles no tiene dueño ni responsable |
+| Almacén público | alta | Un almacén de datos es público o lo alcanzan directamente usuarios o un servicio externo |
+
+- **La exposición y el respaldo se deducen.** Un componente es *público* si está en un área pública (un grupo con el icono de subred pública de AWS, o llamado *pública*, *DMZ*, *internet*…) o si recibe una conexión de usuarios, una app web o móvil o un servicio externo. Un almacén *tiene respaldo* si está conectado a un componente de respaldo (AWS Backup, Recovery Services, un nombre con *backup*, *respaldo*, *snapshot*, *réplica*…) o por una conexión llamada *backup*, *snapshot*, *réplica*… En el panel del componente, **Seguridad** muestra el valor deducido y por qué; elige **Pública / Interna** o **Sí / No** para anularlo.
+- **Descartar** un hallazgo lo oculta: Diagramon pide un motivo breve y lo guarda (con el autor y la fecha) en el diagrama. **Ver descartados (N)** los lista con su motivo y un botón **Restaurar**.
+- **Levantar como observación de revisión** convierte el hallazgo en una observación de revisión manual del componente (ver arriba), con el hallazgo como texto.
+- Pulsa el objetivo de un hallazgo para seleccionarlo y acercarte a él. Tus observaciones de revisión aparecen en la misma lista (no se descartan: se resuelven en el panel del componente).
+- **Exportar CSV** guarda todos los hallazgos, también los descartados, para una hoja de cálculo.
+- Desde la consola: `Diagramon.findings({ dismissed: false })`, `Diagramon.dismissFinding(id, motivo)` y `Diagramon.restoreFinding(id)`.
+
 #### Dueños y responsables
 
 Indica quién responde por cada componente.
@@ -365,6 +386,7 @@ api ~> cola : eventos
 | `a -> b : x datos=pii transferencia=ok` | Transferencia entre jurisdicciones autorizada (`transfer=ok` en inglés) |
 | `capa=oro` (`bronce`, `plata`, `oro`; también `crudo`, `curado`, `consumo` y los nombres en inglés) | Capa del data lake de un nodo o grupo (en inglés: `layer=gold`); los nodos la heredan del grupo |
 | `capas: zonas` | Muestra Crudo / Curado / Consumo en vez de Bronce / Plata / Oro (en inglés: `layers: zones`) |
+| `exposición=pública` (`interna`) · `respaldo=sí` (`no`) | Anula la exposición y el respaldo deducidos de un nodo (en inglés: `exposure=public` / `internal`, `backup=yes` / `no`) |
 | `grupo id "Nombre" color=… { … }` | Grupo; se pueden anidar |
 | `a -> b` · `a => b` · `a ~> b` · `a ..> b` | Petición · datos · evento · opcional |
 | `a -> b -> c : etiqueta` | Cadena; la etiqueta va en la última flecha |
@@ -414,6 +436,7 @@ Todo lo personalizable está en **`config.js`**. Guarda y recarga `index.html`.
 - **Clasificaciones de datos**: `dataClasses` define las etiquetas (nombre, texto corto y color). `sensitive: true` activa el aviso rojo en flujos sin cifrar.
 - **Jurisdicciones (residencia de datos)**: `residency.jurisdictions` en `config.js` es un mapa ordenado `clave → { label: { en, es }, short, match }`. `match` es una expresión regular (sin distinguir mayúsculas) que se prueba contra el texto de la región (`eu-west-1`, `westeurope`, `ES`…); gana la primera que coincide, así que pon las específicas (`uk`, `ch`) antes que las amplias (`eu`). Para añadir una, copia una línea y cambia clave, etiquetas y `match`. `of` es el texto opcional del aviso (*salen de **la UE***). Con `residency.warnSameJurisdiction: true` también avisa cuando cambian de región dentro de una misma jurisdicción.
 - **Capas del data lake**: `dataLayers` define las capas en orden (`label` para los nombres medallón, `alt` para Crudo/Curado/Consumo, letras cortas y `color`). Los colores usan `--layer-bronze`, `--layer-silver` y `--layer-gold`, definidos por tema en `index.html`; cámbialos ahí o pon un color fijo en `config.js`. `layerAliases` lista otras palabras aceptadas al leer JSON y texto. La opción `layers` de cada vista las muestra u oculta.
+- **Revisión de seguridad automática**: `securityRules` en `config.js` tiene una entrada por regla (`sec.unencrypted-sensitive`, `sec.unstated-encryption`, `sec.public-sensitive`, `sec.datastore-backup`, `sec.cross-border`, `sec.sensitive-no-owner`, `sec.public-datastore`) con `enabled` (pon `false` para apagarla) y `severity` (`low`, `medium`, `high`, `critical`). Lo demás son parámetros de la regla: `clientTypes`, `publicGroupIcons` y `publicGroupName` (qué cuenta como público), `dataStoreTypes` y `dataStoreIconCategories`, `backupIcons`, `backupName` y `backupEdgeLabel` (qué cuenta como respaldo). Los patrones de texto son RegExp sin distinguir mayúsculas.
 - **Ambientes**: `environments` define los botones de la pestaña *Versiones* (nombre, texto corto y color). Añade o quita los que necesites.
 - **Tamaño de los nodos**: con `node.sameSize: true` (por defecto) todos miden `node.width` y los nombres largos usan 2 líneas.
   Con `false`, cada nodo crece con su texto.

@@ -205,6 +205,27 @@ The component gets a tag: **IN REVIEW** (orange), **OVERDUE** (red, once the due
 The panel shows how many days are left or how late it is, and the summary above the canvas counts open and overdue findings.
 Diagramon remembers the last reviewer name. Exports with the legend list the open findings with their due date.
 
+#### Automatic security review
+
+Diagramon checks the diagram for common security problems and **only warns, it never blocks anything**. The **Review** tab (next to *Versions*) lists every finding, grouped by source and severity, and its label shows the number of open findings in the color of the worst one. The same number appears in the line above the canvas (*⚑ N findings*), and in the **Security** view each component with findings gets a small *⚠ n* pill.
+
+| Rule | Severity | Fires when |
+|---|---|---|
+| Sensitive data unencrypted | critical | A connection marked *Not encrypted* carries PII, PCI, PHI or confidential data |
+| Encryption not stated | medium | A connection carries sensitive data but its encryption is not set |
+| Public with sensitive data | high | A component that holds sensitive data is public |
+| Data store without backup | medium | A database or storage has no backup component or backup connection |
+| Unapproved cross-border transfer | high | Sensitive data crosses jurisdictions without an approved transfer |
+| Sensitive data without owner | low | A component with sensitive data has no owner and no steward |
+| Public data store | high | A data store is public or is reached directly by users or an external service |
+
+- **Exposure and backup are deduced.** A component is *public* when it sits in a public area (a group with the AWS public-subnet icon, or named *public*, *DMZ*, *internet*…) or receives a connection from users, a web or mobile app or an external service. A data store *has a backup* when it is connected to a backup component (AWS Backup, Recovery Services, a name with *backup*, *snapshot*, *replica*…) or to a connection labelled *backup*, *snapshot*, *replica*… In the component panel, **Security** shows the deduced value and why; choose **Public / Internal** or **Yes / No** to override it.
+- **Dismiss** a finding to hide it: Diagramon asks for a short reason and stores it (with the author and date) in the diagram. **Show dismissed (N)** lists them with their reason and a **Restore** button.
+- **Raise as review observation** turns a finding into a manual review observation on the component (see above), with the finding as its note.
+- Click a finding's target to select it and zoom to it. Your own review observations appear in the same list (they cannot be dismissed: resolve them in the component panel).
+- **Export CSV** saves all findings, dismissed ones included, for a spreadsheet.
+- From the console: `Diagramon.findings({ dismissed: false })`, `Diagramon.dismissFinding(id, reason)` and `Diagramon.restoreFinding(id)`.
+
 #### Owners and stewards
 
 Say who is responsible for each component.
@@ -382,6 +403,7 @@ api ~> queue : events
 | `group id "Name" color=… { … }` | Group; groups can be nested |
 | `layer=gold` (`bronze`, `silver`, `gold`; also `raw`, `curated`, `serving`) | Data lake layer of a node or group (Spanish: `capa=oro`); nodes inherit it from their group |
 | `layers: zones` | Show Raw / Curated / Serving instead of Bronze / Silver / Gold (Spanish: `capas: zonas`) |
+| `exposure=public` (`internal`) · `backup=yes` (`no`) | Override the deduced exposure and backup of a node (Spanish: `exposición=pública` / `interna`, `respaldo=sí` / `no`) |
 | `a -> b` · `a => b` · `a ~> b` · `a ..> b` | Request · data · event · optional |
 | `a -> b -> c : label` | Chain; the label goes on the last arrow |
 | `lines: elbow` · `a -> b : x line=curved` | Elbow or curved lines, for the diagram or one connection |
@@ -430,6 +452,7 @@ Everything you can customize is in **`config.js`**. Save and reload `index.html`
 - **Data classes**: `dataClasses` sets the tags (name, short label, color). `sensitive: true` turns on the red warning for unencrypted flows.
 - **Jurisdictions (data residency)**: `residency.jurisdictions` in `config.js` is an ordered map `key → { label: { en, es }, short, match }`. `match` is a case-insensitive RegExp tested against the region text (`eu-west-1`, `westeurope`, `ES`…); the first jurisdiction that matches wins, so put specific ones (`uk`, `ch`) before wide ones (`eu`). To add one, copy a line and change its key, labels and `match`; to adjust one, edit its `match` (anchor it with `^…$`). `of` is the optional text used in the warning (*leaves **the EU***). Set `residency.warnSameJurisdiction: true` to also warn when regions differ inside the same jurisdiction.
 - **Data lake layers**: `dataLayers` sets the layers in order (`label` for the medallion names, `alt` for the Raw/Curated/Serving names, short letters and `color`). Colors default to `--layer-bronze`, `--layer-silver` and `--layer-gold`, set per theme in `index.html`; edit them there or put a fixed color in `config.js`. `layerAliases` lists the other words accepted when reading JSON and text. Each view's `layers` flag shows or hides them.
+- **Automatic security review**: `securityRules` in `config.js` has one entry per rule (`sec.unencrypted-sensitive`, `sec.unstated-encryption`, `sec.public-sensitive`, `sec.datastore-backup`, `sec.cross-border`, `sec.sensitive-no-owner`, `sec.public-datastore`) with `enabled` (set `false` to turn a rule off) and `severity` (`low`, `medium`, `high`, `critical`). The rest are the rule's parameters: `clientTypes`, `publicGroupIcons` and `publicGroupName` (what counts as public), `dataStoreTypes` and `dataStoreIconCategories`, `backupIcons`, `backupName` and `backupEdgeLabel` (what counts as a backup). Text patterns are case-insensitive RegExps.
 - **Environments**: `environments` sets the buttons of the *Versions* tab (name, short label and color). Add or remove as many as you need.
 - **Node size**: with `node.sameSize: true` (default) every node is `node.width` wide and long names wrap to 2 lines.
   With `false`, each node grows with its text.
