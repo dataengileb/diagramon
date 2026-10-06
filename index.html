@@ -510,6 +510,11 @@
   .cf.share label { display: grid; gap: 5px; font-size: 12px; font-weight: 650; color: var(--muted); }
   .cf.share input { width: 100%; min-width: 0; height: 34px; padding: 0 10px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface2); color: var(--text); font: 13px var(--font); }
   .cf.share input:focus { outline: none; border-color: var(--accent); }
+  .sh-views { margin: 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: 9px; display: flex; flex-wrap: wrap; gap: 4px 14px; }
+  .sh-views legend { padding: 0 4px; font-size: 12px; font-weight: 650; color: var(--muted); }
+  .cf.share .sh-chk { display: flex; align-items: center; gap: 6px; color: var(--text); font-weight: 500; cursor: pointer; }
+  .cf.share .sh-chk input { width: auto; height: auto; }
+  .sh-size { flex-basis: 100%; font-size: 11px; color: var(--muted); }
   .sh-row { display: flex; gap: 6px; }
   .sh-row .btn { flex: none; height: 34px; }
   .sh-meter { display: grid; grid-template-columns: repeat(4, 1fr) auto; align-items: center; gap: 4px; margin-top: -2px; }
@@ -792,6 +797,8 @@
         <div class="menu-pop">
           <button data-export="svg"><span data-i18n="exp.svg"></span> <small>.svg</small></button>
           <button data-export="png"><span data-i18n="exp.png"></span> <small>.png</small></button>
+          <button data-export="svg-all"><span data-i18n="exp.svgAll"></span> <small data-i18n="exp.all.ext"></small></button>
+          <button data-export="png-all"><span data-i18n="exp.pngAll"></span> <small data-i18n="exp.all.ext"></small></button>
           <button data-export="json"><span data-i18n="exp.json"></span> <small>.json</small></button>
           <button data-export="copy"><span data-i18n="exp.copy"></span> <small data-i18n="exp.clip"></small></button>
           <button data-export="mermaid"><span data-i18n="exp.mermaid"></span> <small>.mmd</small></button>

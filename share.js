@@ -8,6 +8,8 @@
    - Cifrado: AES-GCM de 256 bits con vector inicial de 12 bytes.
    - El contenido (título incluido) va comprimido con gzip antes de cifrarse;
      el sobre solo lleva los parámetros, en claro y autenticados.
+   - Formato del contenido: v2 = { fmt: 2, title, version, sharedAt, theme, view, views: [{ key, label, svg: { <tema>: <SVG> } }] }
+     (cada vista en uno o dos temas). El v1 antiguo ({ dark, light, black }) se sigue abriendo: el visor lo trata como una sola vista.
    - El visor bloquea la red (CSP) y muestra el diagrama como imagen, así que
      el contenido descifrado no puede ejecutar código.
    API: window.DiagramonShare.encrypt(payload, password) y .viewer(envelope, lang).
@@ -65,7 +67,7 @@ window.DiagramonShare = (() => {
       insecure: 'Your browser blocks decryption here. Download the file and open it with a double click.',
       old: 'This browser is too old to open the file. Use a recent Chrome, Edge, Firefox or Safari.',
       local: 'Decrypted on this device. Nothing is sent over the network.', fit: 'Fit', theme: 'Theme', lock: 'Lock',
-      zoomIn: 'Zoom in', zoomOut: 'Zoom out', made: 'Made with Diagramon', saved: 'Shared on'
+      view: 'View', zoomIn: 'Zoom in', zoomOut: 'Zoom out', made: 'Made with Diagramon', saved: 'Shared on'
     },
     es: {
       title: 'Diagrama cifrado', lead: 'Este diagrama de arquitectura está cifrado. Escribe la contraseña que te dieron para verlo.',
@@ -73,7 +75,7 @@ window.DiagramonShare = (() => {
       insecure: 'Tu navegador no permite descifrar aquí. Descarga el archivo y ábrelo con doble clic.',
       old: 'Este navegador es demasiado antiguo para abrir el archivo. Usa un Chrome, Edge, Firefox o Safari reciente.',
       local: 'Se descifra en este equipo. No se envía nada por la red.', fit: 'Ajustar', theme: 'Tema', lock: 'Bloquear',
-      zoomIn: 'Acercar', zoomOut: 'Alejar', made: 'Hecho con Diagramon', saved: 'Compartido el'
+      view: 'Vista', zoomIn: 'Acercar', zoomOut: 'Alejar', made: 'Hecho con Diagramon', saved: 'Compartido el'
     }
   };
 
@@ -102,9 +104,15 @@ window.DiagramonShare = (() => {
   }
 
   // Temas incluidos en el archivo (claro, oscuro y negro); empieza por el que usaba el autor
+  // Formato v2: doc.views[]; el v1 (un solo diagrama en tres temas) se envuelve como una vista
   const ORDER = ['light', 'dark', 'black'];
-  let doc = null, theme = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark', urls = [];
-  const themes = () => ORDER.filter(k => doc && doc[k]);
+  let doc = null, cur = 0, theme = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark', urls = [];
+  const norm = d => {
+    if (Array.isArray(d.views) && d.views.length) d.views = d.views.filter(v => v && v.svg);
+    else d.views = [{ key: 'full', label: '', svg: { light: d.light, dark: d.dark, black: d.black } }];
+    return d;
+  };
+  const themes = () => ORDER.filter(k => doc && doc.views[cur].svg[k]);
   const view = { x: 0, y: 0, k: 1 };
   const apply = () => { $('#pic').style.transform = 'translate(' + view.x + 'px,' + view.y + 'px) scale(' + view.k + ')'; };
   function fit() {
@@ -121,14 +129,14 @@ window.DiagramonShare = (() => {
     view.x = cx - (cx - view.x) * (k / view.k); view.y = cy - (cy - view.y) * (k / view.k); view.k = k;
     apply();
   }
-  function show(first) {
-    if (!doc[theme]) theme = themes()[0];
-    const svg = doc[theme];
+  function show(refit) {
+    if (!doc.views[cur].svg[theme]) theme = themes()[0];
+    const svg = doc.views[cur].svg[theme];
     document.body.dataset.theme = theme;
     const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
     urls.push(url);
     const img = $('#pic');
-    img.onload = () => { if (first) fit(); };
+    img.onload = () => { if (refit) fit(); };
     img.src = url;
   }
 
@@ -138,12 +146,18 @@ window.DiagramonShare = (() => {
     if (!pw || $('#go').disabled) return;
     $('#go').disabled = true; msg(t.busy);
     try {
-      doc = await decrypt(pw);
+      doc = norm(await decrypt(pw));
+      if (!doc.views.length) throw new Error('empty');
       $('#pw').value = '';
       document.title = doc.title;
       $('#doc-title').textContent = doc.title;
       $('#doc-sub').textContent = [doc.version, doc.sharedAt ? t.saved + ' ' + new Date(doc.sharedAt).toLocaleDateString(lang, { dateStyle: 'medium' }) : ''].filter(Boolean).join(' · ');
-      if (doc[doc.theme]) theme = doc.theme;
+      cur = Math.max(0, doc.views.findIndex(v => v.key === doc.view));
+      if (doc.views[cur].svg[doc.theme]) theme = doc.theme;
+      const sel = $('#view');
+      sel.textContent = '';
+      doc.views.forEach((v, i) => { const o = document.createElement('option'); o.value = i; o.textContent = v.label || v.key; sel.appendChild(o); });
+      sel.value = cur; sel.hidden = doc.views.length < 2;
       $('#theme').hidden = themes().length < 2;
       $('#gate').hidden = true; $('#viewer').hidden = false;
       show(true);
@@ -155,6 +169,7 @@ window.DiagramonShare = (() => {
   $('#zin').onclick = () => zoom(1.25);
   $('#zout').onclick = () => zoom(0.8);
   $('#theme').onclick = () => { const ts = themes(); theme = ts[(ts.indexOf(theme) + 1) % ts.length]; show(false); };
+  $('#view').onchange = ev => { cur = +ev.target.value || 0; $('#theme').hidden = themes().length < 2; show(true); ev.target.blur(); };
   $('#lock').onclick = () => { urls.forEach(u => URL.revokeObjectURL(u)); location.reload(); };
   const stage = $('#stage');
   stage.addEventListener('wheel', ev => {
@@ -170,7 +185,7 @@ window.DiagramonShare = (() => {
   stage.addEventListener('pointerup', end); stage.addEventListener('pointercancel', end);
   addEventListener('resize', () => { if (doc) fit(); });
   addEventListener('keydown', ev => {
-    if ($('#viewer').hidden || ev.target.tagName === 'INPUT') return;
+    if ($('#viewer').hidden || ev.target.tagName === 'INPUT' || ev.target.tagName === 'SELECT') return;
     if (ev.key === 'f' || ev.key === 'F') fit();
     else if (ev.key === '+' || ev.key === '=') zoom(1.25);
     else if (ev.key === '-') zoom(0.8);
@@ -195,6 +210,8 @@ h1{margin:0 0 6px;font-size:18px}p{margin:0 0 14px;color:var(--muted);font-size:
 form{display:flex;gap:8px}input{flex:1;min-width:0;height:38px;padding:0 12px;border:1px solid var(--border);border-radius:10px;background:var(--surface);color:var(--text);font:inherit}
 input:focus{outline:none;border-color:var(--accent)}
 button{height:38px;padding:0 16px;border:1px solid var(--border);border-radius:10px;background:var(--surface);color:var(--text);font:inherit;font-weight:650;cursor:pointer}
+select{height:32px;max-width:40vw;padding:0 8px;border:1px solid var(--border);border-radius:10px;background:var(--surface);color:var(--text);font:inherit;font-size:12.5px;font-weight:650;cursor:pointer}
+select:hover,select:focus{outline:none;border-color:var(--accent)}
 button:hover:not(:disabled){border-color:var(--accent)}button:disabled{opacity:.55;cursor:default}
 #go{border-color:var(--accent);color:var(--accent)}
 #msg{min-height:20px;margin:10px 0 0;font-size:12.5px}#msg.bad{color:var(--bad)}
@@ -240,6 +257,7 @@ button:hover:not(:disabled){border-color:var(--accent)}button:disabled{opacity:.
     <div class="t"><b id="doc-title"></b><small id="doc-sub"></small></div>
     <button id="zout" data-tt="zoomOut">−</button><button id="zin" data-tt="zoomIn">+</button>
     <button id="fit" data-t="fit">${t.fit}</button>
+    <select id="view" data-tt="view" hidden></select>
     <button id="theme" data-t="theme" hidden>${t.theme}</button>
     <button id="lock" data-t="lock">${t.lock}</button>
   </header>
