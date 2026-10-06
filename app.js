@@ -102,8 +102,9 @@
     return 0.2126 * r + 0.7152 * g + 0.0722 * b;
   };
   const themeSafe = c => { const L = hexLum(c); return L == null ? c : L > 0.6 ? `color-mix(in srgb, ${c}, #000 var(--cfix-light, 0%))` : L < 0.04 ? `color-mix(in srgb, ${c}, #fff var(--cfix-dark, 0%))` : c; };
-  // Un color de un modelo importado acaba dentro de atributos style="…": solo se aceptan hex o nombres CSS simples
-  const SAFE_COLOR = /^(#[0-9a-f]{3,8}|[a-z]{3,20})$/i;
+  // Un color de un modelo importado acaba dentro de atributos style="…": solo se aceptan hex, nombres CSS simples
+  // o una variable CSS con respaldo hex opcional (las de config.js, p. ej. las capas: var(--layer-gold, #d4a72c))
+  const SAFE_COLOR = /^(#[0-9a-f]{3,8}|[a-z]{3,20}|var\(--[a-z0-9-]{1,40}(,\s?#[0-9a-f]{3,8})?\))$/i;
   const colorVar = k => !k ? null : paletteKeys().includes(k) ? `var(--p-${k})` : COLOR_ALIAS[k] ? `var(--p-${COLOR_ALIAS[k]})` : SAFE_COLOR.test(String(k).trim()) ? themeSafe(String(k).trim()) : null;
   const typeOf = n => C.types[n.type] || C.types.generic;
   const typeLabel = type => loc((C.types[type] || C.types.generic).label);
