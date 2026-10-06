@@ -5247,7 +5247,7 @@
     const b = ev.target.closest('[data-export]');
     if (!b) return;
     exportMenu.open = false;
-    const f = { svg: exportSVG, png: exportPNG, 'svg-all': () => exportViews('svg'), 'png-all': () => exportViews('png'), 'svg-levels': () => exportLevels('svg'), 'png-levels': () => exportLevels('png'), json: exportJSON, copy: copyJSON, share: shareEncrypted, stride: exportThreats, compliance: openCompMatrix, report: openReportDialog, costs: () => openCosts('breakdown') }[b.dataset.export];
+    const f = { svg: exportSVG, png: exportPNG, 'svg-all': () => exportViews('svg'), 'png-all': () => exportViews('png'), 'svg-levels': () => exportLevels('svg'), 'png-levels': () => exportLevels('png'), json: exportJSON, copy: copyJSON, share: shareEncrypted, stride: exportThreats, compliance: openCompMatrix, report: openReportDialog, costs: () => openCosts('breakdown'), 'inventory-xlsx': () => exportInventory('xlsx'), 'inventory-csv': openInventoryDialog }[b.dataset.export];
     if (f) f(); else exportOther(b.dataset.export);
   });
 
@@ -6111,6 +6111,127 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     if (navigator.clipboard?.writeText) navigator.clipboard.writeText(txt).then(() => toast(T('toast.copied')), fallback);
     else fallback();
   }
+  /* ---------- inventario exportable (CSV / Excel) ---------- */
+  // Una fila por componente (todos los niveles C4) y varias tablas de apoyo, para CMDB o auditoría. Excel: export-xlsx.js (sin librerías).
+  // Las ayudas opcionales se protegen con typeof para que la exportación siga funcionando si una función se quita.
+  const INV_COMP = [['id'], ['name'], ['detail'], ['type'], ['provider'], ['service'], ['category'], ['c4'], ['level'], ['group'], ['owner'], ['steward'], ['team'], ['costCenter'], ['inherited'], ['region'], ['jurisdiction'],
+    ['data'], ['sensitive'], ['layer'], ['exposure'], ['backup'], ['encIn', 'int'], ['encOut', 'int'], ['unencSens', 'int'], ['sla', 'sla'], ['rpo'], ['rto'], ['replicas', 'int'], ['cost', 'money'], ['period'], ['perMonth', 'money'], ['perYear', 'money'],
+    ['review'], ['findings', 'int'], ['adrs'], ['compliance'], ['desc']];
+  const INV_CONN = [['id'], ['from'], ['to'], ['label'], ['style'], ['encrypted'], ['data'], ['datasets'], ['crossBorder'], ['transferOk'], ['threats', 'int']];
+  const INV_GROUP = [['id'], ['name'], ['parent'], ['kind'], ['region'], ['layer'], ['owner'], ['team'], ['costCenter'], ['count', 'int'], ['monthly', 'money']];
+  const INV_OWNER = [['team'], ['owners'], ['stewards'], ['components', 'int'], ['monthly', 'money']];
+  const INV_ADR = [['id'], ['title'], ['status'], ['date'], ['links']];
+  const INV_FIND = [['severity'], ['source'], ['rule'], ['title'], ['target'], ['dismissed'], ['reason']];
+  const INV_VER = [['name'], ['env'], ['status'], ['author'], ['created'], ['updated'], ['decidedOn']];
+  const invYN = v => T(v ? 'sec.yes' : 'sec.no');
+  const invNum = v => (v == null || v === '' || !Number.isFinite(+v) ? '' : +v);
+  // Filas de componentes: objetos con claves estables (las de INV_COMP)
+  function inventoryRows(model = S.model) {
+    const m = model, byId = new Map(m.nodes.map(n => [n.id, n])), get = id => byId.get(id);
+    const finds = typeof allFindings === 'function' ? allFindings(m).filter(f => !(f.source !== 'review' && m.dismissed?.[f.id])) : [];
+    return m.nodes.map(n => {
+      const ic = typeof iconInfo === 'function' ? iconInfo(n.icon) : null, cat = ic?.category || typeOf(n).category || '';
+      const gv = f => (typeof govOf === 'function' ? govOf(n, f, m) : { value: String(n[f] ?? '').trim(), from: null });
+      const inh = ['owner', 'steward', 'team', 'costCenter'].map(f => { const g = gv(f); return g.from ? `${T(`gov.${f}`)} ← ${m.groups.find(x => x.id === g.from)?.label || g.from}` : ''; }).filter(Boolean).join('; ');
+      const reg = typeof regionOf === 'function' ? regionOf(n, m).value : cleanRegion(n.region), jur = reg && typeof jurOf === 'function' ? jurOf(reg) : null;
+      const ex = typeof exposureOf === 'function' ? exposureOf(n, m).value : n.exposure || '', bk = typeof backupOf === 'function' ? backupOf(n, m).value : typeof n.backup === 'boolean' ? n.backup : null;
+      const cls = typeof dataClassesOf === 'function' ? dataClassesOf(n, m) : n.data || [];
+      const mine = m.edges.filter(e => e.from === n.id || e.to === n.id);
+      const ins = m.edges.filter(e => e.to === n.id || (e.both && e.from === n.id)), outs = m.edges.filter(e => e.from === n.id || (e.both && e.to === n.id));
+      const unenc = typeof isInsecure === 'function' ? mine.filter(e => isInsecure(e, get)).length : 0;
+      const pc = hasCost(n) ? periodOf(n) : '', pm = hasCost(n) ? round2(perMonth(n)) : '';
+      const my = finds.filter(f => f.target?.id === n.id && f.target.kind === 'node').length;
+      const ctl = typeof controlsOf === 'function' ? [...controlsOf(n, m)] : [];
+      const comp = [...new Set(ctl.map(([k]) => ctlSplit(k)[0]))].map(fw => {
+        const st = CTL_STATUS.map(s => [s, ctl.filter(([k, v]) => ctlSplit(k)[0] === fw && v.status === s).length]).filter(x => x[1]);
+        return `${ctlInfo(`${fw}:x`).short}: ${st.map(([s, c]) => `${c} ${T(`cmp.${s}`).toLowerCase()}`).join(' / ')}`;
+      }).join('; ');
+      const grp = typeof groupChain === 'function' ? groupChain(n, m).reverse().map(g => g.label).join(' › ') : '';
+      const lvl = typeof scopePath === 'function' && n.in ? scopePath(n.in, m).map(id => byId.get(id)?.label || id).join(' › ') : '';
+      const rl = typeof layerOf === 'function' ? layerOf(n).value : n.layer;
+      return {
+        id: n.id, name: n.label, detail: n.sub || '', type: typeLabel(n.type), provider: ic?.providerLabel || '', service: ic?.label || '', category: cat && typeof I.category === 'function' ? I.category(cat) : cat,
+        c4: typeof c4Label === 'function' ? c4Label(n.c4) : '', level: lvl, group: grp,
+        owner: gv('owner').value, steward: gv('steward').value, team: gv('team').value, costCenter: gv('costCenter').value, inherited: inh,
+        region: reg, jurisdiction: jur ? `${jur.label} (${jur.short})` : '',
+        data: cls.map(k => loc(DATA[k]?.short) || String(k).toUpperCase()).join(' '), sensitive: invYN(cls.some(k => DATA[k]?.sensitive)),
+        layer: rl && typeof layerInfo === 'function' ? layerInfo(rl)?.label || rl : '', exposure: ex ? T(ex === 'public' ? 'sec.expo.public' : 'sec.expo.internal') : '', backup: bk == null ? '' : invYN(bk),
+        encIn: ins.filter(e => e.encrypted === true).length, encOut: outs.filter(e => e.encrypted === true).length, unencSens: unenc,
+        sla: invNum(n.sla), rpo: n.rpo == null ? '' : String(n.rpo), rto: n.rto == null ? '' : String(n.rto), replicas: invNum(n.replicas),
+        cost: hasCost(n) ? +n.cost : '', period: pc ? T(PERIODS[pc].label) + (pc === 'multi' ? ` · ${T('cost.years', yearsOf(n))}` : '') : '', perMonth: pm, perYear: pm === '' ? '' : round2(perMonth(n) * 12),
+        review: n.review ? T(`rev.tag.${reviewState(n.review)}`) : '', findings: my,
+        adrs: (m.decisions || []).filter(d => d.links?.nodes?.includes(n.id)).map(d => d.id).join(', '), compliance: comp, desc: n.desc || ''
+      };
+    });
+  }
+  // Todas las tablas del inventario: [{ key, name, head, rows (matrices), fmt }]; las vacías no entran salvo Componentes
+  function inventoryTables(model = S.model) {
+    const m = model, byId = new Map(m.nodes.map(n => [n.id, n])), nm = id => byId.get(id)?.label || id;
+    const mk = (key, cols, rows) => ({ key, name: T(`inv.sheet.${key}`), head: cols.map(([k]) => T(`inv.c.${k}`)), keys: cols.map(([k]) => k), fmt: cols.map(([, f]) => f || null), rows });
+    const out = [], comp = inventoryRows(m);
+    out.push(mk('components', INV_COMP, comp.map(r => INV_COMP.map(([k]) => r[k]))));
+    // Conexiones
+    const open = typeof strideAll === 'function' ? (() => { try { return strideAll(m).filter(t => t.status === 'open'); } catch { return []; } })() : [];
+    const conn = m.edges.map(e => {
+      const cb = typeof crossBorder === 'function' ? crossBorder(e, byId) : null;
+      return [e.id || '', nm(e.from), nm(e.to), String(e.label || '').replace(/\s*\n\s*/g, ' '), loc((C.edgeStyles[e.style] || C.edgeStyles.sync).label), e.encrypted === true ? T('enc.yes') : e.encrypted === false ? T('enc.no') : T('enc.unset'),
+        (e.data || []).map(k => loc(DATA[k]?.short) || String(k).toUpperCase()).join(' '), (e.datasets || []).join('; '), invYN(!!cb), cb ? invYN(cb.approved) : '', open.filter(t => t.e === e || t.e.id === e.id).length];
+    });
+    if (conn.length) out.push(mk('connections', INV_CONN, conn));
+    // Grupos
+    const gpath = g => { const p = []; let x = g.parent, i = 0; while (x && i++ < 50) { const gg = m.groups.find(q => q.id === x); if (!gg) break; p.unshift(gg.label); x = gg.parent; } return p.join(' › '); };
+    const grp = m.groups.map(g => {
+      const ns = m.nodes.filter(n => (typeof groupChain === 'function' ? groupChain(n, m) : []).some(x => x.id === g.id)), gv = f => (typeof govOf === 'function' ? govOf(g, f, m).value : g[f] || '');
+      return [g.id, g.label, gpath(g), typeof groupKind === 'function' ? T(`gkind.${groupKind(g)}`) : '', typeof regionOf === 'function' ? regionOf(g, m).value : g.region || '',
+        typeof layerOf === 'function' && layerOf(g).value && typeof layerInfo === 'function' ? layerInfo(layerOf(g).value).label : '', gv('owner'), gv('team'), gv('costCenter'), ns.length, ns.some(hasCost) ? round2(monthlyTotal(ns)) : ''];
+    });
+    if (grp.length) out.push(mk('groups', INV_GROUP, grp));
+    // Dueños por equipo
+    const own = typeof govTeamList === 'function' ? govTeamList(m).map(t => { const ns = t.nodes.map(id => byId.get(id)).filter(Boolean); return [t.team || T('inv.noTeam'), t.owners.join('; '), t.stewards.join('; '), ns.length, ns.some(hasCost) ? round2(monthlyTotal(ns)) : '']; }) : [];
+    if (own.length) out.push(mk('owners', INV_OWNER, own));
+    // Decisiones (ADR)
+    const links = l => [...(l?.nodes || []).map(nm), ...(l?.edges || []).map(id => { const e = m.edges.find(x => x.id === id); return e ? `${nm(e.from)} → ${nm(e.to)}` : id; }), ...(l?.groups || []).map(id => m.groups.find(g => g.id === id)?.label || id),
+      ...(l?.versions || []).map(id => { const v = (m.versions || []).find(x => x.id === id); return v && typeof verLabel === 'function' ? verLabel(v) : id; })].join('; ');
+    if (m.decisions?.length) out.push(mk('decisions', INV_ADR, m.decisions.map(d => [d.id, d.title, T(`adr.st.${d.status}`), d.date || '', links(d.links)])));
+    // Hallazgos (abiertos y descartados)
+    const tl = t => { const o = (t.kind === 'node' ? m.nodes : t.kind === 'edge' ? m.edges : t.kind === 'group' ? m.groups : t.kind === 'zone' ? m.zones || [] : []).find(x => x.id === t.id); return !o ? t.id : t.kind === 'edge' ? `${nm(o.from)} → ${nm(o.to)}` : o.label || t.id; };
+    const fnd = typeof allFindings === 'function' ? allFindings(m).map(f => { const d = f.source !== 'review' && m.dismissed?.[f.id]; return [sevLabel(f.severity), typeof srcLabel === 'function' ? srcLabel(f.source) : f.source, f.rule, f.title, tl(f.target || {}), invYN(!!d), d?.reason || '']; }) : [];
+    if (fnd.length) out.push(mk('findings', INV_FIND, fnd));
+    // Versiones y ambientes
+    if (m.versions?.length) out.push(mk('versions', INV_VER, m.versions.map(v => [verLabel(v), v.kind === 'env' ? loc(C.environments?.[v.env]?.label) || v.env : '', T(`ver.st.${v.status}`), v.author || '', v.created || '', v.updated || '', [v.decidedOn, v.decidedBy].filter(Boolean).join(' · ')])));
+    return out;
+  }
+  // 'xlsx' | 'csv' (solo componentes) | 'csv-all' (una descarga por tabla)
+  function exportInventory(kind = 'xlsx') {
+    try {
+      const tabs = inventoryTables(S.model), X = window.DiagramonXlsx;
+      if (kind === 'xlsx') {
+        if (!X) throw new Error('export-xlsx.js missing');
+        download(X.blob(tabs.map(t => ({ name: t.name, head: t.head, rows: t.rows, fmt: t.fmt })), { title: `${S.model.title || 'Diagramon'} · ${T('inv.title')}`, creator: 'Diagramon' }), fileName('xlsx', 'inventory'), X.MIME);
+      } else if (kind === 'csv-all') {
+        tabs.forEach((t, i) => setTimeout(() => download(toCSV([t.head, ...t.rows]), fileName('csv', `inventory-${t.key}`), 'text/csv;charset=utf-8'), i * 300));
+      } else download(toCSV([tabs[0].head, ...tabs[0].rows]), fileName('csv', 'inventory'), 'text/csv;charset=utf-8');
+      toast(T('toast.exported', { name: T('inv.title') }));
+    } catch (e) { console.error(e); toast(T('toast.exportFail')); }
+  }
+  // Diálogo del CSV: solo componentes o todas las tablas por separado
+  function openInventoryDialog() {
+    const prev = document.activeElement, id = `iv${Date.now()}`, back = document.createElement('div');
+    back.className = 'cf-back';
+    back.innerHTML = `<form class="cf share" role="dialog" aria-modal="true" aria-labelledby="${id}t" autocomplete="off">
+      <h3 id="${id}t">${esc(T('inv.csv.title'))}</h3><p>${esc(T('inv.csv.lead'))}</p>
+      <fieldset class="sh-views"><label class="sh-chk"><input type="radio" name="k" value="csv" checked>${esc(T('inv.csv.one'))}</label><label class="sh-chk"><input type="radio" name="k" value="csv-all">${esc(T('inv.csv.all'))}</label></fieldset>
+      <div class="cf-actions"><button type="button" class="btn" data-iv="no">${esc(T('ver.cf.cancel'))}</button><button type="submit" class="btn primary">${esc(T('inv.csv.go'))}</button></div></form>`;
+    const form = back.querySelector('form'), close = () => { document.removeEventListener('keydown', key, true); back.remove(); prev?.focus?.(); };
+    const key = ev => { if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); close(); } };
+    form.addEventListener('click', ev => { if (ev.target.closest('[data-iv="no"]')) close(); });
+    back.addEventListener('mousedown', ev => { if (ev.target === back) close(); });
+    form.addEventListener('submit', ev => { ev.preventDefault(); const k = form.elements.k.value; close(); exportInventory(k); });
+    document.addEventListener('keydown', key, true);
+    document.body.appendChild(back);
+    form.querySelector('input[name="k"]:checked').focus();
+  }
+
   // Importa un diagrama de Diagramon (JSON) o infraestructura como código (iac.js).
   // Acepta File del navegador o { name, text }.
   async function importFiles(list) {
@@ -6946,6 +7067,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     findings: (opts = {}) => apiFindings(opts), dismissFinding: (id, reason) => dismissFinding(id, reason), restoreFinding: id => restoreFinding(id),
     threats: () => strideAll().map(t => ({ edge: t.e.id, from: t.e.from, to: t.e.to, zones: t.zones.map(z => z.id), category: t.cat, severity: t.severity, status: t.status, note: t.note })),
     exportThreats, exportReport,
+    inventory: () => inventoryRows(S.model).map(r => ({ ...r })), exportInventory: (kind = 'xlsx') => exportInventory(['csv', 'csv-all'].includes(kind) ? kind : 'xlsx'),
     decisions: () => clone(S.model.decisions || []), addDecision, updateDecision, removeDecision, exportDecisions,
     setScope: id => setScope(id), get scope() { return S.scope; }, scopes: () => scopeList().map(x => ({ ...x, path: [...x.path] })), exportLevels,
     exportSVG, exportPNG, exportViews, exportJSON, shareEncrypted, exportOther, exportCtx, toggleRouting, importFiles, config: C, icons: ICONS
