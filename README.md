@@ -561,6 +561,12 @@ Things that work but have not been checked in depth yet. They probably need some
 - Notes and risk zones are not exported to Mermaid, PlantUML or draw.io.
 - **Data governance** fields (datasets, owners, regions, layers) are not exported to Mermaid, PlantUML or draw.io. Lineage is not available in the *Context* view, and IaC import sets the region only for AWS (not yet from Azure `location` or Google Cloud regions).
 - Region detection from a group's name covers the usual AWS, Azure and Google Cloud codes; other names need the **Region** field.
+- **Data governance and security marks not reviewed visually** in some cases: the light and black themes for the new marks and dialogs (review panel, compliance matrix, trust boundaries, ⚠ and *STRIDE n* pills), very small components carrying every pill at once (layer, region, team), and dragging components while a lineage is shown.
+- **Encrypted HTML export** with the new marks (layers, region and team pills, trust boundaries, STRIDE pills) has not been opened yet.
+- **Drawing a trust boundary by hand** with the mouse has not been tried; it was tested from the API and the multi-selection action.
+- **Text tab**: notes on STRIDE decisions, trust boundaries and dismissed findings are not part of the text format, so a round trip through the *Text* tab keeps the statuses but loses the notes.
+- Security review, compliance and STRIDE fields (`exposure`, `backup`, `controls`, `threats`, trust zones, dismissed findings) are not exported to Mermaid, PlantUML or draw.io.
+- The compliance catalog is a practical subset of each standard with paraphrased titles; check it before relying on it for an audit.
 
 ---
 
