@@ -116,6 +116,30 @@ window.DIAGRAMON_CONFIG = {
     phi:          { label: { en: 'Health data (PHI)', es: 'Datos de salud (PHI)' }, short: 'PHI', color: 'lila', sensitive: true }
   },
 
+  /* Residencia y soberanía de datos: región (o país) de cada componente y aviso cuando datos sensibles cruzan jurisdicciones.
+     jurisdictions: mapa ORDENADO clave → { label: {en, es}, short, match, of? }. El texto de la región (p. ej. `eu-west-1`,
+     `westeurope`, `europe-west1`, `ES`, `US`) se prueba contra `match` (RegExp, sin distinguir mayúsculas); gana la primera
+     jurisdicción que coincide, así que pon las más específicas antes (uk y ch antes que eu). Sin coincidencia = región
+     desconocida (no se avisa). Para añadir una: copia una línea, cambia clave, etiquetas y `match`. Para ajustar una, edita su
+     `match` (usa ^…$ para que `IT` no coincida con otras palabras). `of` (opcional) es el texto tras «salen de/leaves» («la UE»).
+     warnSameJurisdiction: true = avisa también cuando las regiones difieren dentro de una misma jurisdicción. */
+  residency: {
+    warnSameJurisdiction: false,
+    jurisdictions: {
+      uk:    { label: { en: 'UK', es: 'Reino Unido' }, short: 'UK', match: /^(uk|gb|uk(south|west)|eu-west-2|europe-west2)$/i },
+      ch:    { label: { en: 'Switzerland', es: 'Suiza' }, short: 'CH', match: /^(ch|switzerland(north|west)|eu-central-2|europe-west6)$/i },
+      eu:    { label: { en: 'EU', es: 'UE' }, of: { en: 'the EU', es: 'la UE' }, short: 'EU',
+               match: /^(eu|eusc-[a-z]+-[a-z]+-\d|eu-(central|north|south|west)-\d|europe-[a-z]+\d+|(west|north)europe|france(central|south)|germany(westcentral|north)|swedencentral|italynorth|spaincentral|polandcentral|austriaeast|denmarkeast|belgiumcentral|at|be|bg|hr|cy|cz|dk|ee|fi|fr|de|gr|hu|ie|it|lv|lt|lu|mt|nl|pl|pt|ro|sk|si|es|se)$/i },
+      us:    { label: { en: 'US', es: 'EE. UU.' }, short: 'US', match: /^(us|us-[a-z-]+\d|(east|west|central|northcentral|southcentral|westcentral)us\d?|usgov[a-z]*|usdod[a-z]*)$/i },
+      ca:    { label: { en: 'Canada', es: 'Canadá' }, short: 'CA', match: /^(ca|ca-[a-z]+-\d|canada(central|east)|northamerica-northeast\d)$/i },
+      br:    { label: { en: 'Brazil', es: 'Brasil' }, short: 'BR', match: /^(br|brazil(south|southeast)|sa-east-1|southamerica-east\d)$/i },
+      latam: { label: { en: 'Latin America', es: 'Latinoamérica' }, short: 'LATAM', match: /^(mx|ar|cl|co|pe|uy|ec|bo|py|ve|cr|pa|mexico[a-z-]*\d?|chile[a-z]*|southamerica-west\d|northamerica-south\d)$/i },
+      apac:  { label: { en: 'Asia-Pacific', es: 'Asia-Pacífico' }, short: 'APAC', match: /^(ap-[a-z]+-\d|asia-[a-z]+\d|australia[a-z-]*\d?|japan[a-z]*|korea[a-z]*|india[a-z]*|(central|south|west)india|jioindia[a-z]*|southeastasia|eastasia|newzealand[a-z]*|cn-[a-z]+-\d|china[a-z]*|cn|jp|kr|in|sg|au|nz|hk|tw|id|my|th|vn|ph)$/i },
+      me:    { label: { en: 'Middle East', es: 'Medio Oriente' }, short: 'ME', match: /^(me-[a-z]+-?\d|il-central-1|uae[a-z]*|qatar[a-z]*|israel[a-z]*|saudi[a-z]*|ae|sa|il|qa|bh|kw|om|jo)$/i },
+      af:    { label: { en: 'Africa', es: 'África' }, short: 'AF', match: /^(af-south-1|southafrica(north|west)|africa-south\d|za|eg|ng|ke|ma)$/i }
+    }
+  },
+
   /* Costos escritos a mano en cada componente (recuadro bajo el nodo).
      hoursPerMonth: horas usadas para pasar un precio por hora a mensual.
      defaultYears: años por defecto del periodo "Multianual". */

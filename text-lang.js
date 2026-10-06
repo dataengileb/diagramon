@@ -26,6 +26,8 @@
    Conexión: a -> b -> c : etiqueta color=…   (la etiqueta va en la última flecha)
    Datos:    nodo … data=pii,pci · conexión a -> b : SQL data=pii encrypted=yes
    Linaje:   conexión a -> b : SQL datasets=orders,customers   (es: tablas= o conjuntos=; con espacios: datasets="sales orders,crm.customers")
+   Residencia: nodo o grupo … region=eu-west-1 (también región=, country=/país= como alias; hereda del grupo) ·
+             conexión a -> b : SQL data=pii transfer=ok (transferencia=ok: transferencia entre jurisdicciones autorizada)
    Comentario: líneas que empiezan por # o //
 
    Acepta las palabras clave en inglés y en español (title/título, group/grupo,
@@ -40,18 +42,19 @@
   const ARROW_SPLIT = /\s*(\.\.>|~>|=>|->)\s*/;
   const HAS_ARROW = /\.\.>|~>|=>|->/;
   const ID = /^[^\s:[\]"{}]+$/;
-  const NODE_KEYS = ['color', 'badge', 'desc', 'sub', 'x', 'y', 'costo', 'cost', 'data', 'datos'];
+  const NODE_KEYS = ['color', 'badge', 'desc', 'sub', 'x', 'y', 'costo', 'cost', 'data', 'datos', 'region', 'región', 'country', 'pais', 'país'];
   /* ---------- gobierno: dueño, responsable, equipo, centro de costo ---------- */
   const GOV_KEYS = { owner: 'owner', dueño: 'owner', dueno: 'owner', steward: 'steward', responsable: 'steward', team: 'team', equipo: 'team',
     costcenter: 'costCenter', centro: 'costCenter', centrocosto: 'costCenter', centrodecosto: 'costCenter' };
   const GOV_WORDS = ['owner', 'steward', 'team', 'costCenter'];
   const applyGov = (o, kv) => { for (const [key, v] of Object.entries(kv)) { const k = GOV_KEYS[key]; if (k && String(v).trim()) o[k] = String(v).trim(); } };
+  const REGION_KEYS = ['region', 'región', 'country', 'pais', 'país']; // todas escriben en `region`
   // review id: "observación" by=… raised=AAAA-MM-DD due=AAAA-MM-DD status=open|resolved closed=AAAA-MM-DD
   const REVIEW_KEYS = { by: 'by', por: 'by', raised: 'raised', levantada: 'raised', due: 'due', compromiso: 'due', status: 'status', estado: 'status', closed: 'closed', cerrada: 'closed' };
   const isDay = v => /^\d{4}-\d{2}-\d{2}$/.test(v) && !isNaN(new Date(`${v}T12:00Z`)) && new Date(`${v}T12:00Z`).toISOString().slice(0, 10) === v;
   // Opciones al final de una conexión: a -> b : etiqueta color=… data=pii encrypted=yes
   // (el valor puede ir entre comillas: datasets="sales orders,crm.customers")
-  const EDGE_OPT = /(?:^|\s)(color|data|datos|encrypted|cifrado|both|ambos|line|linea|línea|datasets|tablas|conjuntos)=("(?:[^"\\]|\\.)*"|\S+)\s*$/i;
+  const EDGE_OPT = /(?:^|\s)(color|data|datos|encrypted|cifrado|both|ambos|line|linea|línea|datasets|tablas|conjuntos|transfer|transferencia)=("(?:[^"\\]|\\.)*"|\S+)\s*$/i;
   /* ---------- linaje: datasets=a,b ---------- */
   const DS_KEY = { en: 'datasets', es: 'tablas' };
   const parseDatasets = v => [...new Set(String(v).replace(/^"([\s\S]*)"$/, (_, x) => { try { return JSON.parse(`"${x}"`); } catch { return x; } }).split(/[,;]/).map(s => s.trim()).filter(Boolean))];
@@ -63,10 +66,10 @@
 
   // Palabras que escribe stringify y mensajes de error, por idioma
   const WORDS = {
-    en: { title: 'title', direction: 'direction', group: 'group', cost: 'cost', hour: 'hour', month: 'month', year: 'year', years: 'years', data: 'data', encrypted: 'encrypted', both: 'both', yes: 'yes', no: 'no', lines: 'lines', line: 'line', elbow: 'elbow', curved: 'curved', elbowOne: 'elbow', curvedOne: 'curved', author: 'author', version: 'version', view: 'view', kind: 'kind', physical: 'physical', logical: 'logical',
+    en: { title: 'title', direction: 'direction', group: 'group', cost: 'cost', hour: 'hour', month: 'month', year: 'year', years: 'years', data: 'data', encrypted: 'encrypted', both: 'both', yes: 'yes', no: 'no', lines: 'lines', line: 'line', region: 'region', transfer: 'transfer', ok: 'ok', elbow: 'elbow', curved: 'curved', elbowOne: 'elbow', curvedOne: 'curved', author: 'author', version: 'version', view: 'view', kind: 'kind', physical: 'physical', logical: 'logical',
       review: 'review', by: 'by', raised: 'raised', due: 'due', status: 'status', closed: 'closed', resolved: 'resolved',
       owner: 'owner', steward: 'steward', team: 'team', costCenter: 'costcenter' },
-    es: { title: 'título', direction: 'dirección', group: 'grupo', cost: 'costo', hour: 'hora', month: 'mes', year: 'año', years: 'años', data: 'datos', encrypted: 'cifrado', both: 'ambos', yes: 'sí', no: 'no', lines: 'líneas', line: 'línea', elbow: 'codos', curved: 'curvas', elbowOne: 'codo', curvedOne: 'curva', author: 'autor', version: 'versión', view: 'vista', kind: 'tipo', physical: 'físico', logical: 'lógico',
+    es: { title: 'título', direction: 'dirección', group: 'grupo', cost: 'costo', hour: 'hora', month: 'mes', year: 'año', years: 'años', data: 'datos', encrypted: 'cifrado', both: 'ambos', yes: 'sí', no: 'no', lines: 'líneas', line: 'línea', region: 'región', transfer: 'transferencia', ok: 'ok', elbow: 'codos', curved: 'curvas', elbowOne: 'codo', curvedOne: 'curva', author: 'autor', version: 'versión', view: 'vista', kind: 'tipo', physical: 'físico', logical: 'lógico',
       review: 'revisión', by: 'por', raised: 'levantada', due: 'compromiso', status: 'estado', closed: 'cerrada', resolved: 'resuelta',
       owner: 'dueño', steward: 'responsable', team: 'equipo', costCenter: 'centro' }
   };
@@ -77,7 +80,7 @@
       edge: 'incomplete connection', id: id => `invalid id “${id || '(empty)'}”`,
       cost: v => `invalid cost “${v}” (e.g. 120/month, 0.1/hour, 1400/year, 5000/3years)`,
       data: v => `unknown data class “${v}” (e.g. pii, pci, confidential)`, enc: v => `invalid encrypted value “${v}” (use yes or no)`,
-      route: v => `invalid line style “${v}” (use curved or elbow)`,
+      route: v => `invalid line style “${v}” (use curved or elbow)`, transfer: v => `invalid transfer value “${v}” (use ok)`,
       day: v => `invalid date “${v}” (use YYYY-MM-DD)`, status: v => `invalid status “${v}” (use open or resolved)`,
       view: v => `unknown view “${v}”`, gkind: v => `invalid group type “${v}” (use logical or physical)`,
       line: 'cannot understand this line', open: n => `missing } to close ${n === 1 ? 'a group' : `${n} groups`}`
@@ -88,7 +91,7 @@
       edge: 'conexión incompleta', id: id => `id no válido «${id || '(vacío)'}»`,
       cost: v => `costo no válido «${v}» (ej.: 120/mes, 0.1/hora, 1400/año, 5000/3años)`,
       data: v => `clasificación de datos desconocida «${v}» (ej.: pii, pci, confidential)`, enc: v => `valor de cifrado no válido «${v}» (usa sí o no)`,
-      route: v => `estilo de línea no válido «${v}» (usa curvas o codos)`,
+      route: v => `estilo de línea no válido «${v}» (usa curvas o codos)`, transfer: v => `valor de transferencia no válido «${v}» (usa ok)`,
       day: v => `fecha no válida «${v}» (usa AAAA-MM-DD)`, status: v => `estado no válido «${v}» (usa abierta o resuelta)`,
       view: v => `vista desconocida «${v}»`, gkind: v => `tipo de grupo no válido «${v}» (usa lógico o físico)`,
       line: 'no se entiende esta línea', open: n => `falta cerrar ${n === 1 ? 'un grupo' : `${n} grupos`} con }`
@@ -117,7 +120,7 @@
   // Divide el resto de una línea en etiqueta, [tipo], "detalle" y clave=valor
   function tokens(rest, keys) {
     const out = { words: [], brackets: [], quotes: [], kv: {} };
-    const re = /\[([^\]]*)\]|("(?:[^"\\]|\\.)*")|([A-Za-zñÑ]+)=("(?:[^"\\]|\\.)*"|\S+)|(\S+)/g;
+    const re = /\[([^\]]*)\]|("(?:[^"\\]|\\.)*")|([A-Za-zÀ-ÿ]+)=("(?:[^"\\]|\\.)*"|\S+)|(\S+)/g;
     let m;
     while ((m = re.exec(rest))) {
       if (m[1] != null) out.brackets.push(m[1].trim());
@@ -207,7 +210,7 @@
         const id = m[2];
         if (!ID.test(id)) return err(ln, msg.groupId(id));
         if (groups.has(id)) return err(ln, msg.groupDup(id));
-        const tk = tokens(m[3], ['color', 'icon', 'icono', 'kind', 'tipo', ...Object.keys(GOV_KEYS)]);
+        const tk = tokens(m[3], ['color', 'icon', 'icono', 'kind', 'tipo', ...Object.keys(GOV_KEYS), ...REGION_KEYS]);
         const g = { id, label: tk.quotes[0] ?? (tk.words.join(' ') || id) };
         if (tk.kv.color) g.color = tk.kv.color;
         applyGov(g, tk.kv);
@@ -218,6 +221,8 @@
           const f = gk.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
           if (/^(physical|fisic[oa]?)$/.test(f)) g.kind = 'physical'; else if (/^(logical|logic[oa]?)$/.test(f)) g.kind = 'logical'; else err(ln, msg.gkind(gk));
         }
+        const gr = REGION_KEYS.map(k => tk.kv[k]).find(v => v != null && v.trim());
+        if (gr) g.region = gr.trim();
         if (stack.length) g.parent = stack[stack.length - 1];
         groups.add(id);
         model.groups.push(g);
@@ -244,6 +249,8 @@
         if (routeV != null && !route) err(ln, msg.route(routeV));
         const bothV = kv.both ?? kv.ambos, both = bothV == null ? null : parseBool(bothV);
         if (bothV != null && both == null) err(ln, msg.enc(bothV));
+        const trV = kv.transfer ?? kv.transferencia, tr = trV == null ? null : /^(ok|yes|y|true|si|sí|1|on)$/i.test(trV);
+        if (trV != null && !tr) err(ln, msg.transfer(trV));
         // Etiqueta entre comillas (JSON) o con \n escapado = varias líneas
         if (/^".*"$/.test(label)) label = unquote(label); else label = label.replace(/\\n/g, '\n');
         for (let k = 0; k + 2 < parts.length; k += 2) {
@@ -258,6 +265,7 @@
           if (enc != null) e.encrypted = enc;
           if (route) e.route = route;
           if (both) e.both = true;
+          if (tr) e.transferOk = true;
           model.edges.push(e);
         }
         return;
@@ -283,6 +291,8 @@
         const dv = tk.kv.data ?? tk.kv.datos;
         if (dv != null) { const d = checkData(dv, ln); if (d.length) n.data = d; }
         applyGov(n, tk.kv);
+        const nr = REGION_KEYS.map(k => tk.kv[k]).find(v => v != null && v.trim());
+        if (nr) n.region = nr.trim();
         if (stack.length) n.group = stack[stack.length - 1];
         return;
       }
@@ -311,12 +321,13 @@
       if (n.cost != null && n.cost !== '' && Number.isFinite(+n.cost)) p.push(`${w.cost}=${costValue(n, w)}`);
       if (n.data?.length) p.push(`${w.data}=${n.data.join(',')}`);
       GOV_WORDS.forEach(k => { if (n[k]) p.push(`${w[k]}=${bare(n[k])}`); });
+      if (n.region) p.push(`${w.region}=${bare(n.region)}`);
       if (n.desc) p.push(`desc=${quote(n.desc)}`);
       return p.join(' ');
     };
     const groupIds = new Set(m.groups.map(g => g.id));
     const writeGroup = (g, ind) => {
-      out.push(`${ind}${w.group} ${g.id} ${quote(g.label)}${g.icon ? ` icon=${bare(g.icon)}` : ''}${g.color ? ` color=${bare(g.color)}` : ''}${g.kind ? ` ${w.kind}=${w[g.kind]}` : ''}${GOV_WORDS.filter(k => g[k]).map(k => ` ${w[k]}=${bare(g[k])}`).join('')} {`);
+      out.push(`${ind}${w.group} ${g.id} ${quote(g.label)}${g.icon ? ` icon=${bare(g.icon)}` : ''}${g.color ? ` color=${bare(g.color)}` : ''}${g.kind ? ` ${w.kind}=${w[g.kind]}` : ''}${GOV_WORDS.filter(k => g[k]).map(k => ` ${w[k]}=${bare(g[k])}`).join('')}${g.region ? ` ${w.region}=${bare(g.region)}` : ''} {`);
       m.nodes.filter(n => n.group === g.id).forEach(n => out.push(`${ind}  ${nodeLine(n)}`));
       m.groups.filter(c => c.parent === g.id).forEach(c => writeGroup(c, ind + '  '));
       out.push(`${ind}}`);
@@ -328,7 +339,7 @@
       const arrow = ARROW_OF[e.style] || '->';
       const tail = [e.label ? (EDGE_OPT.test(e.label) || /^".*"$/.test(e.label) || /[\n\\]/.test(e.label) ? quote(e.label) : e.label) : '', e.color ? `color=${bare(e.color)}` : '',
         e.data?.length ? `${w.data}=${e.data.join(',')}` : '', e.datasets?.length ? `${DS_KEY[lang] || DS_KEY.en}=${bare(e.datasets.join(','))}` : '', e.encrypted != null ? `${w.encrypted}=${e.encrypted ? w.yes : w.no}` : '',
-        e.both ? `${w.both}=${w.yes}` : '', e.route ? `${w.line}=${e.route === 'elbow' ? w.elbowOne : w.curvedOne}` : ''].filter(Boolean).join(' ');
+        e.both ? `${w.both}=${w.yes}` : '', e.transferOk ? `${w.transfer}=${w.ok}` : '', e.route ? `${w.line}=${e.route === 'elbow' ? w.elbowOne : w.curvedOne}` : ''].filter(Boolean).join(' ');
       out.push(`${e.from} ${arrow} ${e.to}${tail ? ` : ${tail}` : ''}`);
     });
     const reviewed = m.nodes.filter(n => n.review);

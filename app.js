@@ -147,6 +147,61 @@
     return [...Object.keys(DATA).filter(k => set.has(k)), ...[...set].filter(k => !DATA[k])];
   };
 
+  /* ---------- residencia y soberanía de datos ---------- */
+  // Región de nodos y grupos (heredada del grupo más cercano) y detección de datos sensibles que cruzan jurisdicciones.
+  // Jurisdicciones y reglas de coincidencia: config.js › residency
+  const RES = C.residency || {}, JURS = RES.jurisdictions || {};
+  const cleanRegion = v => (typeof v === 'string' || typeof v === 'number' ? String(v).trim() : '');
+  const jurCache = new Map();
+  // Jurisdicción de un texto de región → { key, label, short, of } o null si no se conoce
+  const jurOf = region => {
+    const r = cleanRegion(region);
+    if (!r) return null;
+    if (!jurCache.has(r)) {
+      const k = Object.keys(JURS).find(j => { try { return JURS[j].match instanceof RegExp && new RegExp(JURS[j].match.source, 'i').test(r); } catch { return false; } });
+      jurCache.set(r, k ? { key: k, label: loc(JURS[k].label) || k, short: JURS[k].short || k.toUpperCase(), of: loc(JURS[k].of) || loc(JURS[k].label) || k } : null);
+    }
+    return jurCache.get(r);
+  };
+  // Un código de región dentro del nombre de un grupo («Región eu-west-1 (Irlanda)»): solo palabras de 3+ letras para no confundir «es», «it»…
+  const deduceRegion = label => String(label ?? '').split(/[^A-Za-z0-9-]+/).map(w => w.replace(/^-+|-+$/g, '')).find(w => w.length > 2 && jurOf(w));
+  // { value, from }: from = null si es propia; si no { id, label, deduced } del grupo que la aporta. Nodo: su grupo y los de arriba; grupo: él y los de arriba
+  function regionOf(x, m = S.model) {
+    if (!x) return { value: '', from: null };
+    const own = cleanRegion(x.region);
+    if (own) return { value: own, from: null };
+    const isNode = 'type' in x, chain = [];
+    let g = isNode ? x.group : x.parent, i = 0;
+    while (g && i++ < 50) { const gg = m.groups.find(q => q.id === g); if (!gg) break; chain.push(gg); g = gg.parent; }
+    const hit = chain.find(q => cleanRegion(q.region));
+    if (hit) return { value: cleanRegion(hit.region), from: { id: hit.id, label: hit.label, deduced: false } };
+    // Un grupo también puede llamarse como su región
+    const named = (isNode ? chain : [x, ...chain]).map(q => [q, deduceRegion(q.label)]).find(([, r]) => r);
+    return named ? { value: named[1], from: { id: named[0].id, label: named[0].label, deduced: true } } : { value: '', from: null };
+  }
+  const regionLabel = r => { const j = jurOf(r); return j ? `${r} (${j.short})` : r; };
+  // Datos sensibles que viajan por la conexión: los suyos o, sin `data`, los del origen (y del destino si es bidireccional)
+  const sensClasses = (e, get) => {
+    const ks = e.data?.length ? e.data : [...(get(e.from)?.data || []), ...(e.both ? get(e.to)?.data || [] : [])];
+    return [...new Set(ks)].filter(k => DATA[k]?.sensitive).sort((a, b) => Object.keys(DATA).indexOf(a) - Object.keys(DATA).indexOf(b));
+  };
+  // null o { from: {region, jur}, to: {region, jur}, classes, approved }; byId: función o Map
+  function crossBorder(e, byId) {
+    const get = typeof byId === 'function' ? byId : id => byId.get(id);
+    const a = get(e.from), b = get(e.to);
+    if (!a || !b || e.from === e.to) return null;
+    const ra = regionOf(a).value, rb = regionOf(b).value, ja = jurOf(ra), jb = jurOf(rb);
+    if (!ja || !jb) return null;
+    if (ja.key === jb.key && !(RES.warnSameJurisdiction && ra.toLowerCase() !== rb.toLowerCase())) return null;
+    const classes = sensClasses(e, get);
+    if (!classes.length) return null;
+    return { from: { region: ra, jur: ja }, to: { region: rb, jur: jb }, classes, approved: e.transferOk === true };
+  }
+  const isXBorder = (e, byId) => { const c = crossBorder(e, byId); return !!c && !c.approved; };
+  const classShorts = cs => cs.map(k => loc(DATA[k]?.short) || k.toUpperCase());
+  // «⚠ PII leaves the EU → US»
+  const xbWarn = cb => T('res.warn', { cls: classShorts(cb.classes).join(', '), n: cb.classes.length, from: cb.from.jur.of, to: cb.to.jur.label, same: cb.from.jur.key === cb.to.jur.key, fromR: cb.from.region, toR: cb.to.region });
+
   /* ---------- observaciones de revisión (se levantan a mano en el inspector) ---------- */
   // review: { status: 'open' | 'resolved', note, by, raised, due, closed } con fechas AAAA-MM-DD
   // Fecha AAAA-MM-DD que existe en el calendario (2026-02-30 no vale)
@@ -276,6 +331,7 @@
     list(raw.groups).forEach((g, i) => m.groups.push({ ...g, id: take(g.id, 'g', i), label: String(g.label ?? g.id ?? T('model.group')) }));
     const gids = new Set(m.groups.map(g => g.id));
     m.groups.forEach(g => { if (typeof g.icon !== 'string' || !g.icon.includes('/')) delete g.icon; }); // icono opcional 'proveedor/clave'
+    m.groups.forEach(g => { if (cleanRegion(g.region)) g.region = cleanRegion(g.region); else delete g.region; }); // región (residencia de datos)
     m.groups.forEach(g => { // tipo opcional: lógico o físico (sin él se deduce, ver groupKind)
       const k = fold(g.kind);
       if (/^(physical|fisic)/.test(k)) g.kind = 'physical'; else if (/^(logical|logic)/.test(k)) g.kind = 'logical'; else delete g.kind;
@@ -304,6 +360,7 @@
       if (o.costPeriod === 'multi' && Math.round(+o.costYears) >= 1) o.costYears = Math.round(+o.costYears); else delete o.costYears;
       if (cleanData(o.data).length) o.data = cleanData(o.data); else delete o.data;
       if (cleanReview(o.review)) o.review = cleanReview(o.review); else delete o.review;
+      if (cleanRegion(o.region)) o.region = cleanRegion(o.region); else delete o.region;
       m.nodes.push(o);
     });
     [...m.groups, ...m.nodes].forEach(cleanGov);
@@ -318,6 +375,7 @@
       if (o.route !== 'curved' && o.route !== 'elbow') delete o.route;
       if (o.both === true || (typeof o.both === 'string' && /^(yes|true|si|sí)$/i.test(o.both))) o.both = true; else delete o.both;
       const dsl = cleanDatasets(o.datasets); if (dsl.length) o.datasets = dsl; else delete o.datasets;
+      if (o.transferOk === true || (typeof o.transferOk === 'string' && /^(yes|true|ok|si|sí)$/i.test(o.transferOk))) o.transferOk = true; else delete o.transferOk;
       m.edges.push(o);
     });
     m.notes = []; m.zones = [];
@@ -806,11 +864,23 @@
     const parts = Array.from({ length: cfg.particles ? (e.both ? Math.max(2, cfg.particles) : cfg.particles) : 0 }, () => el('circle', { class: 'particle', r: st === 'data' ? 2.4 : 3, cx: -9999, cy: -9999 }, g));
     const byId = id => S.model.nodes.find(n => n.id === id);
     if (isInsecure(e, byId)) g.classList.add('insecure');
-    const r = { g, e, hit, line, arrow, label: null, parts, len: 0, phase: Math.random() };
+    const r = { g, e, hit, line, arrow, label: null, parts, len: 0, phase: Math.random(), xb: null };
     R.edges.set(e.id, r);
     if (e.datasets?.length) el('title', null, g).textContent = T('lin.tip', { list: e.datasets.join(', ') });
     edgeLabel(r);
     edgeDatasets(r);
+    xbMarker(r);
+  }
+  /* ---------- marcador de datos fuera de su jurisdicción (solo se ve en la vista Seguridad) ---------- */
+  // Un globo en el punto medio (rojo) o un ✓ gris si la transferencia está autorizada; se reconstruye con la conexión
+  function xbMarker(r) {
+    const cb = crossBorder(r.e, id => S.model.nodes.find(n => n.id === id));
+    if (!cb) return;
+    const mk = el('g', { class: `edge-xb${cb.approved ? ' ok' : ''}` }, r.g);
+    el('circle', { r: 10 }, mk);
+    if (cb.approved) el('path', { class: 'xb-g', d: 'M-4.5 0.5 -1.5 3.5 4.5 -3' }, mk);
+    else el('path', { class: 'xb-g', d: 'M0 -6a6 6 0 1 0 0 12a6 6 0 1 0 0 -12M-6 0h12M0 -6c-3.5 3.2 -3.5 8.8 0 12M0 -6c3.5 3.2 3.5 8.8 0 12' }, mk);
+    r.xb = mk;
   }
   // Etiqueta: candado de cifrado, texto y clasificaciones de los datos que viajan (según lo que la vista muestre)
   function edgeLabel(r) {
@@ -865,7 +935,8 @@
     if (sub) { paint(true, ' nd-full'); paint(false, ' nd-min'); } else paint(false, '');
     // Arriba a la izquierda: la observación de revisión (si hay) y las clasificaciones de datos
     const dt = [...(n.review ? [{ ...reviewTag(n.review), cls: 'dt-review' }] : []), ...dataTags(n).map(t => ({ ...t, cls: 'dt-data' }))];
-    el('title', null, g).textContent = [n.sub ? `${n.label} · ${n.sub}` : n.label, ...dt.map(t => t.label), govTip(n)].filter(Boolean).join('\n');
+    const rg = regionOf(n).value;
+    el('title', null, g).textContent = [n.sub ? `${n.label} · ${n.sub}` : n.label, ...dt.map(t => t.label), govTip(n), rg ? T('res.tip', regionLabel(rg)) : ''].filter(Boolean).join('\n');
     if (dt.length) {
       const dg = el('g', { class: 'node-data' }, b);
       let x = 14;
@@ -876,6 +947,12 @@
       const bg = el('g', { class: 'node-badge', transform: `translate(${w - 14} 0)` }, b);
       el('rect', { x: -bw / 2, y: -9, width: bw, height: 18, rx: 9 }, bg);
       el('text', { 'text-anchor': 'middle', y: 4 }, bg).textContent = n.badge;
+    }
+    if (rg) { // abajo a la derecha, a caballo del borde (solo en las vistas Seguridad y Física)
+      const j = jurOf(rg), rt = j && j.short.toLowerCase() !== rg.toLowerCase() ? `${j.short} · ${rg}` : rg, rw = Math.min(w - 16, Math.ceil(textW(rt, FONT.cost) + 14));
+      const rgg = el('g', { class: `node-region${j ? ` jur-${j.key}` : ''}`, transform: `translate(${w - rw - 8} ${H - 9})` }, b);
+      el('rect', { width: rw, height: 18, rx: 9 }, rgg);
+      el('text', { x: rw / 2, y: 12.5, 'text-anchor': 'middle' }, rgg).textContent = fitText(rt, FONT.cost, rw - 10);
     }
     if (hasCost(n)) {
       const ct = costText(n), cw = Math.ceil(textW(ct, FONT.cost) + 20);
@@ -1027,6 +1104,10 @@
         const mp = r.line.getPointAtLength(r.len / 2);
         r.label?.setAttribute('transform', `translate(${mp.x} ${mp.y})`);
         r.ds?.setAttribute('transform', `translate(${mp.x} ${mp.y})`);
+      }
+      if (r.xb) { // si hay etiqueta, el marcador se corre hacia el origen para no taparla
+        const mp = r.line.getPointAtLength(r.len * (r.label ? 0.3 : 0.5));
+        r.xb.setAttribute('transform', `translate(${mp.x} ${mp.y})`);
       }
     });
 
@@ -1325,10 +1406,11 @@
   const vc = () => VIEWS[S.viewKey] || VIEWS.full;
   // Vista Seguridad: clase de una conexión. Sin cifrar: alta (crítica si lleva datos sensibles) · sin indicar con datos sensibles: aviso · cifrada: normal
   const secClass = (e, byId) => {
+    if (isXBorder(e, byId)) return 'v-hl v-crit v-xb'; // datos sensibles fuera de su jurisdicción sin transferencia autorizada
     const sens = isSensitive(e) || isSensitive(byId.get(e.from)) || isSensitive(byId.get(e.to));
     return e.encrypted === false ? (sens ? 'v-hl v-crit' : 'v-hl v-high') : e.encrypted == null ? (sens ? 'v-hl v-warn' : 'v-dim') : '';
   };
-  const VCLS = ['v-hide', 'v-hl', 'v-dim', 'v-heat', 'v-crit', 'v-high', 'v-warn', 'v-hlc', 'v-own'];
+  const VCLS = ['v-hide', 'v-hl', 'v-dim', 'v-heat', 'v-crit', 'v-high', 'v-warn', 'v-hlc', 'v-own', 'v-xb'];
   // De menos a más costo: tramos de VR.costHeat mezclados con color-mix
   const heatColor = t => {
     const st = VR.costHeat;
@@ -1367,6 +1449,7 @@
     if (emph === 'security') {
       m.nodes.forEach(n => nodeCls.set(n.id, isSensitive(n) ? 'v-hl' : 'v-dim'));
       m.edges.forEach(e => edgeCls.set(e.id, secClass(e, byId)));
+      m.edges.forEach(e => { if (edgeCls.get(e.id).includes('v-xb')) { nodeCls.set(e.from, 'v-hl'); nodeCls.set(e.to, 'v-hl'); } }); // extremos resaltados
     } else if (emph === 'data') {
       const rank = k => Object.keys(DATA).indexOf(k);
       const isData = n => VR.dataTypes.includes(n.type) || VR.dataIconCategories.includes(iconInfo(n.icon)?.category);
@@ -1785,9 +1868,9 @@
   const save = debounce(() => { store.set('model', S.model); updateMeta(); renderVersions(); }, 250);
 
   const ORDER = {
-    group: ['id', 'label', 'icon', 'color', 'parent', 'kind', 'owner', 'steward', 'team', 'costCenter'],
-    node: ['id', 'label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'x', 'y', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter'],
-    edge: ['id', 'from', 'to', 'label', 'style', 'route', 'both', 'color', 'data', 'encrypted', 'datasets'],
+    group: ['id', 'label', 'icon', 'color', 'parent', 'kind', 'owner', 'steward', 'team', 'costCenter', 'region'],
+    node: ['id', 'label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'x', 'y', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter', 'region'],
+    edge: ['id', 'from', 'to', 'label', 'style', 'route', 'both', 'color', 'data', 'encrypted', 'datasets', 'transferOk'],
     note: ['id', 'x', 'y', 'w', 'h', 'text', 'color'],
     zone: ['id', 'x', 'y', 'w', 'h', 'label', 'severity', 'desc']
   };
@@ -1889,11 +1972,12 @@
     $('#stage-h1').textContent = m.title;
     const costs = m.nodes.some(hasCost) ? `≈ ${money(round2(monthlyTotal(m.nodes)))}${T('cost.mo')}` : '';
     const byId = id => m.nodes.find(n => n.id === id), insecure = m.edges.filter(e => isInsecure(e, byId)).length;
+    const xb = m.edges.filter(e => isXBorder(e, byId)).length;
     const open = m.nodes.filter(n => n.review && n.review.status !== 'resolved'), overdue = open.filter(n => reviewState(n.review) === 'overdue').length;
     const zc = m.zones.filter(z => z.severity === 'critical').length;
     const zones = m.zones.length ? T('meta.zones', { n: m.zones.length, c: zc }) : '';
     const reviews = open.length ? T('meta.review', { n: open.length, o: overdue }) : '';
-    $('#stage-meta').textContent = [T('meta.nodes', m.nodes.length), T('meta.edges', m.edges.length), m.groups.length ? T('meta.groups', m.groups.length) : '', costs, insecure ? T('meta.insecure', insecure) : '', zones, reviews].filter(Boolean).join(' · ');
+    $('#stage-meta').textContent = [T('meta.nodes', m.nodes.length), T('meta.edges', m.edges.length), m.groups.length ? T('meta.groups', m.groups.length) : '', costs, insecure ? T('meta.insecure', insecure) : '', xb ? T('meta.xborder', xb) : '', zones, reviews].filter(Boolean).join(' · ');
     const t = $('#title');
     if (document.activeElement !== t) t.value = m.title;
     $('#empty').hidden = m.nodes.length > 0;
@@ -1945,22 +2029,28 @@
   /* ---------- filtros ("lentes"): atenúan lo que no coincide ---------- */
   // Filtro: { data: [clase | '@insecure'], review: ['open','overdue'], provider, category, group, cost: ['cost'] }
   // Dentro de una sección las fichas suman (O); entre secciones se combinan (Y)
-  const FLT_SECTIONS = ['data', 'review', 'provider', 'category', 'group', 'cost', 'team', 'owner', 'steward', 'costCenter'];
+  const FLT_SECTIONS = ['data', 'review', 'provider', 'category', 'group', 'cost', 'team', 'owner', 'steward', 'costCenter', 'region'];
   const providerOf = n => { const p = String(n.icon || '').split('/')[0]; return n.icon && ICONS[p] ? p : 'generic'; };
   const topGroups = m => m.groups.filter(g => !g.parent || !m.groups.some(x => x.id === g.parent));
+  // Sección «región»: una ficha por jurisdicción usada (según la región efectiva) y «sin región» si falta en algún nodo
+  function regionOptions(m) {
+    const keys = new Set(m.nodes.map(n => jurOf(regionOf(n, m).value)?.key || '@none'));
+    return [...Object.keys(JURS).filter(k => keys.has(k)).map(k => ({ k, label: JURS[k].short || k.toUpperCase() })), ...(keys.has('@none') ? [{ k: '@none', label: T('flt.regionNone') }] : [])];
+  }
   // Fichas disponibles en el diagrama actual: { sección: [{ k, label }] }
   function filterOptions(m = S.model) {
     const used = new Set([...m.nodes, ...m.edges].flatMap(x => x.data || []));
     const provs = new Set(m.nodes.map(providerOf)), cats = new Set(m.nodes.map(n => typeOf(n).category || 'Otros'));
     return {
       data: [...Object.keys(DATA).filter(k => used.has(k)), ...[...used].filter(k => !DATA[k])].map(k => ({ k, label: loc(DATA[k]?.short) || k.toUpperCase() }))
-        .concat([{ k: '@insecure', label: T('flt.insecure') }]),
+        .concat([{ k: '@insecure', label: T('flt.insecure') }, { k: '@xborder', label: T('flt.xborder') }]),
       review: [{ k: 'open', label: T('flt.open') }, { k: 'overdue', label: T('flt.overdue') }],
       provider: [...Object.keys(ICONS), 'generic'].filter(p => provs.has(p)).map(p => ({ k: p, label: p === 'generic' ? T('flt.generic') : ICONS[p].label })),
       category: categories().filter(c => cats.has(c)).map(c => ({ k: c, label: I.category(c) })),
       group: topGroups(m).map(g => ({ k: g.id, label: g.label })),
       cost: [{ k: 'cost', label: T('flt.cost') }],
-      ...Object.fromEntries(GOV_FIELDS.map(f => [f, govFilterOpts(m, f)]))
+      ...Object.fromEntries(GOV_FIELDS.map(f => [f, govFilterOpts(m, f)])),
+      region: regionOptions(m)
     };
   }
   // Fichas de dueño / equipo…: valores efectivos (heredados) usados, y «Sin asignar» (solo dueño y equipo) si a algún nodo le falta
@@ -1992,6 +2082,7 @@
       if (s === 'category') return v.includes(typeOf(n).category || 'Otros');
       if (s === 'group') return v.some(g => inGroup(n, g));
       if (GOV_FIELDS.includes(s)) { const e = govOf(n, s).value; return v.some(k => (k === '@none' ? !e : k === e)); }
+      if (s === 'region') return v.includes(jurOf(regionOf(n).value)?.key || '@none');
       return hasCost(n);
     });
   }
@@ -2000,7 +2091,7 @@
     if (!f || !Object.keys(f).length) return null;
     const byId = id => m.nodes.find(n => n.id === id), ends = new Set();
     if (f.data?.length) m.edges.forEach(e => {
-      if (f.data.some(k => k === '@insecure' ? isInsecure(e, byId) : (e.data || []).includes(k))) { ends.add(e.from); ends.add(e.to); }
+      if (f.data.some(k => k === '@insecure' ? isInsecure(e, byId) : k === '@xborder' ? isXBorder(e, byId) : (e.data || []).includes(k))) { ends.add(e.from); ends.add(e.to); }
     });
     const nodes = new Set(m.nodes.filter(n => matches(n, f, ends)).map(n => n.id));
     return {
@@ -2674,9 +2765,9 @@
 
   // Diferencias entre lo guardado (a) y el lienzo (b). La posición no cuenta como cambio.
   const DIFF_FIELDS = {
-    node: ['label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter'],
-    edge: ['label', 'style', 'route', 'both', 'color', 'data', 'encrypted', 'datasets'],
-    group: ['label', 'icon', 'color', 'parent', 'kind', 'owner', 'steward', 'team', 'costCenter']
+    node: ['label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter', 'region'],
+    edge: ['label', 'style', 'route', 'both', 'color', 'data', 'encrypted', 'datasets', 'transferOk'],
+    group: ['label', 'icon', 'color', 'parent', 'kind', 'owner', 'steward', 'team', 'costCenter', 'region']
   };
   function diffModels(a, b) {
     const val = (f, x) => (f === 'style' ? x || 'sync' : x == null ? '' : typeof x === 'object' ? JSON.stringify(x) : String(x));
@@ -3189,6 +3280,37 @@
       `<button data-enc="${k}" class="enc-${k || 'unset'}${cur === k ? ' on' : ''}">${T(l)}</button>`).join('')}</div>${isInsecure(e, byId) ? `<span class="enc-warn">⚠ ${T('enc.warn')}</span>` : ''}</div>`;
   };
 
+  /* ---------- residencia: campos del inspector ---------- */
+  // Regiones sugeridas además de las que ya usa el diagrama
+  const REGION_HINTS = ['eu-west-1', 'eu-central-1', 'eu-north-1', 'eu-south-2', 'us-east-1', 'us-west-2', 'ca-central-1', 'sa-east-1', 'ap-southeast-1', 'ap-northeast-1', 'westeurope', 'northeurope', 'germanywestcentral', 'eastus', 'westus2', 'brazilsouth',
+    'europe-west1', 'europe-west3', 'us-central1', 'southamerica-east1', 'ES', 'DE', 'FR', 'GB', 'US', 'MX', 'CO', 'BR'];
+  const regionJurText = r => { const j = jurOf(r); return j ? j.label : ''; };
+  // «inherited from X» / «deduced from X» para el valor que aporta un grupo
+  const regionHint = (list, own) => {
+    const rs = list.map(x => regionOf(x)), r0 = rs[0];
+    if (own || !rs.every(r => r.value === r0.value && (r.from?.id || '') === (r0.from?.id || '')) || !r0.value) return '';
+    return r0.from ? T(r0.from.deduced ? 'res.deduced' : 'res.inherited', r0.from.label) : '';
+  };
+  // Cuadro de texto de región (nodo, grupo o varios): valor propio, o el heredado / deducido como sugerencia
+  const regionField = items => {
+    const list = [].concat(items), vals = new Set(list.map(x => cleanRegion(x.region))), mixed = vals.size > 1, own = mixed ? '' : [...vals][0];
+    const eff = list.map(x => regionOf(x).value), same = eff.every(v => v === eff[0]);
+    const ph = mixed ? T('insp.mixed') : own ? '' : same ? eff[0] || T('res.ph') : T('insp.mixed');
+    const used = [...new Set([...S.model.nodes, ...S.model.groups].map(x => cleanRegion(x.region)).filter(Boolean))];
+    const opts = [...new Set([...used, ...REGION_HINTS])];
+    const jur = same ? regionJurText(own || eff[0]) : '';
+    return `<div class="field region-field"><div class="region-row"><label>${T('res.label')}<input data-field="region" list="region-list" value="${esc(own)}" placeholder="${esc(ph)}" autocomplete="off" spellcheck="false"></label><span class="region-jur" id="region-jur"${jur ? '' : ' hidden'}>${esc(jur)}</span></div>
+      <span class="cost-hint" id="region-hint">${esc(mixed ? '' : regionHint(list, own))}</span><datalist id="region-list">${opts.map(o => `<option value="${esc(o)}">`).join('')}</datalist></div>`;
+  };
+  // Conexión entre regiones: «eu-west-1 (EU) → us-east-1 (US)», aviso y botón de transferencia autorizada
+  const xferField = e => {
+    const nm = id => S.model.nodes.find(n => n.id === id), ra = regionOf(nm(e.from)).value, rb = regionOf(nm(e.to)).value;
+    if (!ra || !rb) return '';
+    const cb = crossBorder(e, nm);
+    return `<div class="field">${T('res.edge')}<span class="cost-hint">${esc(regionLabel(ra))} → ${esc(regionLabel(rb))}</span>${cb ? `${cb.approved ? `<span class="cost-hint xfer-ok">✓ ${esc(T('res.approvedLine'))}</span>` : `<span class="enc-warn">${esc(xbWarn(cb))}</span>`}
+      <button class="btn small${cb.approved ? ' on' : ''}" data-xfer="1" aria-pressed="${cb.approved}">${cb.approved ? '✓ ' : ''}${T('res.approve')}</button>` : ''}</div>`;
+  };
+
   // Observación de revisión: la levanta a mano quien revisa (qué, quién, cuándo y para cuándo)
   const reviewField = n => {
     const r = n.review;
@@ -3253,6 +3375,7 @@
         ${t.length === 2 ? pathField() : ''}
         ${dataField(t)}
         ${govField(t, 'multi')}
+        ${regionField(t)}
         ${priced.length ? `<p class="cost-sum">${T('insp.selCost')} <b>≈ ${money(round2(monthlyTotal(t)))}${T('cost.mo')}</b><span>${T('insp.withCost', { a: priced.length, b: t.length })}</span></p>` : ''}
         <p class="note">${T('insp.multiNote')}</p>
         <div class="insp-actions">
@@ -3278,6 +3401,7 @@
         ${costField(t)}
         ${dataField(t)}
         ${govField(t, 'node')}
+        ${regionField(t)}
         ${reviewField(t)}
         <label>${T('insp.desc')}<textarea data-field="desc" rows="3" placeholder="${esc(T('insp.desc.ph'))}">${esc(t.desc || '')}</textarea></label>
         <div class="field">${T('insp.reach')}<div class="seg">${modes.map(([k, l]) => `<button data-reach="${k}" class="${S.reach === k ? 'on' : ''}">${l}</button>`).join('')}</div></div>
@@ -3303,6 +3427,7 @@
         ${encField(t)}
         ${dataField(t, true)}
         ${dsField(t)}
+        ${xferField(t)}
         <div class="field">${T('insp.color')}${swatches(t.color)}</div>
         <div class="conns"><div class="conn-title">${T('insp.ends')}</div>
           <button class="conn" data-goto="${esc(a.id)}" style="--c:${nodeColor(a)}"><span class="dot"></span>${esc(a.label)}<em>${T('insp.source')}</em></button>
@@ -3339,6 +3464,7 @@
         <label>${T('insp.name')}<input data-field="label" value="${esc(t.label)}"></label>
         ${allIcons().some(i => i.group) ? iconPicker(t, true) : ''}
         <label>${T('gkind.label')}<select data-field="kind"><option value=""${t.kind ? '' : ' selected'}>${esc(T('gkind.auto', { k: T(`gkind.${groupKindAuto(t)}`) }))}</option>${['logical', 'physical'].map(k => `<option value="${k}"${t.kind === k ? ' selected' : ''}>${T(`gkind.${k}`)}</option>`).join('')}</select></label>
+        ${regionField(t)}
         <label>${T('insp.parent')}<select data-field="parent"><option value="">${T('insp.none')}</option>${m.groups.filter(g => !blocked.has(g.id)).map(g => `<option value="${esc(g.id)}"${g.id === t.parent ? ' selected' : ''}>${esc(g.label)}</option>`).join('')}</select></label>
         <div class="field">${T('insp.color')}${swatches(t.color)}</div>
         ${govField(t, 'group')}
@@ -3358,6 +3484,7 @@
     const list = Array.isArray(t) ? t : [t];
     let v = f.value;
     if (v === '__mixed') return;
+    if (k === 'region') v = v.trim();
     if (k === 'cost' || k === 'costYears') {
       // Números: vacío o no válido = quitar el valor
       const num = v.trim() === '' ? NaN : +v;
@@ -3381,6 +3508,11 @@
     });
     changed(k !== 'desc' || S.sel.kind === 'zone');
     if (k.startsWith('cost') && !isSelect) $('#inspector .cost-hint').textContent = costHint(list[0]);
+    if (k === 'region') { // sin reconstruir el panel (el cuadro tiene el foco): solo la jurisdicción y la pista
+      const j = $('#region-jur'), r = v || regionOf(list[0]).value, one = list.every(x => regionOf(x).value === regionOf(list[0]).value);
+      if (j) { j.textContent = one ? regionJurText(r) : ''; j.hidden = !j.textContent; }
+      if ($('#region-hint')) $('#region-hint').textContent = v ? '' : regionHint(list, false);
+    }
     if (isSelect) renderInspector();
     else if (k === 'label') $('#inspector .insp-title').textContent = S.sel.kind === 'edge' ? $('#inspector .insp-title').textContent : v;
   }
@@ -3501,6 +3633,10 @@
     } else if (b.dataset.enc != null && t) {
       pushHistory();
       if (b.dataset.enc) t.encrypted = b.dataset.enc === 'yes'; else delete t.encrypted;
+      changed(true); renderInspector();
+    } else if (b.dataset.xfer != null && t && !Array.isArray(t)) {
+      pushHistory();
+      if (t.transferOk) delete t.transferOk; else t.transferOk = true;
       changed(true); renderInspector();
     } else if (b.dataset.path && S.sel?.kind === 'multi' && S.sel.ids.length === 2) {
       const [x, y] = S.sel.ids;
@@ -3882,6 +4018,8 @@
       const cls = new Set(es.map(e => secClass(e, byId)));
       r.conn.push({ color: 'var(--sev-critical)', label: T('leg.sec.crit') });
       if ([...cls].some(c => c.includes('v-high'))) r.conn.push({ color: 'var(--sev-high)', label: T('leg.sec.high') });
+      if ([...cls].some(c => c.includes('v-xb'))) r.conn.push({ color: 'var(--sev-critical)', label: T('leg.sec.xb') });
+      if (es.some(e => crossBorder(e, byId)?.approved)) r.conn.push({ color: 'var(--muted)', label: T('leg.sec.xbok') });
       r.conn.push({ color: 'var(--sev-medium)', label: T('leg.sec.warn') }, { lock: true, label: T('leg.sec.enc') });
     } else if (v.emphasis === 'data') {
       const used = new Set([...visNodes(), ...es].flatMap(x => x.data || []));
@@ -4645,6 +4783,8 @@
     datasets: () => datasetList().map(d => ({ ...d })),
     saveVersion, openVersion, compareVersion, deleteVersion,
     setFilter, clearFilter, get filter() { return clone(S.filter); },
+    crossBorder: () => { const byId = new Map(S.model.nodes.map(n => [n.id, n])); return S.model.edges.map(e => ({ e, cb: crossBorder(e, byId) })).filter(x => x.cb)
+      .map(({ e, cb }) => ({ edge: clone(e), from: cb.from, to: cb.to, fromRegion: cb.from.region, toRegion: cb.to.region, fromJur: cb.from.jur.short, toJur: cb.to.jur.short, classes: [...cb.classes], approved: cb.approved })); },
     setView, get view() { return S.viewKey; }, get views() { return [...VIEW_KEYS]; },
     owners: () => govTeamList(),
     exportSVG, exportPNG, exportViews, exportJSON, shareEncrypted, exportOther, exportCtx, toggleRouting, importFiles, config: C, icons: ICONS
