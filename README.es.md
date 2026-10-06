@@ -545,6 +545,12 @@ Cosas que funcionan pero aún no se han revisado a fondo. Probablemente necesite
 - Las notas y las zonas de riesgo no se exportan a Mermaid, PlantUML ni draw.io.
 - Los campos de **gobierno de datos** (conjuntos, responsables, regiones y capas) no se exportan a Mermaid, PlantUML ni draw.io. El linaje no está disponible en la vista *Contexto*, y la importación de infraestructura como código solo asigna la región en AWS (aún no desde `location` de Azure ni desde las regiones de Google Cloud).
 - La región se deduce del nombre de un grupo con los códigos habituales de AWS, Azure y Google Cloud; para otros nombres hay que usar el campo **Región**.
+- **Marcas de gobierno de datos y seguridad sin revisar visualmente** en algunos casos: los temas claro y negro para las marcas y diálogos nuevos (panel de revisión, matriz de cumplimiento, fronteras de confianza, etiquetas ⚠ y *STRIDE n*), componentes muy pequeños con todas las etiquetas a la vez (capa, región, equipo) y arrastrar componentes mientras se muestra un linaje.
+- **Exportación HTML cifrada** con las marcas nuevas (capas, etiquetas de región y equipo, fronteras de confianza, etiquetas STRIDE): aún no se ha abierto.
+- **Dibujar una frontera de confianza a mano** con el ratón no se ha probado; se probó desde la API y desde la acción de selección múltiple.
+- **Pestaña Texto**: las notas de las decisiones STRIDE, las fronteras de confianza y los hallazgos descartados no forman parte del formato de texto, así que una ida y vuelta por la pestaña *Texto* conserva los estados pero pierde las notas.
+- Los campos de revisión de seguridad, cumplimiento y STRIDE (`exposure`, `backup`, `controls`, `threats`, zonas de confianza, hallazgos descartados) no se exportan a Mermaid, PlantUML ni draw.io.
+- El catálogo de cumplimiento es un subconjunto práctico de cada norma con títulos parafraseados; revísalo antes de usarlo en una auditoría.
 
 ---
 
