@@ -163,6 +163,10 @@ review db: "DB in a public subnet" by=Ana raised=2026-10-01 due=2026-11-15
       'ver.cf.apprTitle': n => `${n} open review ${n === 1 ? 'finding' : 'findings'} in this version. Approve anyway?`, 'ver.cf.apprText': 'These findings are still open in its snapshot:', 'ver.cf.apprOk': 'Approve anyway',
       'ver.approvedBy': 'Approved by', 'ver.rejectedBy': 'Rejected by', 'ver.decidedOn': 'Date', 'ver.reason': 'Reason', 'ver.reason.ph': 'Why it was rejected',
       'ver.reasonWarn': 'Add the reason for the rejection', 'ver.history': 'Status history',
+      'ver.clearHist': 'Clear history', 'ver.histCleared': ({ name }) => `Status history of ${name} deleted`,
+      'ver.cf.histTitle': ({ name }) => `Delete the status history of ${name}?`,
+      'ver.cf.histText': ({ name }) => `The status history of ${name} will be deleted. Its current status, who decided and the rejection reason are kept. You can undo it with ⌘Z while the undo history lasts; it cannot be recovered after that.`,
+      'ver.cf.phraseIntro': 'To confirm, type this sentence (pasting is not allowed):', 'ver.cf.phrase': 'I confirm I want to delete the status history', 'ver.cf.noPaste': 'Type the sentence; pasting is not allowed',
       'ver.edge': 'connection', 'ver.group': 'group', 'field.title': 'Title', 'field.badge': 'Badge', 'field.position': 'position',
 
       'data.label': 'Data classification', 'data.edge': 'Data in transit', 'data.none': 'Tag the data it stores or handles.', 'data.noneEdge': 'Tag the data this connection carries.',
@@ -342,6 +346,10 @@ revisión db: "BD en subred pública" por=Ana levantada=2026-10-01 compromiso=20
       'ver.cf.apprTitle': n => `${n} ${n === 1 ? 'observación de revisión abierta' : 'observaciones de revisión abiertas'} en esta versión. ¿Aprobar de todos modos?`, 'ver.cf.apprText': 'Estas observaciones siguen abiertas en su foto:', 'ver.cf.apprOk': 'Aprobar igualmente',
       'ver.approvedBy': 'Aprobado por', 'ver.rejectedBy': 'Rechazado por', 'ver.decidedOn': 'Fecha', 'ver.reason': 'Motivo', 'ver.reason.ph': 'Por qué se rechazó',
       'ver.reasonWarn': 'Añade el motivo del rechazo', 'ver.history': 'Historial de estados',
+      'ver.clearHist': 'Borrar historial', 'ver.histCleared': ({ name }) => `Historial de estados de ${name} eliminado`,
+      'ver.cf.histTitle': ({ name }) => `¿Eliminar el historial de estados de ${name}?`,
+      'ver.cf.histText': ({ name }) => `Se eliminará el historial de estados de ${name}. Se conservan su estado actual, quién decidió y el motivo del rechazo. Puedes deshacerlo con ⌘Z mientras dure el historial de deshacer; después no se puede recuperar.`,
+      'ver.cf.phraseIntro': 'Para confirmar, escribe esta frase (no se permite pegar):', 'ver.cf.phrase': 'confirmo que quiero eliminar el historial de estados', 'ver.cf.noPaste': 'Escribe la frase; no se permite pegar',
       'ver.edge': 'conexión', 'ver.group': 'grupo', 'field.title': 'Título', 'field.badge': 'Insignia', 'field.position': 'posición',
 
       'data.label': 'Clasificación de datos', 'data.edge': 'Datos en tránsito', 'data.none': 'Marca los datos que guarda o maneja.', 'data.noneEdge': 'Marca los datos que viajan por esta conexión.',
