@@ -176,7 +176,7 @@ Marca qué tablas o conjuntos de datos viajan por cada conexión y sigue uno des
 
 1. Selecciona una conexión. En **Conjuntos de datos** escribe el nombre de una tabla y pulsa `Intro` o `,` para añadirla (el campo sugiere los nombres que ya usa el diagrama). La **×** de cada ficha la quita.
 2. Pulsa una ficha (o la tecla `D` y elige de la lista, o una fila de la leyenda **Conjuntos de datos** de la ficha del documento) para ver su linaje: se resalta todo el recorrido y cada componente lleva un número (su profundidad). Los orígenes salen en verde y los consumos en naranja.
-3. La barra sobre el lienzo lo resume (*orígenes → consumos · saltos*). `Esc` lo quita.
+3. La barra sobre el lienzo lo resume (*orígenes → consumos · saltos*). `Esc` lo quita. También funciona en la vista *Contexto*, donde se muestra en las cajas cerradas y en las conexiones combinadas entre ellas.
 
 Al seleccionar un componente se listan los conjuntos de sus conexiones. En la vista **Datos** los nombres se dibujan bajo la etiqueta de cada conexión y salen en las exportaciones. Las conexiones con flecha en los dos extremos cuentan en ambos sentidos.
 
@@ -318,7 +318,7 @@ Algunas zonas son **fronteras de confianza** en vez de zonas de riesgo: abre una
 
 ### 10. Presentar y exportar
 
-- **Flujo** (o **`P`**) ilumina el diagrama paso a paso, de los clientes a los datos.
+- **Flujo** (o **`P`**) ilumina el diagrama paso a paso, de los clientes a los datos. Las conexiones bidireccionales se siguen en los dos sentidos.
 - **Presentar** (o **`V`**) pasa a pantalla completa sin paneles: una vista general con el título, una diapositiva por grupo (en orden de lectura, acercando y atenuando el resto) y una vista general final. Sin grupos, recorre el flujo. **`→`**, **`Espacio`** o clic avanzan, **`←`** retrocede, **`Inicio`/`Fin`** y las teclas numéricas saltan, **`P`** reproduce el flujo y **`Esc`** sale y restaura tu vista. La edición se desactiva mientras presentas.
 - **Ordenar** recoloca todo automáticamente, siguiendo el flujo. Cada grupo se ordena dentro de su propia caja, así los grupos nunca se pisan. **Ajustar** (o **`F`**) centra el diagrama.
 - **Ángulos** (o **`E`**) cambia las conexiones entre curvas y líneas en ángulo recto que esquivan los nodos. Varias líneas en el mismo lado de un nodo salen de puntos separados y repartidos, para que no se solapen.
@@ -619,9 +619,8 @@ Cosas que funcionan pero aún no se han revisado a fondo. Probablemente necesite
   Los iconos de grupo en la exportación a draw.io aún no se han abierto en draw.io.
 - **Temas claro y negro**: revisados para las marcas, diálogos e iconos de grupo nuevos. Los colores propios muy claros se oscurecen en el tema claro (y los muy oscuros se aclaran en los temas oscuros) para que bordes y etiquetas se lean; los colores de tono medio se respetan tal cual.
 - **Ida y vuelta en la pestaña Texto**: se probaron conexiones bidireccionales, etiquetas con saltos de línea y nombres de componentes con comillas, corchetes o `clave=valor`, en inglés y en español (los nombres que lo necesitan se escriben como `nombre="…"`).
-- *Reproducir flujo* y el modo presentación siguen las conexiones bidireccionales solo en un sentido.
 - Las notas y las zonas de riesgo no se exportan a Mermaid, PlantUML ni draw.io.
-- Los campos de **gobierno de datos** (conjuntos, responsables, regiones y capas) no se exportan a Mermaid, PlantUML ni draw.io. El linaje no está disponible en la vista *Contexto*, y la importación de infraestructura como código solo asigna la región en AWS (aún no desde `location` de Azure ni desde las regiones de Google Cloud).
+- Los campos de **gobierno de datos** (conjuntos, responsables, regiones y capas) no se exportan a Mermaid, PlantUML ni draw.io. La importación de infraestructura como código solo asigna la región en AWS (aún no desde `location` de Azure ni desde las regiones de Google Cloud).
 - La región se deduce del nombre de un grupo con los códigos habituales de AWS, Azure y Google Cloud; para otros nombres hay que usar el campo **Región**.
 - **Componentes muy pequeños** con todas las etiquetas a la vez (capa, región, equipo, disponibilidad): sin revisar; con el ancho fijo por defecto caben.
 - **Pestaña Texto**: las notas de las decisiones STRIDE, las fronteras de confianza y los hallazgos descartados no forman parte del formato de texto, así que una ida y vuelta por la pestaña *Texto* conserva los estados pero pierde las notas.
