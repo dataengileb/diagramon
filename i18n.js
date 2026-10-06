@@ -48,7 +48,7 @@ window.DiagramonI18n = (() => {
       'side.search': 'Search: lambda, s3, kafka…', 'side.tip': 'Click to add to the center, or drag onto the canvas.',
       'side.generic': n => `Generic (${n})`, 'side.none': 'No results.', 'side.none.types': 'No results. You can add types in config.js.',
       'side.noTemplates': 'No templates. Add them in examples.js.', 'side.resize': 'Drag to change the panel width',
-      'side.wide': 'Expand', 'side.narrow': 'Shrink', 'side.format': 'Format',
+      'side.format': 'Format',
       'text.help': 'Text syntax quick guide', 'text.aria': 'Diagram as text', 'json.aria': 'Diagram as JSON',
       'text.guide': `title: Online store
 direction: LR            (or TB)
@@ -239,7 +239,7 @@ review db: "DB in a public subnet" by=Ana raised=2026-10-01 due=2026-11-15
       'side.search': 'Buscar: lambda, s3, kafka…', 'side.tip': 'Haz clic para añadir al centro o arrastra al lienzo.',
       'side.generic': n => `Genéricos (${n})`, 'side.none': 'Sin resultados.', 'side.none.types': 'Sin resultados. Puedes añadir tipos en config.js.',
       'side.noTemplates': 'No hay plantillas. Añádelas en examples.js.', 'side.resize': 'Arrastra para cambiar el ancho del panel',
-      'side.wide': 'Ampliar', 'side.narrow': 'Reducir', 'side.format': 'Formatear',
+      'side.format': 'Formatear',
       'text.help': 'Guía rápida del lenguaje', 'text.aria': 'Diagrama en texto', 'json.aria': 'Diagrama en JSON',
       'text.guide': `título: Tienda online
 dirección: LR            (o TB)

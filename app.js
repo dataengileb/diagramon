@@ -2980,11 +2980,8 @@
     const w = Math.round(clamp(px, 240, innerWidth * 0.8));
     mainEl.style.setProperty('--side', `${w}px`);
     if (keep) store.set('side', w);
-    wideLabels(w);
   }
-  const wideLabels = (w = sideWidth()) => $$('[data-wide]').forEach(b => { b.textContent = T(w >= 520 ? 'side.narrow' : 'side.wide'); });
   if (store.get('side', null)) setSide(store.get('side'), false);
-  $$('[data-wide]').forEach(b => b.addEventListener('click', () => setSide(sideWidth() >= 520 ? 296 : Math.min(860, innerWidth * 0.6))));
   $('#resizer').addEventListener('pointerdown', ev => {
     ev.preventDefault();
     const r = $('#resizer');
@@ -3075,7 +3072,6 @@
     $('#lang-code').textContent = I.lang.toUpperCase();
     [...paletteSel.options].forEach(o => { o.textContent = loc(C.palettes[o.value]?.label) || o.value; });
     [...fontSel.options].forEach(o => { o.textContent = loc(FONTS[o.value]?.label) || o.value; });
-    wideLabels();
     textCtx = null;
     renderProviders();
     renderPalette();
