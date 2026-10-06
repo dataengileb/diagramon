@@ -309,6 +309,17 @@ Algunas zonas son **fronteras de confianza** en vez de zonas de riesgo: abre una
   Los archivos SVG y PNG llevan entonces un panel abajo con solo lo que usa el diagrama (estilos de conexión, candados,
   colores de los componentes, clasificaciones de datos) y un cajetín con título, autor, versión, fecha y costo estimado.
 
+#### Informe de arquitectura
+
+**Exportar › Informe de arquitectura…** genera el documento que piden los comités de arquitectura, sin bibliotecas y sin red:
+
+- **Formato**: **PDF** (abre el diálogo de impresión del navegador con un documento A4 listo para imprimir: elige *Guardar como PDF*), **Markdown** (`.md`) o **HTML** (`.html`, un único archivo autocontenido, el mismo documento que el PDF y sin peticiones externas).
+- **Secciones** (todas activas por defecto, se recuerdan): Resumen · Diagrama · Componentes · Conexiones · Clasificación y residencia de datos · Dueños · Capas del data lake · Costos · Hallazgos de seguridad · Cumplimiento · Modelo de amenazas · Decisiones (ADR) · Historial de versiones · Notas y zonas de riesgo. Una sección sin datos se omite y aparece como *(ninguno)*.
+- **Diagrama**: elige cuáles de las 8 vistas incluir (la activa, más Seguridad y Datos cuando aportan algo). Si el diagrama tiene diagramas internos (niveles C4), **Incluir diagramas internos** dibuja cada uno. Las imágenes usan el tema claro por defecto (ideal para imprimir); **Usar el tema actual** mantiene el de la pantalla.
+- **Imágenes en Markdown**: van incrustadas como PNG `data:`. Algunos visores de Markdown las bloquean, así que marca **Guardar las imágenes como archivos aparte** para descargar los PNG junto al `.md` y referenciarlos por nombre.
+- Los textos salen en el idioma actual de la interfaz, con fechas y dinero en sus formatos, y todo va escapado.
+- Desde la consola: `Diagramon.exportReport({ format: 'pdf' | 'md' | 'html', sections?: [...], views?: [...], scopes?: true | false, theme?: 'light' | 'current', separateImages?: boolean })` devuelve una promesa con el HTML o Markdown generado tras iniciar la descarga o el diálogo de impresión. Claves de sección: `summary diagram components connections data owners layers costs findings compliance threats decisions versions notes`.
+
 ### Vistas
 
 Una **vista** es una forma de mirar el mismo diagrama: solo decide qué se ve, con cuánto detalle y qué destaca. Nunca cambia tus componentes ni posiciones. Elígela en el selector **Vista** de la barra superior, con las teclas **`1`**–**`8`**, o desde la consola (`Diagramon.setView('security')`). Cuando la vista no es *Completa*, una pastilla sobre el lienzo la nombra, cuenta lo que oculta o atenúa y tiene una **×** para volver. La ficha del documento y la leyenda de las exportaciones siguen la vista activa.
@@ -566,6 +577,7 @@ Cosas que funcionan pero aún no se han revisado a fondo. Probablemente necesite
 - Los campos de revisión de seguridad, cumplimiento y STRIDE (`exposure`, `backup`, `controls`, `threats`, zonas de confianza, hallazgos descartados) no se exportan a Mermaid, PlantUML ni draw.io.
 - Las **decisiones de arquitectura** (ADR) no forman parte del formato de texto, no se exportan a Mermaid, PlantUML ni draw.io y no se comparan entre versiones. La etiqueta ADR del lienzo y la exportación a Markdown no se han revisado visualmente en todos los temas.
 - El catálogo de cumplimiento es un subconjunto práctico de cada norma con títulos parafraseados; revísalo antes de usarlo en una auditoría.
+- **Informe de arquitectura**: el PDF depende del diálogo de impresión del navegador (los encabezados y números de página solo salen donde el navegador admite los márgenes `@page` de CSS). Los visores de Markdown que bloquean imágenes `data:` no muestran los diagramas salvo que guardes las imágenes aparte. Los diagramas grandes con muchas vistas y niveles internos pueden tardar unos segundos. No se han revisado tablas muy anchas al imprimir, y la matriz de cumplimiento se lista por control y por componente, no como cuadrícula.
 
 ---
 
