@@ -400,6 +400,9 @@ window.DIAGRAMON_CONFIG = {
     }
   },
 
+  /* Decisiones de arquitectura (ADR): staleDays = días que una propuesta puede esperar antes de aparecer como hallazgo bajo (0 = nunca) */
+  adr: { staleDays: 30 },
+
   /* Orden automático. direction: 'LR' (izquierda→derecha) o 'TB' (arriba→abajo). */
   layout: { direction: 'LR', colGap: 110, rowGap: 40, groupGap: 70, rankGapTB: 90 },
 

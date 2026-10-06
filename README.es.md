@@ -264,6 +264,19 @@ Abre la pestaña **Versiones**.
 - Guardar, abrir, eliminar y cada edición se deshacen con **`⌘Z`**.
 - Las versiones se guardan dentro del diagrama, así que **Exportar › JSON** las lleva todas.
 
+#### Decisiones de arquitectura (ADR)
+
+Abre la pestaña **ADR** para registrar *por qué* la arquitectura es como es, al estilo MADR: **contexto**, **decisión** y **consecuencias**.
+
+- **+ Nueva decisión** agrega una ficha (`ADR-001`, `ADR-002`…). Haz clic para editar su título, **estado** (*Propuesta*, *Aceptada*, *Rechazada*, *Obsoleta*, *Reemplazada*), fecha, decisores y los tres textos. Elegir **Reemplazada por** la marca como *Reemplazada*.
+- Vincula la decisión a lo que afecta: **Vincular selección** enlaza los componentes, la conexión o el grupo seleccionados, y **Vincular versión…** una versión guardada. Lo vinculado aparece como fichas; haz clic en una para seleccionarla en el lienzo (o ir a la versión).
+- Los paneles de componente, conexión y grupo tienen un campo **Decisiones** con los ADR vinculados, **+ Nueva decisión** (ya vinculada) y **Vincular…** para elegir una existente. Cada tarjeta de versión lista sus ADR y tiene **+ ADR**.
+- Los componentes con una decisión *propuesta* o *aceptada* muestran una etiqueta **ADR n** en el lienzo (en las vistas que muestran las marcas de revisión); pasa el cursor para leer los títulos.
+- Fichas de estado con su conteo y un buscador filtran la lista. **Exportar Markdown** descarga todas las decisiones en un solo `.md`: una tabla índice y una sección por ADR.
+- Una decisión *propuesta* desde hace más de 30 días es un hallazgo bajo en la pestaña **Revisión**.
+- Las decisiones son del documento, no de una versión: abrir una versión o editar la pestaña *Texto* no las toca, y se guardan en **Exportar › JSON** bajo `decisions`. Todo se puede deshacer con **`⌘Z`**.
+- Desde la consola: `Diagramon.decisions()`, `Diagramon.addDecision({ title, status, context, decision, consequences, links: { nodes: [...] } })`, `Diagramon.updateDecision(id, cambios)`, `Diagramon.removeDecision(id)` y `Diagramon.exportDecisions()`.
+
 ### 9. Notas adhesivas y zonas de riesgo
 
 Usa los dos botones junto al zoom (abajo a la derecha del lienzo).
@@ -466,6 +479,7 @@ Todo lo personalizable está en **`config.js`**. Guarda y recarga `index.html`.
 - **Capas del data lake**: `dataLayers` define las capas en orden (`label` para los nombres medallón, `alt` para Crudo/Curado/Consumo, letras cortas y `color`). Los colores usan `--layer-bronze`, `--layer-silver` y `--layer-gold`, definidos por tema en `index.html`; cámbialos ahí o pon un color fijo en `config.js`. `layerAliases` lista otras palabras aceptadas al leer JSON y texto. La opción `layers` de cada vista las muestra u oculta.
 - **Revisión de seguridad automática**: `securityRules` en `config.js` tiene una entrada por regla (`sec.unencrypted-sensitive`, `sec.unstated-encryption`, `sec.public-sensitive`, `sec.datastore-backup`, `sec.cross-border`, `sec.sensitive-no-owner`, `sec.public-datastore`) con `enabled` (pon `false` para apagarla) y `severity` (`low`, `medium`, `high`, `critical`). Lo demás son parámetros de la regla: `clientTypes`, `publicGroupIcons` y `publicGroupName` (qué cuenta como público), `dataStoreTypes` y `dataStoreIconCategories`, `backupIcons`, `backupName` y `backupEdgeLabel` (qué cuenta como respaldo). Los patrones de texto son RegExp sin distinguir mayúsculas.
 - **Cumplimiento**: `compliance.frameworks` es un mapa ordenado `clave → { label, short, url?, controls: { '<id>': { label: { en, es } } } }`. Añade un control con una línea en su marco, o un marco (NIST CSF, ENS, DORA…) copiando un bloque; el JSON y el Texto aceptan cualquier `marco:id`, aunque no esté en el catálogo. `compliance.suggest` asocia cada clase de datos (y `crossBorder`) con los controles que se ofrecen como fichas; el primero de cada lista es el que espera la revisión.
+- **Decisiones de arquitectura**: `adr.staleDays` (por defecto `30`) son los días que una decisión *propuesta* puede esperar antes de aparecer como hallazgo bajo en la pestaña *Revisión*; `0` lo desactiva.
 - **Ambientes**: `environments` define los botones de la pestaña *Versiones* (nombre, texto corto y color). Añade o quita los que necesites.
 - **Tamaño de los nodos**: con `node.sameSize: true` (por defecto) todos miden `node.width` y los nombres largos usan 2 líneas.
   Con `false`, cada nodo crece con su texto.
@@ -503,7 +517,7 @@ Todo lo personalizable está en **`config.js`**. Guarda y recarga `index.html`.
 <summary><b>API para extensiones</b></summary>
 
 `window.Diagramon` expone `model`, `load()`, `addNode()`, `addEdge()`, `select()`, `align()`, `relayout()`,
-`fitView()`, `togglePlay()`, `toggleTheme()`, `toggleLang()`, `lang`, `saveVersion()`, `openVersion()`, `compareVersion()`, `deleteVersion()`, `exportSVG()`, `exportPNG()`, `exportJSON()`, `lineage()`, `datasets()`, `owners()`, `crossBorder()`, `layers()`, `setLayerNames()`, `compliance()`, `exportCompliance()`, `config` e `icons`.
+`fitView()`, `togglePlay()`, `toggleTheme()`, `toggleLang()`, `lang`, `saveVersion()`, `openVersion()`, `compareVersion()`, `deleteVersion()`, `exportSVG()`, `exportPNG()`, `exportJSON()`, `lineage()`, `datasets()`, `owners()`, `crossBorder()`, `layers()`, `setLayerNames()`, `compliance()`, `exportCompliance()`, `decisions()`, `addDecision()`, `updateDecision()`, `removeDecision()`, `exportDecisions()`, `config` e `icons`.
 El lenguaje de texto está en `window.DiagramonText` (`parse` y `stringify`).
 
 </details>
@@ -550,6 +564,7 @@ Cosas que funcionan pero aún no se han revisado a fondo. Probablemente necesite
 - **Dibujar una frontera de confianza a mano** con el ratón no se ha probado; se probó desde la API y desde la acción de selección múltiple.
 - **Pestaña Texto**: las notas de las decisiones STRIDE, las fronteras de confianza y los hallazgos descartados no forman parte del formato de texto, así que una ida y vuelta por la pestaña *Texto* conserva los estados pero pierde las notas.
 - Los campos de revisión de seguridad, cumplimiento y STRIDE (`exposure`, `backup`, `controls`, `threats`, zonas de confianza, hallazgos descartados) no se exportan a Mermaid, PlantUML ni draw.io.
+- Las **decisiones de arquitectura** (ADR) no forman parte del formato de texto, no se exportan a Mermaid, PlantUML ni draw.io y no se comparan entre versiones. La etiqueta ADR del lienzo y la exportación a Markdown no se han revisado visualmente en todos los temas.
 - El catálogo de cumplimiento es un subconjunto práctico de cada norma con títulos parafraseados; revísalo antes de usarlo en una auditoría.
 
 ---

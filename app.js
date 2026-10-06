@@ -606,6 +606,7 @@
       m.zones.push(o);
     });
     m.versions = normVersions(raw.versions);
+    m.decisions = cleanDecisions(raw.decisions, m);
     if (raw.active != null && m.versions.some(v => v.id === String(raw.active))) m.active = String(raw.active);
     return m;
   }
@@ -815,6 +816,62 @@
     const late = reviewState(n.review) === 'overdue';
     return { id: `review:observation:node:${n.id}`, source: 'review', rule: 'observation', severity: late ? 'high' : 'medium', target: { kind: 'node', id: n.id }, title: n.review.note || T('find.rev.untitled', n.label), detail: reviewHint(n.review), fix: T('find.rev.fix') };
   }));
+
+  /* ---------- decisiones de arquitectura (ADR): modelo ---------- */
+  // m.decisions = [{ id: 'ADR-001', title, status, date, context, decision, consequences, deciders?, supersededBy?, links: { nodes?, edges?, groups?, versions? } }]
+  // Son del documento: no entran en las fotos de versiones (snapshotOf) y sobreviven al abrir una versión y a los editores.
+  const ADR_STATUS = ['proposed', 'accepted', 'rejected', 'deprecated', 'superseded'];
+  const ADR_COLOR = { proposed: 'var(--p-limon)', accepted: 'var(--p-menta)', rejected: 'var(--p-coral)', deprecated: 'var(--muted)', superseded: 'var(--p-lavanda)' };
+  const ADR_ALIAS = { propuesta: 'proposed', propuesto: 'proposed', aceptada: 'accepted', aceptado: 'accepted', rechazada: 'rejected', rechazado: 'rejected', obsoleta: 'deprecated', obsoleto: 'deprecated', reemplazada: 'superseded', reemplazado: 'superseded', sustituida: 'superseded', sustituido: 'superseded', superada: 'superseded', superado: 'superseded' };
+  const adrStatus = v => { const k = String(v ?? '').trim().toLowerCase(); return ADR_STATUS.includes(k) ? k : ADR_ALIAS[k] || 'proposed'; };
+  const adrNum = id => { const r = /^ADR-(\d+)$/i.exec(String(id)); return r ? +r[1] : 0; };
+  const adrNextId = list => `ADR-${String(Math.max(0, ...list.map(d => adrNum(d.id))) + 1).padStart(3, '0')}`;
+  // Solo enlaces a ids que existen (versiones: las de m.versions)
+  function cleanAdrLinks(l, m) {
+    const out = {};
+    l = l && typeof l === 'object' ? l : {};
+    [['nodes', m.nodes], ['edges', m.edges], ['groups', m.groups], ['versions', m.versions || []]].forEach(([k, src]) => {
+      const ok = new Set(src.map(x => x.id)), ids = [...new Set((Array.isArray(l[k]) ? l[k] : []).map(String).filter(id => ok.has(id)))];
+      if (ids.length) out[k] = ids;
+    });
+    return out;
+  }
+  function cleanDecisions(raw, m) {
+    const txt = v => String(v ?? '').replace(/\r\n?/g, '\n').slice(0, 20000);
+    const seen = new Set(), items = [];
+    (Array.isArray(raw) ? raw : []).forEach(d => {
+      if (!d || typeof d !== 'object' || Array.isArray(d)) return;
+      const o = { title: String(d.title ?? '').trim().slice(0, 200), context: txt(d.context), decision: txt(d.decision), consequences: txt(d.consequences) };
+      let id = String(d.id ?? '').trim().slice(0, 40);
+      if (!id && !o.title && !o.context && !o.decision && !o.consequences) return;
+      if (!id || seen.has(id)) id = ''; else seen.add(id);
+      items.push({ ...o, id, status: adrStatus(d.status), date: isDay(d.date) ? d.date : today(), deciders: String(d.deciders ?? '').trim().slice(0, 200), sup: String(d.supersededBy ?? '').trim(), links: cleanAdrLinks(d.links, m) });
+    });
+    items.forEach(o => { if (!o.id) o.id = adrNextId(items); });
+    const ids = new Set(items.map(o => o.id));
+    return items.map(o => {
+      const r = { id: o.id, title: o.title, status: o.status, date: o.date, context: o.context, decision: o.decision, consequences: o.consequences };
+      if (o.deciders) r.deciders = o.deciders;
+      if (o.sup && o.sup !== o.id && ids.has(o.sup)) { r.supersededBy = o.sup; r.status = 'superseded'; }
+      r.links = o.links;
+      return r;
+    });
+  }
+  const decisionsOf = (kind, id, m = S.model) => (m?.decisions || []).filter(d => d.links?.[kind]?.includes(id));
+  // Tras borrar nodos, conexiones, grupos o versiones: quita de los enlaces los ids que ya no existen
+  function pruneAdrLinks(m = S.model) { (m.decisions || []).forEach(d => { d.links = cleanAdrLinks(d.links, m); }); }
+  // Hallazgo bajo (fuente «adr»): propuestas sin resolver desde hace más de C.adr.staleDays días
+  addFindingSource('adr', m => {
+    const days = C.adr?.staleDays ?? 30;
+    if (!(days > 0)) return [];
+    const now = Date.now();
+    return (m.decisions || []).filter(d => d.status === 'proposed').flatMap(d => {
+      const age = Math.floor((now - new Date(`${d.date}T12:00`).getTime()) / 864e5);
+      if (!(age > days)) return [];
+      const l = d.links || {}, tk = l.nodes?.[0] ? 'node' : l.edges?.[0] ? 'edge' : l.groups?.[0] ? 'group' : 'node', tid = l.nodes?.[0] || l.edges?.[0] || l.groups?.[0] || '';
+      return [{ id: `adr:stale:${d.id}`, source: 'adr', rule: 'stale', severity: 'low', target: { kind: tk, id: tid }, title: T('adr.find.stale', { id: d.id, n: age }), detail: d.title, fix: T('adr.find.fix') }];
+    });
+  });
 
   function uniqueId(prefix) {
     const used = new Set([...S.model.nodes, ...S.model.edges, ...S.model.groups, ...S.model.notes, ...S.model.zones].map(x => x.id));
@@ -1029,6 +1086,11 @@
     el('text', { x: x + w / 2, y: y + h / 2 + 3.4, 'text-anchor': 'middle' }, g).textContent = t.short;
     return w;
   }
+  // Etiqueta «ADR n» (lavanda) de las decisiones propuestas o aceptadas que enlazan el nodo; el tooltip las lista
+  const adrTags = n => {
+    const ds = decisionsOf('nodes', n.id).filter(d => d.status === 'proposed' || d.status === 'accepted');
+    return ds.length ? [{ short: `ADR ${ds.length}`, label: ds.map(d => `${d.id} · ${d.title || d.id} (${T(`adr.st.${d.status}`)})`).join('\n'), color: 'var(--p-lavanda)', cls: 'dt-adr' }] : [];
+  };
   // Candado cerrado (cifrado) o abierto (sin cifrar), de 10 px de ancho
   function lockIcon(parent, x, on) {
     const g = el('g', { class: `edge-lock ${on ? 'on' : 'off'}`, transform: `translate(${x} 0)` }, parent);
@@ -1361,7 +1423,7 @@
     };
     if (sub) { paint(true, ' nd-full'); paint(false, ' nd-min'); } else paint(false, '');
     // Arriba a la izquierda: la observación de revisión (si hay) y las clasificaciones de datos
-    const dt = [...(n.review ? [{ ...reviewTag(n.review), cls: 'dt-review' }] : []), ...dataTags(n).map(t => ({ ...t, cls: 'dt-data' }))];
+    const dt = [...(n.review ? [{ ...reviewTag(n.review), cls: 'dt-review' }] : []), ...dataTags(n).map(t => ({ ...t, cls: 'dt-data' })), ...adrTags(n)];
     const rg = regionOf(n).value;
     const ly = layerOf(n), li = ly.value ? layerInfo(ly.value) : null;
     el('title', null, g).textContent = [n.sub ? `${n.label} · ${n.sub}` : n.label, ...dt.map(t => t.label), govTip(n), cmpTip(n), li ? T('layer.tip', { l: li.label }) : '', rg ? T('res.tip', regionLabel(rg)) : ''].filter(Boolean).join('\n');
@@ -2299,14 +2361,15 @@
   }
 
   // Además de guardar, refresca el aviso de "cambios sin guardar" de la versión abierta
-  const save = debounce(() => { store.set('model', S.model); updateMeta(); renderVersions(); }, 250);
+  const save = debounce(() => { store.set('model', S.model); updateMeta(); renderVersions(); renderAdr(); }, 250);
 
   const ORDER = {
     group: ['id', 'label', 'icon', 'color', 'parent', 'kind', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'controls'],
     node: ['id', 'label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'x', 'y', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'exposure', 'backup', 'controls'],
     edge: ['id', 'from', 'to', 'label', 'style', 'route', 'both', 'color', 'data', 'encrypted', 'datasets', 'transferOk', 'threats'],
     note: ['id', 'x', 'y', 'w', 'h', 'text', 'color'],
-    zone: ['id', 'x', 'y', 'w', 'h', 'label', 'severity', 'desc', 'kind', 'trust']
+    zone: ['id', 'x', 'y', 'w', 'h', 'label', 'severity', 'desc', 'kind', 'trust'],
+    decision: ['id', 'title', 'status', 'date', 'deciders', 'context', 'decision', 'consequences', 'supersededBy', 'links']
   };
   function serialize(m, full = false) {
     const ordered = (o, keys) => { const r = {}; keys.forEach(k => k in o && (r[k] = o[k])); Object.keys(o).forEach(k => k in r || (r[k] = o[k])); return r; };
@@ -2326,6 +2389,7 @@
     const body = [...head, arr('groups', m.groups, ORDER.group), arr('nodes', m.nodes, ORDER.node), arr('edges', m.edges, ORDER.edge)];
     if (m.notes?.length) body.push(arr('notes', m.notes, ORDER.note));
     if (m.zones?.length) body.push(arr('zones', m.zones, ORDER.zone));
+    if (m.decisions?.length) body.push(arr('decisions', m.decisions, ORDER.decision));
     // El archivo exportado lleva también las versiones; el editor JSON no las muestra
     if (full && m.versions?.length) {
       if (m.active) body.push(`  "active": ${JSON.stringify(m.active)}`);
@@ -2376,6 +2440,7 @@
     if (opts.fromEditor && S.model && raw && typeof raw === 'object') {
       if (!Array.isArray(raw.notes)) raw = { ...raw, notes: S.model.notes };
       if (!Array.isArray(raw.zones)) raw = { ...raw, zones: S.model.zones };
+      if (!Array.isArray(raw.decisions)) raw = { ...raw, decisions: S.model.decisions }; // ni el texto ni el JSON (si se borra la clave) tocan las decisiones
       if (opts.fromEditor === 'text' && raw.dismissed === undefined && S.model.dismissed) raw = { ...raw, dismissed: S.model.dismissed }; // el texto no trae los hallazgos descartados
     }
     S.model = normalize(raw);
@@ -2390,6 +2455,7 @@
     updateRouteButton();
     writeEditors(opts.fromEditor, !opts.fromEditor);
     renderInspector();
+    renderAdr(true);
     save();
     updateUndoButtons();
     if (opts.fit) fitView(opts.fit !== 'instant');
@@ -2398,6 +2464,7 @@
   // Tras cambiar el modelo desde el lienzo o el inspector
   function changed(structural = true) {
     if (S.path) clearPath();
+    if (S.model.decisions?.length) pruneAdrLinks();
     if (structural) render(false); else { updateGeometry(); applyCompare(); }
     syncEditor();
     save();
@@ -3191,7 +3258,7 @@
     const v = findVersion(id);
     if (!v) return;
     S.sel = null;
-    setModel({ ...clone(v.diagram), versions: S.model.versions, active: v.id }, { history: true });
+    setModel({ ...clone(v.diagram), versions: S.model.versions, active: v.id, decisions: S.model.decisions }, { history: true });
     toast(T('ver.opened', { name: verLabel(v) }));
   }
   async function deleteVersion(id, { force } = {}) {
@@ -3200,6 +3267,7 @@
     if (v.status === 'approved' && !force && !(await confirmBox({ title: T('ver.cf.delTitle', { name: verLabel(v) }), text: T('ver.cf.delText'), ok: T('ver.delete'), cancel: T('ver.cf.cancel'), danger: true }))) return;
     pushHistory();
     S.model.versions = S.model.versions.filter(x => x.id !== id);
+    pruneAdrLinks();
     if (S.model.active === id) delete S.model.active;
     if (S.compare?.id === id) S.compare = null;
     applyCompare();
@@ -3311,6 +3379,7 @@
         ${v.status === 'approved' && openFindings(v).length ? `<div class="ver-warn">⚑ ${esc(T('ver.openFindings', openFindings(v).length))}</div>` : ''}
         ${on ? `<div class="ver-flag${dirty ? ' dirty' : ''}">${esc(T(dirty ? 'ver.dirty' : 'ver.current'))}</div>` : ''}
         <div class="ver-meta">${esc(verMeta(v))}</div>
+        ${adrChips(decisionsOf('versions', v.id))}
         ${v.note && !editing ? `<div class="ver-note">${esc(v.note)}</div>` : ''}
         ${v.status === 'rejected' && !v.reason ? `<div class="ver-warn">${esc(T('ver.reasonWarn'))}</div>` : ''}
         ${editing ? `<div class="ver-form">
@@ -3334,6 +3403,7 @@
           <button class="btn small" data-ver="open" title="${esc(T('ver.openTip'))}">${T('ver.open')}</button>
           <button class="btn small${cmp ? ' on' : ''}" data-ver="compare" title="${esc(T('ver.compareTip'))}">${T(cmp ? 'ver.stop' : 'ver.compare')}</button>
           ${v.kind === 'env' ? `<button class="btn small" data-ver="update" title="${esc(T('ver.saveHereTip'))}">${T('ver.saveHere')}</button>` : ''}
+          <button class="btn small" data-adr="newver" title="${esc(T('adr.newForVer'))}" aria-label="${esc(T('adr.newForVer'))}">+ ADR</button>
         </div>
       </div>`;
     };
@@ -3901,6 +3971,7 @@
         ${secField(t)}
         ${cmpField(t, 'node')}
         ${reviewField(t)}
+        ${adrField(t)}
         <label>${T('insp.desc')}<textarea data-field="desc" rows="3" placeholder="${esc(T('insp.desc.ph'))}">${esc(t.desc || '')}</textarea></label>
         <div class="field">${T('insp.reach')}<div class="seg">${modes.map(([k, l]) => `<button data-reach="${k}" class="${S.reach === k ? 'on' : ''}">${l}</button>`).join('')}</div></div>
         ${nodeDsField(t)}
@@ -3927,6 +3998,7 @@
         ${dsField(t)}
         ${xferField(t)}
         ${strideField(t)}
+        ${adrField(t)}
         <div class="field">${T('insp.color')}${swatches(t.color)}</div>
         <div class="conns"><div class="conn-title">${T('insp.ends')}</div>
           <button class="conn" data-goto="${esc(a.id)}" style="--c:${nodeColor(a)}"><span class="dot"></span>${esc(a.label)}<em>${T('insp.source')}</em></button>
@@ -3972,6 +4044,7 @@
         <div class="field">${T('insp.color')}${swatches(t.color)}</div>
         ${govField(t, 'group')}
         ${cmpField(t, 'group')}
+        ${adrField(t)}
         <div class="insp-actions"><button class="btn danger" data-act="delete">${T('insp.deleteGroup')}</button></div>`;
     }
 
@@ -5380,9 +5453,12 @@
   };
   // Selecciona el objetivo y encuadra la vista sobre él
   function goToFinding(id) {
-    const f = FC.byId.get(id), o = f && findingTarget(f.target);
+    const f = FC.byId.get(id);
+    if (f) focusTarget(f.target.kind, f.target.id);
+  }
+  function focusTarget(k, tid) {
+    const o = findingTarget({ kind: k, id: tid });
     if (!o) return;
-    const k = f.target.kind;
     select({ kind: k, id: o.id });
     if (!S.sel) return toast(T('view.hiddenHere'));
     if (k === 'node') fitBox({ x: o.x, y: o.y, w: R.width.get(o.id) || nodeWidth(o), h: H }, 1);
@@ -5510,6 +5586,248 @@
     }
     renderFindings();
   });
+  /* ---------- decisiones de arquitectura (ADR): pestaña, inspector, versiones y exportación ---------- */
+  const ADR = { open: null, st: '', q: '' };   // ficha abierta, filtro por estado y búsqueda
+  const adrById = id => (S.model.decisions || []).find(d => d.id === id);
+  const adrTitle = d => d.title || d.id;
+  const adrChips = list => (list.length ? `<div class="adr-chips">${list.map(d => `<button type="button" class="adr-chip" data-adr-open="${esc(d.id)}" style="--s:${ADR_COLOR[d.status]}" title="${esc(`${d.id} · ${adrTitle(d)} · ${T(`adr.st.${d.status}`)}`)}"><b>${esc(d.id)}</b> ${esc(d.title)}</button>`).join('')}</div>` : '');
+  // Nombre legible de un elemento enlazado
+  function adrLinkLabel(kind, id) {
+    const m = S.model;
+    if (kind === 'nodes') return m.nodes.find(n => n.id === id)?.label;
+    if (kind === 'groups') return m.groups.find(g => g.id === id)?.label;
+    if (kind === 'versions') { const v = findVersion(id); return v && verLabel(v); }
+    const e = m.edges.find(x => x.id === id);
+    return e && `${m.nodes.find(n => n.id === e.from)?.label || e.from} ${e.both ? '↔' : '→'} ${m.nodes.find(n => n.id === e.to)?.label || e.to}`;
+  }
+  const ADR_KINDS = ['nodes', 'edges', 'groups', 'versions'];
+  const adrLinkList = d => ADR_KINDS.flatMap(k => (d.links?.[k] || []).map(id => ({ kind: k, id, label: adrLinkLabel(k, id) || id })));
+
+  // Crear, cambiar y borrar: todo pasa por cleanDecisions, así el estado, los enlaces y «sustituida por» siempre quedan coherentes
+  function addDecision(p = {}) {
+    p = p && typeof p === 'object' ? p : {};
+    pushHistory();
+    const list = cleanDecisions([...(S.model.decisions || []), { ...p, title: p.title || T('adr.new.title') }], S.model);
+    S.model.decisions = list;
+    changed(true); renderInspector(); renderAdr(true);
+    return list[list.length - 1].id;
+  }
+  function updateDecision(id, patch) {
+    const d = adrById(id);
+    if (!d || !patch || typeof patch !== 'object') return false;
+    pushHistory();
+    const next = { ...d, ...patch, id: d.id };
+    if ('status' in patch && adrStatus(patch.status) !== 'superseded' && !('supersededBy' in patch)) delete next.supersededBy;
+    if (!next.supersededBy) delete next.supersededBy;
+    S.model.decisions = cleanDecisions(S.model.decisions.map(x => (x === d ? next : x)), S.model);
+    changed(true); renderInspector(); renderAdr(true);
+    return true;
+  }
+  function removeDecision(id) {
+    if (!adrById(id)) return false;
+    pushHistory();
+    S.model.decisions = cleanDecisions(S.model.decisions.filter(d => d.id !== id), S.model);
+    if (ADR.open === id) ADR.open = null;
+    changed(true); renderInspector(); renderAdr(true);
+    return true;
+  }
+  // Enlaces de la selección actual: { nodes } | { edges } | { groups } o null
+  function adrSelLinks() {
+    const s = S.sel;
+    if (!s) return null;
+    if (s.kind === 'node') return { nodes: [s.id] };
+    if (s.kind === 'multi') return { nodes: [...s.ids] };
+    if (s.kind === 'edge') return { edges: [s.id] };
+    if (s.kind === 'group') return { groups: [s.id] };
+    return null;
+  }
+  const adrAddLinks = (d, add) => { const l = {}; ADR_KINDS.forEach(k => { const v = [...(d.links?.[k] || []), ...(add[k] || [])]; if (v.length) l[k] = v; }); return l; };
+
+  // Abre una decisión en la pestaña ADR (quita los filtros que la esconderían)
+  function adrOpen(id) {
+    const d = adrById(id);
+    if (!d) return;
+    ADR.open = id;
+    if (ADR.st && ADR.st !== d.status) ADR.st = '';
+    ADR.q = '';
+    $('.tab[data-tab="adr"]')?.click();
+    renderAdr(true);
+    $(`#adr-list .adr[data-id="${CSS.escape(id)}"]`)?.scrollIntoView({ block: 'nearest' });
+    if (matchMedia('(max-width: 760px)').matches) $('#main').classList.add('open');
+  }
+  // Muestra la versión en su pestaña y la resalta un momento
+  function adrGotoVersion(id) {
+    if (!findVersion(id)) return;
+    $('.tab[data-tab="versions"]')?.click();
+    if (store.get('verFilter', 'all') !== 'all') { store.set('verFilter', 'all'); renderVersions(); }
+    const row = $(`#versions .ver[data-id="${CSS.escape(id)}"]`);
+    row?.scrollIntoView({ block: 'nearest' });
+    row?.classList.add('adr-flash');
+    setTimeout(() => row?.classList.remove('adr-flash'), 1800);
+  }
+  function adrFocus(kind, id) {
+    if (kind === 'versions') return adrGotoVersion(id);
+    focusTarget(kind === 'nodes' ? 'node' : kind === 'edges' ? 'edge' : 'group', id);
+  }
+
+  /* pestaña */
+  const adrPanel = $('#adr-panel');
+  function renderAdr(force) {
+    if (!adrPanel || !S.model || !$('.pane[data-pane="adr"]')?.classList.contains('on')) return;
+    const a = document.activeElement;
+    if (!force && a && adrPanel.contains(a) && a.matches('input, textarea, select')) return; // no pisar lo que se está escribiendo
+    const ds = S.model.decisions || [];
+    if (ADR.open && !adrById(ADR.open)) ADR.open = null;
+    if (ADR.st && !ds.some(d => d.status === ADR.st)) ADR.st = '';
+    const chip = (k, n, label, color) => `<button class="fnd-chip${ADR.st === k ? ' on' : ''}" data-adr-st="${k}" aria-pressed="${ADR.st === k}" style="--s:${color}">${esc(label)} <b>${n}</b></button>`;
+    const counts = Object.fromEntries(ADR_STATUS.map(k => [k, ds.filter(d => d.status === k).length]));
+    $('#adr-bar').innerHTML = `<div class="adr-tools"><button class="btn small primary" data-adr="new">+ ${esc(T('adr.new'))}</button><button class="btn small" data-adr="md"${ds.length ? '' : ' disabled'}>${esc(T('adr.export'))}</button></div>
+      ${ds.length ? `<div class="fnd-chips" role="group" aria-label="${esc(T('adr.filter'))}">${chip('', ds.length, T('adr.f.all'), 'var(--accent)')}${ADR_STATUS.filter(k => counts[k]).map(k => chip(k, counts[k], T(`adr.st.${k}`), ADR_COLOR[k])).join('')}</div>
+      <input class="search" id="adr-q" style="padding-left:10px;margin-bottom:6px" value="${esc(ADR.q)}" placeholder="${esc(T('adr.search'))}" aria-label="${esc(T('adr.search'))}" autocomplete="off">` : ''}`;
+    renderAdrList();
+  }
+  const adrMatches = d => (!ADR.st || d.status === ADR.st) && (!ADR.q || [d.id, d.title, d.context, d.decision, d.consequences].some(x => String(x || '').toLowerCase().includes(ADR.q.toLowerCase())));
+  function adrCard(d, ds) {
+    const on = ADR.open === d.id, links = adrLinkList(d), col = ADR_COLOR[d.status];
+    const goChip = (l, rm) => `<span class="adr-link"><button type="button" data-adr-go="${l.kind}:${esc(l.id)}" title="${esc(T('adr.go'))}">${esc(T(`adr.kind.${l.kind}`))}: ${esc(l.label)}</button>${rm ? `<button type="button" class="adr-x" data-adr-unlink="${l.kind}:${esc(l.id)}" title="${esc(T('adr.unlink'))}" aria-label="${esc(T('adr.unlink'))}">×</button>` : ''}</span>`;
+    let form = '';
+    if (on) {
+      const others = ds.filter(x => x.id !== d.id), free = S.model.versions.filter(v => !d.links?.versions?.includes(v.id));
+      form = `<div class="adr-form">
+        <label>${esc(T('adr.f.id'))}<input value="${esc(d.id)}" readonly></label>
+        <label>${esc(T('adr.f.title'))}<input data-af="title" value="${esc(d.title)}" maxlength="200" autocomplete="off"></label>
+        <div class="adr-two"><label>${esc(T('adr.f.status'))}<select data-af="status">${ADR_STATUS.map(k => `<option value="${k}"${k === d.status ? ' selected' : ''}>${esc(T(`adr.st.${k}`))}</option>`).join('')}</select></label>
+          <label>${esc(T('adr.f.date'))}<input type="date" data-af="date" value="${esc(d.date)}"></label></div>
+        <label>${esc(T('adr.f.deciders'))}<input data-af="deciders" value="${esc(d.deciders || '')}" placeholder="${esc(T('adr.f.deciders.ph'))}" maxlength="200" autocomplete="off"></label>
+        ${['context', 'decision', 'consequences'].map(k => `<label>${esc(T(`adr.f.${k}`))}<textarea data-af="${k}" rows="4" placeholder="${esc(T(`adr.f.${k}.ph`))}">${esc(d[k])}</textarea></label>`).join('')}
+        <label>${esc(T('adr.f.superseded'))}<select data-af="supersededBy"><option value="">${esc(T('insp.none'))}</option>${others.map(x => `<option value="${esc(x.id)}"${x.id === d.supersededBy ? ' selected' : ''}>${esc(`${x.id} · ${adrTitle(x)}`)}</option>`).join('')}</select></label>
+        <div class="adr-links-edit"><span>${esc(T('adr.f.links'))}</span>${links.length ? links.map(l => goChip(l, true)).join('') : `<em>${esc(T('adr.noLinks'))}</em>`}
+          <div class="adr-row"><button class="btn small" data-adr="linksel">${esc(T('adr.linkSel'))}</button>
+          ${free.length ? `<select data-adr-linkver aria-label="${esc(T('adr.linkVer'))}"><option value="">${esc(T('adr.linkVer'))}</option>${free.map(v => `<option value="${esc(v.id)}">${esc(verLabel(v))}</option>`).join('')}</select>` : ''}</div></div>
+        <button class="btn small danger" data-adr="del">${esc(T('adr.delete'))}</button>
+      </div>`;
+    }
+    return `<div class="adr${on ? ' on' : ''}" data-id="${esc(d.id)}" style="--s:${col}">
+      <button type="button" class="adr-head" data-adr-toggle aria-expanded="${on}"><b class="adr-id">${esc(d.id)}</b><span class="adr-title">${esc(adrTitle(d))}</span><span class="adr-pill">${esc(T(`adr.st.${d.status}`))}</span></button>
+      <div class="adr-meta">${esc([fmtDay(d.date), d.deciders].filter(Boolean).join(' · '))}${d.supersededBy ? ` · ${esc(T('adr.f.superseded'))}: ${esc(d.supersededBy)}` : ''}</div>
+      ${!on && links.length ? `<div class="adr-links">${links.map(l => goChip(l, false)).join('')}</div>` : ''}
+      ${form}
+    </div>`;
+  }
+  function renderAdrList() {
+    const box = $('#adr-list');
+    if (!box || !S.model) return;
+    const ds = S.model.decisions || [], shown = ds.filter(adrMatches);
+    const keep = box.parentElement?.scrollTop || 0;
+    box.innerHTML = !ds.length ? `<p class="fnd-empty">${esc(T('adr.empty'))}</p>`
+      : shown.length ? shown.map(d => adrCard(d, ds)).join('') : `<p class="fnd-empty">${esc(T('adr.noMatch'))}</p>`;
+    if (box.parentElement) box.parentElement.scrollTop = keep;
+  }
+  // Actualiza la cabecera de una ficha sin repintarla (para no perder el foco al escribir)
+  function adrRefreshHead(card, d) {
+    card.querySelector('.adr-title').textContent = adrTitle(d);
+    card.querySelector('.adr-meta').textContent = [fmtDay(d.date), d.deciders].filter(Boolean).join(' · ') + (d.supersededBy ? ` · ${T('adr.f.superseded')}: ${d.supersededBy}` : '');
+  }
+  adrPanel?.addEventListener('focusin', ev => { if (ev.target.dataset?.af && ev.target.tagName !== 'SELECT') beginEdit(); });
+  adrPanel?.addEventListener('focusout', ev => { if (ev.target.dataset?.af) endEdit(); });
+  adrPanel?.addEventListener('input', ev => {
+    const f = ev.target;
+    if (f.id === 'adr-q') { ADR.q = f.value; return renderAdrList(); }
+    const k = f.dataset?.af, card = f.closest('.adr'), d = k && f.tagName !== 'SELECT' && card && adrById(card.dataset.id);
+    if (!d) return;
+    if (k === 'date' && !isDay(f.value)) return;
+    markEdit();
+    if (k === 'deciders' && !f.value.trim()) delete d.deciders; else d[k] = f.value;
+    syncEditor(); save();
+    adrRefreshHead(card, d);
+  });
+  adrPanel?.addEventListener('change', ev => {
+    const f = ev.target, card = f.closest('.adr'), d = card && adrById(card.dataset.id);
+    if (!d) return;
+    if (f.dataset.adrLinkver != null) { if (f.value) updateDecision(d.id, { links: adrAddLinks(d, { versions: [f.value] }) }); return; }
+    const k = f.dataset.af;
+    if (!k) return;
+    if (f.tagName === 'SELECT') {
+      if (k === 'status') updateDecision(d.id, { status: f.value });
+      else if (k === 'supersededBy') updateDecision(d.id, f.value ? { supersededBy: f.value, status: 'superseded' } : { supersededBy: '' });
+    } else { changed(true); renderInspector(); renderVersions(); }
+  });
+  adrPanel?.addEventListener('click', async ev => {
+    const b = ev.target.closest('button');
+    if (!b) return;
+    const d0 = b.dataset, card = b.closest('.adr'), d = card && adrById(card.dataset.id);
+    if (d0.adrSt != null) { ADR.st = ADR.st === d0.adrSt ? '' : d0.adrSt; return renderAdr(true); }
+    if (d0.adr === 'new') { ADR.q = ''; ADR.st = ''; return adrOpen(addDecision()); }
+    if (d0.adr === 'md') return exportDecisions();
+    if (d0.adrToggle != null && d) { ADR.open = ADR.open === d.id ? null : d.id; return renderAdr(true); }
+    if (d0.adrGo) { const [k, ...r] = d0.adrGo.split(':'); return adrFocus(k, r.join(':')); }
+    if (!d) return;
+    if (d0.adrUnlink) {
+      const [k, ...r] = d0.adrUnlink.split(':'), id = r.join(':');
+      return void updateDecision(d.id, { links: { ...d.links, [k]: (d.links?.[k] || []).filter(x => x !== id) } });
+    }
+    if (d0.adr === 'linksel') {
+      const l = adrSelLinks();
+      if (!l) return toast(T('adr.noSel'));
+      return void updateDecision(d.id, { links: adrAddLinks(d, l) });
+    }
+    if (d0.adr === 'del' && await confirmBox({ title: T('adr.cf.title', d.id), text: T('adr.cf.text', adrTitle(d)), ok: T('adr.delete'), cancel: T('ver.cf.cancel'), danger: true })) removeDecision(d.id);
+  });
+
+  /* inspector (nodo, conexión y grupo) y filas de versiones */
+  const adrKindOfSel = () => ({ node: 'nodes', edge: 'edges', group: 'groups' })[S.sel?.kind];
+  const adrField = t => {
+    const kind = adrKindOfSel();
+    if (!kind) return '';
+    const linked = decisionsOf(kind, t.id), rest = (S.model.decisions || []).filter(d => !linked.includes(d));
+    return `<div class="field adr-field">${T('adr.field')}${adrChips(linked)}
+      <div class="adr-row"><button class="btn small" data-adr="new">+ ${esc(T('adr.new'))}</button>
+      ${rest.length ? `<select data-adr-link aria-label="${esc(T('adr.linkTo'))}"><option value="">${esc(T('adr.linkTo'))}</option>${rest.map(d => `<option value="${esc(d.id)}">${esc(`${d.id} · ${adrTitle(d)}`)}</option>`).join('')}</select>` : ''}</div></div>`;
+  };
+  $('#inspector').addEventListener('click', ev => {
+    const b = ev.target.closest('button');
+    if (!b) return;
+    if (b.dataset.adrOpen) return adrOpen(b.dataset.adrOpen);
+    const l = b.dataset.adr === 'new' && adrSelLinks();
+    if (l) adrOpen(addDecision({ links: l }));
+  });
+  $('#inspector').addEventListener('change', ev => {
+    const f = ev.target, d = f.matches?.('[data-adr-link]') && f.value && adrById(f.value), l = adrSelLinks();
+    if (d && l) updateDecision(d.id, { links: adrAddLinks(d, l) });
+  });
+  $('#versions').addEventListener('click', ev => {
+    const b = ev.target.closest('button');
+    if (!b) return;
+    if (b.dataset.adrOpen) return adrOpen(b.dataset.adrOpen);
+    if (b.dataset.adr === 'newver') { const id = b.closest('.ver')?.dataset.id; if (id) adrOpen(addDecision({ links: { versions: [id] } })); }
+  });
+
+  /* exportación Markdown (MADR): índice y una sección por decisión */
+  function decisionsMarkdown() {
+    const m = S.model, ds = m.decisions || [], cell = x => String(x ?? '').replace(/\|/g, '\\|').replace(/\s*\n\s*/g, ' ');
+    const body = x => (String(x || '').trim() || '_—_');
+    const out = [`# ${T('adr.md.title', m.title)}`, ''];
+    if (ds.length) {
+      out.push(`| ${T('adr.f.id')} | ${T('adr.f.title')} | ${T('adr.f.status')} | ${T('adr.f.date')} |`, '|---|---|---|---|');
+      ds.forEach(d => out.push(`| ${cell(d.id)} | ${cell(adrTitle(d))} | ${cell(T(`adr.st.${d.status}`))} | ${cell(d.date)} |`));
+      out.push('');
+    }
+    ds.forEach(d => {
+      out.push(`## ${d.id}: ${adrTitle(d).replace(/\s*\n\s*/g, ' ')}`, '', `- **${T('adr.f.status')}:** ${T(`adr.st.${d.status}`)}`, `- **${T('adr.f.date')}:** ${d.date}`);
+      if (d.deciders) out.push(`- **${T('adr.f.deciders')}:** ${d.deciders}`);
+      out.push('', `### ${T('adr.f.context')}`, '', body(d.context), '', `### ${T('adr.f.decision')}`, '', body(d.decision), '', `### ${T('adr.f.consequences')}`, '', body(d.consequences), '');
+      const links = adrLinkList(d);
+      if (links.length) out.push(`### ${T('adr.md.linked')}`, '', ...links.map(l => `- ${T(`adr.kind.${l.kind}`)}: ${l.label}`), '');
+      if (d.supersededBy) { const s = adrById(d.supersededBy); out.push(`### ${T('adr.f.superseded')}`, '', `${d.supersededBy}${s ? ` — ${adrTitle(s)}` : ''}`, ''); }
+    });
+    return out.join('\n').replace(/\n{3,}/g, '\n\n').replace(/\n*$/, '\n');
+  }
+  function exportDecisions() {
+    const md = decisionsMarkdown(), slug = (S.model.title || 'diagram').replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-+|-+$/g, '') || 'diagram';
+    download(md, `${slug}-decisions.md`, 'text/markdown;charset=utf-8');
+    return md;
+  }
+
   // Inspector del nodo: exposición y respaldo (automáticos o a mano) y sus hallazgos abiertos
   const secField = n => {
     const ex = exposureOf(n), bk = backupOf(n), curE = n.exposure === 'public' || n.exposure === 'internal' ? n.exposure : '', curB = typeof n.backup === 'boolean' ? (n.backup ? 'yes' : 'no') : '';
@@ -5656,6 +5974,7 @@
     findings: (opts = {}) => apiFindings(opts), dismissFinding: (id, reason) => dismissFinding(id, reason), restoreFinding: id => restoreFinding(id),
     threats: () => strideAll().map(t => ({ edge: t.e.id, from: t.e.from, to: t.e.to, zones: t.zones.map(z => z.id), category: t.cat, severity: t.severity, status: t.status, note: t.note })),
     exportThreats,
+    decisions: () => clone(S.model.decisions || []), addDecision, updateDecision, removeDecision, exportDecisions,
     exportSVG, exportPNG, exportViews, exportJSON, shareEncrypted, exportOther, exportCtx, toggleRouting, importFiles, config: C, icons: ICONS
   };
 

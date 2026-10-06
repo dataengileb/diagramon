@@ -280,6 +280,19 @@ Open the **Versions** tab.
 - Saving, opening, deleting and every edit can be undone with **`⌘Z`**.
 - Versions are stored inside the diagram, so **Export › JSON** carries them all.
 
+#### Architecture decisions (ADR)
+
+Open the **ADR** tab to record *why* the architecture is the way it is, in the MADR style: **context**, **decision** and **consequences**.
+
+- **+ New decision** adds a card (`ADR-001`, `ADR-002`…). Click it to edit its title, **status** (*Proposed*, *Accepted*, *Rejected*, *Deprecated*, *Superseded*), date, deciders and the three texts. Choosing **Superseded by** marks it *Superseded*.
+- Link a decision to what it affects: **Link selection** links the selected components, connection or group, and **Link version…** a saved version. Linked items show as chips; click one to select it on the canvas (or to jump to the version).
+- The component, connection and group panels have a **Decisions** field with the linked ADRs, **+ New decision** (already linked) and **Link…** to pick an existing one. Each version card lists its ADRs and has **+ ADR**.
+- Components with a *proposed* or *accepted* decision show an **ADR n** tag on the canvas (views that show review marks); hover it to read the titles.
+- Status chips with counts and a search box filter the list. **Export Markdown** downloads every decision as one `.md` file: an index table plus one section per ADR.
+- A decision *proposed* for more than 30 days is a low finding in the **Review** tab.
+- Decisions belong to the document, not to a version: opening a version or editing the *Text* tab keeps them, and they are saved in **Export › JSON** under `decisions`. Everything can be undone with **`⌘Z`**.
+- From the console: `Diagramon.decisions()`, `Diagramon.addDecision({ title, status, context, decision, consequences, links: { nodes: [...] } })`, `Diagramon.updateDecision(id, patch)`, `Diagramon.removeDecision(id)` and `Diagramon.exportDecisions()`.
+
 ### 9. Sticky notes and risk zones
 
 Use the two buttons next to the zoom controls (bottom right of the canvas).
@@ -482,6 +495,7 @@ Everything you can customize is in **`config.js`**. Save and reload `index.html`
 - **Data lake layers**: `dataLayers` sets the layers in order (`label` for the medallion names, `alt` for the Raw/Curated/Serving names, short letters and `color`). Colors default to `--layer-bronze`, `--layer-silver` and `--layer-gold`, set per theme in `index.html`; edit them there or put a fixed color in `config.js`. `layerAliases` lists the other words accepted when reading JSON and text. Each view's `layers` flag shows or hides them.
 - **Automatic security review**: `securityRules` in `config.js` has one entry per rule (`sec.unencrypted-sensitive`, `sec.unstated-encryption`, `sec.public-sensitive`, `sec.datastore-backup`, `sec.cross-border`, `sec.sensitive-no-owner`, `sec.public-datastore`) with `enabled` (set `false` to turn a rule off) and `severity` (`low`, `medium`, `high`, `critical`). The rest are the rule's parameters: `clientTypes`, `publicGroupIcons` and `publicGroupName` (what counts as public), `dataStoreTypes` and `dataStoreIconCategories`, `backupIcons`, `backupName` and `backupEdgeLabel` (what counts as a backup). Text patterns are case-insensitive RegExps.
 - **Compliance**: `compliance.frameworks` is an ordered map `key → { label, short, url?, controls: { '<id>': { label: { en, es } } } }`. Add a control by adding a line in its framework, or a framework (NIST CSF, ENS, DORA…) by copying a block; JSON and Text accept any `framework:id`, even without a catalog entry. `compliance.suggest` maps each data class (and `crossBorder`) to the controls offered as chips; the first one of each list is the one the review expects.
+- **Architecture decisions**: `adr.staleDays` (default `30`) is how many days a *proposed* decision can wait before it shows as a low finding in the *Review* tab; `0` turns it off.
 - **Environments**: `environments` sets the buttons of the *Versions* tab (name, short label and color). Add or remove as many as you need.
 - **Node size**: with `node.sameSize: true` (default) every node is `node.width` wide and long names wrap to 2 lines.
   With `false`, each node grows with its text.
@@ -519,7 +533,7 @@ Set `"icons": { "enabled": false }` in `config.js` to turn them off.
 <summary><b>Extension API</b></summary>
 
 `window.Diagramon` exposes `model`, `load()`, `addNode()`, `addEdge()`, `select()`, `align()`, `relayout()`,
-`fitView()`, `togglePlay()`, `toggleTheme()`, `toggleLang()`, `lang`, `saveVersion()`, `openVersion()`, `compareVersion()`, `deleteVersion()`, `exportSVG()`, `exportPNG()`, `exportJSON()`, `lineage()`, `datasets()`, `owners()`, `crossBorder()`, `layers()`, `setLayerNames()`, `compliance()`, `exportCompliance()`, `config` and `icons`.
+`fitView()`, `togglePlay()`, `toggleTheme()`, `toggleLang()`, `lang`, `saveVersion()`, `openVersion()`, `compareVersion()`, `deleteVersion()`, `exportSVG()`, `exportPNG()`, `exportJSON()`, `lineage()`, `datasets()`, `owners()`, `crossBorder()`, `layers()`, `setLayerNames()`, `compliance()`, `exportCompliance()`, `decisions()`, `addDecision()`, `updateDecision()`, `removeDecision()`, `exportDecisions()`, `config` and `icons`.
 The text language is in `window.DiagramonText` (`parse` and `stringify`). UI translations are in `window.DiagramonI18n`.
 
 </details>
@@ -566,6 +580,7 @@ Things that work but have not been checked in depth yet. They probably need some
 - **Drawing a trust boundary by hand** with the mouse has not been tried; it was tested from the API and the multi-selection action.
 - **Text tab**: notes on STRIDE decisions, trust boundaries and dismissed findings are not part of the text format, so a round trip through the *Text* tab keeps the statuses but loses the notes.
 - Security review, compliance and STRIDE fields (`exposure`, `backup`, `controls`, `threats`, trust zones, dismissed findings) are not exported to Mermaid, PlantUML or draw.io.
+- **Architecture decisions** (ADR) are not part of the text format and are not exported to Mermaid, PlantUML or draw.io; they are not compared between versions. The ADR tag on the canvas and the Markdown export have not been reviewed visually in every theme.
 - The compliance catalog is a practical subset of each standard with paraphrased titles; check it before relying on it for an audit.
 
 ---
