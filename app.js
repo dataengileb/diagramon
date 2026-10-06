@@ -393,12 +393,14 @@
       });
     };
     m.groups.forEach(g => emit('group', g, m.nodes.filter(n => inGroup(n, g.id))));
+    // «Sin mapear» solo para marcos que el diagrama ya usa: sin controles no hay ruido
+    const inUse = new Set([...m.groups, ...m.nodes].flatMap(x => Object.keys(x.controls || {}).map(k => ctlSplit(k)[0])));
     m.nodes.forEach(n => {
       emit('node', n, [n]);
       const eff = controlsOf(n, m);
       dataClassesOf(n, m).filter(k => DATA[k]?.sensitive).forEach(k => {
         const core = (CMP.suggest?.[k] || [])[0];
-        if (!core || !ctlInfo(core).known || eff.has(core)) return;
+        if (!core || !inUse.has(ctlSplit(core)[0]) || !ctlInfo(core).known || eff.has(core)) return;
         const c = ctlInfo(core);
         out.push({ id: `compliance:unmapped:node:${n.id}:${core}`, source: 'compliance', rule: 'compliance.unmapped', severity: 'low', target: { kind: 'node', id: n.id },
           title: T('cmp.find.unmapped', { ctl: `${c.short} ${c.id}`, cls: loc(DATA[k].short) || k.toUpperCase(), name: n.label }), detail: c.title, fix: T('cmp.find.fix') });
