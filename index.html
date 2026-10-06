@@ -764,6 +764,24 @@
   .edge-xb circle { fill: var(--surface); stroke: var(--sev-critical); stroke-width: 1.6; }
   .edge-xb .xb-g { fill: none; stroke: var(--sev-critical); stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; }
   .edge-xb.ok circle, .edge-xb.ok .xb-g { stroke: var(--muted); } .edge-xb.ok .xb-g { stroke-width: 1.8; }
+  /* Niveles C4: indicador «⊞ n» de un nodo con diagrama interno (a la derecha, dentro de la tarjeta), marco de límite y fantasmas del exterior */
+  .node-inner { cursor: pointer; }
+  .node-inner rect { fill: var(--surface); stroke: var(--c); stroke-opacity: .55; stroke-width: 1; transition: fill .2s, stroke-opacity .2s; }
+  .node-inner:hover rect { fill: color-mix(in srgb, var(--c) 18%, var(--surface)); stroke-opacity: 1; }
+  .node-inner text { fill: var(--c); font-size: 10.5px; font-weight: 800; }
+  .node.c4-external .node-card { stroke-dasharray: 6 4; }
+  .xs-frame-box { fill: none; stroke: var(--muted); stroke-opacity: .65; stroke-width: 1.5; stroke-dasharray: 9 6; pointer-events: none; }
+  .xs-frame-label { fill: var(--muted); font-size: 12.5px; font-weight: 700; pointer-events: none; }
+  .xs-ghost { cursor: pointer; }
+  .xs-ghost-card { fill: var(--surface); fill-opacity: .55; stroke: var(--c); stroke-opacity: .5; stroke-width: 1.3; stroke-dasharray: 5 4; }
+  .xs-ghost:hover .xs-ghost-card { fill-opacity: .9; stroke-opacity: 1; }
+  .xs-ghost-name { fill: var(--text); font-size: 13px; font-weight: 650; opacity: .85; }
+  .xs-ghost-sub { fill: var(--muted); font-size: 11px; }
+  .xs-edge-line { fill: none; stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 5 4; stroke-opacity: .8; pointer-events: none; }
+  .xs-edge-arrow { fill: var(--muted); fill-opacity: .8; pointer-events: none; }
+  .xs-edge-label { fill: var(--muted); font-size: 10.5px; font-weight: 600; text-anchor: middle; paint-order: stroke; stroke: var(--bg); stroke-width: 3px; pointer-events: none; }
+  .vw-collapse .xs-edge { display: none; }
+  #viewport.xs-enter { animation: fade-in .35s ease-out both; }
   .vw-no-zones #l-zones, .vw-no-zones #l-zone-top, .vw-no-notes #l-notes, .vw-collapse #l-ghosts { display: none; }
   .diagramon-svg .node.v-dim, .diagramon-svg .edge.v-dim { opacity: .24; }
   .diagramon-svg .edge.v-dim .particle { display: none; }
@@ -840,6 +858,15 @@
   .view-pill { max-width: 100%; }
   .view-pill span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .view-pill .icon-btn { width: 18px; height: 18px; margin-right: -4px; }
+  /* Migas de pan de los niveles C4 (junto a la pastilla de vista) */
+  .scope-crumbs { pointer-events: auto; display: flex; flex-wrap: wrap; align-items: center; gap: 2px; margin-bottom: 5px; font-size: 12px; }
+  .scope-crumbs[hidden] { display: none; }
+  .scope-crumbs .crumb { border: 0; background: transparent; color: var(--muted); font: inherit; font-weight: 650; padding: 2px 7px; border-radius: 999px; cursor: pointer; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .scope-crumbs .crumb:hover { color: var(--text); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+  .scope-crumbs .crumb.on { color: var(--accent); background: color-mix(in srgb, var(--accent) 15%, transparent); cursor: default; }
+  .scope-crumbs .sep { color: var(--muted); opacity: .6; }
+  .scope-crumbs .lvl { margin-left: 6px; padding: 1px 8px; border-radius: 999px; font-size: 10.5px; font-weight: 750; letter-spacing: .03em; color: var(--p-lavanda); background: color-mix(in srgb, var(--p-lavanda) 15%, transparent); }
+  .c4-box { display: grid; gap: 8px; }
   .view-pill .icon-btn svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
   .docbar-leg li[data-gov] { cursor: pointer; } .docbar-leg li[data-gov]:hover { color: var(--text); } .docbar-leg li small { color: var(--muted); }
   .gov-box { margin-bottom: 11px; } .gov-box summary { cursor: pointer; font-size: 11.5px; font-weight: 650; color: var(--muted); margin-bottom: 8px; } .gov-box label { margin-bottom: 8px; }
@@ -973,6 +1000,8 @@
           <button data-export="png"><span data-i18n="exp.png"></span> <small>.png</small></button>
           <button data-export="svg-all"><span data-i18n="exp.svgAll"></span> <small data-i18n="exp.all.ext"></small></button>
           <button data-export="png-all"><span data-i18n="exp.pngAll"></span> <small data-i18n="exp.all.ext"></small></button>
+          <button data-export="svg-levels" id="exp-levels-svg" hidden><span data-i18n="exp.levelsSvg"></span> <small data-i18n="exp.levels.ext"></small></button>
+          <button data-export="png-levels" id="exp-levels-png" hidden><span data-i18n="exp.levelsPng"></span> <small data-i18n="exp.levels.ext"></small></button>
           <button data-export="json"><span data-i18n="exp.json"></span> <small>.json</small></button>
           <button data-export="copy"><span data-i18n="exp.copy"></span> <small data-i18n="exp.clip"></small></button>
           <button data-export="mermaid"><span data-i18n="exp.mermaid"></span> <small>.mmd</small></button>
@@ -1054,12 +1083,13 @@
           <pattern id="hatch-high" class="hatch hatch-high" width="9" height="9" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="9"/></pattern>
           <pattern id="hatch-critical" class="hatch hatch-critical" width="9" height="9" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="9"/></pattern>
         </defs>
-        <g id="viewport"><g id="l-zones"></g><g id="l-groups"></g><g id="l-ghosts"></g><g id="l-nodes"></g><g id="l-edges"></g><g id="l-ctx"></g><g id="l-zone-top"></g><g id="l-notes"></g><g id="l-guides"></g></g>
+        <g id="viewport"><g id="l-zones"></g><g id="l-groups"></g><g id="l-scope"></g><g id="l-ghosts"></g><g id="l-nodes"></g><g id="l-edges"></g><g id="l-ctx"></g><g id="l-zone-top"></g><g id="l-notes"></g><g id="l-guides"></g></g>
       </svg>
-      <div class="stage-title"><div class="ver-pill" id="stage-ver" hidden></div><div class="ver-pill flt-pill" id="stage-flt" hidden></div><div class="ver-pill view-pill" id="stage-view" hidden></div><h1 id="stage-h1"></h1><p id="stage-meta"></p></div>
+      <div class="stage-title"><div class="ver-pill" id="stage-ver" hidden></div><div class="ver-pill flt-pill" id="stage-flt" hidden></div><div class="ver-pill view-pill" id="stage-view" hidden></div><nav class="scope-crumbs" id="stage-scope" hidden></nav><h1 id="stage-h1"></h1><p id="stage-meta"></p></div>
       <div class="compare-bar" id="compare-bar" hidden><span id="compare-text"></span><button class="icon-btn" id="compare-exit" data-i18n-title="ver.exit" data-i18n-aria="ver.exit"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>
       <div class="compare-bar path-bar" id="path-bar" hidden><span id="path-text"></span><button class="icon-btn" id="path-exit" data-i18n-title="path.exit" data-i18n-aria="path.exit"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>
       <div class="empty" id="empty" hidden><div data-i18n-html="stage.empty"></div></div>
+      <div class="empty" id="empty-scope" hidden><div data-i18n-html="c4.empty"></div></div>
       <div class="banner" id="banner" hidden data-i18n-html="stage.banner"></div>
       <div class="hint" data-i18n-html="stage.hint"></div>
       <div class="zoombar">

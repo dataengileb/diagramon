@@ -309,7 +309,23 @@ review db: "DB in a public subnet" by=Ana raised=2026-10-01 due=2026-11-15
       'cmp.find.unmapped': o => `${o.ctl} not mapped for a component with ${o.cls}`,
       'cmp.find.gap.d': 'Marked as a gap in the compliance mapping.', 'cmp.find.partial.d': 'Marked as partially met in the compliance mapping.',
       'cmp.find.fix': 'Remediate and set the control to Met, or mark it N/A with a justification.',
-      'find.src.compliance': 'Compliance', 'flt.sec.compliance': 'Compliance', 'flt.gap': 'Has gaps', 'exp.compliance': 'Compliance matrix', 'exp.compliance.ext': 'view · .csv'
+      'find.src.compliance': 'Compliance', 'flt.sec.compliance': 'Compliance', 'flt.gap': 'Has gaps', 'exp.compliance': 'Compliance matrix', 'exp.compliance.ext': 'view · .csv',
+      /* niveles C4 (drill-down) */
+      'c4.top': 'Top', 'c4.crumbs': 'C4 levels', 'c4.label': 'C4 element', 'c4.in': 'level',
+      'c4.level.1': 'System context', 'c4.level.2': 'Containers', 'c4.level.3': 'Components', 'c4.level.4': 'Code', 'c4.levelN': n => `Level ${n}`,
+      'c4.level.tip': 'C4 level of the diagram you are looking at',
+      'c4.k.person': 'Person', 'c4.k.system': 'Software system', 'c4.k.container': 'Container', 'c4.k.component': 'Component', 'c4.k.external': 'External system',
+      'c4.open': 'Open internal diagram', 'c4.create': 'Create internal diagram', 'c4.open.tip': 'Double-click the node, or press Enter with it selected',
+      'c4.moveUp': 'Move up a level', 'c4.moveInto': 'Move into…', 'c4.moved': ({ n, where }) => `${n} ${n === 1 ? 'component' : 'components'} moved to ${where}`,
+      'c4.inner.tip': n => `${n} ${n === 1 ? 'component' : 'components'} inside · click to open its internal diagram`,
+      'c4.emptyHint': ({ name }) => `Internal diagram of “${name}”: add components here. Esc or Alt+↑ goes back up.`,
+      'c4.empty': '<b>Empty internal diagram</b>Drag a component from the left or double-click here.<br>Esc or Alt+↑ goes back up.',
+      'c4.ghost.tip': 'Outside this level · click to go to it', 'c4.ghost.more': n => `+${n} more connected outside`,
+      'c4.del.title': n => `Delete ${n === 1 ? 'a component' : `${n} components`} with an internal diagram?`,
+      'c4.del.text': n => `Its internal diagram goes with it: ${n} ${n === 1 ? 'component' : 'components'} in total, with their connections.`,
+      'c4.del.n': n => `${n} inside`,
+      'exp.levelsSvg': 'All levels (SVG)', 'exp.levelsPng': 'All levels (PNG)', 'exp.levels.ext': 'one file each',
+      'c4.noLevels': 'No internal diagrams yet: nothing to export by level', 'c4.progress': ({ i, n, name }) => `Exporting ${i}/${n}… ${name}`, 'c4.file': 'level', 'c4.done': n => `${n} ${n === 1 ? 'level' : 'levels'} exported`
     },
 
     es: {
@@ -606,7 +622,23 @@ revisión db: "BD en subred pública" por=Ana levantada=2026-10-01 compromiso=20
       'cmp.find.unmapped': o => `${o.ctl} sin mapear en un componente con ${o.cls}`,
       'cmp.find.gap.d': 'Marcado como brecha en el mapeo de cumplimiento.', 'cmp.find.partial.d': 'Marcado como parcial en el mapeo de cumplimiento.',
       'cmp.find.fix': 'Corrige y pasa el control a Cumple, o márcalo N/A con una justificación.',
-      'find.src.compliance': 'Cumplimiento', 'flt.sec.compliance': 'Cumplimiento', 'flt.gap': 'Con brechas', 'exp.compliance': 'Matriz de cumplimiento', 'exp.compliance.ext': 'vista · .csv'
+      'find.src.compliance': 'Cumplimiento', 'flt.sec.compliance': 'Cumplimiento', 'flt.gap': 'Con brechas', 'exp.compliance': 'Matriz de cumplimiento', 'exp.compliance.ext': 'vista · .csv',
+      /* niveles C4 (drill-down) */
+      'c4.top': 'Superior', 'c4.crumbs': 'Niveles C4', 'c4.label': 'Elemento C4', 'c4.in': 'nivel',
+      'c4.level.1': 'Contexto del sistema', 'c4.level.2': 'Contenedores', 'c4.level.3': 'Componentes', 'c4.level.4': 'Código', 'c4.levelN': n => `Nivel ${n}`,
+      'c4.level.tip': 'Nivel C4 del diagrama que estás viendo',
+      'c4.k.person': 'Persona', 'c4.k.system': 'Sistema de software', 'c4.k.container': 'Contenedor', 'c4.k.component': 'Componente', 'c4.k.external': 'Sistema externo',
+      'c4.open': 'Abrir diagrama interno', 'c4.create': 'Crear diagrama interno', 'c4.open.tip': 'Doble clic en el nodo, o Intro con el nodo elegido',
+      'c4.moveUp': 'Subir un nivel', 'c4.moveInto': 'Mover dentro de…', 'c4.moved': ({ n, where }) => `${n} ${n === 1 ? 'componente movido' : 'componentes movidos'} a ${where}`,
+      'c4.inner.tip': n => `${n} ${n === 1 ? 'componente' : 'componentes'} dentro · clic para abrir su diagrama interno`,
+      'c4.emptyHint': ({ name }) => `Diagrama interno de «${name}»: añade componentes aquí. Esc o Alt+↑ vuelve arriba.`,
+      'c4.empty': '<b>Diagrama interno vacío</b>Arrastra un componente desde la izquierda o haz doble clic aquí.<br>Esc o Alt+↑ vuelve arriba.',
+      'c4.ghost.tip': 'Fuera de este nivel · clic para ir a él', 'c4.ghost.more': n => `+${n} más conectados fuera`,
+      'c4.del.title': n => `¿Eliminar ${n === 1 ? 'un componente' : `${n} componentes`} con diagrama interno?`,
+      'c4.del.text': n => `Su diagrama interno se va con él: ${n} ${n === 1 ? 'componente' : 'componentes'} en total, con sus conexiones.`,
+      'c4.del.n': n => `${n} dentro`,
+      'exp.levelsSvg': 'Todos los niveles (SVG)', 'exp.levelsPng': 'Todos los niveles (PNG)', 'exp.levels.ext': 'un archivo por nivel',
+      'c4.noLevels': 'Aún no hay diagramas internos: nada que exportar por niveles', 'c4.progress': ({ i, n, name }) => `Exportando ${i}/${n}… ${name}`, 'c4.file': 'nivel', 'c4.done': n => `${n} ${n === 1 ? 'nivel exportado' : 'niveles exportados'}`
     }
   };
 

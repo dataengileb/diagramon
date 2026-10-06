@@ -329,6 +329,20 @@ A **view** is a way of looking at the same diagram: it only decides what is show
 
 The rules of each view live in `config.js` › `views`; groups can be marked `logical` or `physical` in the inspector.
 
+### C4 levels (drill-down)
+
+One file can hold several levels of detail, as in the **C4 model**: *system context* → *containers* → *components*. Any component can have an **internal diagram**; the model stays flat (each element just says which component it lives `in`), so reviews, lineage, compliance, owners, costs and versions keep seeing everything.
+
+1. Select a component and press **Create internal diagram** in the inspector (**C4 element** section), then add components inside it. New components, groups, notes and zones take the level you are in. Inside a *Software system* they default to *Container*, inside a *Container* to *Component*.
+2. A component that has an internal diagram shows a **⊞ n** chip on the right of its card. **Click the chip**, **double-click the component** (double-click its *name* to rename), press **`Enter`** with it selected, or use **Open internal diagram** in the inspector.
+3. Go back with **`Esc`** (with nothing selected), **`Alt`+`↑`** or the **breadcrumb** above the canvas (*Top › Shop system › API*), which also names the C4 level (*L1 System context*, *L2 Containers*, *L3 Components*).
+4. Inside a level, a dashed **boundary frame** carries the parent's name and C4 type. What lives outside but connects to it (other systems, the parent's neighbours) appears as dimmed **ghost cards** left (incoming) and right (outgoing) of the frame; click one to jump to its level.
+5. Pick a **C4 element** (*Person*, *Software system*, *Container*, *Component*, *External system*) in the inspector; it shows as a `[Container]` tag on components without a detail line, and in the tooltip.
+6. **Move into…** (nodes you selected go inside another component of the same level) and **Move up a level** are in the inspector; connections follow, and groups travel with their nodes when all of them move. Deleting a component with an internal diagram asks first, and deletes everything inside it.
+7. Each level has its own positions and its own **Auto layout**, **Fit** and presentation. Views (*Context* collapse included), filters, findings and exports all work inside the open level. **Export** › *All levels* writes one image per level with content.
+
+From the console: `Diagramon.setScope('api')`, `Diagramon.scope`, `Diagramon.scopes()`, `Diagramon.exportLevels('png')`.
+
 ### Keyboard shortcuts
 
 | Key | Action |
@@ -351,7 +365,9 @@ The rules of each view live in `config.js` › `views`; groups can be marked `lo
 | `E` | Switch curved / elbow connectors |
 | `G` | Open the filter panel (`Esc` closes it) |
 | `1`–`8` | Switch view: Full, Context, Logical, Physical, Security, Data, Cost, Governance |
-| `Esc` | Cancel or clear the selection |
+| `Enter` | Open the internal diagram of the selected component (C4 levels) |
+| `Esc` | Cancel or clear the selection; with nothing selected, go up one C4 level |
+| `Alt`+`↑` | Go up one C4 level |
 
 ---
 
@@ -427,6 +443,7 @@ api ~> queue : events
 | `a -> b : x data=pii transfer=ok` | Cross-border transfer approved (`transferencia=ok` in Spanish) |
 | `a -> b : SQL threats="T=mitigated,I=accepted"` | STRIDE decisions of a connection (Spanish: `amenazas=`); letters `S T R I D E`, statuses `mitigated`, `accepted`, `na` (Spanish `mitigada`, `aceptada`, `na`). Notes and trust boundaries are not part of the text |
 | `group id "Name" color=… { … }` | Group; groups can be nested |
+| `in=shop` (Spanish: `dentro=shop`) · `c4=container` | C4 levels: the node or group lives in the internal diagram of `shop`; C4 type `person`, `system`, `container`, `component` or `external` (Spanish: `persona`, `sistema`, `contenedor`, `componente`, `externo`). Nodes inside the braces of a group with `in=` inherit its level |
 | `layer=gold` (`bronze`, `silver`, `gold`; also `raw`, `curated`, `serving`) | Data lake layer of a node or group (Spanish: `capa=oro`); nodes inherit it from their group |
 | `layers: zones` | Show Raw / Curated / Serving instead of Bronze / Silver / Gold (Spanish: `capas: zonas`) |
 | `exposure=public` (`internal`) · `backup=yes` (`no`) | Override the deduced exposure and backup of a node (Spanish: `exposición=pública` / `interna`, `respaldo=sí` / `no`) |
@@ -520,6 +537,7 @@ Set `"icons": { "enabled": false }` in `config.js` to turn them off.
 
 `window.Diagramon` exposes `model`, `load()`, `addNode()`, `addEdge()`, `select()`, `align()`, `relayout()`,
 `fitView()`, `togglePlay()`, `toggleTheme()`, `toggleLang()`, `lang`, `saveVersion()`, `openVersion()`, `compareVersion()`, `deleteVersion()`, `exportSVG()`, `exportPNG()`, `exportJSON()`, `lineage()`, `datasets()`, `owners()`, `crossBorder()`, `layers()`, `setLayerNames()`, `compliance()`, `exportCompliance()`, `config` and `icons`.
+Also: `setScope(id | null)`, `scope`, `scopes()` and `exportLevels(format)` for C4 levels.
 The text language is in `window.DiagramonText` (`parse` and `stringify`). UI translations are in `window.DiagramonI18n`.
 
 </details>
@@ -567,6 +585,7 @@ Things that work but have not been checked in depth yet. They probably need some
 - **Text tab**: notes on STRIDE decisions, trust boundaries and dismissed findings are not part of the text format, so a round trip through the *Text* tab keeps the statuses but loses the notes.
 - Security review, compliance and STRIDE fields (`exposure`, `backup`, `controls`, `threats`, trust zones, dismissed findings) are not exported to Mermaid, PlantUML or draw.io.
 - The compliance catalog is a practical subset of each standard with paraphrased titles; check it before relying on it for an audit.
+- **C4 levels** have not been tested in a browser yet. *Duplicate* does not copy the internal diagram of a duplicated component, and Mermaid, PlantUML and draw.io export the whole flat model (no levels, `in` and `c4` are ignored). Text tab: nodes without `in=` go to the top level, so edit a level from the Text tab by writing `in=` on its nodes. Ghost cards show at most 8 per side. Elements that cross levels (an edge between two different levels) are only drawn as ghosts, they cannot be selected on the canvas; reach them from the inspector links.
 
 ---
 
