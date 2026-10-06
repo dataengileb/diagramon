@@ -987,6 +987,9 @@
   :root, .diagramon-svg[data-theme] { --layer-bronze: #c27c3e; --layer-silver: #9aa7b4; --layer-gold: #d4a72c; }
   :root[data-theme="light"], .diagramon-svg[data-theme="light"] { --layer-bronze: #a35f25; --layer-silver: #6b7a89; --layer-gold: #a17800; }
   :root[data-theme="black"], .diagramon-svg[data-theme="black"] { --layer-bronze: #e0904c; --layer-silver: #bcc7d2; --layer-gold: #f2c53d; }
+  /* Colores propios muy claros (tema claro) o muy oscuros (temas oscuro y negro): app.js › themeSafe los mezcla con estas cantidades */
+  :root, .diagramon-svg[data-theme] { --cfix-light: 0%; --cfix-dark: 45%; }
+  :root[data-theme="light"], .diagramon-svg[data-theme="light"] { --cfix-light: 45%; --cfix-dark: 0%; }
   .layer-band { fill: var(--lc); pointer-events: none; }
   .layer-pill { pointer-events: none; }
   .layer-pill rect { fill: var(--surface); stroke: var(--lc); stroke-width: 1.2; }

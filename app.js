@@ -92,7 +92,17 @@
   const paletteKeys = () => Object.keys((C.palettes[S.palette] || Object.values(C.palettes)[0]).dark);
   // También acepta los nombres en inglés de los colores (peach, sky…)
   const COLOR_ALIAS = Object.fromEntries(Object.entries(I.COLOR_NAMES.en).map(([k, v]) => [v, k]));
-  const colorVar = k => !k ? null : paletteKeys().includes(k) ? `var(--p-${k})` : COLOR_ALIAS[k] ? `var(--p-${COLOR_ALIAS[k]})` : k;
+  // Color propio muy claro u oscuro: se ajusta según el tema con variables de #diagram-css (--cfix-light / --cfix-dark),
+  // así sigue leyéndose al cambiar de tema sin redibujar, y las exportaciones hacen lo mismo
+  const hexLum = c => {
+    const m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(c).trim());
+    if (!m) return null;
+    const h = m[1].length === 3 ? [...m[1]].map(x => x + x).join('') : m[1];
+    const [r, g, b] = [0, 2, 4].map(i => parseInt(h.slice(i, i + 2), 16) / 255).map(v => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  const themeSafe = c => { const L = hexLum(c); return L == null ? c : L > 0.6 ? `color-mix(in srgb, ${c}, #000 var(--cfix-light, 0%))` : L < 0.04 ? `color-mix(in srgb, ${c}, #fff var(--cfix-dark, 0%))` : c; };
+  const colorVar = k => !k ? null : paletteKeys().includes(k) ? `var(--p-${k})` : COLOR_ALIAS[k] ? `var(--p-${COLOR_ALIAS[k]})` : themeSafe(k);
   const typeOf = n => C.types[n.type] || C.types.generic;
   const typeLabel = type => loc((C.types[type] || C.types.generic).label);
   const nodeColor = n => colorVar(n && n.color) || colorVar(typeOf(n || {}).color) || 'var(--accent)';
@@ -1848,6 +1858,8 @@
   }
 
   function updateGeometry() {
+    // Las insignias numeradas del camino / linaje siguen a su nodo cuando se arrastra
+    if (S.path) $$('.path-badge[data-id]', L.guides).forEach(b => { const n = S.model.nodes.find(x => x.id === b.dataset.id); if (n) b.setAttribute('transform', `translate(${n.x + 2} ${n.y + 2})`); });
     const m = S.model, byId = new Map(m.nodes.map(n => [n.id, n]));
     const rect = id => { const n = byId.get(id); return { x: n.x, y: n.y, w: R.width.get(id), h: H }; };
     m.nodes.forEach(n => R.nodes.get(n.id)?.setAttribute('transform', `translate(${n.x} ${n.y})`));
@@ -1976,7 +1988,7 @@
     if (res) {
       res.nodes.forEach(id => {
         if (VW.hideNodes.has(id)) return;
-        const n = m.nodes.find(x => x.id === id), g = el('g', { class: 'path-badge', transform: `translate(${n.x + 2} ${n.y + 2})` }, L.guides);
+        const n = m.nodes.find(x => x.id === id), g = el('g', { class: 'path-badge', 'data-id': id, transform: `translate(${n.x + 2} ${n.y + 2})` }, L.guides);
         el('circle', { r: 9 }, g);
         el('text', {}, g).textContent = res.dist.get(id) + 1;
       });
@@ -2056,7 +2068,7 @@
     res.nodes.forEach(id => {
       const n = m.nodes.find(x => x.id === id);
       if (!n || VW.hideNodes.has(id)) return;
-      const g = el('g', { class: `path-badge${res.origins.includes(id) ? ' lin-src' : ''}${res.consumers.includes(id) ? ' lin-dst' : ''}`, transform: `translate(${n.x + 2} ${n.y + 2})` }, L.guides);
+      const g = el('g', { class: `path-badge${res.origins.includes(id) ? ' lin-src' : ''}${res.consumers.includes(id) ? ' lin-dst' : ''}`, 'data-id': id, transform: `translate(${n.x + 2} ${n.y + 2})` }, L.guides);
       el('circle', { r: 9 }, g);
       el('text', {}, g).textContent = res.dist.get(id) + 1;
     });
