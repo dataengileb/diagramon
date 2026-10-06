@@ -164,6 +164,14 @@ The tags appear on top of each node and on the connection's label, next to a pad
 When a connection marked *Not encrypted* carries sensitive data, or links a component with sensitive data, it turns red and a warning appears above the canvas.
 With several components selected, the tags apply to all of them.
 
+### Data residency
+
+1. Select a component or a group and type its **Region** (a cloud region such as `eu-west-1`, `westeurope`, `europe-west1`, or a country code such as `ES`, `US`). The box suggests the regions already used in the diagram. Components inherit the region of the nearest group that has one; a group named like its region (`Region eu-west-1 (Ireland)`) is detected on its own and the panel says *inherited from…* or *deduced from…*.
+2. Diagramon maps each region to a jurisdiction (EU, UK, US, Canada, Brazil, Latin America, Asia-Pacific, Middle East, Africa) and shows it next to the box. Unknown regions are simply ignored.
+3. When a connection links two regions in different jurisdictions and carries sensitive data (its own classes or, if it has none, those of its source), the inspector shows `eu-west-1 (EU) → us-east-1 (US)` and a red warning such as *PII leaves the EU → US*. If the transfer is covered (SCCs, adequacy decision…), turn on **Transfer approved**: it stays listed but no longer raises the alarm.
+
+The **Security** and **Physical** views show a small region chip on each component. In **Security**, unapproved cross-border connections are critical (red, with a globe marker) and their ends are highlighted; the legend gets a *Cross-border sensitive data* row and the summary above the canvas counts them. The filter has a **Cross-border** chip (in *Data*) and a **Region** section (one chip per jurisdiction, plus *Unknown region*). From the console: `Diagramon.crossBorder()`.
+
 ### 7. Review findings
 
 1. Select a component and click **⚑ Raise a review finding**.
@@ -330,6 +338,8 @@ api ~> queue : events
 | `cost=120/month` · `0.1/hour` · `1400/year` · `5000/3years` | Cost in USD (no period = monthly) |
 | `data=pii,pci` | Data classification of a node or a connection |
 | `a -> b : TLS encrypted=yes` | Encryption in transit (`yes` or `no`) |
+| `region=eu-west-1` | Region of a node or a group (aliases `country=`, `país=`, `región=`); nodes inherit it from their group |
+| `a -> b : x data=pii transfer=ok` | Cross-border transfer approved (`transferencia=ok` in Spanish) |
 | `group id "Name" color=… { … }` | Group; groups can be nested |
 | `a -> b` · `a => b` · `a ~> b` · `a ..> b` | Request · data · event · optional |
 | `a -> b -> c : label` | Chain; the label goes on the last arrow |
@@ -376,6 +386,7 @@ Everything you can customize is in **`config.js`**. Save and reload `index.html`
 - **Default theme**: `app.defaultTheme: 'dark' | 'light' | 'black'`. The `T` key and the theme button cycle light → dark → black.
 - **Default language**: `app.defaultLang: 'en' | 'es'`. UI texts live in `i18n.js`; texts in `config.js` and `examples.js` can be `{ en: '…', es: '…' }`.
 - **Data classes**: `dataClasses` sets the tags (name, short label, color). `sensitive: true` turns on the red warning for unencrypted flows.
+- **Jurisdictions (data residency)**: `residency.jurisdictions` in `config.js` is an ordered map `key → { label: { en, es }, short, match }`. `match` is a case-insensitive RegExp tested against the region text (`eu-west-1`, `westeurope`, `ES`…); the first jurisdiction that matches wins, so put specific ones (`uk`, `ch`) before wide ones (`eu`). To add one, copy a line and change its key, labels and `match`; to adjust one, edit its `match` (anchor it with `^…$`). `of` is the optional text used in the warning (*leaves **the EU***). Set `residency.warnSameJurisdiction: true` to also warn when regions differ inside the same jurisdiction.
 - **Environments**: `environments` sets the buttons of the *Versions* tab (name, short label and color). Add or remove as many as you need.
 - **Node size**: with `node.sameSize: true` (default) every node is `node.width` wide and long names wrap to 2 lines.
   With `false`, each node grows with its text.
@@ -413,7 +424,7 @@ Set `"icons": { "enabled": false }` in `config.js` to turn them off.
 <summary><b>Extension API</b></summary>
 
 `window.Diagramon` exposes `model`, `load()`, `addNode()`, `addEdge()`, `select()`, `align()`, `relayout()`,
-`fitView()`, `togglePlay()`, `toggleTheme()`, `toggleLang()`, `lang`, `saveVersion()`, `openVersion()`, `compareVersion()`, `deleteVersion()`, `exportSVG()`, `exportPNG()`, `exportJSON()`, `config` and `icons`.
+`fitView()`, `togglePlay()`, `toggleTheme()`, `toggleLang()`, `lang`, `saveVersion()`, `openVersion()`, `compareVersion()`, `deleteVersion()`, `exportSVG()`, `exportPNG()`, `exportJSON()`, `crossBorder()`, `config` and `icons`.
 The text language is in `window.DiagramonText` (`parse` and `stringify`). UI translations are in `window.DiagramonI18n`.
 
 </details>

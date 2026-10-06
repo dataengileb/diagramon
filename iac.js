@@ -650,7 +650,7 @@ window.DiagramonIaC = (() => {
         const id = 'cloud-' + p;
         const name = { aws: 'AWS', azure: 'Azure', gcp: 'Google Cloud' }[p];
         const icon = groupIcon('cloud', p);
-        groups.push({ id, label: p === 'aws' && region ? `${name} · ${region}` : name, ...(icon ? { icon } : {}), color: 'melocoton', kind: 'physical' });
+        groups.push({ id, label: p === 'aws' && region ? `${name} · ${region}` : name, ...(icon ? { icon } : {}), color: 'melocoton', kind: 'physical', ...(p === 'aws' && region ? { region } : {}) });
         provGroup.set(p, id);
       }
       return provGroup.get(p);

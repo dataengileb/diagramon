@@ -364,6 +364,9 @@
   .dchip.on { background: var(--c); border-color: var(--c); color: var(--bg); }
   .seg button.enc-yes.on { color: var(--p-menta); }
   .seg button.enc-no.on { color: var(--p-coral); }
+  .region-row { display: flex; align-items: flex-end; gap: 8px; } .region-row > label { flex: 1; min-width: 0; }
+  .region-jur { flex: none; height: 32px; padding: 0 10px; display: inline-flex; align-items: center; border: 1px solid var(--border); border-radius: 999px; font-size: 11px; font-weight: 750; letter-spacing: .03em; color: var(--accent); } .region-jur[hidden] { display: none; }
+  .xfer-ok { display: block; margin-top: 5px; } .btn.small.on { border-color: var(--accent); color: var(--accent); }
   .enc-warn { display: block; margin-top: 5px; font-size: 11.5px; font-weight: 600; color: var(--p-coral); }
 
   /* Buscador de iconos */
@@ -662,6 +665,17 @@
   .v-hide { display: none !important; }
   .nd-min { display: none; } .vw-min .nd-min { display: inline; } .vw-min .nd-full { display: none; }
   .vw-no-dtags .dt-data, .vw-no-review .dt-review, .vw-no-cost .node-cost { display: none; }
+  /* Residencia de datos: chip de región (Seguridad y Física) y marcador de cruce de frontera (Seguridad) */
+  .node-region, .edge-xb { display: none; }
+  .vw-security .node-region, .vw-physical .node-region { display: inline; }
+  .vw-security .edge-xb { display: inline; }
+  .node-region { pointer-events: none; }
+  .node-region rect { fill: var(--surface); stroke: var(--c); stroke-opacity: .45; stroke-width: 1; }
+  .node-region text { fill: var(--muted); font-size: 10.5px; font-weight: 700; }
+  .edge-xb { pointer-events: none; }
+  .edge-xb circle { fill: var(--surface); stroke: var(--sev-critical); stroke-width: 1.6; }
+  .edge-xb .xb-g { fill: none; stroke: var(--sev-critical); stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; }
+  .edge-xb.ok circle, .edge-xb.ok .xb-g { stroke: var(--muted); } .edge-xb.ok .xb-g { stroke-width: 1.8; }
   .vw-no-zones #l-zones, .vw-no-zones #l-zone-top, .vw-no-notes #l-notes, .vw-collapse #l-ghosts { display: none; }
   .diagramon-svg .node.v-dim, .diagramon-svg .edge.v-dim { opacity: .24; }
   .diagramon-svg .edge.v-dim .particle { display: none; }
