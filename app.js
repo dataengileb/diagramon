@@ -2230,10 +2230,166 @@
   $('#path-exit').addEventListener('click', clearPath);
 
   /* ---------- inspector ---------- */
-  const swatches = cur => `<div class="swatches">
+  // Tras la paleta, un botón "+": marcado y con el color cuando el actual no es de la paleta
+  const swatches = cur => {
+    const custom = !!cur && cur !== '__mixed' && !paletteKeys().includes(cur) && !COLOR_ALIAS[cur];
+    return `<div class="swatches">
       <button class="sw auto${!cur ? ' on' : ''}" data-color="" title="${esc(T('insp.auto'))}"></button>
       ${paletteKeys().map(k => `<button class="sw${cur === k ? ' on' : ''}" data-color="${k}" title="${esc(I.colorName(k))}" style="--c:var(--p-${k})"></button>`).join('')}
+      <button class="sw sw-custom${custom ? ' on' : ''}" type="button" aria-haspopup="dialog" aria-expanded="false" title="${esc(T('color.custom') + (custom ? ` · ${cur}` : ''))}" aria-label="${esc(T('color.custom'))}"${custom ? ` style="--c:${esc(cur)}"` : ''}></button>
     </div>`;
+  };
+
+  /* ---------- color personalizado: selector con recientes y favoritos ---------- */
+  const CP_RECENT = 7, CP_FAV = 14;
+  // #RGB o #RRGGBB (con o sin #) -> #rrggbb, o null si no es válido
+  const normHex = v => {
+    const m = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(v ?? '').trim());
+    if (!m) return null;
+    const h = m[1].toLowerCase();
+    return '#' + (h.length === 3 ? [...h].map(c => c + c).join('') : h);
+  };
+  const loadColors = (k, max) => { const v = store.get(k, []); return Array.isArray(v) ? [...new Set(v.map(normHex).filter(Boolean))].slice(0, max) : []; };
+  let cpRecent = loadColors('colorRecent', CP_RECENT), cpFav = loadColors('colorFav', CP_FAV);
+  let cpPop = null, cpDrag = false;
+  const cpStar = '<svg viewBox="0 0 24 24"><path d="m12 3.5 2.6 5.4 5.9.8-4.3 4.1 1 5.9L12 16.9l-5.2 2.8 1-5.9-4.3-4.1 5.9-.8z"/></svg>';
+  // Color actual de la selección: un valor, '' (automático) o '__mixed'
+  const cpCurrent = () => {
+    const t = selTarget(), list = Array.isArray(t) ? t : t ? [t] : [];
+    const set = new Set(list.map(x => x.color || ''));
+    return set.size === 1 ? [...set][0] : '__mixed';
+  };
+  // Hex del color actual en el tema activo, para arrancar el selector
+  const cpStartHex = () => {
+    const pal = C.palettes[S.palette] || Object.values(C.palettes)[0], tp = pal[S.theme] || pal.dark, cur = cpCurrent();
+    return normHex(cur) || normHex(tp[COLOR_ALIAS[cur] || cur]) || normHex(tp[pal.accent || 'lavanda']) || '#8573db';
+  };
+  // Mismo camino que las muestras; en vivo agrupa en un solo paso de deshacer (markEdit)
+  function cpApply(val, live) {
+    const t = selTarget();
+    if (!t) return;
+    const list = Array.isArray(t) ? t : [t];
+    if (list.every(x => x.color === val)) return;
+    if (live) markEdit(); else pushHistory();
+    list.forEach(x => { x.color = val; });
+    changed(true); renderInspector(); cpPlace();
+  }
+  const cpRemember = hex => {
+    cpRecent = [hex, ...cpRecent.filter(c => c !== hex)].slice(0, CP_RECENT);
+    store.set('colorRecent', cpRecent);
+    cpRenderLists();
+  };
+  const cpCommit = hex => { const h = normHex(hex); if (!h) return false; cpApply(h, false); cpRemember(h); return true; };
+  function cpToggleFav(hex) {
+    if (cpFav.includes(hex)) cpFav = cpFav.filter(c => c !== hex);
+    else if (cpFav.length >= CP_FAV) return toast(T('color.favMax', CP_FAV));
+    else cpFav = [...cpFav, hex];
+    store.set('colorFav', cpFav);
+    cpRenderLists();
+  }
+  function cpRenderLists() {
+    if (!cpPop) return;
+    const box = cpPop.querySelector('.cp-lists'), a = document.activeElement;
+    const was = box.contains(a) && a.dataset.cp ? `${a.dataset.cp}|${a.dataset.c}|${a.closest('[data-sec]')?.dataset.sec}` : null;
+    const cur = normHex(cpCurrent());
+    const item = c => {
+      const fav = cpFav.includes(c), pin = esc(T(fav ? 'color.unpin' : 'color.pin', c));
+      return `<span class="cp-it"><button type="button" class="cp-sw${c === cur ? ' on' : ''}" data-cp="use" data-c="${c}" style="--c:${c}" title="${c}" aria-label="${esc(T('color.use', c))}"></button>
+        <button type="button" class="cp-pin${fav ? ' on' : ''}" data-cp="pin" data-c="${c}" aria-pressed="${fav}" title="${pin}" aria-label="${pin}">${cpStar}</button></span>`;
+    };
+    const sec = (key, title, list, none) => `<div class="cat">${esc(title)}</div><div class="cp-grid" data-sec="${key}">${list.length ? list.map(item).join('') : `<p class="cp-none">${esc(none)}</p>`}</div>`;
+    box.innerHTML = sec('recent', T('color.recent'), cpRecent, T('color.recent.none')) + sec('fav', `${T('color.fav')} · ${cpFav.length}/${CP_FAV}`, cpFav, T('color.fav.none'));
+    if (was) {
+      const [kind, c, s] = was.split('|');
+      (box.querySelector(`[data-sec="${s}"] [data-cp="${kind}"][data-c="${c}"]`) || box.querySelector(`[data-cp="${kind}"][data-c="${c}"]`) || box.querySelector('[data-cp]') || cpPop).focus();
+    }
+  }
+  // Anclado al botón "+" (se vuelve a buscar porque el inspector se redibuja); abre hacia arriba si no cabe abajo
+  function cpPlace() {
+    if (!cpPop) return;
+    const a = $('#inspector .sw-custom');
+    if (!a) return cpClose(false);
+    a.setAttribute('aria-expanded', 'true');
+    const r = a.getBoundingClientRect(), pw = cpPop.offsetWidth, ph = cpPop.offsetHeight, m = 8;
+    let top = r.bottom + 6;
+    if (top + ph > innerHeight - m && r.top - ph - 6 >= m) top = r.top - ph - 6;
+    cpPop.style.left = `${Math.min(Math.max(m, r.left), Math.max(m, innerWidth - pw - m))}px`;
+    cpPop.style.top = `${Math.max(m, Math.min(top, innerHeight - ph - m))}px`;
+  }
+  function cpClose(refocus = true) {
+    if (!cpPop) return;
+    cpPop.remove(); cpPop = null; cpDrag = false; endEdit();
+    const a = $('#inspector .sw-custom');
+    if (a) { a.setAttribute('aria-expanded', 'false'); if (refocus) a.focus(); }
+  }
+  function cpOpen() {
+    cpClose(false);
+    const hex = cpStartHex();
+    cpPop = document.createElement('div');
+    cpPop.className = 'menu-pop color-pop';
+    cpPop.setAttribute('role', 'dialog');
+    cpPop.setAttribute('aria-label', T('color.custom'));
+    cpPop.tabIndex = -1;
+    cpPop.innerHTML = `<div class="cp-top"><input type="color" class="cp-color" value="${hex}" aria-label="${esc(T('color.picker'))}">
+      <input type="text" class="cp-hex" value="${hex}" maxlength="7" spellcheck="false" autocomplete="off" placeholder="#RRGGBB" aria-label="${esc(T('color.hex'))}">
+      <button type="button" class="cp-apply" data-cp="apply">${esc(T('color.apply'))}</button></div>
+      <p class="cp-err" role="alert" hidden>${esc(T('color.hexBad'))}</p><div class="cp-lists"></div>`;
+    document.body.appendChild(cpPop);
+    cpRenderLists();
+    cpPlace();
+    const col = cpPop.querySelector('.cp-color'), hx = cpPop.querySelector('.cp-hex'), err = cpPop.querySelector('.cp-err');
+    const ok = h => { hx.value = h; col.value = h; err.hidden = true; hx.removeAttribute('aria-invalid'); };
+    // Arrastrar el selector aplica en vivo (un solo paso de deshacer); al soltar se guarda en recientes
+    col.addEventListener('input', () => {
+      if (!cpDrag) { cpDrag = true; beginEdit(); }
+      ok(col.value);
+      cpApply(col.value, true);
+    });
+    col.addEventListener('change', () => {
+      if (!cpDrag) cpApply(col.value, false);
+      cpDrag = false; endEdit(); cpRemember(col.value);
+    });
+    hx.addEventListener('input', () => {
+      const h = normHex(hx.value), bad = !!hx.value.trim() && !h;
+      err.hidden = !bad; hx.toggleAttribute('aria-invalid', bad);
+      if (h) col.value = h;
+    });
+    const commit = () => {
+      const h = normHex(hx.value);
+      if (h && cpCommit(h)) ok(h);
+      else { err.hidden = false; hx.setAttribute('aria-invalid', 'true'); hx.focus(); }
+    };
+    hx.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); commit(); } });
+    hx.addEventListener('change', () => { if (normHex(hx.value)) commit(); });
+    cpPop.addEventListener('click', ev => {
+      const b = ev.target.closest('button[data-cp]');
+      if (!b) return;
+      if (b.dataset.cp === 'apply') commit();
+      else if (b.dataset.cp === 'pin') cpToggleFav(b.dataset.c);
+      else if (cpCommit(b.dataset.c)) ok(b.dataset.c);
+    });
+    // Esc cierra; las flechas recorren las muestras; Tab no sale del menú
+    cpPop.addEventListener('keydown', ev => {
+      if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); return cpClose(); }
+      if (ev.key === 'Tab') {
+        const f = $$('input, button', cpPop), i = f.indexOf(document.activeElement);
+        if (ev.shiftKey && i <= 0) { ev.preventDefault(); f[f.length - 1].focus(); }
+        else if (!ev.shiftKey && i === f.length - 1) { ev.preventDefault(); f[0].focus(); }
+        return;
+      }
+      if (!ev.target.matches('.cp-sw')) return;
+      const sws = $$('.cp-sw', cpPop), i = sws.indexOf(ev.target);
+      const j = { ArrowRight: i + 1, ArrowDown: i + 1, ArrowLeft: i - 1, ArrowUp: i - 1, Home: 0, End: sws.length - 1 }[ev.key];
+      if (j != null && sws[j]) { ev.preventDefault(); sws[j].focus(); }
+    });
+    hx.focus(); hx.select();
+  }
+  $('#inspector').addEventListener('click', ev => {
+    if (ev.target.closest('.sw-custom')) cpPop ? cpClose(false) : cpOpen();
+  });
+  document.addEventListener('pointerdown', ev => { if (cpPop && !cpPop.contains(ev.target) && !ev.target.closest('.sw-custom')) cpClose(false); });
+  addEventListener('resize', cpPlace);
+  $('#inspector').addEventListener('scroll', cpPlace);
   const typeOptions = cur => categories().map(cat => {
     const ts = Object.entries(C.types).filter(([, t]) => (t.category || 'Otros') === cat);
     return ts.length ? `<optgroup label="${esc(I.category(cat))}">${ts.map(([k, t]) => `<option value="${k}"${k === cur ? ' selected' : ''}>${esc(loc(t.label))}</option>`).join('')}</optgroup>` : '';
@@ -2291,7 +2447,7 @@
     changed(true);
     renderInspector();
   }
-  const head = (c, iconHtml, kicker, title, isLogo) => `<div class="insp-head" style="--c:${c}">
+  const head = (c, iconHtml, kicker, title, isLogo) => `<div class="insp-head" style="--c:${esc(c)}">
       ${iconHtml ? `<span class="insp-icon${isLogo ? ' logo' : ''}">${iconHtml}</span>` : ''}
       <div class="insp-hgroup"><div class="insp-kicker">${esc(kicker)}</div><div class="insp-title">${esc(title)}</div></div>
       <button class="icon-btn" data-act="close" aria-label="${esc(T('insp.close'))}">${ICON.x}</button></div>`;
@@ -3142,7 +3298,7 @@
      Cada exportador recibe una copia del diagrama y este contexto, y devuelve { text, ext, mime }. */
   const hexOf = k => {
     const pal = C.palettes[S.palette]?.light || {}, key = COLOR_ALIAS[k] || k;
-    return pal[key] || (/^#[0-9a-f]{3,8}$/i.test(k || '') ? k : null);
+    return pal[key] || normHex(k);  // los exportadores esperan #RRGGBB
   };
   function exportCtx() {
     const m = S.model, byId = new Map(m.nodes.map(n => [n.id, n]));
