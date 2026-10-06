@@ -1212,6 +1212,36 @@
     return rank;
   }
 
+  /* ---------- rangos de flujo (reproducir y presentar): las conexiones bidireccionales se siguen en los dos sentidos ---------- */
+  // Igual que computeRanks, pero un extremo "from" que solo se alcanza por la vuelta de una conexión "both" pasa a quedar
+  // después de su "to" (que recibe de otros). Sin conexiones "both" devuelve exactamente computeRanks.
+  function flowRanks(m) {
+    const rank = computeRanks(m), bo = m.edges.filter(e => e.both && e.from !== e.to);
+    if (!bo.length) return rank;
+    const es = m.edges.filter(e => e.from !== e.to);
+    const desc = id => { const seen = new Set([id]), q = [id]; while (q.length) { const u = q.pop(); es.forEach(e => { if (e.from === u && !seen.has(e.to)) { seen.add(e.to); q.push(e.to); } }); } return seen; };
+    bo.forEach(e => {
+      const f = e.from, t = e.to;
+      if (es.some(x => x.to === f)) return;                                   // "from" ya recibe de otro: su rango es el normal
+      const down = desc(f);
+      if (!es.some(x => x.to === t && x.from !== f && !down.has(x.from))) return; // "to" solo recibe de "from": no hay vuelta que seguir
+      if (rank.get(f) > rank.get(t)) return;
+      rank.set(f, rank.get(t) + 1);
+      // Lo que cuelga de "from" se retrasa con él (sin tocar los arcos hacia "to": no hay ciclos)
+      const cap = (m.nodes.length + 1) * (es.length + 1);
+      for (let n = 0, ch = true; ch && n < cap; n++) {
+        ch = false;
+        es.forEach(x => { if (x.to !== t && down.has(x.from) && x.from !== x.to && rank.get(x.to) < rank.get(x.from) + 1 && down.has(x.to)) { rank.set(x.to, rank.get(x.from) + 1); ch = true; } });
+      }
+    });
+    return rank;
+  }
+  // ¿La conexión se ilumina en el paso r? Una "both" que llega por su "to" antes que por su "from" se recorre al revés
+  const flowPulse = (e, ranks, r) => {
+    const a = ranks.get(e.from), b = ranks.get(e.to);
+    return e.both && b < a ? b === r : a === r;
+  };
+
   function autoLayout(m) {
     if (m.nodes.some(n => n.group && m.groups.some(g => g.id === n.group))) return groupLayout(m);
     flatLayout(m);
@@ -2072,7 +2102,6 @@
     return [...seen.values()];
   }
   function showLineage(ds) {
-    if (vc().groups === 'collapse-top') { toast(T('ctx.noPath')); return null; }
     const m = S.model, res = lineageOf(m, ds);
     if (!res) { toast(T('lin.unknown', { name: String(ds) })); return null; }
     clearPath();
@@ -2081,14 +2110,31 @@
     const bar = $('#path-bar');
     bar.style.top = S.compare ? '54px' : '';
     bar.hidden = false;
-    res.nodes.forEach(id => {
-      const n = m.nodes.find(x => x.id === id);
-      if (!n || VW.hideNodes.has(id)) return;
-      const g = el('g', { class: `path-badge${res.origins.includes(id) ? ' lin-src' : ''}${res.consumers.includes(id) ? ' lin-dst' : ''}`, 'data-id': id, transform: `translate(${n.x + 2} ${n.y + 2})` }, L.guides);
+    const badge = (key, v, x, y, dist) => {
+      const g = el('g', { class: `path-badge${v.src ? ' lin-src' : ''}${v.dst ? ' lin-dst' : ''}`, [key]: v.id, transform: `translate(${x + 2} ${y + 2})` }, L.guides);
       el('circle', { r: 9 }, g);
-      el('text', {}, g).textContent = res.dist.get(id) + 1;
+      el('text', {}, g).textContent = dist + 1;
+    };
+    // Vista Contexto: los nodos de dentro de una caja cerrada se marcan en la caja (una insignia por caja)
+    const boxOf = new Map(), onBox = new Map(), shown = [];
+    VW.ctxBoxes.forEach((b, gid) => b.ids.forEach(id => boxOf.set(id, gid)));
+    res.nodes.forEach(id => {
+      const n = m.nodes.find(x => x.id === id), gid = boxOf.get(id);
+      if (gid) {
+        const o = onBox.get(gid) || onBox.set(gid, { id: gid, src: false, dst: false, dist: Infinity }).get(gid);
+        o.src ||= res.origins.includes(id); o.dst ||= res.consumers.includes(id); o.dist = Math.min(o.dist, res.dist.get(id));
+        return;
+      }
+      if (!n || VW.hideNodes.has(id)) return;
+      shown.push(id);
+      badge('data-id', { id, src: res.origins.includes(id), dst: res.consumers.includes(id) }, n.x, n.y, res.dist.get(id));
     });
-    fitNodes([...res.nodes]);
+    onBox.forEach((o, gid) => { const c = VW.ctxBoxes.get(gid).card; badge('data-gid', o, c.x, c.y, o.dist); });
+    if (onBox.size) {
+      const rs = [...shown.map(id => { const n = m.nodes.find(x => x.id === id); return { x: n.x, y: n.y, w: R.width.get(id), h: nodeBoxH(n) }; }), ...[...onBox.keys()].map(g => VW.ctxBoxes.get(g).card)];
+      const x0 = Math.min(...rs.map(r => r.x)), y0 = Math.min(...rs.map(r => r.y));
+      fitBox({ x: x0, y: y0, w: Math.max(...rs.map(r => r.x + r.w)) - x0, h: Math.max(...rs.map(r => r.y + r.h)) - y0 });
+    } else fitNodes([...res.nodes]);
     applyHighlight();
     return res;
   }
@@ -3611,7 +3657,7 @@
     if (vc().groups === 'collapse-top') return toast(T('ctx.noPlay'));
     cancelConnect();
     select(null);
-    const ranks = computeRanks(scopeModel()), max = Math.max(0, ...ranks.values());
+    const ranks = flowRanks(scopeModel()), max = Math.max(0, ...ranks.values());
     svg.classList.remove('focusing', 'hovering');
     svg.classList.add('playing');
     $('#btn-play').classList.add('on');
@@ -3623,7 +3669,7 @@
         if (ranks.get(id) === r) g.classList.add('lit');
       });
       R.edges.forEach(o => {
-        const on = ranks.get(o.e.from) === r;
+        const on = flowPulse(o.e, ranks, r);
         o.g.classList.toggle('pulse', on);
         if (on) o.g.classList.add('lit');
       });
@@ -3656,7 +3702,7 @@
     groups.sort((a, b) => depth(a) - depth(b) || pos(a)[0] - pos(b)[0] || pos(a)[1] - pos(b)[1]);
     const over = { kind: 'overview' };
     if (groups.length) return [over, ...groups.map(g => ({ kind: 'group', g })), { kind: 'overview', end: true }];
-    const ranks = computeRanks(m), max = Math.max(0, ...ranks.values());
+    const ranks = flowRanks(m), max = Math.max(0, ...ranks.values());
     if (max < 1) return [over];
     return [over, ...Array.from({ length: max + 1 }, (_, r) => ({ kind: 'step', r, ranks }))];
   }
@@ -3716,7 +3762,8 @@
       gin = new Set(m.groups.filter(g => { let c = g, k = 0; while (c && k++ < 50) { if (c.id === sl.g.id) return true; c = groupById(c.parent); } return false; }).map(g => g.id));
     } else if (sl.kind === 'step') {
       lit = new Set(m.nodes.filter(n => sl.ranks.get(n.id) === sl.r).map(n => n.id));
-      m.edges.forEach(e => { if (lit.has(e.from)) lit.add(e.to); });
+      const base = new Set(lit);
+      m.edges.forEach(e => { if (flowPulse(e, sl.ranks, sl.r)) lit.add(base.has(e.from) ? e.to : e.from); });
     }
     P.sl = { lit, gin };
     presentDim(lit, gin);
