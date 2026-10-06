@@ -633,6 +633,13 @@ window.DiagramonIaC = (() => {
     const isGroup = r => r && ['vpc', 'subnet', 'rg'].includes(r.role);
     const provOf = t => (/^(aws_|AWS::)/.test(t) ? 'aws' : /^azurerm_/.test(t) ? 'azure' : /^google_/.test(t) ? 'gcp' : 'other');
     const region = list.map(r => r.region).find(Boolean) || '';
+    // Icono de grupo (esquina del recuadro) según el papel del recurso y su nube; sin icono oficial no se pone ninguno
+    const groupIcon = (role, prov, pub) => ({
+      cloud: { aws: 'aws/group-cloud' },
+      vpc: { aws: 'aws/group-vpc', azure: 'azure/vnet', gcp: 'gcp/vpc' },
+      subnet: { aws: pub ? 'aws/group-publicsubnet' : 'aws/group-privatesubnet', azure: 'azure/subnet' },
+      rg: { azure: 'azure/group-resourcegroup' }
+    })[role]?.[prov];
 
     /* ---------- grupos ---------- */
     const groups = [], gid = new Map();
@@ -642,7 +649,8 @@ window.DiagramonIaC = (() => {
       if (!provGroup.has(p)) {
         const id = 'cloud-' + p;
         const name = { aws: 'AWS', azure: 'Azure', gcp: 'Google Cloud' }[p];
-        groups.push({ id, label: p === 'aws' && region ? `${name} · ${region}` : name, color: 'melocoton' });
+        const icon = groupIcon('cloud', p);
+        groups.push({ id, label: p === 'aws' && region ? `${name} · ${region}` : name, ...(icon ? { icon } : {}), color: 'melocoton' });
         provGroup.set(p, id);
       }
       return provGroup.get(p);
@@ -655,7 +663,8 @@ window.DiagramonIaC = (() => {
       const id = safeId('g-' + r.key);
       gid.set(r.key, id);
       const label = r.name + (r.cidr ? ` · ${r.cidr}` : '');
-      groups.push({ id, label, color: r.public === true ? 'menta' : r.role === 'subnet' ? 'lavanda' : COLORS[r.role], _r: r });
+      const icon = groupIcon(r.role, provOf(r.type), r.public === true);
+      groups.push({ id, label, ...(icon ? { icon } : {}), color: r.public === true ? 'menta' : r.role === 'subnet' ? 'lavanda' : COLORS[r.role], _r: r });
     });
     groups.forEach(g => {
       const r = g._r;
@@ -680,7 +689,8 @@ window.DiagramonIaC = (() => {
           const vpcs = [...new Set(subnets.map(s => firstRef(s, 'vpc')).filter(Boolean))];
           const id = safeId('g-subnets-' + multi.size);
           const label = subnets.map(s => s.name).join(' + ');
-          groups.push({ id, label, color: subnets.every(s => s.public === true) ? 'menta' : 'lavanda', parent: vpcs.length === 1 ? gid.get(vpcs[0].key) : providerGroup(provOf(r.type)), _subnets: subnets });
+          const icon = groupIcon('subnet', provOf(r.type), subnets.every(s => s.public === true));
+          groups.push({ id, label, ...(icon ? { icon } : {}), color: subnets.every(s => s.public === true) ? 'menta' : 'lavanda', parent: vpcs.length === 1 ? gid.get(vpcs[0].key) : providerGroup(provOf(r.type)), _subnets: subnets });
           multi.set(k, id);
         }
         return multi.get(k);

@@ -18,7 +18,7 @@
 
    Nodo:     id: Nombre [tipo o icono] "detalle" color=… badge=… costo=120/mes desc="…"
              costo: número en USD + /hora, /mes, /año o /3años (sin periodo = mensual)
-   Grupo:    grupo id "Nombre" color=… { … }   (se pueden anidar)
+   Grupo:    grupo id "Nombre" icon=aws/group-vpc color=… { … }   (se pueden anidar; icon = icono de grupo, opcional)
    Conexión: a -> b -> c : etiqueta color=…   (la etiqueta va en la última flecha)
    Datos:    nodo … data=pii,pci · conexión a -> b : SQL data=pii encrypted=yes
    Comentario: líneas que empiezan por # o //
@@ -184,9 +184,11 @@
         const id = m[2];
         if (!ID.test(id)) return err(ln, msg.groupId(id));
         if (groups.has(id)) return err(ln, msg.groupDup(id));
-        const tk = tokens(m[3], ['color']);
+        const tk = tokens(m[3], ['color', 'icon', 'icono']);
         const g = { id, label: tk.quotes[0] ?? (tk.words.join(' ') || id) };
         if (tk.kv.color) g.color = tk.kv.color;
+        const gi = (tk.kv.icon ?? tk.kv.icono)?.trim().toLowerCase();
+        if (gi) { if (ctx.icons[gi] && gi.includes('/')) g.icon = gi; else err(ln, msg.icon(gi)); } // icono de grupo: proveedor/clave
         if (stack.length) g.parent = stack[stack.length - 1];
         groups.add(id);
         model.groups.push(g);
@@ -276,7 +278,7 @@
     };
     const groupIds = new Set(m.groups.map(g => g.id));
     const writeGroup = (g, ind) => {
-      out.push(`${ind}${w.group} ${g.id} ${quote(g.label)}${g.color ? ` color=${bare(g.color)}` : ''} {`);
+      out.push(`${ind}${w.group} ${g.id} ${quote(g.label)}${g.icon ? ` icon=${bare(g.icon)}` : ''}${g.color ? ` color=${bare(g.color)}` : ''} {`);
       m.nodes.filter(n => n.group === g.id).forEach(n => out.push(`${ind}  ${nodeLine(n)}`));
       m.groups.filter(c => c.parent === g.id).forEach(c => writeGroup(c, ind + '  '));
       out.push(`${ind}}`);
