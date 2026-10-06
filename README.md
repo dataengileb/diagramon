@@ -93,6 +93,8 @@ around 290 official cloud icons, and the browser itself blocks every network req
 
 ## 🚀 Get started in 30 seconds
 
+**Just want to try it?** Open the [online demo](https://dataengileb.github.io/diagramon/). It is the same page, served by GitHub Pages: your diagram stays in your browser.
+
 1. **Download** the project: green **Code › Download ZIP** button, or with git:
 
    ```bash
@@ -434,9 +436,9 @@ To keep the spirit of the project:
 
 ## 🙏 Credits
 
-Diagramon is based on [**archify**](https://github.com/tt-a1i/archify) by [@tt-a1i](https://github.com/tt-a1i),
+Diagramon is inspired by [**archify**](https://github.com/tt-a1i/archify) by [@tt-a1i](https://github.com/tt-a1i),
 an agent skill that turns ideas, plans and codebases into interactive diagrams (MIT license).
-Thank you for the idea and the starting point. 💜
+Thank you for the inspiration. 💜
 
 ---
 

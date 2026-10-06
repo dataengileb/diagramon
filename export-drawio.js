@@ -138,14 +138,14 @@
       const color = ctx.color(e);
       const elbow = (e.route || model.routing || ctx.routing) === 'elbow';
       let style = elbow ? 'edgeStyle=orthogonalEdgeStyle;rounded=1;' : 'edgeStyle=orthogonalEdgeStyle;curved=1;';
-      style += `html=1;endArrow=block;endFill=1;strokeColor=${color};fontColor=#333333;fontSize=11;labelBackgroundColor=#FFFFFF;`;
+      style += `html=1;endArrow=block;endFill=1;${e.both ? 'startArrow=block;startFill=1;' : ''}strokeColor=${color};fontColor=#333333;fontSize=11;labelBackgroundColor=#FFFFFF;`;
       if (e.style === 'async') style += 'dashed=1;dashPattern=8 8;strokeWidth=2;';
       else if (e.style === 'data') style += 'strokeWidth=3;';
       else if (e.style === 'optional') style += 'dashed=1;dashPattern=2 6;opacity=70;strokeWidth=2;';
       else style += 'strokeWidth=2;';
 
       const parts = [];
-      if (e.label) parts.push(h(e.label));
+      if (e.label) parts.push(String(e.label).split('\n').map(h).join('<br>'));
       const tags = (e.data || []).map(k => ctx.dataLabel(k).short).filter(Boolean);
       if (tags.length) parts.push(h(tags.join(' · ')));
       let label = parts.join('<br>');

@@ -73,6 +73,7 @@ api ..&gt; cache            ..&gt; optional
 cost=0.1/hour · 120/month · 1400/year · 5000/3years  (USD)
 data=pii,pci      public internal confidential pii pci phi
 encrypted=yes|no  encryption in transit (connections)
+both=yes          arrowhead at both ends (connections)
 line=elbow        one connection with elbows (or curved)
 review db: "DB in a public subnet" by=Ana raised=2026-10-01 due=2026-11-15
                   review finding (status=resolved closed=… when fixed)
@@ -134,7 +135,7 @@ review db: "DB in a public subnet" by=Ana raised=2026-10-01 due=2026-11-15
       'reach.direct': 'Neighbors', 'reach.down': 'Targets', 'reach.up': 'Sources', 'reach.both': 'All',
       'insp.receives': 'Receives from', 'insp.sends': 'Sends to', 'insp.connect': 'Connect',
       'insp.edge': 'Connection', 'insp.label': 'Label', 'insp.label.ph': 'e.g. HTTPS, SQL, events', 'insp.style': 'Style',
-      'insp.ends': 'Endpoints', 'insp.source': 'source', 'insp.target': 'target', 'insp.reverse': 'Reverse',
+      'insp.dir': 'Arrowheads', 'dir.one': 'One way', 'dir.both': 'Both ways', 'leg.both': 'Both directions', 'insp.ends': 'Endpoints', 'insp.source': 'source', 'insp.target': 'target', 'insp.reverse': 'Reverse',
       'insp.groupNote': n => `${plural(n, 'component', 'components')} inside. Drag the group label to move it all.`,
       'insp.parent': 'Inside of', 'insp.deleteGroup': 'Delete group',
 
@@ -168,6 +169,10 @@ review db: "DB in a public subnet" by=Ana raised=2026-10-01 due=2026-11-15
       'ver.cf.apprTitle': n => `${n} open review ${n === 1 ? 'finding' : 'findings'} in this version. Approve anyway?`, 'ver.cf.apprText': 'These findings are still open in its snapshot:', 'ver.cf.apprOk': 'Approve anyway',
       'ver.approvedBy': 'Approved by', 'ver.rejectedBy': 'Rejected by', 'ver.decidedOn': 'Date', 'ver.reason': 'Reason', 'ver.reason.ph': 'Why it was rejected',
       'ver.reasonWarn': 'Add the reason for the rejection', 'ver.history': 'Status history',
+      'ver.clearHist': 'Clear history', 'ver.histCleared': ({ name }) => `Status history of ${name} deleted`,
+      'ver.cf.histTitle': ({ name }) => `Delete the status history of ${name}?`,
+      'ver.cf.histText': ({ name }) => `The status history of ${name} will be deleted. Its current status, who decided and the rejection reason are kept. You can undo it with ⌘Z while the undo history lasts; it cannot be recovered after that.`,
+      'ver.cf.phraseIntro': 'To confirm, type this sentence (pasting is not allowed):', 'ver.cf.phrase': 'I confirm I want to delete the status history', 'ver.cf.noPaste': 'Type the sentence; pasting is not allowed',
       'ver.edge': 'connection', 'ver.group': 'group', 'field.title': 'Title', 'field.badge': 'Badge', 'field.position': 'position',
 
       'data.label': 'Data classification', 'data.edge': 'Data in transit', 'data.none': 'Tag the data it stores or handles.', 'data.noneEdge': 'Tag the data this connection carries.',
@@ -196,7 +201,8 @@ review db: "DB in a public subnet" by=Ana raised=2026-10-01 due=2026-11-15
       'exp.legend': 'Legend and title block', 'exp.author.ph': 'Your name or team', 'exp.legend.note': 'Added at the bottom of SVG and PNG exports.',
       'leg.connections': 'CONNECTIONS', 'leg.components': 'COMPONENTS', 'leg.data': 'DATA', 'leg.document': 'DOCUMENT',
       'leg.encrypted': 'Encrypted in transit', 'leg.unencrypted': 'Not encrypted',
-      'leg.author': 'Author', 'leg.version': 'Version', 'leg.date': 'Date', 'leg.cost': 'Estimated cost', 'leg.made': 'Made with Diagramon'
+      'leg.author': 'Author', 'leg.version': 'Version', 'leg.date': 'Date', 'leg.cost': 'Estimated cost', 'leg.made': 'Made with Diagramon', 'leg.more': n => `+${n} more`,
+      'doc.hide': 'Collapse document card (I)', 'doc.show': 'Show document card (I)'
     },
 
     es: {
@@ -257,6 +263,7 @@ api ..&gt; cache            ..&gt; opcional
 costo=0.1/hora · 120/mes · 1400/año · 5000/3años  (USD)
 datos=pii,pci     public internal confidential pii pci phi
 cifrado=sí|no     cifrado en tránsito (conexiones)
+ambos=sí          punta de flecha en ambos extremos
 línea=codo        una conexión en ángulo recto (o curva)
 revisión db: "BD en subred pública" por=Ana levantada=2026-10-01 compromiso=2026-11-15
                   observación (estado=resuelta cerrada=… al corregirla)
@@ -318,7 +325,7 @@ revisión db: "BD en subred pública" por=Ana levantada=2026-10-01 compromiso=20
       'reach.direct': 'Vecinos', 'reach.down': 'Destinos', 'reach.up': 'Orígenes', 'reach.both': 'Todo',
       'insp.receives': 'Recibe de', 'insp.sends': 'Envía a', 'insp.connect': 'Conectar',
       'insp.edge': 'Conexión', 'insp.label': 'Etiqueta', 'insp.label.ph': 'p. ej. HTTPS, SQL, eventos', 'insp.style': 'Estilo',
-      'insp.ends': 'Extremos', 'insp.source': 'origen', 'insp.target': 'destino', 'insp.reverse': 'Invertir',
+      'insp.dir': 'Puntas de flecha', 'dir.one': 'Un sentido', 'dir.both': 'Ambos sentidos', 'leg.both': 'Ambos sentidos', 'insp.ends': 'Extremos', 'insp.source': 'origen', 'insp.target': 'destino', 'insp.reverse': 'Invertir',
       'insp.groupNote': n => `${plural(n, 'componente', 'componentes')} dentro. Arrastra la etiqueta del grupo para moverlo entero.`,
       'insp.parent': 'Dentro de', 'insp.deleteGroup': 'Eliminar grupo',
 
@@ -352,6 +359,10 @@ revisión db: "BD en subred pública" por=Ana levantada=2026-10-01 compromiso=20
       'ver.cf.apprTitle': n => `${n} ${n === 1 ? 'observación de revisión abierta' : 'observaciones de revisión abiertas'} en esta versión. ¿Aprobar de todos modos?`, 'ver.cf.apprText': 'Estas observaciones siguen abiertas en su foto:', 'ver.cf.apprOk': 'Aprobar igualmente',
       'ver.approvedBy': 'Aprobado por', 'ver.rejectedBy': 'Rechazado por', 'ver.decidedOn': 'Fecha', 'ver.reason': 'Motivo', 'ver.reason.ph': 'Por qué se rechazó',
       'ver.reasonWarn': 'Añade el motivo del rechazo', 'ver.history': 'Historial de estados',
+      'ver.clearHist': 'Borrar historial', 'ver.histCleared': ({ name }) => `Historial de estados de ${name} eliminado`,
+      'ver.cf.histTitle': ({ name }) => `¿Eliminar el historial de estados de ${name}?`,
+      'ver.cf.histText': ({ name }) => `Se eliminará el historial de estados de ${name}. Se conservan su estado actual, quién decidió y el motivo del rechazo. Puedes deshacerlo con ⌘Z mientras dure el historial de deshacer; después no se puede recuperar.`,
+      'ver.cf.phraseIntro': 'Para confirmar, escribe esta frase (no se permite pegar):', 'ver.cf.phrase': 'confirmo que quiero eliminar el historial de estados', 'ver.cf.noPaste': 'Escribe la frase; no se permite pegar',
       'ver.edge': 'conexión', 'ver.group': 'grupo', 'field.title': 'Título', 'field.badge': 'Insignia', 'field.position': 'posición',
 
       'data.label': 'Clasificación de datos', 'data.edge': 'Datos en tránsito', 'data.none': 'Marca los datos que guarda o maneja.', 'data.noneEdge': 'Marca los datos que viajan por esta conexión.',
@@ -380,7 +391,8 @@ revisión db: "BD en subred pública" por=Ana levantada=2026-10-01 compromiso=20
       'exp.legend': 'Leyenda y cajetín', 'exp.author.ph': 'Tu nombre o equipo', 'exp.legend.note': 'Se añade abajo en las exportaciones SVG y PNG.',
       'leg.connections': 'CONEXIONES', 'leg.components': 'COMPONENTES', 'leg.data': 'DATOS', 'leg.document': 'DOCUMENTO',
       'leg.encrypted': 'Cifrado en tránsito', 'leg.unencrypted': 'Sin cifrar',
-      'leg.author': 'Autor', 'leg.version': 'Versión', 'leg.date': 'Fecha', 'leg.cost': 'Costo estimado', 'leg.made': 'Hecho con Diagramon'
+      'leg.author': 'Autor', 'leg.version': 'Versión', 'leg.date': 'Fecha', 'leg.cost': 'Costo estimado', 'leg.made': 'Hecho con Diagramon', 'leg.more': n => `+${n} más`,
+      'doc.hide': 'Contraer la ficha del documento (I)', 'doc.show': 'Mostrar la ficha del documento (I)'
     }
   };
 
