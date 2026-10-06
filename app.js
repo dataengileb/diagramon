@@ -4463,6 +4463,7 @@
     $$('.pane').forEach(p => p.classList.toggle('on', p.dataset.pane === t.dataset.tab));
     store.set('tab', t.dataset.tab);
     if (t.dataset.tab === 'review') renderFindings();
+    else if (t.dataset.tab === 'adr') renderAdr(true);
   }));
 
   function codeBox(box, apply) {
