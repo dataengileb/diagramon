@@ -2575,7 +2575,9 @@
       if (list.length > shown.length) more.push({ s, k: list.length - shown.length, y: top + shown.length * ROW });
     });
     const target = id => { const n = id && inner.has(id) && !VW.hideNodes.has(id) ? byId.get(id) : null; return n ? { x: n.x, y: n.y, w: R.width.get(n.id) || nodeWidth(n), h: H } : fr; };
-    const labelBoxes = [...rects.values()].map(r => ({ x0: r.x - 4, x1: r.x + r.w + 4, y0: r.y - 4, y1: r.y + r.h + 4 })); // etiquetas ya colocadas y tarjetas fantasma
+    // Tarjetas fantasma y etiquetas ya colocadas: cada etiqueta busca el hueco que menos las pisa
+    const cards = [...rects.values()].map(r => ({ x0: r.x - 4, x1: r.x + r.w + 4, y0: r.y - 4, y1: r.y + r.h + 4 })), labelBoxes = [];
+    const over = (a, b) => Math.max(0, Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0)) * Math.max(0, Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0));
     links.forEach(l => {
       const gr = rects.get(l.gid);
       if (!gr || collapse) return;
@@ -2584,18 +2586,14 @@
       const g = el('g', { class: 'xs-edge' }, L.scope), line = el('path', { class: 'xs-edge-line', d }, g);
       el('path', { class: 'xs-edge-arrow', d: arrowD(line, line.getTotalLength(), l.both) }, g);
       if (l.label) {
-        const txt = fitText(String(l.label).split('\n')[0], FONT.edge, 150), len = line.getTotalLength(), w = Math.ceil(textW(txt, FONT.edge)) + 10, hit = (a, b) => a.x0 < b.x1 && a.x1 > b.x0 && a.y0 < b.y1 && a.y1 > b.y0;
+        const txt = fitText(String(l.label).split('\n')[0], FONT.edge, 150), len = line.getTotalLength(), w = Math.ceil(textW(txt, FONT.edge)) + 10;
         const boxAt = (p, dy = 0) => ({ x0: p.x - w / 2, x1: p.x + w / 2, y0: p.y - 15 + dy, y1: p.y + 4 + dy });
-        let pos = null, p;
-        for (const t of [0.5, 0.35, 0.65, 0.25, 0.75, 0.18, 0.82]) { // se prueban posiciones a lo largo de la línea y se toma la primera libre
-          p = line.getPointAtLength(len * t);
-          if (!labelBoxes.some(b => hit(boxAt(p), b))) { pos = { x: p.x, y: p.y }; break; }
-        }
-        if (!pos) { // sin hueco: punto medio, desplazado en vertical hasta quedar libre (o lo menos solapado)
-          p = line.getPointAtLength(len / 2);
-          let dy = 0;
-          for (const k of [1, -1, 2, -2, 3, -3, 4, -4]) { if (!labelBoxes.some(b => hit(boxAt(p, k * 15), b))) { dy = k * 15; break; } }
-          pos = { x: p.x, y: p.y + dy };
+        // Posiciones a lo largo de la línea y desplazadas en vertical; gana la de menor solape (pisar otra etiqueta pesa más que pisar una tarjeta)
+        let pos = null, best = Infinity;
+        for (const dy of [0, -15, 15, -30, 30, -45, 45]) for (const f of [0.5, 0.35, 0.65, 0.25, 0.75, 0.18, 0.82]) {
+          const p = line.getPointAtLength(len * f), bx = boxAt(p, dy);
+          const sc = labelBoxes.reduce((a, o) => a + 4 * over(bx, o), 0) + cards.reduce((a, o) => a + over(bx, o), 0) + Math.abs(dy) * 0.5 + Math.abs(f - 0.5) * 20;
+          if (sc < best) { best = sc; pos = { x: p.x, y: p.y + dy }; }
         }
         labelBoxes.push(boxAt(pos));
         el('text', { class: 'xs-edge-label', x: pos.x, y: pos.y - 4 }, g).textContent = txt;
