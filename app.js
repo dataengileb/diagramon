@@ -2172,7 +2172,7 @@
     const c = viewCounts(), parts = c.ctx != null ? [T('view.pill.ctx', c.ctx)] : [c.hidden && T('view.pill.hidden', c.hidden), c.dim && T('view.pill.dim', c.dim)].filter(Boolean);
     const lbl = `${T('view.pill')}: ${name}${parts.length ? ` · ${parts.join(' · ')}` : ''}`;
     viewPill.title = c.ctx != null ? '' : T('view.pill.tip', { hidden: c.hidden, dim: c.dim });
-    viewPill.innerHTML = `<svg class="vi" viewBox="0 0 24 24" aria-hidden="true">${viewIcon(key)}</svg><span>${esc(lbl)}</span><button class="icon-btn" data-view-back title="${esc(T('view.back'))}" aria-label="${esc(T('view.back'))}"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>`;
+    viewPill.innerHTML = `<svg class="vi" viewBox="0 0 24 24" aria-hidden="true">${viewIcon(key)}</svg><span>${esc(lbl)}</span>${vc().emphasis === 'cost' ? `<button class="btn small cst-open" data-cst-open title="${esc(T('cst.open.tip'))}">${esc(T('cst.open'))}</button>` : ''}<button class="icon-btn" data-view-back title="${esc(T('view.back'))}" aria-label="${esc(T('view.back'))}"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>`;
   }
   viewPill.addEventListener('click', ev => { if (ev.target.closest('[data-view-back]')) setView('full'); });
   const optList = () => [...viewList.querySelectorAll('.vopt')];
@@ -2862,6 +2862,7 @@
     // Leyenda compacta de la vista (solo si aporta algo): niveles, escala de calor, grupos visibles
     const vrows = ex ? [...ex.conn.map(r => `<li class="sw" style="--c:${esc(r.lock ? 'var(--muted)' : sw(r.color))}"><i></i>${esc(r.label)}</li>`),
       ...(ex.heat ? [`<li><i class="heat" style="background:linear-gradient(90deg,${esc(ex.heat.stops.join(','))})"></i>${esc(`${ex.heat.min} – ${ex.heat.max}`)}</li>`, `<li>${esc(`${T('leg.total')}: ${ex.heat.total}`)}</li>`] : []),
+      ...(ex.costBy || []).map(o => `<li style="--c:var(--muted)"><i></i>${esc(`${o.label} · ${o.value}`)}</li>`),
       ...(ex.owners || []).map(o => `<li style="--c:${esc(o.color)}"><i></i>${esc(o.label)} <small>(${o.n})</small></li>`),
       ...(ex.groups ? [`<li class="sw" style="--c:var(--muted)"><i></i>${esc(ex.groups)}</li>`] : [])] : [];
     // Conjuntos de datos del diagrama: cada fila es un botón que muestra su linaje
@@ -3710,7 +3711,7 @@
     drawGhosts();
     const bar = $('#compare-bar');
     bar.style.setProperty('--c', verColor(v));
-    $('#compare-text').innerHTML = `${T('ver.comparing', { name: esc(verLabel(v)) })} · ${d.count.a + d.count.r + d.count.c ? esc(T('ver.summary', d.count)) : esc(T('ver.same'))}`;
+    $('#compare-text').innerHTML = `${T('ver.comparing', { name: esc(verLabel(v)) })} · ${d.count.a + d.count.r + d.count.c ? esc(T('ver.summary', d.count)) : esc(T('ver.same'))}${cstVerLine(base, S.model) ? ` · ${esc(cstVerLine(base, S.model))}` : ''}`;
   }
   function drawGhosts() {
     L.ghosts.textContent = '';
@@ -3774,6 +3775,7 @@
           <button class="btn small" data-ver="open" title="${esc(T('ver.openTip'))}">${T('ver.open')}</button>
           <button class="btn small${cmp ? ' on' : ''}" data-ver="compare" title="${esc(T('ver.compareTip'))}">${T(cmp ? 'ver.stop' : 'ver.compare')}</button>
           ${v.kind === 'env' ? `<button class="btn small" data-ver="update" title="${esc(T('ver.saveHereTip'))}">${T('ver.saveHere')}</button>` : ''}
+          <button class="btn small" data-cst-cmp title="${esc(T('cst.compareCosts.tip'))}">${T('cst.compareCosts')}</button>
           <button class="btn small" data-adr="newver" title="${esc(T('adr.newForVer'))}" aria-label="${esc(T('adr.newForVer'))}">+ ADR</button>
         </div>
       </div>`;
@@ -3822,7 +3824,8 @@
     d.edges.added.forEach(e => rows.push(['add', edgeName(e), T('ver.edge')]));
     d.edges.changed.forEach(c => rows.push(['chg', edgeName(c.item), `${T('ver.edge')}: ${fields(c.fields, 'edge')}`]));
     d.edges.removed.forEach(e => rows.push(['del', edgeName(e), T('ver.edge')]));
-    return `<p class="ver-sum">${esc(T('ver.summary', d.count))}</p><ul class="diff-list">${rows.map(([k, name, extra, id]) =>
+    const cl = cstVerLine(S.compare.base, S.model);
+    return `<p class="ver-sum">${esc(T('ver.summary', d.count))}</p>${cl ? `<p class="ver-sum cst-vline">${esc(cl)}</p>` : ''}<ul class="diff-list">${rows.map(([k, name, extra, id]) =>
       `<li class="d-${k}"${id ? ` data-goto="${esc(id)}"` : ''}><i>${k === 'add' ? '+' : k === 'del' ? '−' : '~'}</i><span title="${esc(name)}">${esc(name)}</span>${extra ? `<em title="${esc(extra)}">${esc(extra)}</em>` : ''}</li>`).join('')}</ul>`;
   }
 
@@ -3903,6 +3906,180 @@
   });
   $('#compare-exit').addEventListener('click', () => compareVersion(null));
   $('#path-exit').addEventListener('click', clearPath);
+
+  /* ---------- costos: desglose por equipo/centro/etc. y escenarios (actual vs propuesto) ---------- */
+  const CST_BY = ['team', 'costCenter', 'owner', 'group', 'type', 'provider', 'region', 'layer'];
+  // { key, label, monthly, nodes: [ids], unassigned?, filter? } por cada valor de `by`; solo cuentan los nodos con costo. `filter` = ficha equivalente del filtro del lienzo
+  function costBreakdown(m = S.model, by = 'team') {
+    if (!CST_BY.includes(by)) by = 'team';
+    const gm = new Map(m.groups.map(g => [g.id, g]));
+    const top = n => { let g = gm.get(n.group), i = 0; while (g && gm.has(g.parent) && i++ < 50) g = gm.get(g.parent); return g || null; };
+    const lay = n => { if (DL[n.layer]) return n.layer; let g = gm.get(n.group), i = 0; while (g && i++ < 50) { if (DL[g.layer]) return g.layer; g = gm.get(g.parent); } return null; };
+    const NONE = { team: '@none', owner: '@none', region: '@none', layer: '@none' };
+    const keyOf = n => {
+      if (GOV_FIELDS.includes(by)) { const v = govOf(n, by, m).value; return v ? { key: v, label: v, filter: v } : null; }
+      if (by === 'group') { const g = top(n); return g ? { key: g.id, label: g.label, filter: g.id } : null; }
+      if (by === 'type') { const t = C.types[n.type] ? n.type : 'generic'; return { key: t, label: typeLabel(t) }; }
+      if (by === 'provider') { const p = providerOf(n); return { key: p, label: p === 'generic' ? T('flt.generic') : ICONS[p].label, filter: p }; }
+      if (by === 'region') { const r = regionOf(n, m).value; return r ? { key: r, label: regionLabel(r), filter: jurOf(r)?.key || '@none' } : null; }
+      const l = lay(n); return l ? { key: l, label: layerInfo(l).label, filter: l } : null;
+    };
+    const map = new Map();
+    m.nodes.filter(hasCost).forEach(n => {
+      const k = keyOf(n) || { key: '@none', label: T('cst.unassigned'), unassigned: true, filter: NONE[by] };
+      if (!map.has(k.key)) map.set(k.key, { key: k.key, label: k.label, monthly: 0, nodes: [], ...(k.unassigned ? { unassigned: true } : {}), ...(k.filter ? { filter: { [by]: [k.filter] } } : {}) });
+      const r = map.get(k.key);
+      r.monthly += perMonth(n);
+      r.nodes.push(n.id);
+    });
+    return [...map.values()].sort((a, b) => b.monthly - a.monthly || a.label.localeCompare(b.label));
+  }
+  // Origen de una comparación: null = lienzo; id = foto de una versión (copia normalizada, el lienzo no se toca)
+  function cstSource(id) {
+    if (id) { const v = findVersion(id); return v?.diagram ? { id, label: `${verLabel(v)} · ${T(`ver.st.${v.status}`)}`, m: prepared(v) } : null; }
+    return { id: null, label: T('cst.canvas'), m: S.model };
+  }
+  const cstSame = (a, b) => Math.abs(a - b) < 0.005;
+  function cstCompare(A, B) {
+    const am = new Map(A.m.nodes.map(n => [n.id, n])), bm = new Map(B.m.nodes.map(n => [n.id, n]));
+    const val = n => (n && hasCost(n) ? perMonth(n) : 0);
+    const rows = [...new Set([...am.keys(), ...bm.keys()])].filter(id => hasCost(am.get(id) || {}) || hasCost(bm.get(id) || {})).map(id => {
+      const a = val(am.get(id)), b = val(bm.get(id));
+      return { id, label: (bm.get(id) || am.get(id)).label, a, b, delta: b - a, status: !am.has(id) ? 'added' : !bm.has(id) ? 'removed' : cstSame(a, b) ? 'same' : 'changed' };
+    });
+    const ma = monthlyTotal(A.m.nodes), mb = monthlyTotal(B.m.nodes);
+    return { a: { label: A.label, monthly: ma }, b: { label: B.label, monthly: mb }, delta: mb - ma, deltaPct: ma ? (mb - ma) / ma * 100 : null, rows };
+  }
+  // Cambio por clave de agrupación entre dos orígenes: [{ key, label, a, b, delta }] por |delta|
+  function cstDeltaBy(A, B, by) {
+    const out = new Map();
+    [[A, 'a'], [B, 'b']].forEach(([s, f]) => costBreakdown(s.m, by).forEach(r => {
+      if (!out.has(r.key)) out.set(r.key, { key: r.key, label: r.label, a: 0, b: 0, ...(r.unassigned ? { unassigned: true } : {}) });
+      out.get(r.key)[f] += r.monthly;
+    }));
+    return [...out.values()].map(r => ({ ...r, delta: r.b - r.a })).sort((x, y) => Math.abs(y.delta) - Math.abs(x.delta) || x.label.localeCompare(y.label));
+  }
+  const cstMoney = v => money(round2(v));
+  const cstDelta = v => (cstSame(v, 0) ? cstMoney(0) : `${v > 0 ? '+' : '−'}${cstMoney(Math.abs(v))}`);
+  const cstPct = (a, d) => (a ? `${d > 0 ? '+' : d < 0 ? '−' : ''}${(Math.abs(d) / a * 100).toFixed(1)}%` : '—');
+  // «Costo: $A → $B (Δ)» para el resumen de la comparación con una versión ('' si ninguno de los dos tiene costo)
+  const cstVerLine = (a, b) => {
+    const ca = monthlyTotal(a.nodes), cb = monthlyTotal(b.nodes);
+    return a.nodes.some(hasCost) || b.nodes.some(hasCost) ? T('cst.verCost', { a: `${cstMoney(ca)}${T('cost.mo')}`, b: `${cstMoney(cb)}${T('cost.mo')}`, d: `${cstDelta(cb - ca)}${T('cost.mo')}` }) : '';
+  };
+  const cstCSV = rows => '﻿' + rows.map(r => r.map(v => (typeof v === 'number' ? String(v) : csvCell(v))).join(',')).join('\r\n');
+  let cstClose = null;
+  function openCosts(tab = 'breakdown', opts = {}) {
+    if (!S.model) return;
+    cstClose?.();
+    const prev = document.activeElement, back = document.createElement('div'), id = `cs${Date.now()}`;
+    const vers = () => S.model.versions.slice().sort((a, b) => String(b.savedAt || b.updated || b.created || '').localeCompare(String(a.savedAt || a.updated || a.created || '')) || (b.n || 0) - (a.n || 0));
+    const vs0 = vers(), defA = (vs0.find(v => v.status === 'approved') || vs0[0])?.id || null;
+    const st = { tab: tab === 'compare' ? 'compare' : 'breakdown', by: CST_BY.includes(opts.by) ? opts.by : 'team', a: opts.a !== undefined ? opts.a : defA, b: opts.b !== undefined ? opts.b : null, only: false, sort: 'delta', dir: -1 };
+    let cur = [], cmp = null;
+    const byOpts = () => CST_BY.map(k => `<option value="${k}"${k === st.by ? ' selected' : ''}>${esc(T(`cst.by.${k}`))}</option>`).join('');
+    back.className = 'cf-back';
+    back.innerHTML = `<div class="cf cm cst" role="dialog" aria-modal="true" aria-labelledby="${id}t">
+      <div class="cm-head"><h3 id="${id}t">${esc(T('cst.title'))}</h3>
+        <div class="cst-tabs" role="tablist">${['breakdown', 'compare'].map(k => `<button class="btn small" role="tab" data-cst-tab="${k}">${esc(T(`cst.tab.${k}`))}</button>`).join('')}</div>
+        <span class="cm-btns"><button class="btn small" data-cst="csv">${esc(T('cst.csv'))}</button><button class="btn small" data-cst="close">${esc(T('cst.close'))}</button></span></div>
+      <div class="cst-pane" data-pane="breakdown"><div class="cst-ctl"><label>${esc(T('cst.groupBy'))}<select data-cst="by"></select></label></div><div class="cm-scroll cst-out"></div></div>
+      <div class="cst-pane" data-pane="compare"><div class="cst-ctl">
+        <label>${esc(T('cst.a'))}<select data-cst="a"></select></label><label>${esc(T('cst.b'))}<select data-cst="b"></select></label>
+        <label>${esc(T('cst.groupBy'))}<select data-cst="by2"></select></label>
+        <label class="cst-chk"><input type="checkbox" data-cst="only">${esc(T('cst.onlyChanges'))}</label>
+        <button class="btn small" data-cst="save">${esc(T('cst.saveProposed'))}</button></div><div class="cm-scroll cst-out"></div></div></div>`;
+    const $q = s => back.querySelector(s), outs = { breakdown: $q('[data-pane="breakdown"] .cst-out'), compare: $q('[data-pane="compare"] .cst-out') };
+    const verOpts = sel => `<option value=""${sel == null ? ' selected' : ''}>${esc(T('cst.canvas'))}</option>${vers().map(v => `<option value="${esc(v.id)}"${v.id === sel ? ' selected' : ''}>${esc(`${verLabel(v)} · ${T(`ver.st.${v.status}`)}`)}</option>`).join('')}`;
+    const fillSelects = () => {
+      if (st.a && !findVersion(st.a)) st.a = null;
+      if (st.b && !findVersion(st.b)) st.b = null;
+      $q('[data-cst="a"]').innerHTML = verOpts(st.a); $q('[data-cst="b"]').innerHTML = verOpts(st.b);
+      $q('[data-cst="by"]').innerHTML = byOpts(); $q('[data-cst="by2"]').innerHTML = byOpts();
+    };
+    const bars = (v, tot) => { const p = tot > 0 ? Math.max(0, Math.min(100, v / tot * 100)) : 0; return `<span class="cst-pct"><span class="cst-bar"><i style="width:${p.toFixed(1)}%"></i></span><b>${p.toFixed(p >= 10 || p === 0 ? 0 : 1)}%</b></span>`; };
+    const drawBreakdown = () => {
+      cur = costBreakdown(S.model, st.by);
+      if (!cur.length) { outs.breakdown.innerHTML = `<p class="cm-empty">${esc(T('cst.empty'))}</p>`; return; }
+      const tot = cur.reduce((s, r) => s + r.monthly, 0), n = cur.reduce((s, r) => s + r.nodes.length, 0);
+      outs.breakdown.innerHTML = `<table class="cst-table"><thead><tr><th>${esc(T(`cst.by.${st.by}`))}</th><th class="num">${esc(T('cst.col.components'))}</th><th class="num">${esc(T('cst.col.monthly'))}</th><th class="num">${esc(T('cst.col.yearly'))}</th><th>${esc(T('cst.col.pct'))}</th></tr></thead><tbody>${cur.map((r, i) =>
+        `<tr${r.filter ? ` class="cst-click" data-i="${i}" title="${esc(T('cst.rowTip'))}"` : ''}><td${r.unassigned ? ' class="cst-un"' : ''}>${r.filter ? `<button class="cst-key" data-i="${i}">${esc(r.label)}</button>` : esc(r.label)}</td><td class="num">${r.nodes.length}</td><td class="num">${esc(cstMoney(r.monthly))}</td><td class="num">${esc(cstMoney(r.monthly * 12))}</td><td>${bars(r.monthly, tot)}</td></tr>`).join('')}</tbody>
+        <tfoot><tr><th>${esc(T('cst.total'))}</th><td class="num">${n}</td><td class="num">${esc(cstMoney(tot))}</td><td class="num">${esc(cstMoney(tot * 12))}</td><td></td></tr></tfoot></table>`;
+    };
+    const drawCompare = () => {
+      if (st.a && !findVersion(st.a)) st.a = null;
+      if (st.b && !findVersion(st.b)) st.b = null;
+      $q('[data-cst="a"]').value = st.a || ''; $q('[data-cst="b"]').value = st.b || '';
+      const A = cstSource(st.a), B = cstSource(st.b), c = cmp = cstCompare(A, B), by = cstDeltaBy(A, B, st.by);
+      const sk = st.sort, key = r => (sk === 'label' ? r.label.toLowerCase() : sk === 'a' ? r.a : sk === 'b' ? r.b : Math.abs(r.delta));
+      const rows = c.rows.filter(r => !st.only || r.status !== 'same').sort((x, y) => (key(x) > key(y) ? 1 : key(x) < key(y) ? -1 : x.label.localeCompare(y.label)) * st.dir * (sk === 'label' ? -1 : 1));
+      cmp.shown = rows; cmp.by = by;
+      const th = (k, label, cls = '') => `<th class="${cls}"><button class="cst-sort${st.sort === k ? ' on' : ''}" data-cst-sort="${k}" aria-label="${esc(T('cst.sortBy', { c: label }))}">${esc(label)}${st.sort === k ? (st.dir < 0 ? ' ↓' : ' ↑') : ''}</button></th>`;
+      const sumRow = (lbl, f) => `<tr><th>${esc(lbl)}</th><td class="num">${esc(cstMoney(c.a.monthly * f))}</td><td class="num">${esc(cstMoney(c.b.monthly * f))}</td><td class="num cst-d">${esc(cstDelta(c.delta * f))}</td><td class="num">${esc(cstPct(c.a.monthly, c.delta))}</td></tr>`;
+      outs.compare.innerHTML = `<table class="cst-table cst-sum"><thead><tr><th></th><th class="num" title="${esc(A.label)}">A</th><th class="num" title="${esc(B.label)}">B</th><th class="num">${esc(T('cst.delta'))}</th><th class="num">%</th></tr></thead><tbody>${sumRow(T('cst.col.monthly'), 1)}${sumRow(T('cst.col.yearly'), 12)}</tbody></table>
+        ${st.a === st.b ? `<p class="cst-note">${esc(T('cst.sameSrc'))}</p>` : ''}${vers().length ? '' : `<p class="cst-note">${esc(T('cst.noVersions'))}</p>`}
+        ${!c.rows.length ? `<p class="cm-empty">${esc(T('cst.empty'))}</p>` : `<table class="cst-table"><thead><tr>${th('label', T('cst.col.component'))}${th('a', 'A', 'num')}${th('b', 'B', 'num')}${th('delta', T('cst.col.delta'), 'num')}<th>${esc(T('cst.col.status'))}</th></tr></thead><tbody>${rows.map(r =>
+          `<tr class="st-${r.status}"><td>${esc(r.label)}</td><td class="num">${esc(cstMoney(r.a))}</td><td class="num">${esc(cstMoney(r.b))}</td><td class="num cst-d">${esc(cstDelta(r.delta))}</td><td><span class="cst-st">${esc(T(`cst.st.${r.status}`))}</span></td></tr>`).join('') || `<tr><td colspan="5" class="cm-empty">${esc(T('cst.noChanges'))}</td></tr>`}</tbody></table>
+        <h4 class="cst-h">${esc(T('cst.deltaBy', { by: T(`cst.by.${st.by}`) }))}</h4>
+        <table class="cst-table"><thead><tr><th>${esc(T(`cst.by.${st.by}`))}</th><th class="num">A</th><th class="num">B</th><th class="num">${esc(T('cst.col.delta'))}</th></tr></thead><tbody>${by.map(r =>
+          `<tr><td${r.unassigned ? ' class="cst-un"' : ''}>${esc(r.label)}</td><td class="num">${esc(cstMoney(r.a))}</td><td class="num">${esc(cstMoney(r.b))}</td><td class="num cst-d">${esc(cstDelta(r.delta))}</td></tr>`).join('')}</tbody></table>`}`;
+    };
+    const show = () => {
+      back.querySelectorAll('[data-pane]').forEach(p => { p.hidden = p.dataset.pane !== st.tab; });
+      back.querySelectorAll('[data-cst-tab]').forEach(b => { const on = b.dataset.cstTab === st.tab; b.classList.toggle('on', on); b.setAttribute('aria-selected', on); });
+      if (st.tab === 'compare') drawCompare(); else drawBreakdown();
+    };
+    const close = () => { document.removeEventListener('keydown', key, true); back.remove(); cstClose = null; prev?.focus?.(); };
+    const key = ev => { if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); close(); } };
+    const exportCsv = () => {
+      if (st.tab === 'breakdown') {
+        if (!cur.length) return;
+        const tot = cur.reduce((s, r) => s + r.monthly, 0);
+        download(cstCSV([[T(`cst.by.${st.by}`), T('cst.col.components'), T('cst.col.monthly'), T('cst.col.yearly'), T('cst.col.pct')], ...cur.map(r => [r.label, r.nodes.length, round2(r.monthly), round2(r.monthly * 12), tot ? round2(r.monthly / tot * 100) : 0]), [T('cst.total'), cur.reduce((s, r) => s + r.nodes.length, 0), round2(tot), round2(tot * 12), 100]]), fileName('csv', 'costs'), 'text/csv;charset=utf-8');
+      } else if (cmp) {
+        download(cstCSV([[T('cst.col.component'), `A: ${cmp.a.label}`, `B: ${cmp.b.label}`, T('cst.col.delta'), T('cst.col.status')], ...cmp.shown.map(r => [r.label, round2(r.a), round2(r.b), round2(r.delta), T(`cst.st.${r.status}`)]),
+          [T('cst.total'), round2(cmp.a.monthly), round2(cmp.b.monthly), round2(cmp.delta), ''], [], [T(`cst.by.${st.by}`), 'A', 'B', T('cst.col.delta')], ...cmp.by.map(r => [r.label, round2(r.a), round2(r.b), round2(r.delta)])]), fileName('csv', 'cost-compare'), 'text/csv;charset=utf-8');
+      }
+    };
+    back.addEventListener('mousedown', ev => { if (ev.target === back) close(); });
+    back.addEventListener('click', async ev => {
+      const t = ev.target.closest('[data-cst-tab]');
+      if (t) { st.tab = t.dataset.cstTab; return show(); }
+      const s = ev.target.closest('[data-cst-sort]');
+      if (s) { const k = s.dataset.cstSort; if (st.sort === k) st.dir = -st.dir; else { st.sort = k; st.dir = -1; } drawCompare(); return back.querySelector(`[data-cst-sort="${k}"]`)?.focus(); }
+      const r = ev.target.closest('tr[data-i]');
+      if (r) { const f = cur[+r.dataset.i]?.filter; if (f) { close(); setFilter(f); } return; }
+      const b = ev.target.closest('[data-cst]');
+      if (!b) return;
+      if (b.dataset.cst === 'close') close();
+      else if (b.dataset.cst === 'csv') exportCsv();
+      else if (b.dataset.cst === 'save') {
+        const keep = S.verNote;
+        S.verNote = T('cst.proposedNote', { date: today() });
+        await saveVersion('version');
+        S.verNote = keep;
+        const v = findVersion(S.model.active);
+        if (v && v.kind === 'version') { if (!v.name) v.name = T('cst.proposed'); versionsChanged(); st.b = v.id; show(); toast(T('cst.proposedSaved'), 2600); }
+      }
+    });
+    back.addEventListener('change', ev => {
+      const k = ev.target.dataset?.cst;
+      if (!k) return;
+      if (k === 'a' || k === 'b') st[k] = ev.target.value || null;
+      else if (k === 'only') st.only = ev.target.checked;
+      else if (k === 'by' || k === 'by2') { st.by = ev.target.value; $q('[data-cst="by"]').value = $q('[data-cst="by2"]').value = st.by; }
+      show();
+    });
+    cstClose = close;
+    document.addEventListener('keydown', key, true);
+    fillSelects();
+    document.body.appendChild(back);
+    show();
+    back.querySelector('[data-cst="close"]').focus();
+  }
+  // Botón «Costos» de la pastilla de la vista Costo y «Comparar costos» de cada versión
+  viewPill.addEventListener('click', ev => { if (ev.target.closest('[data-cst-open]')) openCosts('breakdown'); });
+  versionsBox.addEventListener('click', ev => { const b = ev.target.closest('[data-cst-cmp]'); if (b) openCosts('compare', { a: b.closest('.ver')?.dataset.id || null, b: null }); });
 
   /* ---------- inspector ---------- */
   // Tras la paleta, un botón "+": marcado y con el color cuando el actual no es de la paleta
@@ -4405,9 +4582,10 @@
       const blocked = new Set([t.id]);
       let grew = true;
       while (grew) { grew = false; m.groups.forEach(g => { if (g.parent && blocked.has(g.parent) && !blocked.has(g.id)) { blocked.add(g.id); grew = true; } }); }
-      const count = m.nodes.filter(n => inGroup(n, t.id)).length;
+      const count = m.nodes.filter(n => inGroup(n, t.id)).length, gPriced = m.nodes.filter(n => inGroup(n, t.id) && hasCost(n));
       html = head(colorVar(t.color) || 'var(--muted)', '', T('insp.group'), t.label) + `
         <p class="note">${T('insp.groupNote', count)}</p>
+        ${gPriced.length ? `<p class="cost-sum">${T('cst.groupCost')} <b>≈ ${money(round2(monthlyTotal(gPriced)))}${T('cost.mo')}</b><span>${T('insp.withCost', { a: gPriced.length, b: count })}</span></p>` : ''}
         <label>${T('insp.name')}<input data-field="label" value="${esc(t.label)}"></label>
         ${allIcons().some(i => i.group) ? iconPicker(t, true) : ''}
         <label>${T('gkind.label')}<select data-field="kind"><option value=""${t.kind ? '' : ' selected'}>${esc(T('gkind.auto', { k: T(`gkind.${groupKindAuto(t)}`) }))}</option>${['logical', 'physical'].map(k => `<option value="${k}"${t.kind === k ? ' selected' : ''}>${T(`gkind.${k}`)}</option>`).join('')}</select></label>
@@ -5069,7 +5247,7 @@
     const b = ev.target.closest('[data-export]');
     if (!b) return;
     exportMenu.open = false;
-    const f = { svg: exportSVG, png: exportPNG, 'svg-all': () => exportViews('svg'), 'png-all': () => exportViews('png'), 'svg-levels': () => exportLevels('svg'), 'png-levels': () => exportLevels('png'), json: exportJSON, copy: copyJSON, share: shareEncrypted, stride: exportThreats, compliance: openCompMatrix, report: openReportDialog }[b.dataset.export];
+    const f = { svg: exportSVG, png: exportPNG, 'svg-all': () => exportViews('svg'), 'png-all': () => exportViews('png'), 'svg-levels': () => exportLevels('svg'), 'png-levels': () => exportLevels('png'), json: exportJSON, copy: copyJSON, share: shareEncrypted, stride: exportThreats, compliance: openCompMatrix, report: openReportDialog, costs: () => openCosts('breakdown') }[b.dataset.export];
     if (f) f(); else exportOther(b.dataset.export);
   });
 
@@ -5121,6 +5299,8 @@
     } else if (v.emphasis === 'cost') {
       const vals = m.nodes.filter(hasCost).map(perMonth);
       if (vals.length) r.heat = { min: `${money(round2(Math.min(...vals)))}${T('cost.mo')}`, max: `${money(round2(Math.max(...vals)))}${T('cost.mo')}`, total: `≈ ${money(round2(monthlyTotal(m.nodes)))}${T('cost.mo')}`, stops: VR.costHeat };
+      const teams = costBreakdown(m, 'team').filter(t => !t.unassigned).slice(0, 5);
+      if (teams.length) r.costBy = teams.map(t => ({ label: t.label, value: `${money(round2(t.monthly))}${T('cost.mo')}` }));
     }
     else if (v.emphasis === 'owner') {
       const vis = new Set(visNodes().map(n => n.id));
@@ -5212,6 +5392,8 @@
         textRow(x + lw + BW + 16, y, hc.max);
       } }, { w: textW(tot, '400 12px'), draw: (x, y) => textRow(x, y, tot) }]);
     }
+    // Costo por equipo (vista Costo): los 5 equipos que más cuestan
+    if (ex.costBy?.length) col(T('cst.leg.byTeam'), ex.costBy.map(r => { const txt = fitText(`${r.label} · ${r.value}`, '400 12px', 300); return { w: textW(txt, '400 12px'), draw: (x, y) => textRow(x, y, txt) }; }));
     // Datos
     const used = new Set([...vn, ...es].flatMap(x => x.data || []));
     if (v.dataTags) col(T('leg.data'), dataTags({ data: [...used] }).map(t => ({ w: Math.ceil(textW(t.short, FONT.dtag)) + 20 + textW(t.label, '400 12px'), draw: (x, y) => {
@@ -5641,6 +5823,13 @@
       const cn = m.nodes.filter(hasCost), blocks = [{ k: 'table', head: [repT('h.component'), repT('h.group'), repT('h.price'), repT('h.cost')], rows: [...cn.map(n => [n.label, gpath(n), costText(n), money(round2(perMonth(n)))]), [{ t: repT('total'), tone: 'total' }, '', '', { t: money(round2(monthlyTotal(m.nodes))), tone: 'total' }]] }];
       const gr = m.groups.map(g => ({ g, sum: monthlyTotal(nodesUnder(g, m)), n: nodesUnder(g, m).filter(hasCost).length })).filter(x => x.n);
       if (gr.length) { blocks.push({ k: 'h3', t: repT('h.perGroup') }); blocks.push({ k: 'table', head: [repT('h.group'), repT('h.nodes'), repT('h.cost')], rows: gr.map(x => [[gpath(x.g), x.g.label].filter(Boolean).join(' › '), String(x.n), money(round2(x.sum))]) }); }
+      [['team', 'byTeam', 'gov.team'], ['costCenter', 'byCostCenter', 'gov.costCenter']].forEach(([by, hk, fk]) => {
+        const rs = costBreakdown(m, by);
+        if (!rs.some(x => !x.unassigned)) return;
+        const tot = rs.reduce((s, x) => s + x.monthly, 0);
+        blocks.push({ k: 'h3', t: repT(`h.${hk}`) });
+        blocks.push({ k: 'table', head: [T(fk), repT('h.nodes'), repT('h.cost'), T('cst.col.pct')], rows: rs.map(x => [x.label, String(x.nodes.length), money(round2(x.monthly)), tot ? `${(x.monthly / tot * 100).toFixed(1)}%` : '']) });
+      });
       const per = [...new Set(cn.map(periodOf))];
       blocks.push({ k: 'p', muted: true, t: repT('costNote', { h: COST.hoursPerMonth, p: per.map(p => T(PERIODS[p].label)).join(', ') }) });
       sec('costs', blocks);
@@ -6745,6 +6934,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     lineage: ds => { const r = showLineage(ds); return r ? { origins: [...r.origins], consumers: [...r.consumers], hops: r.hops, nodes: [...r.nodes], edges: [...r.edges] } : null; },
     datasets: () => datasetList().map(d => ({ ...d })),
     saveVersion, openVersion, compareVersion, deleteVersion,
+    costBreakdown: (by = 'team') => costBreakdown(S.model, by), compareCosts: (a = null, b = null) => { const A = cstSource(a || null), B = cstSource(b || null); return A && B ? cstCompare(A, B) : null; }, openCosts,
     setFilter, clearFilter, get filter() { return clone(S.filter); },
     crossBorder: () => { const byId = new Map(S.model.nodes.map(n => [n.id, n])); return S.model.edges.map(e => ({ e, cb: crossBorder(e, byId) })).filter(x => x.cb)
       .map(({ e, cb }) => ({ edge: clone(e), from: cb.from, to: cb.to, fromRegion: cb.from.region, toRegion: cb.to.region, fromJur: cb.from.jur.short, toJur: cb.to.jur.short, classes: [...cb.classes], approved: cb.approved })); },

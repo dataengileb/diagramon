@@ -156,6 +156,17 @@ With several services selected, the panel shows the cost of the selection.
 
 > Diagramon never looks up prices online (privacy first). You type the costs yourself.
 
+#### Breakdown and scenarios
+
+Open **Costs…** from the *Export* menu, or from the **Costs** button in the pill of the **Cost** view (key `7`).
+
+- **Breakdown** tab: group the monthly cost by **Team**, **Cost center**, **Owner**, **Group** (top-level), **Type**, **Provider**, **Region** or **Layer**. Each row shows the components, the monthly and yearly cost (monthly × 12) and its share of the total with a bar. Components without a value go to **Unassigned**. Click a row to filter the canvas by it (not available for *Type*).
+- **Compare scenarios** tab: pick **A** and **B** among the canvas and every saved version. Version snapshots are used as they were saved; the canvas is not touched. You get the totals, the change (amount and %), per month and per year, a table per component (new in green, changed in yellow, removed in red; click a header to sort, *Only changes* hides the unchanged ones) and the change by team, cost center, owner…
+- **Current vs proposed**: save the architecture as it is today as a version (e.g. *Approved*), change the canvas into the proposal and open the dialog: A is the latest approved version and B the canvas. **Save canvas as proposed scenario** saves a version called *Proposed* and selects it as B. In the **Versions** tab, **Compare costs** on any version opens the dialog with that version as A and the canvas as B.
+- **CSV** exports the table that is shown (`<diagram>-costs.csv` or `<diagram>-cost-compare.csv`).
+- The Cost view legend lists the 5 most expensive teams, a group's panel shows the group's monthly total, comparing a version on the canvas adds a *Cost: $A → $B* line, and the architecture report adds *Cost by team* and *Cost by cost center*.
+- From the console: `Diagramon.costBreakdown(by)` returns `[{ key, label, monthly, nodes }]`; `Diagramon.compareCosts(aVersionId, bVersionId)` (`null` = canvas) returns `{ a: { label, monthly }, b: { label, monthly }, delta, deltaPct, rows: [{ id, label, a, b, delta, status }] }`; `Diagramon.openCosts('breakdown' | 'compare')` opens the dialog.
+
 ### 6. Data classification and encryption
 
 1. Select a component. Under **Data classification**, click the tags for the data it stores or handles: **PUB**, **INT**, **CONF**, **PII**, **PCI**, **PHI**. You can pick several.
@@ -613,6 +624,7 @@ Things that work but have not been checked in depth yet. They probably need some
 - **ADR status history (to do)**: a decision keeps only its current status and date. It should record each status change (proposed → accepted → superseded…) with its date and who made it, and show that timeline in the ADR editor, the Markdown export and the architecture report.
 - The compliance catalog is a practical subset of each standard with paraphrased titles; check it before relying on it for an audit.
 - **Architecture report**: the PDF print dialog itself has not been tried yet (HTML and Markdown were checked). The PDF depends on the browser print dialog (page headers and numbers appear only where the browser supports CSS `@page` margin boxes). Markdown viewers that block `data:` images show nothing for the diagrams unless you save the images as separate files. Large diagrams with many views and internal levels can take several seconds. The report has not been checked on very wide tables in print, and the Compliance matrix is listed per control and per component rather than as a grid.
+- **Cost breakdown and scenarios**: the dialog and the *Compare costs* actions were written without being run in the browser yet. Scenarios compare only the monthly-equivalent price of components (not edges or groups), and *Group* groups by the top-level group only. The breakdown is not exported to Mermaid, PlantUML or draw.io.
 - **C4 levels**: entering and leaving levels (`Enter`, `Esc`, `Alt+↑`, breadcrumb), the boundary frame, ghost cards, adding components inside a level, undo, *Export all levels* and the report with internal diagrams were checked in the browser; *Move into…* / *Move up a level*, deleting a component with an internal diagram, double-click on the card vs the name, and Auto layout inside a level have not been tried yet. Ghost edge labels can overlap when several connections leave the boundary close together. *Duplicate* does not copy the internal diagram of a duplicated component, and Mermaid, PlantUML and draw.io export the whole flat model (no levels, `in` and `c4` are ignored). Text tab: nodes without `in=` go to the top level, so edit a level from the Text tab by writing `in=` on its nodes. Ghost cards show at most 8 per side. Elements that cross levels (an edge between two different levels) are only drawn as ghosts, they cannot be selected on the canvas; reach them from the inspector links.
 
 ---

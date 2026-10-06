@@ -950,6 +950,28 @@
   .cm-table tfoot th, .cm-table tfoot td { position: sticky; bottom: 0; z-index: 2; border-top: 1px solid var(--border); font-weight: 700; text-align: center; font-variant-numeric: tabular-nums; }
   .cm-table tfoot th { z-index: 4; text-align: left; }
   .cm-note { margin: 8px 0 0; font-size: 11px; } .cm-empty { margin: 0; padding: 22px; text-align: center; font-size: 12.5px; }
+  /* costos: desglose y escenarios */
+  .cf.cst { width: min(860px, 100%); }
+  .cst-tabs { display: flex; gap: 4px; } .cst-tabs .btn.on { border-color: var(--accent); color: var(--accent); }
+  .cst-pane { display: flex; flex-direction: column; min-height: 0; flex: 1; } .cst-pane[hidden] { display: none; }
+  .cst-ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-bottom: 8px; }
+  .cst-ctl label { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--muted); }
+  .cst-ctl select { height: 28px; max-width: 220px; padding: 0 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface2); color: var(--text); font: 12px var(--font); }
+  .cst-out { padding: 0; } .cst-note { margin: 6px 10px; font-size: 11.5px; } .cst-h { margin: 14px 10px 4px; font-size: 12px; }
+  .cst-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .cst-table th, .cst-table td { padding: 6px 10px; border-bottom: 1px solid var(--border); text-align: left; font-weight: 500; }
+  .cst-table thead th { position: sticky; top: 0; z-index: 1; background: var(--panel); font-size: 10.5px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+  .cst-table .num { text-align: right; font-variant-numeric: tabular-nums; } .cst-table tbody th, .cst-table tfoot th { font-weight: 650; }
+  .cst-table tfoot th, .cst-table tfoot td { font-weight: 700; background: var(--surface2); }
+  .cst-un { font-style: italic; color: var(--muted); } .cst-d { font-weight: 650; }
+  .cst-click { cursor: pointer; } .cst-click:hover { background: var(--surface2); }
+  .cst-key { padding: 0; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; text-align: left; } .cst-key:hover { text-decoration: underline; }
+  .cst-pct { display: flex; align-items: center; gap: 8px; min-width: 130px; } .cst-pct b { width: 38px; text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .cst-bar { flex: 1; height: 8px; border-radius: 4px; background: var(--surface2); overflow: hidden; } .cst-bar i { display: block; height: 100%; border-radius: 4px; background: var(--accent); }
+  .cst-sort { padding: 0; border: 0; background: none; color: inherit; font: inherit; letter-spacing: inherit; text-transform: inherit; cursor: pointer; } .cst-sort.on { color: var(--accent); }
+  .cst-st { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 650; background: color-mix(in srgb, var(--sc, var(--muted)) 22%, transparent); }
+  tr.st-added { --sc: var(--p-menta); } tr.st-changed { --sc: var(--p-limon); } tr.st-removed { --sc: var(--p-coral); } tr.st-same { color: var(--muted); }
+  .cst-vline { color: var(--muted); font-weight: 600; } .view-pill .cst-open { height: 22px; margin-left: 6px; }
   .docbar-leg .heat { width: 70px; height: 8px; border-radius: 4px; border-radius: 4px; }
   .docbar-leg li.sw i { width: 16px; height: 3px; border-radius: 2px; }
   /* Capas del data lake (bronze / silver / gold). Colores por tema; config.js › dataLayers los usa con var(--layer-<clave>) y se pueden cambiar aquí */
@@ -1051,6 +1073,7 @@
           <button data-export="share"><span data-i18n="exp.share"></span> <small data-i18n="exp.share.ext"></small></button>
           <button data-export="compliance"><span data-i18n="exp.compliance"></span> <small data-i18n="exp.compliance.ext"></small></button>
           <button data-export="report"><span data-i18n="exp.report"></span> <small data-i18n="exp.report.ext"></small></button>
+          <button data-export="costs"><span data-i18n="exp.costs"></span> <small data-i18n="exp.costs.ext"></small></button>
           <div class="menu-sep"></div>
           <label class="menu-check"><input type="checkbox" id="exp-legend"><span data-i18n="exp.legend"></span></label>
           <label class="menu-field"><span data-i18n="leg.author"></span><input id="exp-author" autocomplete="off" data-i18n-placeholder="exp.author.ph"></label>

@@ -140,6 +140,17 @@ Con varios servicios elegidos, el panel muestra el costo de la selección.
 
 > Diagramon no consulta precios en internet (por privacidad). Los costos los escribes tú.
 
+#### Desglose y escenarios
+
+Abre **Costos…** desde el menú *Exportar*, o con el botón **Costos** de la pastilla de la vista **Costo** (tecla `7`).
+
+- Pestaña **Desglose**: agrupa el costo mensual por **Equipo**, **Centro de costo**, **Dueño**, **Grupo** (de primer nivel), **Tipo**, **Proveedor**, **Región** o **Capa**. Cada fila muestra los componentes, el costo mensual y anual (mensual × 12) y su parte del total con una barra. Los componentes sin valor van a **Sin asignar**. Un clic en una fila filtra el lienzo por ella (no disponible para *Tipo*).
+- Pestaña **Comparar escenarios**: elige **A** y **B** entre el lienzo y cada versión guardada. Se usan las fotos de las versiones tal como se guardaron; el lienzo no se toca. Verás los totales, el cambio (importe y %), por mes y por año, una tabla por componente (nuevo en verde, cambiado en amarillo, eliminado en rojo; un clic en el encabezado ordena, *Solo cambios* oculta los que no cambian) y el cambio por equipo, centro de costo, dueño…
+- **Actual vs propuesto**: guarda como versión la arquitectura de hoy (p. ej. *Aprobada*), convierte el lienzo en la propuesta y abre el diálogo: A es la última versión aprobada y B el lienzo. **Guardar el lienzo como escenario propuesto** guarda una versión llamada *Propuesto* y la elige como B. En la pestaña **Versiones**, **Comparar costos** en cualquier versión abre el diálogo con esa versión como A y el lienzo como B.
+- **CSV** exporta la tabla que se ve (`<diagrama>-costs.csv` o `<diagrama>-cost-compare.csv`).
+- La leyenda de la vista Costo lista los 5 equipos que más cuestan, el panel de un grupo muestra su total mensual, al comparar una versión en el lienzo se añade una línea *Costo: $A → $B*, y el informe de arquitectura suma *Costo por equipo* y *Costo por centro de costo*.
+- Desde la consola: `Diagramon.costBreakdown(by)` devuelve `[{ key, label, monthly, nodes }]`; `Diagramon.compareCosts(idVersionA, idVersionB)` (`null` = lienzo) devuelve `{ a: { label, monthly }, b: { label, monthly }, delta, deltaPct, rows: [{ id, label, a, b, delta, status }] }`; `Diagramon.openCosts('breakdown' | 'compare')` abre el diálogo.
+
 ### 6. Clasificación de datos y cifrado
 
 1. Selecciona un componente. En **Clasificación de datos**, pulsa las etiquetas de los datos que guarda o maneja: **PUB**, **INT**, **CONF**, **PII**, **PCI**, **PHI**. Puedes elegir varias.
@@ -598,6 +609,7 @@ Cosas que funcionan pero aún no se han revisado a fondo. Probablemente necesite
 - El catálogo de cumplimiento es un subconjunto práctico de cada norma con títulos parafraseados; revísalo antes de usarlo en una auditoría.
 - **Informe de arquitectura**: aún no se ha probado el diálogo de impresión a PDF (sí el HTML y el Markdown). El PDF depende del diálogo de impresión del navegador (los encabezados y números de página solo salen donde el navegador admite los márgenes `@page` de CSS). Los visores de Markdown que bloquean imágenes `data:` no muestran los diagramas salvo que guardes las imágenes aparte. Los diagramas grandes con muchas vistas y niveles internos pueden tardar unos segundos. No se han revisado tablas muy anchas al imprimir, y la matriz de cumplimiento se lista por control y por componente, no como cuadrícula.
 - **Niveles C4**: se probaron en el navegador entrar y salir de niveles (`Intro`, `Esc`, `Alt+↑`, ruta de navegación), el marco de límite, las tarjetas fantasma, añadir componentes dentro de un nivel, deshacer, *Exportar todos los niveles* y el informe con diagramas internos; falta probar *Mover dentro de…* / *Subir un nivel*, borrar un componente con diagrama interno, doble clic en la tarjeta frente al nombre y el orden automático dentro de un nivel. Las etiquetas de las conexiones fantasma pueden solaparse cuando varias salen del límite muy juntas. *Duplicar* no copia el diagrama interno de un componente duplicado, y Mermaid, PlantUML y draw.io exportan el modelo plano completo (sin niveles; `in` y `c4` se ignoran). Pestaña Texto: los nodos sin `dentro=` van al nivel superior, así que para editar un nivel desde la pestaña Texto escribe `dentro=` en sus nodos. Las tarjetas fantasma son como máximo 8 por lado. Lo que cruza niveles (una conexión entre dos niveles distintos) solo se dibuja como fantasma y no se puede seleccionar en el lienzo; llega a ello desde los enlaces del inspector.
+- **Desglose de costos y escenarios**: el diálogo y las acciones *Comparar costos* se escribieron sin probarlos aún en el navegador. Los escenarios comparan solo el precio mensual equivalente de los componentes (no conexiones ni grupos), y *Grupo* agrupa solo por el grupo de primer nivel. El desglose no se exporta a Mermaid, PlantUML ni draw.io.
 
 ---
 
