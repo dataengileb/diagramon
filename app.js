@@ -44,7 +44,7 @@
   const fontKey = k => FONTS[k] ? k : FONTS[C.fonts.default] ? C.fonts.default : 'system';
 
   /* ---------- vistas: filtros de presentación del mismo modelo (reglas en config.js › views) ---------- */
-  const VIEW_DEFAULTS = { groups: 'all', nodeDetail: 'full', edgeLabels: true, dataTags: true, locks: true, cost: true, zones: true, notes: true, review: true, emphasis: null, legendGroups: false };
+  const VIEW_DEFAULTS = { groups: 'all', nodeDetail: 'full', edgeLabels: true, dataTags: true, locks: true, cost: true, zones: true, notes: true, review: true, emphasis: null, legendGroups: false, layers: true };
   const VIEWS = {};
   for (const [k, v] of Object.entries(C.views || {})) if (v && typeof v === 'object') VIEWS[k] = { ...VIEW_DEFAULTS, ...v };
   if (!VIEWS.full) VIEWS.full = { label: { en: 'Full', es: 'Completa' }, ...VIEW_DEFAULTS };
@@ -146,6 +146,106 @@
     const set = new Set(list.map(k => String(k).trim().toLowerCase()).filter(Boolean));
     return [...Object.keys(DATA).filter(k => set.has(k)), ...[...set].filter(k => !DATA[k])];
   };
+
+  /* ---------- residencia y soberanía de datos ---------- */
+  // Región de nodos y grupos (heredada del grupo más cercano) y detección de datos sensibles que cruzan jurisdicciones.
+  // Jurisdicciones y reglas de coincidencia: config.js › residency
+  const RES = C.residency || {}, JURS = RES.jurisdictions || {};
+  const cleanRegion = v => (typeof v === 'string' || typeof v === 'number' ? String(v).trim() : '');
+  const jurCache = new Map();
+  // Jurisdicción de un texto de región → { key, label, short, of } o null si no se conoce
+  const jurOf = region => {
+    const r = cleanRegion(region);
+    if (!r) return null;
+    if (!jurCache.has(r)) {
+      const k = Object.keys(JURS).find(j => { try { return JURS[j].match instanceof RegExp && new RegExp(JURS[j].match.source, 'i').test(r); } catch { return false; } });
+      jurCache.set(r, k ? { key: k, label: loc(JURS[k].label) || k, short: JURS[k].short || k.toUpperCase(), of: loc(JURS[k].of) || loc(JURS[k].label) || k } : null);
+    }
+    return jurCache.get(r);
+  };
+  // Un código de región dentro del nombre de un grupo («Región eu-west-1 (Irlanda)»): solo palabras de 3+ letras para no confundir «es», «it»…
+  const deduceRegion = label => String(label ?? '').split(/[^A-Za-z0-9-]+/).map(w => w.replace(/^-+|-+$/g, '')).find(w => w.length > 2 && jurOf(w));
+  // { value, from }: from = null si es propia; si no { id, label, deduced } del grupo que la aporta. Nodo: su grupo y los de arriba; grupo: él y los de arriba
+  function regionOf(x, m = S.model) {
+    if (!x) return { value: '', from: null };
+    const own = cleanRegion(x.region);
+    if (own) return { value: own, from: null };
+    const isNode = 'type' in x, chain = [];
+    let g = isNode ? x.group : x.parent, i = 0;
+    while (g && i++ < 50) { const gg = m.groups.find(q => q.id === g); if (!gg) break; chain.push(gg); g = gg.parent; }
+    const hit = chain.find(q => cleanRegion(q.region));
+    if (hit) return { value: cleanRegion(hit.region), from: { id: hit.id, label: hit.label, deduced: false } };
+    // Un grupo también puede llamarse como su región
+    const named = (isNode ? chain : [x, ...chain]).map(q => [q, deduceRegion(q.label)]).find(([, r]) => r);
+    return named ? { value: named[1], from: { id: named[0].id, label: named[0].label, deduced: true } } : { value: '', from: null };
+  }
+  const regionLabel = r => { const j = jurOf(r); return j ? `${r} (${j.short})` : r; };
+  // Datos sensibles que viajan por la conexión: los suyos o, sin `data`, los del origen (y del destino si es bidireccional)
+  const sensClasses = (e, get) => {
+    const ks = e.data?.length ? e.data : [...(get(e.from)?.data || []), ...(e.both ? get(e.to)?.data || [] : [])];
+    return [...new Set(ks)].filter(k => DATA[k]?.sensitive).sort((a, b) => Object.keys(DATA).indexOf(a) - Object.keys(DATA).indexOf(b));
+  };
+  // null o { from: {region, jur}, to: {region, jur}, classes, approved }; byId: función o Map
+  function crossBorder(e, byId) {
+    const get = typeof byId === 'function' ? byId : id => byId.get(id);
+    const a = get(e.from), b = get(e.to);
+    if (!a || !b || e.from === e.to) return null;
+    const ra = regionOf(a).value, rb = regionOf(b).value, ja = jurOf(ra), jb = jurOf(rb);
+    if (!ja || !jb) return null;
+    if (ja.key === jb.key && !(RES.warnSameJurisdiction && ra.toLowerCase() !== rb.toLowerCase())) return null;
+    const classes = sensClasses(e, get);
+    if (!classes.length) return null;
+    return { from: { region: ra, jur: ja }, to: { region: rb, jur: jb }, classes, approved: e.transferOk === true };
+  }
+  const isXBorder = (e, byId) => { const c = crossBorder(e, byId); return !!c && !c.approved; };
+  const classShorts = cs => cs.map(k => loc(DATA[k]?.short) || k.toUpperCase());
+  // «⚠ PII leaves the EU → US»
+  const xbWarn = cb => T('res.warn', { cls: classShorts(cb.classes).join(', '), n: cb.classes.length, from: cb.from.jur.of, to: cb.to.jur.label, same: cb.from.jur.key === cb.to.jur.key, fromR: cb.from.region, toR: cb.to.region });
+  /* ---------- capas del data lake (bronze / silver / gold · raw / curated / serving) ---------- */
+  const DL = C.dataLayers || {}, DL_ALIAS = C.layerAliases || {};
+  // Clave válida (acepta alias: raw, plata, oro…) o null
+  const cleanLayer = v => { const k = fold(v).trim(); return DL[k] ? k : DL[DL_ALIAS[k]] ? DL_ALIAS[k] : null; };
+  const layerNaming = () => (S.model?.layerNames === 'zones' ? 'zones' : 'medallion');
+  // Datos de una capa con el nombre elegido por el documento (layerNames): medallion = label, zones = alt
+  const layerInfo = (k, naming = layerNaming()) => {
+    const d = DL[k], z = naming === 'zones';
+    return d ? { k, label: loc(z && d.alt ? d.alt : d.label) || k, short: (z && d.altShort) || d.short || k[0].toUpperCase(), color: colorVar(d.color) || 'var(--muted)' } : null;
+  };
+  // Capa efectiva de un nodo o grupo: la propia o la del grupo más cercano que la tenga. from = id de quien la define
+  function layerOf(x) {
+    if (x && DL[x.layer]) return { value: x.layer, from: x.id };
+    let gid = x && (x.group || x.parent), i = 0;
+    while (gid && i++ < 50) {
+      const o = groupById(gid);
+      if (!o) break;
+      if (DL[o.layer]) return { value: o.layer, from: o.id };
+      gid = o.parent;
+    }
+    return { value: null, from: null };
+  }
+  // Etiqueta con el nombre de una capa (borde de color, texto en mayúsculas); devuelve su ancho
+  function layerPill(parent, x, y, li, h) {
+    const txt = li.label.toUpperCase(), w = Math.ceil(textW(txt, FONT.dtag) + txt.length * 0.4) + 12;
+    const g = el('g', { class: 'layer-pill', style: `--lc:${li.color}` }, parent);
+    el('rect', { x, y, width: w, height: h, rx: h / 2 }, g);
+    el('text', { x: x + w / 2, y: y + h / 2 + 3.4, 'text-anchor': 'middle' }, g).textContent = txt;
+    return w;
+  }
+  const layerPillW = li => Math.ceil(textW(li.label.toUpperCase(), FONT.dtag) + li.label.length * 0.4) + 12;
+  // Franja de color pegada al borde izquierdo de la tarjeta, con la misma curva de las esquinas, y la etiqueta abajo a la izquierda
+  function drawNodeLayer(parent, li) {
+    const r = C.node.radius, bw = 5, dy = r - Math.sqrt(Math.max(0, r * r - (r - bw) * (r - bw)));
+    const g = el('g', { class: 'node-layer', style: `--lc:${li.color}` }, parent);
+    el('path', { class: 'layer-band', d: `M${bw},${dy} A${r},${r} 0 0 0 0,${r} V${H - r} A${r},${r} 0 0 0 ${bw},${H - dy} Z` }, g);
+    layerPill(g, 14, H - 8, li, 16);
+  }
+  // Capas en uso entre los nodos y grupos que se ven: Map clave → ids de nodos (en el orden de config.js)
+  function layerUsage(nodes = visNodes(), groups = S.model.groups.filter(g => !VW.hideGroups.has(g.id))) {
+    const use = new Map(Object.keys(DL).map(k => [k, []]));
+    nodes.forEach(n => { const l = layerOf(n).value; if (l) use.get(l).push(n.id); });
+    const used = new Set(groups.map(g => g.layer).filter(k => DL[k]));
+    return [...use].filter(([k, ids]) => ids.length || used.has(k));
+  }
 
   /* ---------- observaciones de revisión (se levantan a mano en el inspector) ---------- */
   // review: { status: 'open' | 'resolved', note, by, raised, due, closed } con fechas AAAA-MM-DD
@@ -258,6 +358,7 @@
     const m = { title: String(raw.title || T('model.untitled')), groups: [], nodes: [], edges: [] };
     if (raw.direction === 'LR' || raw.direction === 'TB') m.direction = raw.direction;
     if (raw.routing === 'elbow') m.routing = 'elbow';
+    if (raw.layerNames === 'zones') m.layerNames = 'zones';
     if (raw.meta && typeof raw.meta === 'object') {
       const meta = {};
       ['author', 'version'].forEach(k => { if (raw.meta[k] != null && String(raw.meta[k]).trim()) meta[k] = String(raw.meta[k]).trim(); });
@@ -276,6 +377,7 @@
     list(raw.groups).forEach((g, i) => m.groups.push({ ...g, id: take(g.id, 'g', i), label: String(g.label ?? g.id ?? T('model.group')) }));
     const gids = new Set(m.groups.map(g => g.id));
     m.groups.forEach(g => { if (typeof g.icon !== 'string' || !g.icon.includes('/')) delete g.icon; }); // icono opcional 'proveedor/clave'
+    m.groups.forEach(g => { if (cleanRegion(g.region)) g.region = cleanRegion(g.region); else delete g.region; }); // región (residencia de datos)
     m.groups.forEach(g => { // tipo opcional: lógico o físico (sin él se deduce, ver groupKind)
       const k = fold(g.kind);
       if (/^(physical|fisic)/.test(k)) g.kind = 'physical'; else if (/^(logical|logic)/.test(k)) g.kind = 'logical'; else delete g.kind;
@@ -295,6 +397,7 @@
       }
     });
 
+    m.groups.forEach(g => { const l = cleanLayer(g.layer); if (l) g.layer = l; else delete g.layer; });
     list(raw.nodes).forEach((n, i) => {
       const type = C.types[n.type] ? n.type : 'generic';
       const o = { ...n, id: take(n.id, 'n', i), type, label: String(n.label ?? typeLabel(type)) };
@@ -304,8 +407,11 @@
       if (o.costPeriod === 'multi' && Math.round(+o.costYears) >= 1) o.costYears = Math.round(+o.costYears); else delete o.costYears;
       if (cleanData(o.data).length) o.data = cleanData(o.data); else delete o.data;
       if (cleanReview(o.review)) o.review = cleanReview(o.review); else delete o.review;
+      if (cleanRegion(o.region)) o.region = cleanRegion(o.region); else delete o.region;
+      { const l = cleanLayer(o.layer); if (l) o.layer = l; else delete o.layer; }
       m.nodes.push(o);
     });
+    [...m.groups, ...m.nodes].forEach(cleanGov);
     const nids = new Set(m.nodes.map(n => n.id));
     list(raw.edges).forEach((e, i) => {
       const from = String(e.from), to = String(e.to);
@@ -316,6 +422,8 @@
       if (enc === true || enc === false) o.encrypted = enc; else delete o.encrypted;
       if (o.route !== 'curved' && o.route !== 'elbow') delete o.route;
       if (o.both === true || (typeof o.both === 'string' && /^(yes|true|si|sí)$/i.test(o.both))) o.both = true; else delete o.both;
+      const dsl = cleanDatasets(o.datasets); if (dsl.length) o.datasets = dsl; else delete o.datasets;
+      if (o.transferOk === true || (typeof o.transferOk === 'string' && /^(yes|true|ok|si|sí)$/i.test(o.transferOk))) o.transferOk = true; else delete o.transferOk;
       m.edges.push(o);
     });
     m.notes = []; m.zones = [];
@@ -421,6 +529,41 @@
     while (g && i++ < 50) { if (g === gid) return true; g = groupById(g)?.parent; }
     return false;
   }
+  /* ---------- dueños y responsables: dueño, responsable de datos, equipo y centro de costo (heredan del grupo) ---------- */
+  const GOV_FIELDS = ['owner', 'steward', 'team', 'costCenter'];
+  const cleanGov = o => GOV_FIELDS.forEach(f => { const v = o[f] == null ? '' : String(o[f]).trim(); if (v) o[f] = v; else delete o[f]; });
+  // Valor efectivo de un campo: el propio o el del grupo ancestro más cercano que lo tenga ({ value, from: id del grupo | null })
+  function govOf(x, f, m = S.model) {
+    const own = String(x?.[f] ?? '').trim();
+    if (own) return { value: own, from: null };
+    let gid = x?.group || x?.parent, i = 0;
+    while (gid && i++ < 50) {
+      const g = m.groups.find(y => y.id === gid), v = String(g?.[f] ?? '').trim();
+      if (v) return { value: v, from: g.id };
+      gid = g?.parent;
+    }
+    return { value: '', from: null };
+  }
+  const govKey = n => govOf(n, 'team').value || govOf(n, 'owner').value;
+  // Equipos (o dueños, si el nodo no tiene equipo) en orden alfabético; cada uno con un color estable de la paleta
+  function govTeams(m = S.model, ids = null) {
+    // Colores en un orden que alterna tonos lejanos (dos equipos seguidos no quedan casi iguales)
+    const pk = paletteKeys(), keys = [...['cielo', 'melocoton', 'menta', 'lila', 'limon', 'coral', 'lavanda', 'rosa'].filter(k => pk.includes(k)), ...pk.filter(k => !['cielo', 'melocoton', 'menta', 'lila', 'limon', 'coral', 'lavanda', 'rosa'].includes(k))];
+    const by = new Map();
+    m.nodes.forEach(n => {
+      const k = govKey(n);
+      if (!k || (ids && !ids.has(n.id))) return;
+      if (!by.has(k)) by.set(k, { key: k, kind: govOf(n, 'team').value ? 'team' : 'owner', owners: new Set(), ids: [] });
+      const t = by.get(k), o = govOf(n, 'owner').value;
+      if (o && o !== k) t.owners.add(o);
+      t.ids.push(n.id);
+    });
+    const order = [...new Set(m.nodes.map(govKey).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+    by.forEach(t => { t.color = `var(--p-${keys[order.indexOf(t.key) % keys.length]})`; t.owners = [...t.owners].sort((a, b) => a.localeCompare(b)); });
+    return new Map([...by].sort((a, b) => a[0].localeCompare(b[0])));
+  }
+  const govTip = n => GOV_FIELDS.map(f => { const v = govOf(n, f).value; return v ? `${T(`gov.${f}`)}: ${v}` : ''; }).filter(Boolean).join(' · ');
+
   function uniqueId(prefix) {
     const used = new Set([...S.model.nodes, ...S.model.edges, ...S.model.groups, ...S.model.notes, ...S.model.zones].map(x => x.id));
     let i = 1;
@@ -657,11 +800,25 @@
     const label = total ? `${g.label} · ${money(round2(total))}${T('cost.mo')}` : g.label;
     // El CSS añade .04em de espaciado entre letras
     r.tw = Math.ceil(textW(label, FONT.tag) + String(label).length * 0.44 + 22 + ix);
+    // Capa propia del grupo: borde de color y etiqueta junto al nombre (solo si la vista muestra capas)
+    const li = DL[g.layer] && vc().layers ? layerInfo(g.layer) : null, tx = r.tw - 6;
+    r.g.classList.toggle('has-layer', !!li);
+    if (li) { r.g.style.setProperty('--lc', li.color); r.tw += layerPillW(li) + 2; } else r.g.style.removeProperty('--lc');
     el('rect', { width: r.tw, height: 22, rx: 7 }, r.tag);
     if (info) el('image', { href: info.src, x: 6, y: 3, width: 16, height: 16 }, r.tag);
     el('text', { x: 10 + ix, y: 15 }, r.tag).textContent = label;
+    if (li) layerPill(r.tag, tx, 3, li, 16);
   }
 
+  // Nombres de las capas para todo el documento: 'medallion' (Bronce/Plata/Oro) o 'zones' (Crudo/Curado/Consumo)
+  function setLayerNames(v) {
+    v = v === 'zones' ? 'zones' : 'medallion';
+    if (v === layerNaming()) return;
+    pushHistory();
+    if (v === 'zones') S.model.layerNames = 'zones'; else delete S.model.layerNames;
+    changed(true);
+    renderInspector();
+  }
   /* ---------- notas adhesivas y zonas de riesgo ---------- */
   const sevLabel = k => T(`sev.${k}`);
   const itemSel = () => (S.sel?.kind === 'note' || S.sel?.kind === 'zone' ? S.sel : null);
@@ -771,9 +928,23 @@
     const parts = Array.from({ length: cfg.particles ? (e.both ? Math.max(2, cfg.particles) : cfg.particles) : 0 }, () => el('circle', { class: 'particle', r: st === 'data' ? 2.4 : 3, cx: -9999, cy: -9999 }, g));
     const byId = id => S.model.nodes.find(n => n.id === id);
     if (isInsecure(e, byId)) g.classList.add('insecure');
-    const r = { g, e, hit, line, arrow, label: null, parts, len: 0, phase: Math.random() };
+    const r = { g, e, hit, line, arrow, label: null, parts, len: 0, phase: Math.random(), xb: null };
     R.edges.set(e.id, r);
+    if (e.datasets?.length) el('title', null, g).textContent = T('lin.tip', { list: e.datasets.join(', ') });
     edgeLabel(r);
+    edgeDatasets(r);
+    xbMarker(r);
+  }
+  /* ---------- marcador de datos fuera de su jurisdicción (solo se ve en la vista Seguridad) ---------- */
+  // Un globo en el punto medio (rojo) o un ✓ gris si la transferencia está autorizada; se reconstruye con la conexión
+  function xbMarker(r) {
+    const cb = crossBorder(r.e, id => S.model.nodes.find(n => n.id === id));
+    if (!cb) return;
+    const mk = el('g', { class: `edge-xb${cb.approved ? ' ok' : ''}` }, r.g);
+    el('circle', { r: 10 }, mk);
+    if (cb.approved) el('path', { class: 'xb-g', d: 'M-4.5 0.5 -1.5 3.5 4.5 -3' }, mk);
+    else el('path', { class: 'xb-g', d: 'M0 -6a6 6 0 1 0 0 12a6 6 0 1 0 0 -12M-6 0h12M0 -6c-3.5 3.2 -3.5 8.8 0 12M0 -6c3.5 3.2 3.5 8.8 0 12' }, mk);
+    r.xb = mk;
   }
   // Etiqueta: candado de cifrado, texto y clasificaciones de los datos que viajan (según lo que la vista muestre)
   function edgeLabel(r) {
@@ -828,7 +999,9 @@
     if (sub) { paint(true, ' nd-full'); paint(false, ' nd-min'); } else paint(false, '');
     // Arriba a la izquierda: la observación de revisión (si hay) y las clasificaciones de datos
     const dt = [...(n.review ? [{ ...reviewTag(n.review), cls: 'dt-review' }] : []), ...dataTags(n).map(t => ({ ...t, cls: 'dt-data' }))];
-    el('title', null, g).textContent = [n.sub ? `${n.label} · ${n.sub}` : n.label, ...dt.map(t => t.label)].join('\n');
+    const rg = regionOf(n).value;
+    const ly = layerOf(n), li = ly.value ? layerInfo(ly.value) : null;
+    el('title', null, g).textContent = [n.sub ? `${n.label} · ${n.sub}` : n.label, ...dt.map(t => t.label), govTip(n), li ? T('layer.tip', { l: li.label }) : '', rg ? T('res.tip', regionLabel(rg)) : ''].filter(Boolean).join('\n');
     if (dt.length) {
       const dg = el('g', { class: 'node-data' }, b);
       let x = 14;
@@ -840,12 +1013,27 @@
       el('rect', { x: -bw / 2, y: -9, width: bw, height: 18, rx: 9 }, bg);
       el('text', { 'text-anchor': 'middle', y: 4 }, bg).textContent = n.badge;
     }
+    if (rg) { // abajo a la derecha, a caballo del borde (solo en las vistas Seguridad y Física)
+      const j = jurOf(rg), rt = j && j.short.toLowerCase() !== rg.toLowerCase() ? `${j.short} · ${rg}` : rg, rw = Math.min(w - 16, Math.ceil(textW(rt, FONT.cost) + 14));
+      const rgg = el('g', { class: `node-region${j ? ` jur-${j.key}` : ''}`, transform: `translate(${w - rw - 8} ${H - 9})` }, b);
+      el('rect', { width: rw, height: 18, rx: 9 }, rgg);
+      el('text', { x: rw / 2, y: 12.5, 'text-anchor': 'middle' }, rgg).textContent = fitText(rt, FONT.cost, rw - 10);
+    }
     if (hasCost(n)) {
       const ct = costText(n), cw = Math.ceil(textW(ct, FONT.cost) + 20);
       const cg = el('g', { class: 'node-cost', transform: `translate(${(w - cw) / 2} ${H + 6})` }, b);
       el('rect', { width: cw, height: 20, rx: 10 }, cg);
       el('text', { x: cw / 2, y: 14, 'text-anchor': 'middle' }, cg).textContent = ct;
     }
+    // Gobierno: pastilla de equipo (o dueño) bajo el nodo; solo se ve en la vista Gobierno
+    const gt = govOf(n, 'team').value || govOf(n, 'owner').value;
+    if (gt) {
+      const ot = fitText(gt, FONT.cost, w - 20), ow = Math.ceil(textW(ot, FONT.cost) + 20);
+      const og = el('g', { class: 'node-own', transform: `translate(${(w - ow) / 2} ${H + 6})` }, b);
+      el('rect', { width: ow, height: 20, rx: 10 }, og);
+      el('text', { x: ow / 2, y: 14, 'text-anchor': 'middle' }, og).textContent = ot;
+    }
+    if (li) drawNodeLayer(b, li);
     R.nodes.set(n.id, g);
   }
 
@@ -978,9 +1166,14 @@
       r.line.setAttribute('d', d);
       r.len = r.line.getTotalLength();
       r.arrow.setAttribute('d', arrowD(r.line, r.len, e.both));
-      if (r.label) {
+      if (r.label || r.ds) {
         const mp = r.line.getPointAtLength(r.len / 2);
-        r.label.setAttribute('transform', `translate(${mp.x} ${mp.y})`);
+        r.label?.setAttribute('transform', `translate(${mp.x} ${mp.y})`);
+        r.ds?.setAttribute('transform', `translate(${mp.x} ${mp.y})`);
+      }
+      if (r.xb) { // si hay etiqueta, el marcador se corre hacia el origen para no taparla
+        const mp = r.line.getPointAtLength(r.len * (r.label ? 0.3 : 0.5));
+        r.xb.setAttribute('transform', `translate(${mp.x} ${mp.y})`);
       }
     });
 
@@ -1094,6 +1287,129 @@
     $$('.path-badge', L.guides).forEach(x => x.remove());
     applyHighlight();
   }
+  /* ---------- linaje de datos: qué tablas viajan por cada conexión y su ruta de origen a consumo ---------- */
+  // Lista de nombres: admite array o texto separado por comas / punto y coma; recorta, quita vacíos y repetidos
+  function cleanDatasets(v) {
+    const out = [], seen = new Set();
+    (Array.isArray(v) ? v : typeof v === 'string' ? v.split(/[,;]/) : []).forEach(x => {
+      const s = String(x ?? '').trim(), k = s.toLowerCase();
+      if (s && !seen.has(k)) { seen.add(k); out.push(s); }
+    });
+    return out;
+  }
+  const dsKey = s => String(s).trim().toLowerCase();
+  // Conjuntos de datos usados en el diagrama: [{ name, edges }] (primera grafía), por uso y luego alfabético
+  function datasetList(model = S.model) {
+    const map = new Map();
+    model.edges.forEach(e => (e.datasets || []).forEach(d => {
+      const k = dsKey(d), r = map.get(k) || { name: d, edges: 0 };
+      r.edges++; map.set(k, r);
+    }));
+    return [...map.values()].sort((a, b) => b.edges - a.edges || a.name.localeCompare(b.name));
+  }
+  // Subgrafo de las conexiones que llevan ds. Origen = sin entrada; consumo = sin salida. Profundidad = rango más largo desde los orígenes
+  function lineageOf(model, ds) {
+    const k = dsKey(ds), es = model.edges.filter(e => (e.datasets || []).some(d => dsKey(d) === k));
+    if (!es.length) return null;
+    const name = es[0].datasets.find(d => dsKey(d) === k);
+    // Pasos dirigidos u → v (las aristas "both" valen en los dos sentidos)
+    const steps = es.flatMap(e => e.from === e.to ? [] : [[e.from, e.to, e.id], ...(e.both ? [[e.to, e.from, e.id]] : [])]);
+    const nodes = new Set(es.flatMap(e => [e.from, e.to])), edges = new Set(es.map(e => e.id));
+    const hasIn = new Set(steps.map(s => s[1])), hasOut = new Set(steps.map(s => s[0]));
+    const ids = [...nodes];
+    let origins = ids.filter(id => !hasIn.has(id)), consumers = ids.filter(id => !hasOut.has(id));
+    // Solo ciclos (sin origen claro): se parte de los nodos con salida para que haya algo que mostrar
+    const seeds = origins.length ? origins : ids.slice(0, 1);
+    // Capas por BFS con tope de relajaciones: un ciclo no puede colgar el cálculo
+    const dist = new Map(seeds.map(id => [id, 0])), q = [...seeds], cap = ids.length * steps.length + 8;
+    for (let n = 0; q.length && n < cap; n++) {
+      const u = q.shift();
+      steps.forEach(([a, b]) => {
+        if (a === u && dist.get(u) + 1 > (dist.get(b) ?? -1) && dist.get(u) + 1 < ids.length) { dist.set(b, dist.get(u) + 1); q.push(b); }
+      });
+    }
+    ids.forEach(id => dist.has(id) || dist.set(id, 0));
+    const hops = Math.max(0, ...dist.values());
+    return { nodes, edges, dist, origins, consumers, hops, name };
+  }
+  // Conjuntos de datos que entran y salen de un nodo (para el inspector): [nombre]
+  function datasetsOfNode(id) {
+    const seen = new Map();
+    S.model.edges.filter(e => e.from === id || e.to === id).forEach(e => (e.datasets || []).forEach(d => seen.has(dsKey(d)) || seen.set(dsKey(d), d)));
+    return [...seen.values()];
+  }
+  function showLineage(ds) {
+    if (vc().groups === 'collapse-top') { toast(T('ctx.noPath')); return null; }
+    const m = S.model, res = lineageOf(m, ds);
+    if (!res) { toast(T('lin.unknown', { name: String(ds) })); return null; }
+    clearPath();
+    S.path = { lineage: res.name, res, directed: true };
+    $('#path-text').innerHTML = T('lin.summary', { name: esc(res.name), src: res.origins.length, dst: res.consumers.length, hops: res.hops });
+    const bar = $('#path-bar');
+    bar.style.top = S.compare ? '54px' : '';
+    bar.hidden = false;
+    res.nodes.forEach(id => {
+      const n = m.nodes.find(x => x.id === id);
+      if (!n) return;
+      const g = el('g', { class: `path-badge${res.origins.includes(id) ? ' lin-src' : ''}${res.consumers.includes(id) ? ' lin-dst' : ''}`, transform: `translate(${n.x + 2} ${n.y + 2})` }, L.guides);
+      el('circle', { r: 9 }, g);
+      el('text', {}, g).textContent = res.dist.get(id) + 1;
+    });
+    fitNodes([...res.nodes]);
+    applyHighlight();
+    return res;
+  }
+  // Nombres de los conjuntos bajo la etiqueta de la conexión (solo se ve en la vista Datos; va en el SVG para que se exporte)
+  function edgeDatasets(r) {
+    r.ds?.remove(); r.ds = null;
+    const ds = r.e.datasets;
+    if (!ds?.length) return;
+    // Debajo de la etiqueta o, si no hay, de las fichas de datos / el candado que ocupan su sitio
+    const lines = r.e.label ? String(r.e.label).split('\n').length : 0, tags = r.e.data?.length || r.e.encrypted != null;
+    const dy = (lines ? Math.max(20, lines * 14 + 6) / 2 : tags ? 10 : 0) + 11;
+    const txt = ds.slice(0, 3).join(' · ') + (ds.length > 3 ? ` +${ds.length - 3}` : '');
+    const g = el('g', { class: 'edge-ds' }, r.g);
+    el('text', { y: dy, 'text-anchor': 'middle' }, g).textContent = fitText(txt, '600 10px', 240);
+    r.ds = g;
+  }
+  // Selector de conjuntos (tecla D): ventana pequeña con filtro, ↑↓ y Intro
+  const dsPick = { box: null, sel: 0, q: '' };
+  function closeDatasetPicker() { dsPick.box?.remove(); dsPick.box = null; }
+  function openDatasetPicker() {
+    if (dsPick.box) return closeDatasetPicker();
+    const box = document.createElement('div');
+    box.className = 'menu-pop ds-pop'; box.setAttribute('role', 'dialog'); box.setAttribute('aria-label', T('lin.picker'));
+    box.innerHTML = `<input class="ds-q" type="text" placeholder="${esc(T('lin.picker.ph'))}" aria-label="${esc(T('lin.picker.ph'))}" autocomplete="off" spellcheck="false"><div class="ds-list" role="listbox"></div>`;
+    document.body.appendChild(box);
+    dsPick.box = box; dsPick.sel = 0; dsPick.q = '';
+    const input = box.querySelector('input'), listEl = box.querySelector('.ds-list');
+    const rows = () => datasetList().filter(d => dsKey(d.name).includes(dsKey(dsPick.q)));
+    const draw = () => {
+      const rs = rows();
+      dsPick.sel = Math.min(dsPick.sel, Math.max(0, rs.length - 1));
+      listEl.innerHTML = rs.length ? rs.map((d, i) => `<button role="option" aria-selected="${i === dsPick.sel}" class="${i === dsPick.sel ? 'on' : ''}" data-ds="${esc(d.name)}"><span>${esc(d.name)}</span><small>${esc(T('lin.picker.count', d.edges))}</small></button>`).join('')
+        : `<p class="menu-note">${esc(T(datasetList().length ? 'lin.picker.nomatch' : 'lin.picker.empty'))}</p>`;
+      listEl.querySelector('.on')?.scrollIntoView({ block: 'nearest' });
+    };
+    const pick = name => { closeDatasetPicker(); showLineage(name); };
+    input.addEventListener('input', () => { dsPick.q = input.value; dsPick.sel = 0; draw(); });
+    input.addEventListener('keydown', ev => {
+      const rs = rows();
+      if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') { ev.preventDefault(); if (rs.length) { dsPick.sel = (dsPick.sel + (ev.key === 'ArrowDown' ? 1 : rs.length - 1)) % rs.length; draw(); } }
+      else if (ev.key === 'Enter') { ev.preventDefault(); if (rs[dsPick.sel]) pick(rs[dsPick.sel].name); }
+      else if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); closeDatasetPicker(); }
+    });
+    listEl.addEventListener('click', ev => { const b = ev.target.closest('button[data-ds]'); if (b) pick(b.dataset.ds); });
+    // Se cierra al pulsar fuera
+    setTimeout(() => document.addEventListener('pointerdown', function off(ev) {
+      if (!dsPick.box) return document.removeEventListener('pointerdown', off, true);
+      if (!dsPick.box.contains(ev.target)) { closeDatasetPicker(); document.removeEventListener('pointerdown', off, true); }
+    }, true));
+    const tb = $('#btn-view')?.getBoundingClientRect();
+    box.style.top = `${(tb ? tb.bottom : 60) + 6}px`; box.style.left = `${Math.max(8, Math.min(innerWidth - 268, tb ? tb.left : 80))}px`;
+    draw(); input.focus();
+  }
+
   // Encuadra solo algunos nodos (suave); no aleja más de lo necesario
   function fitNodes(ids) {
     const ns = S.model.nodes.filter(n => ids.includes(n.id)), r = svg.getBoundingClientRect();
@@ -1158,10 +1474,11 @@
   const vc = () => VIEWS[S.viewKey] || VIEWS.full;
   // Vista Seguridad: clase de una conexión. Sin cifrar: alta (crítica si lleva datos sensibles) · sin indicar con datos sensibles: aviso · cifrada: normal
   const secClass = (e, byId) => {
+    if (isXBorder(e, byId)) return 'v-hl v-crit v-xb'; // datos sensibles fuera de su jurisdicción sin transferencia autorizada
     const sens = isSensitive(e) || isSensitive(byId.get(e.from)) || isSensitive(byId.get(e.to));
     return e.encrypted === false ? (sens ? 'v-hl v-crit' : 'v-hl v-high') : e.encrypted == null ? (sens ? 'v-hl v-warn' : 'v-dim') : '';
   };
-  const VCLS = ['v-hide', 'v-hl', 'v-dim', 'v-heat', 'v-crit', 'v-high', 'v-warn', 'v-hlc'];
+  const VCLS = ['v-hide', 'v-hl', 'v-dim', 'v-heat', 'v-crit', 'v-high', 'v-warn', 'v-hlc', 'v-own', 'v-xb'];
   // De menos a más costo: tramos de VR.costHeat mezclados con color-mix
   const heatColor = t => {
     const st = VR.costHeat;
@@ -1187,10 +1504,11 @@
     [...svg.classList].filter(c => c.startsWith('vw-')).forEach(c => svg.classList.remove(c));
     svg.classList.add(...[`vw-${key}`, collapse && 'vw-collapse', v.nodeDetail === 'min' && 'vw-min', !v.dataTags && 'vw-no-dtags', !v.cost && 'vw-no-cost',
       !v.zones && 'vw-no-zones', !v.notes && 'vw-no-notes', !v.review && 'vw-no-review', emph && 'vw-emph'].filter(Boolean));
+    svg.classList.toggle('vw-no-layers', !v.layers);
     svg.dataset.view = key;
     const byId = new Map(m.nodes.map(n => [n.id, n]));
     const hideN = new Set(), hideE = new Set(), hideG = new Set(), top = new Set();
-    const nodeCls = new Map(), edgeCls = new Map(), nodeVar = new Map(), edgeVar = new Map();
+    const nodeCls = new Map(), edgeCls = new Map(), nodeVar = new Map(), edgeVar = new Map(), ownVar = new Map();
     if (collapse) { // cajas cerradas: dentro de un grupo todo se oculta; las conexiones reales se sustituyen por las agregadas
       m.nodes.forEach(n => { if (n.group) hideN.add(n.id); });
       m.edges.forEach(e => hideE.add(e.id));
@@ -1200,12 +1518,13 @@
     if (emph === 'security') {
       m.nodes.forEach(n => nodeCls.set(n.id, isSensitive(n) ? 'v-hl' : 'v-dim'));
       m.edges.forEach(e => edgeCls.set(e.id, secClass(e, byId)));
+      m.edges.forEach(e => { if (edgeCls.get(e.id).includes('v-xb')) { nodeCls.set(e.from, 'v-hl'); nodeCls.set(e.to, 'v-hl'); } }); // extremos resaltados
     } else if (emph === 'data') {
       const rank = k => Object.keys(DATA).indexOf(k);
       const isData = n => VR.dataTypes.includes(n.type) || VR.dataIconCategories.includes(iconInfo(n.icon)?.category);
-      m.nodes.forEach(n => nodeCls.set(n.id, isData(n) || n.data?.length ? 'v-hl' : 'v-dim'));
+      m.nodes.forEach(n => nodeCls.set(n.id, isData(n) || n.data?.length || layerOf(n).value ? 'v-hl' : 'v-dim'));
       m.edges.forEach(e => {
-        if (e.style !== 'data' && !e.data?.length) return edgeCls.set(e.id, 'v-dim');
+        if (e.style !== 'data' && !e.data?.length && !e.datasets?.length) return edgeCls.set(e.id, 'v-dim');
         // Color de la clasificación más sensible que lleva (la propia, o la de sus extremos)
         const ks = e.data?.length ? e.data : [...(byId.get(e.from)?.data || []), ...(byId.get(e.to)?.data || [])];
         const best = ks.filter(k => DATA[k]).sort((a, b) => rank(b) - rank(a))[0];
@@ -1220,6 +1539,14 @@
         nodeVar.set(n.id, heatColor(max > 0 ? perMonth(n) / max : 0));
       });
       m.edges.forEach(e => edgeCls.set(e.id, 'v-dim'));
+    } else if (emph === 'owner') { // color por equipo efectivo (o dueño); sin ninguno, atenuado
+      const tm = govTeams(m);
+      m.nodes.forEach(n => {
+        const k = govKey(n);
+        if (!k) return nodeCls.set(n.id, 'v-dim');
+        nodeCls.set(n.id, 'v-hl v-own');
+        ownVar.set(n.id, tm.get(k).color);
+      });
     }
 
     const paint = (g, id, hide, cls, vars, prop) => {
@@ -1230,6 +1557,7 @@
       if (vars.has(id)) g.style.setProperty(prop, vars.get(id));
     };
     R.nodes.forEach((g, id) => paint(g, id, hideN, nodeCls, nodeVar, '--heat'));
+    R.nodes.forEach((g, id) => { g.style.removeProperty('--own'); if (ownVar.has(id) && !hideN.has(id)) g.style.setProperty('--own', ownVar.get(id)); });
     R.edges.forEach((r, id) => paint(r.g, id, hideE, edgeCls, edgeVar, '--vc'));
     R.groups.forEach((r, id) => r.g.classList.toggle('v-hide', hideG.has(id) || top.has(id)));
     VW.hideNodes = hideN; VW.hideEdges = hideE; VW.hideGroups = hideG;
@@ -1609,9 +1937,9 @@
   const save = debounce(() => { store.set('model', S.model); updateMeta(); renderVersions(); }, 250);
 
   const ORDER = {
-    group: ['id', 'label', 'icon', 'color', 'parent', 'kind'],
-    node: ['id', 'label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'x', 'y', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc'],
-    edge: ['id', 'from', 'to', 'label', 'style', 'route', 'both', 'color', 'data', 'encrypted'],
+    group: ['id', 'label', 'icon', 'color', 'parent', 'kind', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer'],
+    node: ['id', 'label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'x', 'y', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer'],
+    edge: ['id', 'from', 'to', 'label', 'style', 'route', 'both', 'color', 'data', 'encrypted', 'datasets', 'transferOk'],
     note: ['id', 'x', 'y', 'w', 'h', 'text', 'color'],
     zone: ['id', 'x', 'y', 'w', 'h', 'label', 'severity', 'desc']
   };
@@ -1627,6 +1955,7 @@
     const head = [`  "title": ${JSON.stringify(m.title)}`];
     if (m.direction) head.push(`  "direction": ${JSON.stringify(m.direction)}`);
     if (m.routing) head.push(`  "routing": ${JSON.stringify(m.routing)}`);
+    if (m.layerNames === 'zones') head.push(`  "layerNames": "zones"`);
     if (m.meta) head.push(`  "meta": ${JSON.stringify(m.meta)}`);
     const body = [...head, arr('groups', m.groups, ORDER.group), arr('nodes', m.nodes, ORDER.node), arr('edges', m.edges, ORDER.edge)];
     if (m.notes?.length) body.push(arr('notes', m.notes, ORDER.note));
@@ -1713,11 +2042,12 @@
     $('#stage-h1').textContent = m.title;
     const costs = m.nodes.some(hasCost) ? `≈ ${money(round2(monthlyTotal(m.nodes)))}${T('cost.mo')}` : '';
     const byId = id => m.nodes.find(n => n.id === id), insecure = m.edges.filter(e => isInsecure(e, byId)).length;
+    const xb = m.edges.filter(e => isXBorder(e, byId)).length;
     const open = m.nodes.filter(n => n.review && n.review.status !== 'resolved'), overdue = open.filter(n => reviewState(n.review) === 'overdue').length;
     const zc = m.zones.filter(z => z.severity === 'critical').length;
     const zones = m.zones.length ? T('meta.zones', { n: m.zones.length, c: zc }) : '';
     const reviews = open.length ? T('meta.review', { n: open.length, o: overdue }) : '';
-    $('#stage-meta').textContent = [T('meta.nodes', m.nodes.length), T('meta.edges', m.edges.length), m.groups.length ? T('meta.groups', m.groups.length) : '', costs, insecure ? T('meta.insecure', insecure) : '', zones, reviews].filter(Boolean).join(' · ');
+    $('#stage-meta').textContent = [T('meta.nodes', m.nodes.length), T('meta.edges', m.edges.length), m.groups.length ? T('meta.groups', m.groups.length) : '', costs, insecure ? T('meta.insecure', insecure) : '', xb ? T('meta.xborder', xb) : '', zones, reviews].filter(Boolean).join(' · ');
     const t = $('#title');
     if (document.activeElement !== t) t.value = m.title;
     $('#empty').hidden = m.nodes.length > 0;
@@ -1745,33 +2075,74 @@
     // Leyenda compacta de la vista (solo si aporta algo): niveles, escala de calor, grupos visibles
     const vrows = ex ? [...ex.conn.map(r => `<li class="sw" style="--c:${esc(r.lock ? 'var(--muted)' : sw(r.color))}"><i></i>${esc(r.label)}</li>`),
       ...(ex.heat ? [`<li><i class="heat" style="background:linear-gradient(90deg,${esc(ex.heat.stops.join(','))})"></i>${esc(`${ex.heat.min} – ${ex.heat.max}`)}</li>`, `<li>${esc(`${T('leg.total')}: ${ex.heat.total}`)}</li>`] : []),
+      ...(ex.owners || []).map(o => `<li style="--c:${esc(o.color)}"><i></i>${esc(o.label)} <small>(${o.n})</small></li>`),
       ...(ex.groups ? [`<li class="sw" style="--c:var(--muted)"><i></i>${esc(ex.groups)}</li>`] : [])] : [];
+    // Conjuntos de datos del diagrama: cada fila es un botón que muestra su linaje
+    const dsRows = open ? datasetList().map(d => `<li><button class="ds-row" data-lin="${esc(d.name)}" title="${esc(T('lin.show', { name: d.name }))}"><span>${esc(d.name)}</span><small>${d.edges}</small></button></li>`) : [];
+    // Equipos del diagrama (fuera de la vista Gobierno, que ya los muestra): al pulsar uno se filtra por él
+    const teams = open && vc().emphasis !== 'owner' ? [...govTeams().values()] : [];
+    const lay = open && vc().layers ? layerUsage() : [];
     const det = (k, head, rows) => `<details class="docbar-leg" data-k="${k}"${store.get(k, false) ? ' open' : ''}><summary>${esc(head)} · ${rows.length}</summary><ul>${rows.join('')}</ul></details>`;
-    $('#docbar-body').innerHTML = open ? `<dl>${d.info.map(([k, x]) => `<dt>${esc(k)}</dt><dd>${esc(x)}</dd>`).join('')}</dl>${types.length ? det('docbarLeg', T('leg.components'), types.map(r => `<li style="--c:${esc(r.color)}"><i></i>${esc(r.label)}</li>`)) : ''}${vrows.length ? det('docbarLegV', `${T('leg.view')}: ${viewLabel(S.viewKey)}`, vrows) : ''}` : '';
+    $('#docbar-body').innerHTML = open ? `<dl>${d.info.map(([k, x]) => `<dt>${esc(k)}</dt><dd>${esc(x)}</dd>`).join('')}</dl>${types.length ? det('docbarLeg', T('leg.components'), types.map(r => `<li style="--c:${esc(r.color)}"><i></i>${esc(r.label)}</li>`)) : ''}${lay.length ? det('docbarLegL', T('leg.layersN'), lay.map(([k, ids]) => { const li = layerInfo(k); return `<li class="layer-row" data-layer="${esc(k)}" style="--c:${esc(li.color)}" title="${esc(T('layer.filter'))}"><i></i>${esc(li.label)}<b>${ids.length}</b></li>`; })) : ''}${vrows.length ? det('docbarLegV', `${T('leg.view')}: ${viewLabel(S.viewKey)}`, vrows) : ''}${teams.length ? det('docbarLegT', T('leg.teams'), teams.map(t => `<li data-gov="${esc(t.kind)}" data-k="${esc(t.key)}" style="--c:${esc(t.color)}" title="${esc(T('flt.pill'))}"><i></i>${esc([t.key, t.owners.join(', ')].filter(Boolean).join(' · '))} <small>(${t.ids.length})</small></li>`)) : ''}${dsRows.length ? det('docbarLegD', T('lin.leg'), dsRows) : ''}` : '';
   }
+  // Clic en un equipo de la leyenda: filtra por él (otro clic lo quita)
+  $('#docbar-body').addEventListener('click', ev => {
+    const li = ev.target.closest('li[data-gov]');
+    if (!li) return;
+    const s = li.dataset.gov, k = li.dataset.k, cur = S.filter[s] || [];
+    setFilter(cur.length === 1 && cur[0] === k ? { ...S.filter, [s]: [] } : { ...S.filter, [s]: [k] });
+  });
   function toggleDocbar() { store.set('docbar', !store.get('docbar', true)); renderDocbar(); }
   $('#docbar-toggle').addEventListener('click', toggleDocbar);
+  $('#docbar-body').addEventListener('click', ev => { const b = ev.target.closest('button[data-lin]'); if (b) showLineage(b.dataset.lin); });
+  // Clic en una capa de la leyenda: filtra por ella (otro clic igual lo quita)
+  $('#docbar-body').addEventListener('click', ev => {
+    const li = ev.target.closest('li[data-layer]');
+    if (!li) return;
+    const k = li.dataset.layer, cur = S.filter.layer || [];
+    setFilter({ ...S.filter, layer: cur.length === 1 && cur[0] === k ? [] : [k] });
+  });
   $('#docbar-body').addEventListener('toggle', ev => { if (ev.target.matches('details')) store.set(ev.target.dataset.k || 'docbarLeg', ev.target.open); }, true);
 
   /* ---------- filtros ("lentes"): atenúan lo que no coincide ---------- */
   // Filtro: { data: [clase | '@insecure'], review: ['open','overdue'], provider, category, group, cost: ['cost'] }
   // Dentro de una sección las fichas suman (O); entre secciones se combinan (Y)
-  const FLT_SECTIONS = ['data', 'review', 'provider', 'category', 'group', 'cost'];
+  const FLT_SECTIONS = ['data', 'review', 'provider', 'category', 'group', 'cost', 'team', 'owner', 'steward', 'costCenter', 'region', 'layer'];
   const providerOf = n => { const p = String(n.icon || '').split('/')[0]; return n.icon && ICONS[p] ? p : 'generic'; };
   const topGroups = m => m.groups.filter(g => !g.parent || !m.groups.some(x => x.id === g.parent));
+  // Sección «región»: una ficha por jurisdicción usada (según la región efectiva) y «sin región» si falta en algún nodo
+  function regionOptions(m) {
+    const keys = new Set(m.nodes.map(n => jurOf(regionOf(n, m).value)?.key || '@none'));
+    return [...Object.keys(JURS).filter(k => keys.has(k)).map(k => ({ k, label: JURS[k].short || k.toUpperCase() })), ...(keys.has('@none') ? [{ k: '@none', label: T('flt.regionNone') }] : [])];
+  }
+  // Fichas de capa: las que usa el diagrama (con el nombre del documento) y «Sin capa» si algún nodo no tiene
+  function layerOptions(m) {
+    const eff = m.nodes.map(n => layerOf(n).value), used = new Set([...eff, ...m.groups.map(g => g.layer)]);
+    const opts = Object.keys(DL).filter(k => used.has(k)).map(k => ({ k, label: layerInfo(k).label }));
+    return opts.length && eff.some(l => !l) ? [...opts, { k: '@none', label: T('flt.noLayer') }] : opts;
+  }
   // Fichas disponibles en el diagrama actual: { sección: [{ k, label }] }
   function filterOptions(m = S.model) {
     const used = new Set([...m.nodes, ...m.edges].flatMap(x => x.data || []));
     const provs = new Set(m.nodes.map(providerOf)), cats = new Set(m.nodes.map(n => typeOf(n).category || 'Otros'));
     return {
       data: [...Object.keys(DATA).filter(k => used.has(k)), ...[...used].filter(k => !DATA[k])].map(k => ({ k, label: loc(DATA[k]?.short) || k.toUpperCase() }))
-        .concat([{ k: '@insecure', label: T('flt.insecure') }]),
+        .concat([{ k: '@insecure', label: T('flt.insecure') }, { k: '@xborder', label: T('flt.xborder') }]),
       review: [{ k: 'open', label: T('flt.open') }, { k: 'overdue', label: T('flt.overdue') }],
       provider: [...Object.keys(ICONS), 'generic'].filter(p => provs.has(p)).map(p => ({ k: p, label: p === 'generic' ? T('flt.generic') : ICONS[p].label })),
       category: categories().filter(c => cats.has(c)).map(c => ({ k: c, label: I.category(c) })),
       group: topGroups(m).map(g => ({ k: g.id, label: g.label })),
-      cost: [{ k: 'cost', label: T('flt.cost') }]
+      cost: [{ k: 'cost', label: T('flt.cost') }],
+      ...Object.fromEntries(GOV_FIELDS.map(f => [f, govFilterOpts(m, f)])),
+      region: regionOptions(m),
+      layer: layerOptions(m)
     };
+  }
+  // Fichas de dueño / equipo…: valores efectivos (heredados) usados, y «Sin asignar» (solo dueño y equipo) si a algún nodo le falta
+  function govFilterOpts(m, f) {
+    const vals = m.nodes.map(n => govOf(n, f, m).value), set = [...new Set(vals.filter(Boolean))].sort((a, b) => a.localeCompare(b));
+    const none = (f === 'owner' || f === 'team') && set.length && vals.some(v => !v);
+    return [...set.map(v => ({ k: v, label: v })), ...(none ? [{ k: '@none', label: T('flt.unassigned') }] : [])];
   }
   // Deja solo fichas que existen; `insecure: true` y `cost: true` son atajos para la API
   function cleanFilter(raw, m = S.model) {
@@ -1795,6 +2166,9 @@
       if (s === 'provider') return v.includes(providerOf(n));
       if (s === 'category') return v.includes(typeOf(n).category || 'Otros');
       if (s === 'group') return v.some(g => inGroup(n, g));
+      if (GOV_FIELDS.includes(s)) { const e = govOf(n, s).value; return v.some(k => (k === '@none' ? !e : k === e)); }
+      if (s === 'region') return v.includes(jurOf(regionOf(n).value)?.key || '@none');
+      if (s === 'layer') { const l = layerOf(n).value; return v.some(k => (k === '@none' ? !l : k === l)); }
       return hasCost(n);
     });
   }
@@ -1803,7 +2177,7 @@
     if (!f || !Object.keys(f).length) return null;
     const byId = id => m.nodes.find(n => n.id === id), ends = new Set();
     if (f.data?.length) m.edges.forEach(e => {
-      if (f.data.some(k => k === '@insecure' ? isInsecure(e, byId) : (e.data || []).includes(k))) { ends.add(e.from); ends.add(e.to); }
+      if (f.data.some(k => k === '@insecure' ? isInsecure(e, byId) : k === '@xborder' ? isXBorder(e, byId) : (e.data || []).includes(k))) { ends.add(e.from); ends.add(e.to); }
     });
     const nodes = new Set(m.nodes.filter(n => matches(n, f, ends)).map(n => n.id));
     return {
@@ -2368,7 +2742,7 @@
   const findVersion = id => S.model.versions.find(v => v.id === id);
   // Solo lo que se dibuja: sin versiones y con posiciones redondeadas
   const snapshotOf = m => {
-    const d = clone({ title: m.title, ...(m.direction ? { direction: m.direction } : {}), ...(m.routing ? { routing: m.routing } : {}), groups: m.groups, nodes: m.nodes, edges: m.edges, ...(m.notes?.length ? { notes: m.notes } : {}), ...(m.zones?.length ? { zones: m.zones } : {}) });
+    const d = clone({ title: m.title, ...(m.direction ? { direction: m.direction } : {}), ...(m.routing ? { routing: m.routing } : {}), ...(m.layerNames ? { layerNames: m.layerNames } : {}), groups: m.groups, nodes: m.nodes, edges: m.edges, ...(m.notes?.length ? { notes: m.notes } : {}), ...(m.zones?.length ? { zones: m.zones } : {}) });
     d.nodes.forEach(n => { n.x = Math.round(n.x); n.y = Math.round(n.y); });
     return d;
   };
@@ -2477,9 +2851,9 @@
 
   // Diferencias entre lo guardado (a) y el lienzo (b). La posición no cuenta como cambio.
   const DIFF_FIELDS = {
-    node: ['label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc'],
-    edge: ['label', 'style', 'route', 'both', 'color', 'data', 'encrypted'],
-    group: ['label', 'icon', 'color', 'parent', 'kind']
+    node: ['label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer'],
+    edge: ['label', 'style', 'route', 'both', 'color', 'data', 'encrypted', 'datasets', 'transferOk'],
+    group: ['label', 'icon', 'color', 'parent', 'kind', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer']
   };
   function diffModels(a, b) {
     const val = (f, x) => (f === 'style' ? x || 'sync' : x == null ? '' : typeof x === 'object' ? JSON.stringify(x) : String(x));
@@ -2973,11 +3347,70 @@
       return `<button class="dchip${n === list.length ? ' on' : n ? ' some' : ''}" data-dclass="${esc(k)}" style="--c:${colorVar(c.color) || 'var(--accent)'}" title="${esc(loc(c.label) || k)}">${esc(loc(c.short) || k.toUpperCase())}</button>`;
     }).join('')}</div><span class="cost-hint">${esc(on.length ? on.map(([, c]) => loc(c.label)).join(' · ') : T(edge ? 'data.noneEdge' : 'data.none'))}</span></div>`;
   };
+  // Conjuntos de datos de una conexión: fichas (nombre = ver linaje, × = quitar) y campo para añadir
+  const dsField = e => {
+    const list = e.datasets || [], more = datasetList().map(d => d.name).filter(n => !list.some(x => dsKey(x) === dsKey(n)));
+    return `<div class="field">${T('lin.label')}<div class="ds-chips">${list.map(d => `<span class="ds-chip"><button class="ds-name" data-lin="${esc(d)}" title="${esc(T('lin.show', { name: d }))}">${esc(d)}</button><button class="ds-x" data-ds-rm="${esc(d)}" title="${esc(T('lin.remove', { name: d }))}" aria-label="${esc(T('lin.remove', { name: d }))}">×</button></span>`).join('')}</div>
+      <input class="ds-add" list="ds-suggest" placeholder="${esc(T('lin.add.ph'))}" aria-label="${esc(T('lin.add.aria'))}" autocomplete="off" spellcheck="false">
+      <datalist id="ds-suggest">${more.map(n => `<option value="${esc(n)}"></option>`).join('')}</datalist>${list.length ? '' : `<span class="cost-hint">${T('lin.none')}</span>`}</div>`;
+  };
+  // Conjuntos que pasan por las conexiones de un nodo (solo lectura; pulsar uno muestra su linaje)
+  const nodeDsField = n => {
+    const list = datasetsOfNode(n.id);
+    return list.length ? `<div class="field">${T('lin.node')}<div class="ds-chips">${list.map(d => `<span class="ds-chip"><button class="ds-name" data-lin="${esc(d)}" title="${esc(T('lin.show', { name: d }))}">${esc(d)}</button></span>`).join('')}</div><span class="cost-hint">${T('lin.node.hint')}</span></div>` : '';
+  };
+  // Capa del data lake (nodos y grupos, también varios a la vez): ninguna / una de config.js › dataLayers.
+  // «Ninguna» pasa a «Heredada (Oro)» cuando el grupo aporta una; abajo, el nombre que usa todo el documento
+  const layerField = items => {
+    const list = [].concat(items), keys = Object.keys(DL);
+    if (!keys.length) return '';
+    const own = new Set(list.map(x => (DL[x.layer] ? x.layer : ''))), cur = own.size === 1 ? [...own][0] : null;
+    const eff = list.length === 1 && !cur ? layerOf(list[0]) : null, inh = eff?.value ? layerInfo(eff.value) : null;
+    const hint = cur === null ? T('layer.mixed') : inh ? T('layer.inheritedFrom', { g: groupById(eff.from)?.label || '' }) : T('layer.hint');
+    const nm = layerNaming(), names = k => keys.map(j => layerInfo(j, k).label).join(' · ');
+    return `<div class="field">${T('layer.label')}<div class="seg layer-seg">
+      <button data-layer="" class="${cur === '' ? 'on' : ''}">${esc(inh ? T('layer.inheritedN', { n: inh.label }) : T('layer.none'))}</button>${keys.map(k => { const li = layerInfo(k);
+        return `<button data-layer="${esc(k)}" class="${cur === k ? 'on' : ''}" style="--lc:${esc(li.color)}">${esc(li.label)}</button>`; }).join('')}</div>
+      <span class="cost-hint">${esc(hint)}</span>
+      <div class="layer-names" title="${esc(T('layer.names.tip'))}"><span>${T('layer.names')}</span><div class="seg">${['medallion', 'zones'].map(k =>
+        `<button data-lnames="${k}" class="${nm === k ? 'on' : ''}" title="${esc(T('layer.names.tip'))}">${esc(names(k))}</button>`).join('')}</div></div></div>`;
+  };
   const encField = e => {
     const cur = e.encrypted === true ? 'yes' : e.encrypted === false ? 'no' : '';
     const byId = id => S.model.nodes.find(n => n.id === id);
     return `<div class="field">${T('enc.label')}<div class="seg">${[['', 'enc.unset'], ['yes', 'enc.yes'], ['no', 'enc.no']].map(([k, l]) =>
       `<button data-enc="${k}" class="enc-${k || 'unset'}${cur === k ? ' on' : ''}">${T(l)}</button>`).join('')}</div>${isInsecure(e, byId) ? `<span class="enc-warn">⚠ ${T('enc.warn')}</span>` : ''}</div>`;
+  };
+
+  /* ---------- residencia: campos del inspector ---------- */
+  // Regiones sugeridas además de las que ya usa el diagrama
+  const REGION_HINTS = ['eu-west-1', 'eu-central-1', 'eu-north-1', 'eu-south-2', 'us-east-1', 'us-west-2', 'ca-central-1', 'sa-east-1', 'ap-southeast-1', 'ap-northeast-1', 'westeurope', 'northeurope', 'germanywestcentral', 'eastus', 'westus2', 'brazilsouth',
+    'europe-west1', 'europe-west3', 'us-central1', 'southamerica-east1', 'ES', 'DE', 'FR', 'GB', 'US', 'MX', 'CO', 'BR'];
+  const regionJurText = r => { const j = jurOf(r); return j ? j.label : ''; };
+  // «inherited from X» / «deduced from X» para el valor que aporta un grupo
+  const regionHint = (list, own) => {
+    const rs = list.map(x => regionOf(x)), r0 = rs[0];
+    if (own || !rs.every(r => r.value === r0.value && (r.from?.id || '') === (r0.from?.id || '')) || !r0.value) return '';
+    return r0.from ? T(r0.from.deduced ? 'res.deduced' : 'res.inherited', r0.from.label) : '';
+  };
+  // Cuadro de texto de región (nodo, grupo o varios): valor propio, o el heredado / deducido como sugerencia
+  const regionField = items => {
+    const list = [].concat(items), vals = new Set(list.map(x => cleanRegion(x.region))), mixed = vals.size > 1, own = mixed ? '' : [...vals][0];
+    const eff = list.map(x => regionOf(x).value), same = eff.every(v => v === eff[0]);
+    const ph = mixed ? T('insp.mixed') : own ? '' : same ? eff[0] || T('res.ph') : T('insp.mixed');
+    const used = [...new Set([...S.model.nodes, ...S.model.groups].map(x => cleanRegion(x.region)).filter(Boolean))];
+    const opts = [...new Set([...used, ...REGION_HINTS])];
+    const jur = same ? regionJurText(own || eff[0]) : '';
+    return `<div class="field region-field"><div class="region-row"><label>${T('res.label')}<input data-field="region" list="region-list" value="${esc(own)}" placeholder="${esc(ph)}" autocomplete="off" spellcheck="false"></label><span class="region-jur" id="region-jur"${jur ? '' : ' hidden'}>${esc(jur)}</span></div>
+      <span class="cost-hint" id="region-hint">${esc(mixed ? '' : regionHint(list, own))}</span><datalist id="region-list">${opts.map(o => `<option value="${esc(o)}">`).join('')}</datalist></div>`;
+  };
+  // Conexión entre regiones: «eu-west-1 (EU) → us-east-1 (US)», aviso y botón de transferencia autorizada
+  const xferField = e => {
+    const nm = id => S.model.nodes.find(n => n.id === id), ra = regionOf(nm(e.from)).value, rb = regionOf(nm(e.to)).value;
+    if (!ra || !rb) return '';
+    const cb = crossBorder(e, nm);
+    return `<div class="field">${T('res.edge')}<span class="cost-hint">${esc(regionLabel(ra))} → ${esc(regionLabel(rb))}</span>${cb ? `${cb.approved ? `<span class="cost-hint xfer-ok">✓ ${esc(T('res.approvedLine'))}</span>` : `<span class="enc-warn">${esc(xbWarn(cb))}</span>`}
+      <button class="btn small${cb.approved ? ' on' : ''}" data-xfer="1" aria-pressed="${cb.approved}">${cb.approved ? '✓ ' : ''}${T('res.approve')}</button>` : ''}</div>`;
   };
 
   // Observación de revisión: la levanta a mano quien revisa (qué, quién, cuándo y para cuándo)
@@ -2996,6 +3429,22 @@
         <button class="btn small danger" data-rev="remove">${T('rev.remove')}</button>
       </div>
     </div>`;
+  };
+
+  // Dueños y responsables: sección plegable con 4 campos; sugiere los valores ya usados y muestra lo heredado del grupo
+  const govField = (items, kind) => {
+    const list = [].concat(items), m = S.model, one = list.length === 1 && list[0];
+    const own = (x, f) => String(x[f] ?? '').trim();
+    const any = list.some(x => GOV_FIELDS.some(f => own(x, f)));
+    const open = store.get(`govOpen.${kind}`, any);
+    const cells = GOV_FIELDS.map(f => {
+      const vals = list.map(x => own(x, f)), same = vals.every(v => v === vals[0]), inh = one && !vals[0] ? govOf(one, f) : null;
+      const ph = !same ? T('insp.mixed') : inh?.value || '';
+      const used = [...new Set([...m.nodes, ...m.groups].map(x => own(x, f)).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+      const gl = inh?.from ? m.groups.find(g => g.id === inh.from)?.label : '';
+      return `<label>${T(`gov.${f}`)}<input data-gov="${f}" list="dl-gov-${f}" value="${esc(same ? vals[0] : '')}" placeholder="${esc(ph)}" autocomplete="off"><datalist id="dl-gov-${f}">${used.map(v => `<option value="${esc(v)}"></option>`).join('')}</datalist>${gl ? `<span class="cost-hint">${esc(T('gov.inherited', { name: gl }))}</span>` : ''}</label>`;
+    });
+    return `<details class="gov-box" data-gov-open="${kind}"${open ? ' open' : ''}><summary>${T('gov.title')}</summary><div class="row2">${cells[0]}${cells[1]}</div><div class="row2">${cells[2]}${cells[3]}</div></details>`;
   };
 
   // Sección "Camino" con exactamente dos nodos: el orden de selección define A y B
@@ -3027,6 +3476,9 @@
         <div class="field">${T('insp.color')}${swatches(colorsOf.size === 1 ? [...colorsOf][0] : '__mixed')}</div>
         ${t.length === 2 ? pathField() : ''}
         ${dataField(t)}
+        ${govField(t, 'multi')}
+        ${regionField(t)}
+        ${layerField(t)}
         ${priced.length ? `<p class="cost-sum">${T('insp.selCost')} <b>≈ ${money(round2(monthlyTotal(t)))}${T('cost.mo')}</b><span>${T('insp.withCost', { a: priced.length, b: t.length })}</span></p>` : ''}
         <p class="note">${T('insp.multiNote')}</p>
         <div class="insp-actions">
@@ -3051,9 +3503,13 @@
         <div class="field">${T('insp.color')}${swatches(t.color)}</div>
         ${costField(t)}
         ${dataField(t)}
+        ${govField(t, 'node')}
+        ${regionField(t)}
+        ${layerField(t)}
         ${reviewField(t)}
         <label>${T('insp.desc')}<textarea data-field="desc" rows="3" placeholder="${esc(T('insp.desc.ph'))}">${esc(t.desc || '')}</textarea></label>
         <div class="field">${T('insp.reach')}<div class="seg">${modes.map(([k, l]) => `<button data-reach="${k}" class="${S.reach === k ? 'on' : ''}">${l}</button>`).join('')}</div></div>
+        ${nodeDsField(t)}
         ${ins.length || outs.length ? `<div class="conns">
           ${ins.length ? `<div class="conn-title">${T('insp.receives')} · ${ins.length}</div>${ins.map(e => conn(e, e.from)).join('')}` : ''}
           ${outs.length ? `<div class="conn-title">${T('insp.sends')} · ${outs.length}</div>${outs.map(e => conn(e, e.to)).join('')}` : ''}
@@ -3074,6 +3530,8 @@
           `<button data-dir="${k}" class="${(t.both ? 'both' : '') === k ? 'on' : ''}">${T(l)}</button>`).join('')}</div></div>
         ${encField(t)}
         ${dataField(t, true)}
+        ${dsField(t)}
+        ${xferField(t)}
         <div class="field">${T('insp.color')}${swatches(t.color)}</div>
         <div class="conns"><div class="conn-title">${T('insp.ends')}</div>
           <button class="conn" data-goto="${esc(a.id)}" style="--c:${nodeColor(a)}"><span class="dot"></span>${esc(a.label)}<em>${T('insp.source')}</em></button>
@@ -3110,8 +3568,11 @@
         <label>${T('insp.name')}<input data-field="label" value="${esc(t.label)}"></label>
         ${allIcons().some(i => i.group) ? iconPicker(t, true) : ''}
         <label>${T('gkind.label')}<select data-field="kind"><option value=""${t.kind ? '' : ' selected'}>${esc(T('gkind.auto', { k: T(`gkind.${groupKindAuto(t)}`) }))}</option>${['logical', 'physical'].map(k => `<option value="${k}"${t.kind === k ? ' selected' : ''}>${T(`gkind.${k}`)}</option>`).join('')}</select></label>
+        ${regionField(t)}
+        ${layerField(t)}
         <label>${T('insp.parent')}<select data-field="parent"><option value="">${T('insp.none')}</option>${m.groups.filter(g => !blocked.has(g.id)).map(g => `<option value="${esc(g.id)}"${g.id === t.parent ? ' selected' : ''}>${esc(g.label)}</option>`).join('')}</select></label>
         <div class="field">${T('insp.color')}${swatches(t.color)}</div>
+        ${govField(t, 'group')}
         <div class="insp-actions"><button class="btn danger" data-act="delete">${T('insp.deleteGroup')}</button></div>`;
     }
 
@@ -3128,6 +3589,7 @@
     const list = Array.isArray(t) ? t : [t];
     let v = f.value;
     if (v === '__mixed') return;
+    if (k === 'region') v = v.trim();
     if (k === 'cost' || k === 'costYears') {
       // Números: vacío o no válido = quitar el valor
       const num = v.trim() === '' ? NaN : +v;
@@ -3151,6 +3613,11 @@
     });
     changed(k !== 'desc' || S.sel.kind === 'zone');
     if (k.startsWith('cost') && !isSelect) $('#inspector .cost-hint').textContent = costHint(list[0]);
+    if (k === 'region') { // sin reconstruir el panel (el cuadro tiene el foco): solo la jurisdicción y la pista
+      const j = $('#region-jur'), r = v || regionOf(list[0]).value, one = list.every(x => regionOf(x).value === regionOf(list[0]).value);
+      if (j) { j.textContent = one ? regionJurText(r) : ''; j.hidden = !j.textContent; }
+      if ($('#region-hint')) $('#region-hint').textContent = v ? '' : regionHint(list, false);
+    }
     if (isSelect) renderInspector();
     else if (k === 'label') $('#inspector .insp-title').textContent = S.sel.kind === 'edge' ? $('#inspector .insp-title').textContent : v;
   }
@@ -3200,8 +3667,34 @@
     box.querySelector('.rev-head em').textContent = reviewHint(n.review);
   });
   inspector.addEventListener('focusout', endEdit);
+  /* ---------- dueños y responsables: escribir en el inspector ---------- */
+  inspector.addEventListener('focusin', ev => { if (ev.target.matches('input[data-gov]')) beginEdit(); });
+  inspector.addEventListener('toggle', ev => { if (ev.target.matches('details[data-gov-open]')) store.set(`govOpen.${ev.target.dataset.govOpen}`, ev.target.open); }, true);
+  inspector.addEventListener('input', ev => {
+    const f = ev.target, t = selTarget();
+    if (!f.matches('input[data-gov]') || !t) return;
+    markEdit();
+    const v = f.value.trim();
+    (Array.isArray(t) ? t : [t]).forEach(x => { if (v) x[f.dataset.gov] = v; else delete x[f.dataset.gov]; });
+    changed(true);
+  });
   inspector.addEventListener('input', ev => { if (ev.target.matches('input[data-field], textarea[data-field]')) onField(ev.target); });
   inspector.addEventListener('change', ev => { if (ev.target.matches('select[data-field]')) onField(ev.target); });
+  // Añadir conjuntos de datos a la conexión elegida (Intro o coma; también al elegir de la lista o salir del campo)
+  function addDatasets(inp) {
+    const t = selTarget(), add = cleanDatasets(inp.value);
+    if (!t || Array.isArray(t) || S.sel?.kind !== 'edge') return;
+    inp.value = '';
+    if (!add.length) return;
+    pushHistory();
+    t.datasets = cleanDatasets([...(t.datasets || []), ...add]);
+    changed(true); renderInspector();
+    $('#inspector .ds-add')?.focus();
+  }
+  inspector.addEventListener('keydown', ev => {
+    if (ev.target.matches('.ds-add') && (ev.key === 'Enter' || ev.key === ',' || ev.key === ';')) { ev.preventDefault(); addDatasets(ev.target); }
+  });
+  inspector.addEventListener('change', ev => { if (ev.target.matches('.ds-add')) addDatasets(ev.target); });
   inspector.addEventListener('click', ev => {
     const b = ev.target.closest('button');
     if (!b) return;
@@ -3231,6 +3724,19 @@
       pushHistory();
       list.forEach(x => { const d = cleanData([...(x.data || []).filter(j => j !== k), ...(all ? [] : [k])]); if (d.length) x.data = d; else delete x.data; });
       changed(true); renderInspector();
+    } else if (b.dataset.lin) {
+      showLineage(b.dataset.lin);
+    } else if (b.dataset.dsRm && t && !Array.isArray(t)) {
+      pushHistory();
+      t.datasets = (t.datasets || []).filter(d => dsKey(d) !== dsKey(b.dataset.dsRm));
+      if (!t.datasets.length) delete t.datasets;
+      changed(true); renderInspector();
+    } else if (b.dataset.layer != null && t) {
+      pushHistory();
+      (Array.isArray(t) ? t : [t]).forEach(x => { if (b.dataset.layer && DL[b.dataset.layer]) x.layer = b.dataset.layer; else delete x.layer; });
+      changed(true); renderInspector();
+    } else if (b.dataset.lnames && t) {
+      setLayerNames(b.dataset.lnames);
     } else if (b.dataset.dir != null && t && !Array.isArray(t)) {
       pushHistory();
       if (b.dataset.dir) t.both = true; else delete t.both;
@@ -3238,6 +3744,10 @@
     } else if (b.dataset.enc != null && t) {
       pushHistory();
       if (b.dataset.enc) t.encrypted = b.dataset.enc === 'yes'; else delete t.encrypted;
+      changed(true); renderInspector();
+    } else if (b.dataset.xfer != null && t && !Array.isArray(t)) {
+      pushHistory();
+      if (t.transferOk) delete t.transferOk; else t.transferOk = true;
       changed(true); renderInspector();
     } else if (b.dataset.path && S.sel?.kind === 'multi' && S.sel.ids.length === 2) {
       const [x, y] = S.sel.ids;
@@ -3390,6 +3900,7 @@
     types: Object.fromEntries(Object.entries(C.types).map(([k, t]) => [k.toLowerCase(), { ...t, label: loc(t.label) }])),
     providers: Object.keys(ICONS),
     dataClasses: Object.keys(DATA),
+    layers: Object.fromEntries([...Object.keys(DL), ...Object.keys(DL_ALIAS)].map(k => [fold(k), cleanLayer(k)]).filter(([, v]) => v)),
     views: VIEW_KEYS,
     lang: I.lang
   });
@@ -3614,11 +4125,13 @@
   const visEdges = () => (vc().groups === 'collapse-top' ? [...VW.flows.values()].flatMap(f => f.edges) : S.model.edges.filter(e => !VW.hideEdges.has(e.id)));
   // Filas de leyenda propias de la vista activa, según sus reglas en config.js (emphasis, groups, legendGroups)
   function viewLegend() {
-    const v = vc(), m = S.model, byId = new Map(m.nodes.map(n => [n.id, n])), es = visEdges(), r = { conn: [], groups: '', heat: null };
+    const v = vc(), m = S.model, byId = new Map(m.nodes.map(n => [n.id, n])), es = visEdges(), r = { conn: [], groups: '', heat: null, owners: null };
     if (v.emphasis === 'security') {
       const cls = new Set(es.map(e => secClass(e, byId)));
       r.conn.push({ color: 'var(--sev-critical)', label: T('leg.sec.crit') });
       if ([...cls].some(c => c.includes('v-high'))) r.conn.push({ color: 'var(--sev-high)', label: T('leg.sec.high') });
+      if ([...cls].some(c => c.includes('v-xb'))) r.conn.push({ color: 'var(--sev-critical)', label: T('leg.sec.xb') });
+      if (es.some(e => crossBorder(e, byId)?.approved)) r.conn.push({ color: 'var(--muted)', label: T('leg.sec.xbok') });
       r.conn.push({ color: 'var(--sev-medium)', label: T('leg.sec.warn') }, { lock: true, label: T('leg.sec.enc') });
     } else if (v.emphasis === 'data') {
       const used = new Set([...visNodes(), ...es].flatMap(x => x.data || []));
@@ -3627,6 +4140,10 @@
     } else if (v.emphasis === 'cost') {
       const vals = m.nodes.filter(hasCost).map(perMonth);
       if (vals.length) r.heat = { min: `${money(round2(Math.min(...vals)))}${T('cost.mo')}`, max: `${money(round2(Math.max(...vals)))}${T('cost.mo')}`, total: `≈ ${money(round2(monthlyTotal(m.nodes)))}${T('cost.mo')}`, stops: VR.costHeat };
+    }
+    else if (v.emphasis === 'owner') {
+      const vis = new Set(visNodes().map(n => n.id));
+      r.owners = [...govTeams(m, vis).values()].map(t => ({ color: t.color, label: [t.key, t.owners.join(', ')].filter(Boolean).join(' · '), n: t.ids.length }));
     }
     if (m.groups.length && (v.groups !== 'all' || v.legendGroups)) r.groups = T(v.groups === 'collapse-top' ? 'leg.g.collapse' : v.groups === 'logical' ? 'leg.g.logical' : 'leg.g.all');
     return r;
@@ -3694,6 +4211,14 @@
       el('rect', { x, y: y - 6, width: 20, height: 14, rx: 3, style: 'fill:none;stroke:var(--muted);stroke-width:1.3', 'stroke-dasharray': '4 3' }, g);
       textRow(x + 30, y, ex.groups);
     } }]);
+    // Equipos de la vista Gobierno: un punto de color por equipo, con sus dueños y cuántos componentes
+    if (ex.owners?.length) {
+      const own = ex.owners.map(r => { const txt = fitText(`${r.label} (${r.n})`, '400 12px', 300); return { w: 22 + textW(txt, '400 12px'), draw: (x, y) => {
+        el('circle', { cx: x + 6, cy: y, r: 6, style: `fill:${r.color}` }, g);
+        textRow(x + 22, y, txt);
+      } }; });
+      for (let i = 0; i < own.length; i += 8) col(i ? '' : T('leg.teams'), own.slice(i, i + 8));
+    }
     // Escala de calor de la vista Costo
     if (ex.heat) {
       const hc = ex.heat, n = hc.stops.length, tot = `${T('leg.total')}: ${hc.total}`, BW = 104;
@@ -3712,6 +4237,14 @@
       const tw = dataTag(g, x, y - 8, t, 16);
       textRow(x + tw + 8, y, t.label);
     } })));
+    // Capas del data lake en uso, en el orden de config.js
+    if (v.layers) col(T('leg.layers'), layerUsage(vn).map(([k]) => {
+      const li = layerInfo(k);
+      return { w: 22 + textW(li.label, '400 12px'), draw: (x, y) => {
+        el('rect', { x, y: y - 7, width: 6, height: 14, rx: 2, style: `fill:${li.color}` }, g);
+        textRow(x + 16, y, li.label);
+      } };
+    }));
     // Zonas de riesgo, de la más grave a la más leve
     const zs = [...m.zones].sort((a, b) => SEVERITY.indexOf(b.severity) - SEVERITY.indexOf(a.severity)).slice(0, 8);
     if (v.zones) col(T('leg.zones'), zs.map(z => {
@@ -3830,6 +4363,7 @@
     const m = S.model, em = VIEWS[key]?.emphasis;
     if (key === 'context') return m.groups.length > 0;
     if (em === 'cost') return m.nodes.some(hasCost);
+    if (em === 'owner') return m.nodes.some(n => govKey(n));
     if (em === 'security') return m.nodes.some(n => n.data?.length) || m.edges.some(e => e.data?.length || e.encrypted != null);
     if (em === 'data') return m.nodes.some(n => n.data?.length || VR.dataTypes.includes(n.type) || VR.dataIconCategories.includes(iconInfo(n.icon)?.category)) || m.edges.some(e => e.style === 'data' || e.data?.length);
     return true;
@@ -4223,6 +4757,7 @@
     else if (k === 'r' && selIds().length === 2) showPath(...selIds());
     else if (k === 'v') present({ views: ev.shiftKey });
     else if (k === 'i') toggleDocbar();
+    else if (k === 'd') openDatasetPicker();
     else if (k === 't') toggleTheme();
     else if (k === 'l') toggleLang();
     else if (k === 'e') toggleRouting();
@@ -4341,6 +4876,21 @@
     requestAnimationFrame(tick);
   }
 
+  // API: equipos con sus dueños, responsables y nodos (valores efectivos, con herencia); los nodos sin equipo salen con team ''
+  function govTeamList(m = S.model) {
+    const by = new Map();
+    m.nodes.forEach(n => {
+      const [team, owner, steward] = ['team', 'owner', 'steward'].map(f => govOf(n, f, m).value);
+      if (!team && !owner && !steward) return;
+      if (!by.has(team)) by.set(team, { team, owners: new Set(), stewards: new Set(), nodes: [] });
+      const t = by.get(team);
+      if (owner) t.owners.add(owner);
+      if (steward) t.stewards.add(steward);
+      t.nodes.push(n.id);
+    });
+    return [...by.values()].sort((a, b) => (!a.team - !b.team) || a.team.localeCompare(b.team)).map(t => ({ ...t, owners: [...t.owners].sort(), stewards: [...t.stewards].sort() }));
+  }
+
   // API para extensiones futuras (consola o scripts propios)
   window.Diagramon = {
     get model() { return clone(S.model); },
@@ -4349,9 +4899,16 @@
     get lang() { return I.lang; },
     select: ids => select({ kind: 'multi', ids: [].concat(ids) }), align: alignNodes,
     showPath, clearPath,
+    lineage: ds => { const r = showLineage(ds); return r ? { origins: [...r.origins], consumers: [...r.consumers], hops: r.hops, nodes: [...r.nodes], edges: [...r.edges] } : null; },
+    datasets: () => datasetList().map(d => ({ ...d })),
     saveVersion, openVersion, compareVersion, deleteVersion,
     setFilter, clearFilter, get filter() { return clone(S.filter); },
+    crossBorder: () => { const byId = new Map(S.model.nodes.map(n => [n.id, n])); return S.model.edges.map(e => ({ e, cb: crossBorder(e, byId) })).filter(x => x.cb)
+      .map(({ e, cb }) => ({ edge: clone(e), from: cb.from, to: cb.to, fromRegion: cb.from.region, toRegion: cb.to.region, fromJur: cb.from.jur.short, toJur: cb.to.jur.short, classes: [...cb.classes], approved: cb.approved })); },
+    layers: () => ({ naming: layerNaming(), layers: Object.keys(DL).map(k => ({ key: k, label: layerInfo(k).label, nodes: S.model.nodes.filter(n => layerOf(n).value === k).map(n => n.id) })) }),
+    setLayerNames,
     setView, get view() { return S.viewKey; }, get views() { return [...VIEW_KEYS]; },
+    owners: () => govTeamList(),
     exportSVG, exportPNG, exportViews, exportJSON, shareEncrypted, exportOther, exportCtx, toggleRouting, importFiles, config: C, icons: ICONS
   };
 

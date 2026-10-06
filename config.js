@@ -116,6 +116,46 @@ window.DIAGRAMON_CONFIG = {
     phi:          { label: { en: 'Health data (PHI)', es: 'Datos de salud (PHI)' }, short: 'PHI', color: 'lila', sensitive: true }
   },
 
+  /* Residencia y soberanía de datos: región (o país) de cada componente y aviso cuando datos sensibles cruzan jurisdicciones.
+     jurisdictions: mapa ORDENADO clave → { label: {en, es}, short, match, of? }. El texto de la región (p. ej. `eu-west-1`,
+     `westeurope`, `europe-west1`, `ES`, `US`) se prueba contra `match` (RegExp, sin distinguir mayúsculas); gana la primera
+     jurisdicción que coincide, así que pon las más específicas antes (uk y ch antes que eu). Sin coincidencia = región
+     desconocida (no se avisa). Para añadir una: copia una línea, cambia clave, etiquetas y `match`. Para ajustar una, edita su
+     `match` (usa ^…$ para que `IT` no coincida con otras palabras). `of` (opcional) es el texto tras «salen de/leaves» («la UE»).
+     warnSameJurisdiction: true = avisa también cuando las regiones difieren dentro de una misma jurisdicción. */
+  residency: {
+    warnSameJurisdiction: false,
+    jurisdictions: {
+      uk:    { label: { en: 'UK', es: 'Reino Unido' }, short: 'UK', match: /^(uk|gb|uk(south|west)|eu-west-2|europe-west2)$/i },
+      ch:    { label: { en: 'Switzerland', es: 'Suiza' }, short: 'CH', match: /^(ch|switzerland(north|west)|eu-central-2|europe-west6)$/i },
+      eu:    { label: { en: 'EU', es: 'UE' }, of: { en: 'the EU', es: 'la UE' }, short: 'EU',
+               match: /^(eu|eusc-[a-z]+-[a-z]+-\d|eu-(central|north|south|west)-\d|europe-[a-z]+\d+|(west|north)europe|france(central|south)|germany(westcentral|north)|swedencentral|italynorth|spaincentral|polandcentral|austriaeast|denmarkeast|belgiumcentral|at|be|bg|hr|cy|cz|dk|ee|fi|fr|de|gr|hu|ie|it|lv|lt|lu|mt|nl|pl|pt|ro|sk|si|es|se)$/i },
+      us:    { label: { en: 'US', es: 'EE. UU.' }, short: 'US', match: /^(us|us-[a-z-]+\d|(east|west|central|northcentral|southcentral|westcentral)us\d?|usgov[a-z]*|usdod[a-z]*)$/i },
+      ca:    { label: { en: 'Canada', es: 'Canadá' }, short: 'CA', match: /^(ca|ca-[a-z]+-\d|canada(central|east)|northamerica-northeast\d)$/i },
+      br:    { label: { en: 'Brazil', es: 'Brasil' }, short: 'BR', match: /^(br|brazil(south|southeast)|sa-east-1|southamerica-east\d)$/i },
+      latam: { label: { en: 'Latin America', es: 'Latinoamérica' }, short: 'LATAM', match: /^(mx|ar|cl|co|pe|uy|ec|bo|py|ve|cr|pa|mexico[a-z-]*\d?|chile[a-z]*|southamerica-west\d|northamerica-south\d)$/i },
+      apac:  { label: { en: 'Asia-Pacific', es: 'Asia-Pacífico' }, short: 'APAC', match: /^(ap-[a-z]+-\d|asia-[a-z]+\d|australia[a-z-]*\d?|japan[a-z]*|korea[a-z]*|india[a-z]*|(central|south|west)india|jioindia[a-z]*|southeastasia|eastasia|newzealand[a-z]*|cn-[a-z]+-\d|china[a-z]*|cn|jp|kr|in|sg|au|nz|hk|tw|id|my|th|vn|ph)$/i },
+      me:    { label: { en: 'Middle East', es: 'Medio Oriente' }, short: 'ME', match: /^(me-[a-z]+-?\d|il-central-1|uae[a-z]*|qatar[a-z]*|israel[a-z]*|saudi[a-z]*|ae|sa|il|qa|bh|kw|om|jo)$/i },
+      af:    { label: { en: 'Africa', es: 'África' }, short: 'AF', match: /^(af-south-1|southafrica(north|west)|africa-south\d|za|eg|ng|ke|ma)$/i }
+    }
+  },
+  /* Capas del data lake (medallion): etiqueta de color en la esquina inferior izquierda de cada nodo, franja en su borde
+     izquierdo y borde de color en los grupos. Los nodos heredan la capa de su grupo.
+     label: nombre «Medallion» · alt: nombre «Zonas» (el diagrama elige cuál ver, ver `layerNames` en el JSON) · short: letra corta
+     color: cualquier color CSS. Por defecto usan variables --layer-<clave> definidas por tema en index.html (#diagram-css),
+     para que se lean bien en oscuro, claro y negro; cámbialas ahí o pon aquí un color fijo (p. ej. '#c27c3e').
+     El orden de las claves es el de la leyenda. layerAliases (abajo): otros nombres aceptados al leer JSON y texto (se comparan en minúsculas, sin tildes). */
+  dataLayers: {
+    bronze: { label: { en: 'Bronze', es: 'Bronce' }, alt: { en: 'Raw', es: 'Crudo' }, short: 'B', altShort: 'R', color: 'var(--layer-bronze, #c27c3e)' },
+    silver: { label: { en: 'Silver', es: 'Plata' }, alt: { en: 'Curated', es: 'Curado' }, short: 'S', altShort: 'C', color: 'var(--layer-silver, #9aa7b4)' },
+    gold:   { label: { en: 'Gold', es: 'Oro' }, alt: { en: 'Serving', es: 'Consumo' }, short: 'G', altShort: 'S', color: 'var(--layer-gold, #d4a72c)' }
+  },
+  layerAliases: {
+    raw: 'bronze', bronce: 'bronze', crudo: 'bronze',
+    curated: 'silver', plata: 'silver', curado: 'silver', refined: 'silver',
+    serving: 'gold', oro: 'gold', consumo: 'gold'
+  },
+
   /* Costos escritos a mano en cada componente (recuadro bajo el nodo).
      hoursPerMonth: horas usadas para pasar un precio por hora a mensual.
      defaultYears: años por defecto del periodo "Multianual". */
@@ -129,20 +169,22 @@ window.DIAGRAMON_CONFIG = {
   view:  { minZoom: 0.2, maxZoom: 2.5 },
 
   /* Vistas: filtros de presentación del MISMO modelo (no cambian datos ni posiciones).
-     Clave = nombre de la vista (atajos 1…7 en este orden). Cada regla es opcional; lo que falte vale como en `full`.
+     Clave = nombre de la vista (atajos 1…8 en este orden). Cada regla es opcional; lo que falte vale como en `full`.
      - groups: 'all' (todos) · 'logical' (oculta los grupos físicos) · 'collapse-top' (cajas cerradas de primer nivel)
      - nodeDetail: 'full' | 'min' (sin detalle `sub`) · edgeLabels / dataTags / locks / cost / zones / notes / review: true | false
-     - emphasis: null | 'security' | 'data' | 'cost' (resalta lo relevante y atenúa el resto)
+     - emphasis: null | 'security' | 'data' | 'cost' | 'owner' (resalta lo relevante y atenúa el resto)
+     - layers: true | false (capas del data lake: franja, etiqueta y borde de grupo)
      - legendGroups: true añade a la leyenda una fila que indica qué grupos se ven (ya sale sola si `groups` no es 'all')
      - icon: contenido SVG de 24×24 a trazo para el selector de vistas de la barra superior (su descripción está en i18n.js › view.desc.<clave>) */
   views: {
-    full:     { label: { en: 'Full', es: 'Completa' }, icon: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>', groups: 'all', nodeDetail: 'full', edgeLabels: true, dataTags: true, locks: true, cost: true, zones: true, notes: true, review: true, emphasis: null },
-    context:  { label: { en: 'Context', es: 'Contexto' }, icon: '<rect x="3" y="8" width="7" height="8" rx="2"/><rect x="14" y="8" width="7" height="8" rx="2"/><path d="M10 12h4"/>', groups: 'collapse-top', nodeDetail: 'min', edgeLabels: false, dataTags: false, locks: false, cost: false, zones: false, notes: false, review: false, emphasis: null },
-    logical:  { label: { en: 'Logical', es: 'Lógica' }, icon: '<path d="m12 3 9 5-9 5-9-5z"/><path d="m3 13 9 5 9-5"/>', groups: 'logical', nodeDetail: 'full', edgeLabels: true, dataTags: false, locks: false, cost: false, zones: false, notes: true, review: true, emphasis: null },
-    physical: { label: { en: 'Physical', es: 'Física' }, legendGroups: true, icon: '<rect x="3" y="4" width="18" height="6" rx="1.5"/><rect x="3" y="14" width="18" height="6" rx="1.5"/><path d="M7 7h.01M7 17h.01"/>', groups: 'all', nodeDetail: 'full', edgeLabels: false, dataTags: false, locks: true, cost: false, zones: true, notes: true, review: true, emphasis: null },
-    security: { label: { en: 'Security', es: 'Seguridad' }, icon: '<path d="M12 3 4.5 6v5.5c0 4.5 3.2 8 7.5 9.5 4.3-1.5 7.5-5 7.5-9.5V6z"/><path d="m9 12 2 2 4-4"/>', groups: 'all', nodeDetail: 'full', edgeLabels: true, dataTags: true, locks: true, cost: false, zones: true, notes: true, review: true, emphasis: 'security' },
-    data:     { label: { en: 'Data', es: 'Datos' }, icon: '<ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/>', groups: 'all', nodeDetail: 'full', edgeLabels: true, dataTags: true, locks: false, cost: false, zones: true, notes: true, review: true, emphasis: 'data' },
-    cost:     { label: { en: 'Cost', es: 'Costo' }, icon: '<circle cx="12" cy="12" r="9"/><path d="M14.8 9.2c-.4-1-1.4-1.6-2.8-1.6-1.6 0-2.8.8-2.8 2s1 1.7 2.8 2.1 2.8.9 2.8 2.1-1.2 2-2.8 2c-1.4 0-2.4-.6-2.8-1.6M12 6v1.6M12 16.4V18"/>', groups: 'all', nodeDetail: 'full', edgeLabels: true, dataTags: false, locks: false, cost: true, zones: false, notes: true, review: true, emphasis: 'cost' }
+    full:     { label: { en: 'Full', es: 'Completa' }, icon: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>', groups: 'all', nodeDetail: 'full', edgeLabels: true, dataTags: true, locks: true, cost: true, zones: true, notes: true, review: true, emphasis: null, layers: true },
+    context:  { label: { en: 'Context', es: 'Contexto' }, icon: '<rect x="3" y="8" width="7" height="8" rx="2"/><rect x="14" y="8" width="7" height="8" rx="2"/><path d="M10 12h4"/>', groups: 'collapse-top', nodeDetail: 'min', edgeLabels: false, dataTags: false, locks: false, cost: false, zones: false, notes: false, review: false, emphasis: null, layers: false },
+    logical:  { label: { en: 'Logical', es: 'Lógica' }, icon: '<path d="m12 3 9 5-9 5-9-5z"/><path d="m3 13 9 5 9-5"/>', groups: 'logical', nodeDetail: 'full', edgeLabels: true, dataTags: false, locks: false, cost: false, zones: false, notes: true, review: true, emphasis: null, layers: true },
+    physical: { label: { en: 'Physical', es: 'Física' }, legendGroups: true, icon: '<rect x="3" y="4" width="18" height="6" rx="1.5"/><rect x="3" y="14" width="18" height="6" rx="1.5"/><path d="M7 7h.01M7 17h.01"/>', groups: 'all', nodeDetail: 'full', edgeLabels: false, dataTags: false, locks: true, cost: false, zones: true, notes: true, review: true, emphasis: null, layers: true },
+    security: { label: { en: 'Security', es: 'Seguridad' }, icon: '<path d="M12 3 4.5 6v5.5c0 4.5 3.2 8 7.5 9.5 4.3-1.5 7.5-5 7.5-9.5V6z"/><path d="m9 12 2 2 4-4"/>', groups: 'all', nodeDetail: 'full', edgeLabels: true, dataTags: true, locks: true, cost: false, zones: true, notes: true, review: true, emphasis: 'security', layers: true },
+    data:     { label: { en: 'Data', es: 'Datos' }, icon: '<ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/>', groups: 'all', nodeDetail: 'full', edgeLabels: true, dataTags: true, locks: false, cost: false, zones: true, notes: true, review: true, emphasis: 'data', layers: true },
+    cost:     { label: { en: 'Cost', es: 'Costo' }, icon: '<circle cx="12" cy="12" r="9"/><path d="M14.8 9.2c-.4-1-1.4-1.6-2.8-1.6-1.6 0-2.8.8-2.8 2s1 1.7 2.8 2.1 2.8.9 2.8 2.1-1.2 2-2.8 2c-1.4 0-2.4-.6-2.8-1.6M12 6v1.6M12 16.4V18"/>', groups: 'all', nodeDetail: 'full', edgeLabels: true, dataTags: false, locks: false, cost: true, zones: false, notes: true, review: true, emphasis: 'cost', layers: false },
+    governance: { label: { en: 'Governance', es: 'Gobierno' }, icon: '<circle cx="9" cy="7.5" r="3.5"/><path d="M2.5 20c0-3.8 2.9-6 6.5-6s6.5 2.2 6.5 6"/><rect x="15" y="12" width="7" height="8.5" rx="1.5"/><path d="M17 15.5h3M17 18h3"/>', groups: 'all', nodeDetail: 'full', edgeLabels: true, dataTags: true, locks: false, cost: false, zones: false, notes: true, review: true, emphasis: 'owner', layers: true }
   },
   /* Vista por defecto al abrir si el navegador no recuerda otra (el diagrama puede traer `meta.view`). */
   defaultView: 'full',

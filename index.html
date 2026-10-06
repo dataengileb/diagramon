@@ -364,6 +364,9 @@
   .dchip.on { background: var(--c); border-color: var(--c); color: var(--bg); }
   .seg button.enc-yes.on { color: var(--p-menta); }
   .seg button.enc-no.on { color: var(--p-coral); }
+  .region-row { display: flex; align-items: flex-end; gap: 8px; } .region-row > label { flex: 1; min-width: 0; }
+  .region-jur { flex: none; height: 32px; padding: 0 10px; display: inline-flex; align-items: center; border: 1px solid var(--border); border-radius: 999px; font-size: 11px; font-weight: 750; letter-spacing: .03em; color: var(--accent); } .region-jur[hidden] { display: none; }
+  .xfer-ok { display: block; margin-top: 5px; } .btn.small.on { border-color: var(--accent); color: var(--accent); }
   .enc-warn { display: block; margin-top: 5px; font-size: 11.5px; font-weight: 600; color: var(--p-coral); }
 
   /* Buscador de iconos */
@@ -490,6 +493,30 @@
   .path-badge { pointer-events: none; }
   .path-badge circle { fill: var(--accent); stroke: var(--panel); stroke-width: 2; }
   .path-badge text { fill: #fff; font: 700 10px var(--font, inherit); text-anchor: middle; dominant-baseline: central; }
+  .path-badge.lin-src circle { fill: var(--p-menta); }
+  .path-badge.lin-dst circle { fill: var(--p-melocoton); }
+  .path-badge.lin-src.lin-dst circle { fill: var(--p-limon); }
+  .path-badge.lin-src text, .path-badge.lin-dst text { fill: #10161c; }
+  .ds-chips { display: flex; flex-wrap: wrap; gap: 5px; margin: 4px 0 6px; }
+  .ds-chips:empty { display: none; }
+  .ds-chip { display: inline-flex; align-items: center; max-width: 100%; border: 1px solid var(--border); border-radius: 999px; background: var(--surface2); overflow: hidden; }
+  .ds-chip button { border: 0; background: none; color: inherit; font: inherit; font-size: 12px; cursor: pointer; padding: 3px 9px; }
+  .ds-chip .ds-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+  .ds-chip .ds-name:hover { color: var(--accent); }
+  .ds-chip .ds-x { padding: 3px 8px 3px 2px; color: var(--muted); }
+  .ds-chip .ds-x:hover { color: var(--p-coral); }
+  .ds-chip:not(:has(.ds-x)) .ds-name { padding-right: 10px; }
+  .ds-add { display: block; width: 100%; box-sizing: border-box; margin-top: 3px; padding: 7px 9px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); font: inherit; font-size: 12.5px; }
+  .ds-add:focus { outline: none; border-color: var(--accent); }
+  .ds-pop { width: 260px; max-width: calc(100vw - 16px); z-index: 40; }
+  .ds-q { display: block; width: 100%; box-sizing: border-box; padding: 7px 9px; margin-bottom: 4px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); font: inherit; font-size: 12.5px; }
+  .ds-q:focus { outline: none; border-color: var(--accent); }
+  .ds-list { max-height: min(40vh, 280px); overflow: auto; }
+  .ds-list button > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .menu-pop .ds-list button.on { background: var(--surface2); box-shadow: inset 2px 0 0 var(--accent); }
+  .docbar-leg .ds-row { display: flex; align-items: baseline; gap: 8px; width: 100%; padding: 2px 4px; border: 0; border-radius: 6px; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+  .docbar-leg .ds-row:hover { background: color-mix(in srgb, var(--text) 8%, transparent); color: var(--accent); }
+  .docbar-leg .ds-row small { margin-left: auto; color: var(--muted); }
 
   .cf-back { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 16px; background: rgba(0,0,0,.45); }
   .cf { width: min(400px, 100%); padding: 18px 18px 14px; border: 1px solid var(--border); border-radius: 16px; background: var(--panel); box-shadow: var(--shadow); }
@@ -614,6 +641,10 @@
   .edge-label { pointer-events: none; }
   .edge-label > rect { fill: var(--surface); stroke: var(--c); stroke-opacity: .35; transition: fill .4s, stroke .4s; }
   .edge-label > text { fill: var(--text); font-size: 11px; font-weight: 500; opacity: .85; }
+  /* Linaje: nombres de los conjuntos de datos bajo la etiqueta (solo en la vista Datos) */
+  .edge-ds { display: none; pointer-events: none; }
+  .vw-data .edge-ds { display: inline; }
+  .edge-ds text { fill: var(--text); opacity: .72; font-size: 10px; font-weight: 600; paint-order: stroke; stroke: var(--surface); stroke-width: 3px; stroke-linejoin: round; }
   .edge.insecure .edge-label > rect { stroke: var(--p-coral); stroke-opacity: 1; stroke-width: 1.5; }
   .edge-lock rect, .edge-lock path { fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
   .edge-lock.on rect, .edge-lock.on path { stroke: var(--p-menta); }
@@ -662,6 +693,17 @@
   .v-hide { display: none !important; }
   .nd-min { display: none; } .vw-min .nd-min { display: inline; } .vw-min .nd-full { display: none; }
   .vw-no-dtags .dt-data, .vw-no-review .dt-review, .vw-no-cost .node-cost { display: none; }
+  /* Residencia de datos: chip de región (Seguridad y Física) y marcador de cruce de frontera (Seguridad) */
+  .node-region, .edge-xb { display: none; }
+  .vw-security .node-region, .vw-physical .node-region { display: inline; }
+  .vw-security .edge-xb { display: inline; }
+  .node-region { pointer-events: none; }
+  .node-region rect { fill: var(--surface); stroke: var(--c); stroke-opacity: .45; stroke-width: 1; }
+  .node-region text { fill: var(--muted); font-size: 10.5px; font-weight: 700; }
+  .edge-xb { pointer-events: none; }
+  .edge-xb circle { fill: var(--surface); stroke: var(--sev-critical); stroke-width: 1.6; }
+  .edge-xb .xb-g { fill: none; stroke: var(--sev-critical); stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; }
+  .edge-xb.ok circle, .edge-xb.ok .xb-g { stroke: var(--muted); } .edge-xb.ok .xb-g { stroke-width: 1.8; }
   .vw-no-zones #l-zones, .vw-no-zones #l-zone-top, .vw-no-notes #l-notes, .vw-collapse #l-ghosts { display: none; }
   .diagramon-svg .node.v-dim, .diagramon-svg .edge.v-dim { opacity: .24; }
   .diagramon-svg .edge.v-dim .particle { display: none; }
@@ -676,6 +718,14 @@
   .node.v-heat .node-card { fill: color-mix(in srgb, var(--heat) 24%, var(--surface)); stroke: var(--heat); stroke-opacity: 1; stroke-width: 1.8; }
   .node.v-heat .node-cost rect { fill: var(--heat); stroke: var(--heat); stroke-opacity: 1; }
   .node.v-heat .node-cost text { fill: var(--bg); }
+  /* Gobierno: color por equipo (--own lo calcula app.js) y pastilla de equipo / dueño bajo cada nodo (solo en la vista Gobierno) */
+  .node.v-own .node-card { fill: color-mix(in srgb, var(--own) 22%, var(--surface)); stroke: var(--own); stroke-opacity: 1; stroke-width: 1.8; }
+  .node-own { display: none; }
+  .vw-governance .node-own { display: inline; }
+  .node-own rect { fill: var(--surface); stroke: var(--c); stroke-opacity: .45; stroke-width: 1; }
+  .node-own text { fill: var(--c); font-size: 10.5px; font-weight: 700; }
+  .node.v-own .node-own rect { fill: var(--own); stroke: var(--own); stroke-opacity: 1; }
+  .node.v-own .node-own text { fill: var(--bg); }
   /* Contexto: cajas cerradas de primer nivel (el mismo rectángulo del grupo) */
   .ctx-box { cursor: grab; }
   .ctx-rect { fill: var(--c); fill-opacity: .13; stroke: var(--c); stroke-opacity: .75; stroke-width: 1.6; transition: fill-opacity .2s, stroke-opacity .2s; }
@@ -731,8 +781,33 @@
   .view-pill span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .view-pill .icon-btn { width: 18px; height: 18px; margin-right: -4px; }
   .view-pill .icon-btn svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+  .docbar-leg li[data-gov] { cursor: pointer; } .docbar-leg li[data-gov]:hover { color: var(--text); } .docbar-leg li small { color: var(--muted); }
+  .gov-box { margin-bottom: 11px; } .gov-box summary { cursor: pointer; font-size: 11.5px; font-weight: 650; color: var(--muted); margin-bottom: 8px; } .gov-box label { margin-bottom: 8px; }
+  .gov-box .cost-hint { margin-top: 3px; font-size: 10.5px; }
   .docbar-leg .heat { width: 70px; height: 8px; border-radius: 4px; border-radius: 4px; }
   .docbar-leg li.sw i { width: 16px; height: 3px; border-radius: 2px; }
+  /* Capas del data lake (bronze / silver / gold). Colores por tema; config.js › dataLayers los usa con var(--layer-<clave>) y se pueden cambiar aquí */
+  :root, .diagramon-svg[data-theme] { --layer-bronze: #c27c3e; --layer-silver: #9aa7b4; --layer-gold: #d4a72c; }
+  :root[data-theme="light"], .diagramon-svg[data-theme="light"] { --layer-bronze: #a35f25; --layer-silver: #6b7a89; --layer-gold: #a17800; }
+  :root[data-theme="black"], .diagramon-svg[data-theme="black"] { --layer-bronze: #e0904c; --layer-silver: #bcc7d2; --layer-gold: #f2c53d; }
+  .layer-band { fill: var(--lc); pointer-events: none; }
+  .layer-pill { pointer-events: none; }
+  .layer-pill rect { fill: var(--surface); stroke: var(--lc); stroke-width: 1.2; }
+  .layer-pill text { fill: var(--lc); font-size: 9.5px; font-weight: 800; letter-spacing: .04em; }
+  .group-tag .layer-pill rect, .group-tag:hover .layer-pill rect { fill: var(--surface); fill-opacity: 1; }
+  .group-tag .layer-pill text { fill: var(--lc); font-size: 9.5px; letter-spacing: .04em; }
+  .group.has-layer .group-box { stroke: var(--lc); stroke-opacity: .9; stroke-width: 2.4; }
+  .vw-no-layers .node-layer { display: none; }
+  .docbar-leg li.layer-row { cursor: pointer; }
+  .docbar-leg li.layer-row:hover { color: var(--text); }
+  .docbar-leg li.layer-row i { width: 4px; height: 12px; border-radius: 2px; }
+  .docbar-leg li.layer-row b { margin-left: auto; color: var(--muted); font-weight: 650; font-variant-numeric: tabular-nums; }
+  .layer-seg button { padding: 5px 1px; font-size: 11px; line-height: 1.2; }
+  .layer-seg button[data-layer].on:not([data-layer=""]) { color: var(--lc); }
+  .layer-names { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+  .layer-names > span { flex: none; font-size: 11px; color: var(--muted); }
+  .layer-names .seg { flex: 1; margin-top: 0; padding: 2px; }
+  .layer-names .seg button { padding: 3px 2px; font-size: 10px; }
   .flt-pill .icon-btn { width: 18px; height: 18px; margin-right: -4px; }
   .flt-pill .icon-btn svg { width: 12px; height: 12px; }
   .diagramon-svg .node.fdim, .diagramon-svg .edge.fdim, .diagramon-svg .group.fdim { opacity: .12; }
