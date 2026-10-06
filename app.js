@@ -1321,7 +1321,25 @@
       pill.innerHTML = `<span class="dot"></span>${esc(verLabel(v))}${v.status !== 'draft' ? ` <b class="ver-status" style="--s:${VSTATUS[v.status]}">${esc(T(`ver.st.${v.status}`))}</b>` : ''}${isDirty(v) ? ` <small>· ${esc(T('ver.dirty'))}</small>` : ''}`;
     }
     document.title = `${m.title} · ${C.app.name}`;
+    renderDocbar();
   }
+
+  /* ---------- ficha del documento al pie del lienzo (misma fuente que el cajetín exportado) ---------- */
+  function renderDocbar() {
+    const box = $('#docbar'), open = store.get('docbar', true), d = docInfo(), v = d.av;
+    box.classList.toggle('open', open);
+    $('#docbar-toggle').setAttribute('aria-expanded', open);
+    $('#docbar-toggle').title = T(open ? 'doc.hide' : 'doc.show');
+    $('#docbar-title').textContent = d.title;
+    const pill = $('#docbar-pill');
+    pill.hidden = !v;
+    if (v) { pill.style.setProperty('--s', VSTATUS[v.status]); pill.textContent = `${verLabel(v)} · ${T(`ver.st.${v.status}`)}`; }
+    const types = open ? legendTypes() : [];
+    $('#docbar-body').innerHTML = open ? `<dl>${d.info.map(([k, x]) => `<dt>${esc(k)}</dt><dd>${esc(x)}</dd>`).join('')}</dl>${types.length ? `<details class="docbar-leg"${store.get('docbarLeg', false) ? ' open' : ''}><summary>${esc(T('leg.components'))} · ${types.length}</summary><ul>${types.map(r => `<li style="--c:${esc(r.color)}"><i></i>${esc(r.label)}</li>`).join('')}</ul></details>` : ''}` : '';
+  }
+  function toggleDocbar() { store.set('docbar', !store.get('docbar', true)); renderDocbar(); }
+  $('#docbar-toggle').addEventListener('click', toggleDocbar);
+  $('#docbar-body').addEventListener('toggle', ev => { if (ev.target.matches('details')) store.set('docbarLeg', ev.target.open); }, true);
 
   /* ---------- filtros ("lentes"): atenúan lo que no coincide ---------- */
   // Filtro: { data: [clase | '@insecure'], review: ['open','overdue'], provider, category, group, cost: ['cost'] }
@@ -2952,6 +2970,25 @@
     setTimeout(() => URL.revokeObjectURL(a.href), 3000);
   }
   /* ---------- leyenda y cajetín de las exportaciones ---------- */
+  // Ficha del documento (la usan el cajetín exportado y la franja del lienzo): { title, info: [[clave, valor]] }
+  function docInfo() {
+    const m = S.model, av = activeVersion(), cost = m.nodes.some(hasCost) ? `≈ ${money(round2(monthlyTotal(m.nodes)))}${T('cost.mo')}` : '';
+    const info = [[T('leg.author'), m.meta?.author || av?.author || '—'], [T('leg.version'), m.meta?.version || (av ? av.name || verLabel(av) : '—')],
+      ...(av ? [[T('leg.status'), T(`ver.st.${av.status}`)], ...(decided(av) ? [[decLabel(av), [av.decidedBy, fmtDay(av.decidedOn)].filter(Boolean).join(' · ')]] : []), [T('ver.created'), fmtDay(av.created)], [T('ver.updatedOn'), fmtDay(av.updated)]] : [[T('leg.date'), new Intl.DateTimeFormat(I.lang, { dateStyle: 'long' }).format(new Date())]]),
+      ...(cost ? [[T('leg.cost'), cost]] : [])];
+    return { title: m.title, info, av };
+  }
+  // Tipos de componente que usa el diagrama, con el color con que se ven (el propio del nodo o el del tipo).
+  // Una fila por tipo+color: un mismo tipo con colores distintos se distingue en el lienzo y en la leyenda.
+  function legendTypes() {
+    const seen = new Map();
+    S.model.nodes.forEach(n => {
+      const type = C.types[n.type] ? n.type : 'generic', color = nodeColor({ ...n, type }), k = `${type}|${color}`;
+      if (!seen.has(k)) seen.set(k, { type, color, label: typeLabel(type) });
+    });
+    const order = [...new Set([...seen.values()].map(r => r.type))];
+    return [...seen.values()].sort((a, b) => order.indexOf(a.type) - order.indexOf(b.type));
+  }
   // Solo lo que el diagrama usa: estilos de conexión, candados, tipos de componente y clasificaciones
   function buildLegend() {
     const m = S.model, g = document.createElementNS(NS, 'g');
@@ -2981,13 +3018,15 @@
       } });
     });
     col(T('leg.connections'), conn);
-    // Componentes: un color por tipo (los nodos con color propio no entran)
-    const types = [...new Map(m.nodes.filter(n => !n.color).map(n => [n.type, n])).keys()].slice(0, 16);
-    const comp = types.map(k => ({ w: 22 + textW(typeLabel(k), '400 12px'), draw: (x, y) => {
-      el('circle', { cx: x + 6, cy: y, r: 6, style: `fill:${colorVar(typeOf({ type: k }).color) || 'var(--accent)'}` }, g);
-      textRow(x + 22, y, typeLabel(k));
+    // Componentes: una fila por tipo y color tal como se ven; en columnas de hasta 8 (más si son muchos)
+    const MAXT = 40, all = legendTypes(), shown = all.length > MAXT ? all.slice(0, MAXT - 1) : all;
+    const comp = shown.map(r => ({ w: 22 + textW(r.label, '400 12px'), draw: (x, y) => {
+      el('circle', { cx: x + 6, cy: y, r: 6, style: `fill:${r.color}` }, g);
+      textRow(x + 22, y, r.label);
     } }));
-    for (let i = 0; i < comp.length; i += 8) col(i ? '' : T('leg.components'), comp.slice(i, i + 8));
+    if (all.length > shown.length) { const more = T('leg.more', all.length - shown.length); comp.push({ w: 22 + textW(more, '400 12px'), draw: (x, y) => textRow(x + 22, y, more, 'legend-muted') }); }
+    const per = Math.max(8, Math.ceil(comp.length / 4));
+    for (let i = 0; i < comp.length; i += per) col(i ? '' : T('leg.components'), comp.slice(i, i + per));
     // Datos
     const used = new Set([...m.nodes, ...m.edges].flatMap(x => x.data || []));
     col(T('leg.data'), dataTags({ data: [...used] }).map(t => ({ w: Math.ceil(textW(t.short, FONT.dtag)) + 20 + textW(t.label, '400 12px'), draw: (x, y) => {
@@ -3019,12 +3058,9 @@
       } };
     }), 38);
     // Cajetín
-    const av = activeVersion(), cost = m.nodes.some(hasCost) ? `≈ ${money(round2(monthlyTotal(m.nodes)))}${T('cost.mo')}` : '';
-    const info = [[T('leg.author'), m.meta?.author || av?.author || '—'], [T('leg.version'), m.meta?.version || (av ? av.name || verLabel(av) : '—')],
-      ...(av ? [[T('leg.status'), T(`ver.st.${av.status}`)], ...(decided(av) ? [[decLabel(av), [av.decidedBy, fmtDay(av.decidedOn)].filter(Boolean).join(' · ')]] : []), [T('ver.created'), fmtDay(av.created)], [T('ver.updatedOn'), fmtDay(av.updated)]] : [[T('leg.date'), new Intl.DateTimeFormat(I.lang, { dateStyle: 'long' }).format(new Date())]]),
-      ...(cost ? [[T('leg.cost'), cost]] : [])];
+    const doc = docInfo(), info = doc.info.map(([k, v]) => [k, fitText(v, '400 12px', 380)]), title = fitText(doc.title, '700 14px', 420);
     const keyW = Math.max(...info.map(([k]) => textW(k, '400 11.5px'))) + 14;
-    const infoW = Math.max(220, textW(m.title, '700 14px'), keyW + Math.max(...info.map(([, v]) => textW(v, '400 12px')))) + 4;
+    const infoW = Math.max(220, textW(title, '700 14px'), keyW + Math.max(...info.map(([, v]) => textW(v, '400 12px')))) + 4;
     const colW = c => Math.max(textW(c.head, '750 10.5px') + 10, ...c.rows.map(rw => rw.w));
     const P = 20, GAP = 34, HEAD = 26;
     const rowsH = Math.max(0, ...cols.map(c => c.rows.length * c.rh));
@@ -3035,15 +3071,15 @@
       c.rows.forEach((rw, i) => rw.draw(x, P + HEAD + i * c.rh + c.rh / 2 - 4));
       x += colW(c) + GAP;
     });
-    return { g, h, colsW: x - GAP + P, infoW, info, keyW, P };
+    return { g, h, colsW: x - GAP + P, infoW, info, keyW, P, title };
   }
   function placeLegend(lg, W) {
-    const { g, h, infoW, info, keyW, P } = lg, ix = W - P - infoW;
+    const { g, h, infoW, info, keyW, P, title } = lg, ix = W - P - infoW;
     const panel = el('rect', { class: 'legend-panel', x: 0, y: 0, width: W, height: h, rx: 14 });
     g.insertBefore(panel, g.firstChild);
     el('line', { x1: ix - 18, y1: P - 4, x2: ix - 18, y2: h - P + 4, style: 'stroke:var(--border)' }, g);
     el('text', { class: 'legend-head', x: ix, y: P + 9 }, g).textContent = T('leg.document');
-    el('text', { class: 'legend-title', x: ix, y: P + 32 }, g).textContent = S.model.title;
+    el('text', { class: 'legend-title', x: ix, y: P + 32 }, g).textContent = title;
     info.forEach(([k, v], i) => {
       el('text', { class: 'legend-muted', x: ix, y: P + 54 + i * 20 }, g).textContent = k;
       el('text', { class: 'legend-text', x: ix + keyW, y: P + 54 + i * 20 }, g).textContent = v;
@@ -3412,6 +3448,7 @@
     else if (k === 'p') togglePlay();
     else if (k === 'r' && selIds().length === 2) showPath(...selIds());
     else if (k === 'v') present();
+    else if (k === 'i') toggleDocbar();
     else if (k === 't') toggleTheme();
     else if (k === 'l') toggleLang();
     else if (k === 'e') toggleRouting();

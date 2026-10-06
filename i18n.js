@@ -192,7 +192,8 @@ review db: "DB in a public subnet" by=Ana raised=2026-10-01 due=2026-11-15
       'exp.legend': 'Legend and title block', 'exp.author.ph': 'Your name or team', 'exp.legend.note': 'Added at the bottom of SVG and PNG exports.',
       'leg.connections': 'CONNECTIONS', 'leg.components': 'COMPONENTS', 'leg.data': 'DATA', 'leg.document': 'DOCUMENT',
       'leg.encrypted': 'Encrypted in transit', 'leg.unencrypted': 'Not encrypted',
-      'leg.author': 'Author', 'leg.version': 'Version', 'leg.date': 'Date', 'leg.cost': 'Estimated cost', 'leg.made': 'Made with Diagramon'
+      'leg.author': 'Author', 'leg.version': 'Version', 'leg.date': 'Date', 'leg.cost': 'Estimated cost', 'leg.made': 'Made with Diagramon', 'leg.more': n => `+${n} more`,
+      'doc.hide': 'Collapse document card (I)', 'doc.show': 'Show document card (I)'
     },
 
     es: {
@@ -372,7 +373,8 @@ revisión db: "BD en subred pública" por=Ana levantada=2026-10-01 compromiso=20
       'exp.legend': 'Leyenda y cajetín', 'exp.author.ph': 'Tu nombre o equipo', 'exp.legend.note': 'Se añade abajo en las exportaciones SVG y PNG.',
       'leg.connections': 'CONEXIONES', 'leg.components': 'COMPONENTES', 'leg.data': 'DATOS', 'leg.document': 'DOCUMENTO',
       'leg.encrypted': 'Cifrado en tránsito', 'leg.unencrypted': 'Sin cifrar',
-      'leg.author': 'Autor', 'leg.version': 'Versión', 'leg.date': 'Fecha', 'leg.cost': 'Costo estimado', 'leg.made': 'Hecho con Diagramon'
+      'leg.author': 'Autor', 'leg.version': 'Versión', 'leg.date': 'Fecha', 'leg.cost': 'Costo estimado', 'leg.made': 'Hecho con Diagramon', 'leg.more': n => `+${n} más`,
+      'doc.hide': 'Contraer la ficha del documento (I)', 'doc.show': 'Mostrar la ficha del documento (I)'
     }
   };
 
