@@ -294,6 +294,7 @@
       const enc = typeof o.encrypted === 'string' ? (/^(yes|true|si|sí)$/i.test(o.encrypted) ? true : /^(no|false)$/i.test(o.encrypted) ? false : null) : o.encrypted;
       if (enc === true || enc === false) o.encrypted = enc; else delete o.encrypted;
       if (o.route !== 'curved' && o.route !== 'elbow') delete o.route;
+      if (o.both === true || (typeof o.both === 'string' && /^(yes|true|si|sí)$/i.test(o.both))) o.both = true; else delete o.both;
       m.edges.push(o);
     });
     m.notes = []; m.zones = [];
@@ -725,7 +726,8 @@
       g.style.setProperty('--dash-dur', `${(dist / (C.animation.particleSpeed * 0.5)).toFixed(2)}s`);
     }
     const arrow = el('path', { class: 'edge-arrow' }, g);
-    const parts = Array.from({ length: cfg.particles || 0 }, () => el('circle', { class: 'particle', r: st === 'data' ? 2.4 : 3, cx: -9999, cy: -9999 }, g));
+    // Con punta en ambos extremos las partículas van y vienen (al menos dos, alternando sentido)
+    const parts = Array.from({ length: cfg.particles ? (e.both ? Math.max(2, cfg.particles) : cfg.particles) : 0 }, () => el('circle', { class: 'particle', r: st === 'data' ? 2.4 : 3, cx: -9999, cy: -9999 }, g));
     // Etiqueta: candado de cifrado, texto y clasificaciones de los datos que viajan
     let label = null;
     const tags = dataTags(e), lock = e.encrypted != null;
@@ -735,12 +737,18 @@
       label = el('g', { class: 'edge-label' }, g);
       const items = [];
       if (lock) items.push({ w: 10, draw: x => lockIcon(label, x, e.encrypted) });
-      if (e.label) items.push({ w: textW(e.label, FONT.edge), draw: x => { el('text', { x, y: 4 }, label).textContent = e.label; } });
+      // La etiqueta puede tener varias líneas (\n): se centran y la píldora crece con ellas
+      const lines = e.label ? String(e.label).split('\n') : [], LH = 14;
+      if (e.label) items.push({ w: Math.max(...lines.map(l => textW(l, FONT.edge))), draw: (x, w) => {
+        const tx = el('text', { x: x + w / 2, y: 4 - (lines.length - 1) * LH / 2, 'text-anchor': 'middle' }, label);
+        lines.forEach((l, i) => { el('tspan', i ? { x: x + w / 2, dy: LH } : null, tx).textContent = l; });
+      } });
       tags.forEach(t => items.push({ w: Math.ceil(textW(t.short, FONT.dtag)) + 12, draw: x => dataTag(label, x, -7, t, 14) }));
       const gap = 5, w = items.reduce((sum, it) => sum + it.w, 0) + gap * (items.length - 1) + 16;
-      el('rect', { x: -w / 2, y: -10, width: w, height: 20, rx: 10 }, label);
+      const ph = Math.max(20, lines.length * LH + 6);
+      el('rect', { x: -w / 2, y: -ph / 2, width: w, height: ph, rx: Math.min(10, ph / 2) }, label);
       let x = -w / 2 + 8;
-      items.forEach(it => { it.draw(x); x += it.w + gap; });
+      items.forEach(it => { it.draw(x, it.w); x += it.w + gap; });
     }
     R.edges.set(e.id, { g, e, hit, line, arrow, label, parts, len: 0, phase: Math.random() });
   }
@@ -906,7 +914,14 @@
       const p = r.line.getPointAtLength(r.len), q = r.line.getPointAtLength(Math.max(0, r.len - 9));
       const ang = Math.atan2(p.y - q.y, p.x - q.x), c = Math.cos(ang), s = Math.sin(ang);
       const bx = p.x - 10 * c, by = p.y - 10 * s;
-      r.arrow.setAttribute('d', `M${p.x},${p.y} L${bx - 5 * s},${by + 5 * c} L${bx + 5 * s},${by - 5 * c} Z`);
+      let ad = `M${p.x},${p.y} L${bx - 5 * s},${by + 5 * c} L${bx + 5 * s},${by - 5 * c} Z`;
+      if (e.both) { // segunda punta en el origen, mirando hacia fuera
+        const p0 = r.line.getPointAtLength(0), q0 = r.line.getPointAtLength(Math.min(r.len, 9));
+        const a0 = Math.atan2(p0.y - q0.y, p0.x - q0.x), c0 = Math.cos(a0), s0 = Math.sin(a0);
+        const bx0 = p0.x - 10 * c0, by0 = p0.y - 10 * s0;
+        ad += ` M${p0.x},${p0.y} L${bx0 - 5 * s0},${by0 + 5 * c0} L${bx0 + 5 * s0},${by0 - 5 * c0} Z`;
+      }
+      r.arrow.setAttribute('d', ad);
       if (r.label) {
         const mp = r.line.getPointAtLength(r.len / 2);
         r.label.setAttribute('transform', `translate(${mp.x} ${mp.y})`);
@@ -946,8 +961,9 @@
       while (q.length) {
         const u = q.shift();
         m.edges.forEach(e => {
-          if ((down ? e.from : e.to) !== u) return;
-          const v = down ? e.to : e.from;
+          const fwd = (down ? e.from : e.to) === u;
+          if (!fwd && !(e.both && (down ? e.to : e.from) === u)) return;
+          const v = fwd ? (down ? e.to : e.from) : (down ? e.from : e.to);
           edges.add(e.id); nodes.add(v);
           if (!seen.has(v)) { seen.add(v); q.push(v); }
         });
@@ -964,7 +980,7 @@
     if (a === b || !model.nodes.some(n => n.id === a) || !model.nodes.some(n => n.id === b)) return null;
     // Pasos posibles desde u: [arista, vecino]; hacia atrás si rev
     const steps = (u, rev) => model.edges.flatMap(e =>
-      (rev ? e.to : e.from) === u ? [[e, rev ? e.from : e.to]] : !directed && (rev ? e.from : e.to) === u ? [[e, rev ? e.to : e.from]] : []);
+      (rev ? e.to : e.from) === u ? [[e, rev ? e.from : e.to]] : (!directed || e.both) && (rev ? e.from : e.to) === u ? [[e, rev ? e.to : e.from]] : []);
     const bfs = (src, rev) => {
       const dist = new Map([[src, 0]]), cnt = new Map([[src, 1]]), q = [src];
       while (q.length) {
@@ -982,7 +998,7 @@
     f.dist.forEach((d, id) => { if (r.dist.has(id) && d + r.dist.get(id) === hops) { nodes.add(id); dist.set(id, d); } });
     model.edges.forEach(e => {
       const ok = (u, v) => nodes.has(u) && nodes.has(v) && dist.get(u) + 1 === dist.get(v);
-      if (ok(e.from, e.to) || (!directed && ok(e.to, e.from))) edges.add(e.id);
+      if (ok(e.from, e.to) || ((!directed || e.both) && ok(e.to, e.from))) edges.add(e.id);
     });
     return { nodes, edges, hops, count: f.cnt.get(b), dist };
   }
@@ -1078,7 +1094,7 @@
         r.phase = (r.phase + dt * C.animation.particleSpeed * f / r.len) % 1;
         const count = r.parts.length;
         r.parts.forEach((c, i) => {
-          const t = (r.phase + i / count) % 1, p = r.line.getPointAtLength(t * r.len);
+          const t = (r.phase + i / count) % 1, p = r.line.getPointAtLength((r.e.both && i % 2 ? 1 - t : t) * r.len);
           c.setAttribute('cx', p.x.toFixed(1));
           c.setAttribute('cy', p.y.toFixed(1));
           c.setAttribute('opacity', Math.min(1, t * 6, (1 - t) * 6).toFixed(2));
@@ -1194,7 +1210,7 @@
   const ORDER = {
     group: ['id', 'label', 'icon', 'color', 'parent'],
     node: ['id', 'label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'x', 'y', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc'],
-    edge: ['id', 'from', 'to', 'label', 'style', 'route', 'color', 'data', 'encrypted'],
+    edge: ['id', 'from', 'to', 'label', 'style', 'route', 'both', 'color', 'data', 'encrypted'],
     note: ['id', 'x', 'y', 'w', 'h', 'text', 'color'],
     zone: ['id', 'x', 'y', 'w', 'h', 'label', 'severity', 'desc']
   };
@@ -1309,7 +1325,25 @@
       pill.innerHTML = `<span class="dot"></span>${esc(verLabel(v))}${v.status !== 'draft' ? ` <b class="ver-status" style="--s:${VSTATUS[v.status]}">${esc(T(`ver.st.${v.status}`))}</b>` : ''}${isDirty(v) ? ` <small>· ${esc(T('ver.dirty'))}</small>` : ''}`;
     }
     document.title = `${m.title} · ${C.app.name}`;
+    renderDocbar();
   }
+
+  /* ---------- ficha del documento al pie del lienzo (misma fuente que el cajetín exportado) ---------- */
+  function renderDocbar() {
+    const box = $('#docbar'), open = store.get('docbar', true), d = docInfo(), v = d.av;
+    box.classList.toggle('open', open);
+    $('#docbar-toggle').setAttribute('aria-expanded', open);
+    $('#docbar-toggle').title = T(open ? 'doc.hide' : 'doc.show');
+    $('#docbar-title').textContent = d.title;
+    const pill = $('#docbar-pill');
+    pill.hidden = !v;
+    if (v) { pill.style.setProperty('--s', VSTATUS[v.status]); pill.textContent = `${verLabel(v)} · ${T(`ver.st.${v.status}`)}`; }
+    const types = open ? legendTypes() : [];
+    $('#docbar-body').innerHTML = open ? `<dl>${d.info.map(([k, x]) => `<dt>${esc(k)}</dt><dd>${esc(x)}</dd>`).join('')}</dl>${types.length ? `<details class="docbar-leg"${store.get('docbarLeg', false) ? ' open' : ''}><summary>${esc(T('leg.components'))} · ${types.length}</summary><ul>${types.map(r => `<li style="--c:${esc(r.color)}"><i></i>${esc(r.label)}</li>`).join('')}</ul></details>` : ''}` : '';
+  }
+  function toggleDocbar() { store.set('docbar', !store.get('docbar', true)); renderDocbar(); }
+  $('#docbar-toggle').addEventListener('click', toggleDocbar);
+  $('#docbar-body').addEventListener('toggle', ev => { if (ev.target.matches('details')) store.set('docbarLeg', ev.target.open); }, true);
 
   /* ---------- filtros ("lentes"): atenúan lo que no coincide ---------- */
   // Filtro: { data: [clase | '@insecure'], review: ['open','overdue'], provider, category, group, cost: ['cost'] }
@@ -1987,6 +2021,16 @@
     versionsChanged();
     toast(T('ver.deleted', { name: verLabel(v) }));
   }
+  // Borra solo el historial de estados; el estado actual, quién decidió y el motivo no se tocan. Entra en Deshacer
+  async function clearVerHistory(id) {
+    const v = findVersion(id);
+    if (!v?.history?.length) return;
+    if (!(await phraseBox({ title: T('ver.cf.histTitle', { name: verLabel(v) }), text: T('ver.cf.histText', { name: verLabel(v) }), phrase: T('ver.cf.phrase'), ok: T('ver.clearHist'), cancel: T('ver.cf.cancel') }))) return;
+    pushHistory();
+    delete v.history;
+    versionsChanged();
+    toast(T('ver.histCleared', { name: verLabel(v) }));
+  }
   function compareVersion(id) {
     S.compare = id && S.compare?.id !== id && findVersion(id) ? { id } : null;
     applyCompare();
@@ -1996,7 +2040,7 @@
   // Diferencias entre lo guardado (a) y el lienzo (b). La posición no cuenta como cambio.
   const DIFF_FIELDS = {
     node: ['label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc'],
-    edge: ['label', 'style', 'route', 'color', 'data', 'encrypted'],
+    edge: ['label', 'style', 'route', 'both', 'color', 'data', 'encrypted'],
     group: ['label', 'icon', 'color', 'parent']
   };
   function diffModels(a, b) {
@@ -2098,7 +2142,7 @@
             <label>${T('ver.updatedOn')}<input type="date" data-vfield="updated" value="${esc(v.updated)}"></label>
           </div>
           <label>${T('ver.note')}<textarea data-vfield="note" rows="2" placeholder="${esc(T('ver.note.ph'))}">${esc(v.note || '')}</textarea></label>
-          ${v.history?.length ? `<div class="ver-hist"><span>${T('ver.history')}</span><ul>${v.history.map(h => `<li style="--s:${VSTATUS[h.status]}">${[fmtDay(h.date), T(`ver.st.${h.status}`), h.by, h.reason].filter(Boolean).map((x, i) => i === 1 ? `<b>${esc(x)}</b>` : esc(x)).join(' · ')}</li>`).join('')}</ul></div>` : ''}
+          ${v.history?.length ? `<div class="ver-hist"><span>${T('ver.history')}<button class="ver-hist-clear" data-ver="clearHist">${T('ver.clearHist')}</button></span><ul>${v.history.map(h => `<li style="--s:${VSTATUS[h.status]}">${[fmtDay(h.date), T(`ver.st.${h.status}`), h.by, h.reason].filter(Boolean).map((x, i) => i === 1 ? `<b>${esc(x)}</b>` : esc(x)).join(' · ')}</li>`).join('')}</ul></div>` : ''}
         </div>` : ''}
         ${cmp && S.compare.diff ? diffList(S.compare.diff) : ''}
         <div class="ver-actions">
@@ -2137,10 +2181,10 @@
     if (!(d.count.a + d.count.r + d.count.c)) return `<p class="ver-sum">${esc(T('ver.same'))}</p>`;
     const FIELD = { label: 'insp.name', sub: 'insp.detail', type: 'insp.type', icon: 'insp.icon', group: 'insp.group', color: 'insp.color', badge: 'field.badge',
       cost: 'cost.label', costPeriod: 'cost.period', costYears: 'cost.yearsAria', desc: 'insp.desc', style: 'insp.style', parent: 'insp.parent',
-      data: 'data.label', encrypted: 'enc.label', route: 'insp.route', review: 'rev.label' };
+      data: 'data.label', encrypted: 'enc.label', route: 'insp.route', both: 'insp.dir', review: 'rev.label' };
     const fields = (fs, kind) => fs.map(f => T(kind === 'edge' && f === 'label' ? 'insp.label' : FIELD[f] || f).toLowerCase()).join(', ');
     const names = new Map([...S.compare.base.nodes, ...S.model.nodes].map(n => [n.id, n.label]));
-    const edgeName = e => `${names.get(e.from) || e.from} → ${names.get(e.to) || e.to}`;
+    const edgeName = e => `${names.get(e.from) || e.from} ${e.both ? '↔' : '→'} ${names.get(e.to) || e.to}`;
     const rows = [];
     if (d.title) rows.push(['chg', T('field.title'), d.title.to]);
     d.nodes.added.forEach(n => rows.push(['add', n.label, '', n.id]));
@@ -2224,6 +2268,7 @@
     else if (b.dataset.ver === 'compare') compareVersion(id);
     else if (b.dataset.ver === 'update') { const v = findVersion(id); if (v) saveVersion('env', v.env); }
     else if (b.dataset.ver === 'delete') deleteVersion(id);
+    else if (b.dataset.ver === 'clearHist') clearVerHistory(id);
     else if (b.dataset.ver === 'edit') {
       S.verEdit = S.verEdit === id ? null : id;
       renderVersions();
@@ -2425,11 +2470,13 @@
         </div>`;
     } else if (kind === 'edge') {
       const a = nm(t.from), b = nm(t.to);
-      html = head(colorVar(t.color) || nodeColor(a), '', T('insp.edge'), `${a.label} → ${b.label}`) + `
-        <label>${T('insp.label')}<input data-field="label" value="${esc(t.label || '')}" placeholder="${esc(T('insp.label.ph'))}"></label>
+      html = head(colorVar(t.color) || nodeColor(a), '', T('insp.edge'), `${a.label} ${t.both ? '↔' : '→'} ${b.label}`) + `
+        <label>${T('insp.label')}<textarea data-field="label" rows="2" placeholder="${esc(T('insp.label.ph'))}">${esc(t.label || '')}</textarea></label>
         <label>${T('insp.style')}<select data-field="style">${Object.entries(C.edgeStyles).map(([k, v]) => `<option value="${k}"${k === (C.edgeStyles[t.style] ? t.style : 'sync') ? ' selected' : ''}>${esc(loc(v.label))}</option>`).join('')}</select></label>
         <label>${T('insp.route')}<select data-field="route">${[['', T('route.default', { name: T(`route.${S.model.routing || 'curved'}`) })], ['curved', T('route.curved')], ['elbow', T('route.elbow')]]
           .map(([k, l]) => `<option value="${k}"${(t.route || '') === k ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select></label>
+        <div class="field">${T('insp.dir')}<div class="seg">${[['', 'dir.one'], ['both', 'dir.both']].map(([k, l]) =>
+          `<button data-dir="${k}" class="${(t.both ? 'both' : '') === k ? 'on' : ''}">${T(l)}</button>`).join('')}</div></div>
         ${encField(t)}
         ${dataField(t, true)}
         <div class="field">${T('insp.color')}${swatches(t.color)}</div>
@@ -2587,6 +2634,10 @@
       const list = [].concat(t), k = b.dataset.dclass, all = list.every(x => x.data?.includes(k));
       pushHistory();
       list.forEach(x => { const d = cleanData([...(x.data || []).filter(j => j !== k), ...(all ? [] : [k])]); if (d.length) x.data = d; else delete x.data; });
+      changed(true); renderInspector();
+    } else if (b.dataset.dir != null && t && !Array.isArray(t)) {
+      pushHistory();
+      if (b.dataset.dir) t.both = true; else delete t.both;
       changed(true); renderInspector();
     } else if (b.dataset.enc != null && t) {
       pushHistory();
@@ -2942,6 +2993,25 @@
     setTimeout(() => URL.revokeObjectURL(a.href), 3000);
   }
   /* ---------- leyenda y cajetín de las exportaciones ---------- */
+  // Ficha del documento (la usan el cajetín exportado y la franja del lienzo): { title, info: [[clave, valor]] }
+  function docInfo() {
+    const m = S.model, av = activeVersion(), cost = m.nodes.some(hasCost) ? `≈ ${money(round2(monthlyTotal(m.nodes)))}${T('cost.mo')}` : '';
+    const info = [[T('leg.author'), m.meta?.author || av?.author || '—'], [T('leg.version'), m.meta?.version || (av ? av.name || verLabel(av) : '—')],
+      ...(av ? [[T('leg.status'), T(`ver.st.${av.status}`)], ...(decided(av) ? [[decLabel(av), [av.decidedBy, fmtDay(av.decidedOn)].filter(Boolean).join(' · ')]] : []), [T('ver.created'), fmtDay(av.created)], [T('ver.updatedOn'), fmtDay(av.updated)]] : [[T('leg.date'), new Intl.DateTimeFormat(I.lang, { dateStyle: 'long' }).format(new Date())]]),
+      ...(cost ? [[T('leg.cost'), cost]] : [])];
+    return { title: m.title, info, av };
+  }
+  // Tipos de componente que usa el diagrama, con el color con que se ven (el propio del nodo o el del tipo).
+  // Una fila por tipo+color: un mismo tipo con colores distintos se distingue en el lienzo y en la leyenda.
+  function legendTypes() {
+    const seen = new Map();
+    S.model.nodes.forEach(n => {
+      const type = C.types[n.type] ? n.type : 'generic', color = nodeColor({ ...n, type }), k = `${type}|${color}`;
+      if (!seen.has(k)) seen.set(k, { type, color, label: typeLabel(type) });
+    });
+    const order = [...new Set([...seen.values()].map(r => r.type))];
+    return [...seen.values()].sort((a, b) => order.indexOf(a.type) - order.indexOf(b.type));
+  }
   // Solo lo que el diagrama usa: estilos de conexión, candados, tipos de componente y clasificaciones
   function buildLegend() {
     const m = S.model, g = document.createElementNS(NS, 'g');
@@ -2957,6 +3027,12 @@
       el('path', { class: 'edge-arrow', d: `M${x + 34},${y} L${x + 26},${y - 4} L${x + 26},${y + 4} Z` }, eg);
       textRow(x + 46, y, loc(cfg.label));
     } }));
+    if (m.edges.some(e => e.both)) conn.push({ w: 46 + textW(T('leg.both'), '400 12px'), draw: (x, y) => {
+      const eg = el('g', { class: 'edge', style: '--c:var(--muted);--w:1.8px' }, g);
+      el('path', { class: 'edge-line', d: `M${x + 4},${y} L${x + 30},${y}` }, eg);
+      el('path', { class: 'edge-arrow', d: `M${x + 34},${y} L${x + 26},${y - 4} L${x + 26},${y + 4} Z M${x},${y} L${x + 8},${y - 4} L${x + 8},${y + 4} Z` }, eg);
+      textRow(x + 46, y, T('leg.both'));
+    } });
     [[true, 'leg.encrypted'], [false, 'leg.unencrypted']].forEach(([on, key]) => {
       if (m.edges.some(e => e.encrypted === on)) conn.push({ w: 46 + textW(T(key), '400 12px'), draw: (x, y) => {
         const lg = el('g', { transform: `translate(${x + 10} ${y})` }, g);
@@ -2965,13 +3041,15 @@
       } });
     });
     col(T('leg.connections'), conn);
-    // Componentes: un color por tipo (los nodos con color propio no entran)
-    const types = [...new Map(m.nodes.filter(n => !n.color).map(n => [n.type, n])).keys()].slice(0, 16);
-    const comp = types.map(k => ({ w: 22 + textW(typeLabel(k), '400 12px'), draw: (x, y) => {
-      el('circle', { cx: x + 6, cy: y, r: 6, style: `fill:${colorVar(typeOf({ type: k }).color) || 'var(--accent)'}` }, g);
-      textRow(x + 22, y, typeLabel(k));
+    // Componentes: una fila por tipo y color tal como se ven; en columnas de hasta 8 (más si son muchos)
+    const MAXT = 40, all = legendTypes(), shown = all.length > MAXT ? all.slice(0, MAXT - 1) : all;
+    const comp = shown.map(r => ({ w: 22 + textW(r.label, '400 12px'), draw: (x, y) => {
+      el('circle', { cx: x + 6, cy: y, r: 6, style: `fill:${r.color}` }, g);
+      textRow(x + 22, y, r.label);
     } }));
-    for (let i = 0; i < comp.length; i += 8) col(i ? '' : T('leg.components'), comp.slice(i, i + 8));
+    if (all.length > shown.length) { const more = T('leg.more', all.length - shown.length); comp.push({ w: 22 + textW(more, '400 12px'), draw: (x, y) => textRow(x + 22, y, more, 'legend-muted') }); }
+    const per = Math.max(8, Math.ceil(comp.length / 4));
+    for (let i = 0; i < comp.length; i += per) col(i ? '' : T('leg.components'), comp.slice(i, i + per));
     // Datos
     const used = new Set([...m.nodes, ...m.edges].flatMap(x => x.data || []));
     col(T('leg.data'), dataTags({ data: [...used] }).map(t => ({ w: Math.ceil(textW(t.short, FONT.dtag)) + 20 + textW(t.label, '400 12px'), draw: (x, y) => {
@@ -3003,12 +3081,9 @@
       } };
     }), 38);
     // Cajetín
-    const av = activeVersion(), cost = m.nodes.some(hasCost) ? `≈ ${money(round2(monthlyTotal(m.nodes)))}${T('cost.mo')}` : '';
-    const info = [[T('leg.author'), m.meta?.author || av?.author || '—'], [T('leg.version'), m.meta?.version || (av ? av.name || verLabel(av) : '—')],
-      ...(av ? [[T('leg.status'), T(`ver.st.${av.status}`)], ...(decided(av) ? [[decLabel(av), [av.decidedBy, fmtDay(av.decidedOn)].filter(Boolean).join(' · ')]] : []), [T('ver.created'), fmtDay(av.created)], [T('ver.updatedOn'), fmtDay(av.updated)]] : [[T('leg.date'), new Intl.DateTimeFormat(I.lang, { dateStyle: 'long' }).format(new Date())]]),
-      ...(cost ? [[T('leg.cost'), cost]] : [])];
+    const doc = docInfo(), info = doc.info.map(([k, v]) => [k, fitText(v, '400 12px', 380)]), title = fitText(doc.title, '700 14px', 420);
     const keyW = Math.max(...info.map(([k]) => textW(k, '400 11.5px'))) + 14;
-    const infoW = Math.max(220, textW(m.title, '700 14px'), keyW + Math.max(...info.map(([, v]) => textW(v, '400 12px')))) + 4;
+    const infoW = Math.max(220, textW(title, '700 14px'), keyW + Math.max(...info.map(([, v]) => textW(v, '400 12px')))) + 4;
     const colW = c => Math.max(textW(c.head, '750 10.5px') + 10, ...c.rows.map(rw => rw.w));
     const P = 20, GAP = 34, HEAD = 26;
     const rowsH = Math.max(0, ...cols.map(c => c.rows.length * c.rh));
@@ -3019,15 +3094,15 @@
       c.rows.forEach((rw, i) => rw.draw(x, P + HEAD + i * c.rh + c.rh / 2 - 4));
       x += colW(c) + GAP;
     });
-    return { g, h, colsW: x - GAP + P, infoW, info, keyW, P };
+    return { g, h, colsW: x - GAP + P, infoW, info, keyW, P, title };
   }
   function placeLegend(lg, W) {
-    const { g, h, infoW, info, keyW, P } = lg, ix = W - P - infoW;
+    const { g, h, infoW, info, keyW, P, title } = lg, ix = W - P - infoW;
     const panel = el('rect', { class: 'legend-panel', x: 0, y: 0, width: W, height: h, rx: 14 });
     g.insertBefore(panel, g.firstChild);
     el('line', { x1: ix - 18, y1: P - 4, x2: ix - 18, y2: h - P + 4, style: 'stroke:var(--border)' }, g);
     el('text', { class: 'legend-head', x: ix, y: P + 9 }, g).textContent = T('leg.document');
-    el('text', { class: 'legend-title', x: ix, y: P + 32 }, g).textContent = S.model.title;
+    el('text', { class: 'legend-title', x: ix, y: P + 32 }, g).textContent = title;
     info.forEach(([k, v], i) => {
       el('text', { class: 'legend-muted', x: ix, y: P + 54 + i * 20 }, g).textContent = k;
       el('text', { class: 'legend-text', x: ix + keyW, y: P + 54 + i * 20 }, g).textContent = v;
@@ -3396,6 +3471,7 @@
     else if (k === 'p') togglePlay();
     else if (k === 'r' && selIds().length === 2) showPath(...selIds());
     else if (k === 'v') present();
+    else if (k === 'i') toggleDocbar();
     else if (k === 't') toggleTheme();
     else if (k === 'l') toggleLang();
     else if (k === 'e') toggleRouting();
@@ -3440,6 +3516,49 @@
       document.addEventListener('keydown', key, true);
       document.body.appendChild(back);
       back.querySelector('[data-cf="no"]').focus();
+    });
+  }
+
+  // Confirmación escrita: el botón sigue deshabilitado hasta teclear la frase (sin pegar ni arrastrar)
+  const normPhrase = x => String(x).trim().replace(/\s+/g, ' ').toLowerCase();
+  function phraseBox({ title, text, phrase, ok, cancel }) {
+    return new Promise(done => {
+      const prev = document.activeElement, id = `cf${Date.now()}`;
+      const back = document.createElement('div');
+      back.className = 'cf-back';
+      back.innerHTML = `<div class="cf" role="dialog" aria-modal="true" aria-labelledby="${id}t" aria-describedby="${id}d">
+        <h3 id="${id}t">${esc(title)}</h3>
+        <div id="${id}d"><p>${esc(text)}</p><p>${esc(T('ver.cf.phraseIntro'))}</p><p class="cf-phrase" id="${id}p">${esc(phrase)}</p></div>
+        <input class="cf-type" type="text" aria-labelledby="${id}p" aria-describedby="${id}h" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off">
+        <div class="cf-hint" id="${id}h" role="status" aria-live="polite"></div>
+        <div class="cf-actions"><button class="btn" data-cf="no">${esc(cancel)}</button><button class="btn danger" data-cf="ok" disabled>${esc(ok)}</button></div></div>`;
+      const input = back.querySelector('input'), okBtn = back.querySelector('[data-cf="ok"]'), hint = back.querySelector('.cf-hint');
+      const want = normPhrase(phrase);
+      let hintTimer;
+      const close = r => { clearTimeout(hintTimer); document.removeEventListener('keydown', key, true); back.remove(); prev?.focus?.(); done(r); };
+      const noPaste = ev => {
+        ev.preventDefault();
+        hint.textContent = T('ver.cf.noPaste');
+        clearTimeout(hintTimer);
+        hintTimer = setTimeout(() => { hint.textContent = ''; }, 2600);
+      };
+      ['paste', 'drop'].forEach(t => input.addEventListener(t, noPaste));
+      input.addEventListener('beforeinput', ev => { if (['insertFromPaste', 'insertFromDrop', 'insertReplacementText', 'insertFromYank'].includes(ev.inputType)) noPaste(ev); });
+      input.addEventListener('input', () => { okBtn.disabled = normPhrase(input.value) !== want; });
+      const key = ev => {
+        if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); close(false); }
+        else if (ev.key === 'Enter') {
+          ev.preventDefault(); ev.stopPropagation();
+          if (document.activeElement?.dataset?.cf === 'no') close(false);
+          else if (!okBtn.disabled) close(true);
+        }
+        else if (ev.key === 'Tab') { ev.preventDefault(); const b = [input, ...back.querySelectorAll('button:not(:disabled)')]; b[(b.indexOf(document.activeElement) + (ev.shiftKey ? b.length - 1 : 1)) % b.length].focus(); }
+      };
+      back.addEventListener('mousedown', ev => { if (ev.target === back) close(false); });
+      back.addEventListener('click', ev => { const b = ev.target.closest('[data-cf]'); if (b && !b.disabled) close(b.dataset.cf === 'ok'); });
+      document.addEventListener('keydown', key, true);
+      document.body.appendChild(back);
+      input.focus();
     });
   }
 

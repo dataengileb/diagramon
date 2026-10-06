@@ -80,6 +80,8 @@ de verdad. Ese tipo de información no debería viajar a un servicio de terceros
 
 ## 🚀 Empezar en 30 segundos
 
+**¿Solo quieres probarlo?** Abre la [demo en línea](https://dataengileb.github.io/diagramon/). Es la misma página, servida por GitHub Pages: tu diagrama se queda en tu navegador.
+
 1. **Descarga** el proyecto: botón verde **Code › Download ZIP**, o con git:
 
    ```bash
@@ -419,9 +421,9 @@ Para mantener el espíritu del proyecto:
 
 ## 🙏 Créditos
 
-Diagramon se basa en [**archify**](https://github.com/tt-a1i/archify) de [@tt-a1i](https://github.com/tt-a1i),
+Diagramon está inspirado en [**archify**](https://github.com/tt-a1i/archify) de [@tt-a1i](https://github.com/tt-a1i),
 una skill para agentes que convierte ideas, planes o código en diagramas interactivos (licencia MIT).
-Gracias por la idea y el punto de partida. 💜
+Gracias por la inspiración. 💜
 
 ---
 

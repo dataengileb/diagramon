@@ -40,7 +40,7 @@
   const REVIEW_KEYS = { by: 'by', por: 'by', raised: 'raised', levantada: 'raised', due: 'due', compromiso: 'due', status: 'status', estado: 'status', closed: 'closed', cerrada: 'closed' };
   const isDay = v => /^\d{4}-\d{2}-\d{2}$/.test(v) && !isNaN(new Date(`${v}T12:00Z`)) && new Date(`${v}T12:00Z`).toISOString().slice(0, 10) === v;
   // Opciones al final de una conexión: a -> b : etiqueta color=… data=pii encrypted=yes
-  const EDGE_OPT = /(?:^|\s)(color|data|datos|encrypted|cifrado|line|linea|línea)=(\S+)\s*$/i;
+  const EDGE_OPT = /(?:^|\s)(color|data|datos|encrypted|cifrado|both|ambos|line|linea|línea)=(\S+)\s*$/i;
   // curved | elbow (también curva/curvas, codo/codos, orthogonal)
   const parseRoute = v => (/^(elbows?|codos?|orthogonal|ortogonal(es)?|angle|ángulos?)$/i.test(v) ? 'elbow' : /^(curved?|curvas?)$/i.test(v) ? 'curved' : null);
   // data=pii,pci → ['pii', 'pci'] · encrypted=yes|no (también sí/no, true/false)
@@ -49,9 +49,9 @@
 
   // Palabras que escribe stringify y mensajes de error, por idioma
   const WORDS = {
-    en: { title: 'title', direction: 'direction', group: 'group', cost: 'cost', hour: 'hour', month: 'month', year: 'year', years: 'years', data: 'data', encrypted: 'encrypted', yes: 'yes', no: 'no', lines: 'lines', line: 'line', elbow: 'elbow', curved: 'curved', elbowOne: 'elbow', curvedOne: 'curved', author: 'author', version: 'version',
+    en: { title: 'title', direction: 'direction', group: 'group', cost: 'cost', hour: 'hour', month: 'month', year: 'year', years: 'years', data: 'data', encrypted: 'encrypted', both: 'both', yes: 'yes', no: 'no', lines: 'lines', line: 'line', elbow: 'elbow', curved: 'curved', elbowOne: 'elbow', curvedOne: 'curved', author: 'author', version: 'version',
       review: 'review', by: 'by', raised: 'raised', due: 'due', status: 'status', closed: 'closed', resolved: 'resolved' },
-    es: { title: 'título', direction: 'dirección', group: 'grupo', cost: 'costo', hour: 'hora', month: 'mes', year: 'año', years: 'años', data: 'datos', encrypted: 'cifrado', yes: 'sí', no: 'no', lines: 'líneas', line: 'línea', elbow: 'codos', curved: 'curvas', elbowOne: 'codo', curvedOne: 'curva', author: 'autor', version: 'versión',
+    es: { title: 'título', direction: 'dirección', group: 'grupo', cost: 'costo', hour: 'hora', month: 'mes', year: 'año', years: 'años', data: 'datos', encrypted: 'cifrado', both: 'ambos', yes: 'sí', no: 'no', lines: 'líneas', line: 'línea', elbow: 'codos', curved: 'curvas', elbowOne: 'codo', curvedOne: 'curva', author: 'autor', version: 'versión',
       review: 'revisión', by: 'por', raised: 'levantada', due: 'compromiso', status: 'estado', closed: 'cerrada', resolved: 'resuelta' }
   };
   const MSG = {
@@ -212,7 +212,10 @@
         if (encV != null && enc == null) err(ln, msg.enc(encV));
         const routeV = kv.line ?? kv.linea ?? kv['línea'], route = routeV == null ? null : parseRoute(routeV);
         if (routeV != null && !route) err(ln, msg.route(routeV));
-        if (/^".*"$/.test(label)) label = unquote(label);
+        const bothV = kv.both ?? kv.ambos, both = bothV == null ? null : parseBool(bothV);
+        if (bothV != null && both == null) err(ln, msg.enc(bothV));
+        // Etiqueta entre comillas (JSON) o con \n escapado = varias líneas
+        if (/^".*"$/.test(label)) label = unquote(label); else label = label.replace(/\\n/g, '\n');
         for (let k = 0; k + 2 < parts.length; k += 2) {
           nodeFor(parts[k]); nodeFor(parts[k + 2]);
           const e = { from: parts[k], to: parts[k + 2] };
@@ -223,6 +226,7 @@
           if (data?.length) e.data = data;
           if (enc != null) e.encrypted = enc;
           if (route) e.route = route;
+          if (both) e.both = true;
           model.edges.push(e);
         }
         return;
@@ -288,9 +292,9 @@
     if (m.edges.length) out.push('');
     m.edges.forEach(e => {
       const arrow = ARROW_OF[e.style] || '->';
-      const tail = [e.label ? (EDGE_OPT.test(e.label) || /^".*"$/.test(e.label) ? quote(e.label) : e.label) : '', e.color ? `color=${bare(e.color)}` : '',
+      const tail = [e.label ? (EDGE_OPT.test(e.label) || /^".*"$/.test(e.label) || /[\n\\]/.test(e.label) ? quote(e.label) : e.label) : '', e.color ? `color=${bare(e.color)}` : '',
         e.data?.length ? `${w.data}=${e.data.join(',')}` : '', e.encrypted != null ? `${w.encrypted}=${e.encrypted ? w.yes : w.no}` : '',
-        e.route ? `${w.line}=${e.route === 'elbow' ? w.elbowOne : w.curvedOne}` : ''].filter(Boolean).join(' ');
+        e.both ? `${w.both}=${w.yes}` : '', e.route ? `${w.line}=${e.route === 'elbow' ? w.elbowOne : w.curvedOne}` : ''].filter(Boolean).join(' ');
       out.push(`${e.from} ${arrow} ${e.to}${tail ? ` : ${tail}` : ''}`);
     });
     const reviewed = m.nodes.filter(n => n.review);
