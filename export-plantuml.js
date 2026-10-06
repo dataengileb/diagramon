@@ -157,12 +157,13 @@ window.DiagramonExport.plantuml = (() => {
       const base = hexOf(ctx.color(e));
       const c = style === 'optional' ? mix(base, 0.35) : base;
       let arrow;
-      if (style === 'async') arrow = `.[${c}].>`;
-      else if (style === 'data') arrow = `-[${c},bold]->`;
-      else if (style === 'optional') arrow = `-[${c},dashed]->`;
-      else arrow = `-[${c}]->`;
+      const two = e.both === true ? '<' : '';
+      if (style === 'async') arrow = `${two}.[${c}].>`;
+      else if (style === 'data') arrow = `${two}-[${c},bold]->`;
+      else if (style === 'optional') arrow = `${two}-[${c},dashed]->`;
+      else arrow = `${two}-[${c}]->`;
       const parts = [];
-      if (e.label) parts.push(clean(e.label));
+      if (e.label) parts.push(String(e.label).split('\n').map(clean).join('\\n'));
       if (e.encrypted === true) parts.push('🔒');
       else if (e.encrypted === false) parts.push('🔓');
       if (e.data && e.data.length) { noteData(e.data); parts.push(dataShort(e.data).join(' · ')); }

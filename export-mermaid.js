@@ -112,10 +112,12 @@
     edges.forEach(e => {
       if (!nid[e.from] || !nid[e.to]) return;
       const style = e.style || 'sync';
-      const arrow = style === 'data' ? '==>' : style === 'async' || style === 'optional' ? '-.->' : '-->';
+      const two = e.both === true;
+      const arrow = style === 'data' ? (two ? '<==>' : '==>') : style === 'async' || style === 'optional' ? (two ? '<-.->' : '-.->') : (two ? '<-->' : '-->');
       const lock = e.encrypted === true ? '🔒' : e.encrypted === false ? '🔓' : '';
-      const text = [e.label, shorts(e.data).join(' · '), lock].filter(Boolean).join(' ');
-      out.push(`    ${nid[e.from]} ${arrow}${text ? `|"${esc(text)}"|` : ''} ${nid[e.to]}`);
+      const label = e.label ? String(e.label).split('\n').map(esc).join('<br/>') : '';
+      const text = [label, esc(shorts(e.data).join(' · ')), lock].filter(Boolean).join(' ');
+      out.push(`    ${nid[e.from]} ${arrow}${text ? `|"${text}"|` : ''} ${nid[e.to]}`);
       if (style === 'data') links.push(`    linkStyle ${idx} stroke-width:3px`);
       else if (style === 'optional') links.push(`    linkStyle ${idx} stroke-width:1px,stroke-dasharray: 2 4`);
       idx++;

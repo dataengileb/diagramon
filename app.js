@@ -293,6 +293,7 @@
       const enc = typeof o.encrypted === 'string' ? (/^(yes|true|si|sí)$/i.test(o.encrypted) ? true : /^(no|false)$/i.test(o.encrypted) ? false : null) : o.encrypted;
       if (enc === true || enc === false) o.encrypted = enc; else delete o.encrypted;
       if (o.route !== 'curved' && o.route !== 'elbow') delete o.route;
+      if (o.both === true || (typeof o.both === 'string' && /^(yes|true|si|sí)$/i.test(o.both))) o.both = true; else delete o.both;
       m.edges.push(o);
     });
     m.notes = []; m.zones = [];
@@ -721,7 +722,8 @@
       g.style.setProperty('--dash-dur', `${(dist / (C.animation.particleSpeed * 0.5)).toFixed(2)}s`);
     }
     const arrow = el('path', { class: 'edge-arrow' }, g);
-    const parts = Array.from({ length: cfg.particles || 0 }, () => el('circle', { class: 'particle', r: st === 'data' ? 2.4 : 3, cx: -9999, cy: -9999 }, g));
+    // Con punta en ambos extremos las partículas van y vienen (al menos dos, alternando sentido)
+    const parts = Array.from({ length: cfg.particles ? (e.both ? Math.max(2, cfg.particles) : cfg.particles) : 0 }, () => el('circle', { class: 'particle', r: st === 'data' ? 2.4 : 3, cx: -9999, cy: -9999 }, g));
     // Etiqueta: candado de cifrado, texto y clasificaciones de los datos que viajan
     let label = null;
     const tags = dataTags(e), lock = e.encrypted != null;
@@ -731,12 +733,18 @@
       label = el('g', { class: 'edge-label' }, g);
       const items = [];
       if (lock) items.push({ w: 10, draw: x => lockIcon(label, x, e.encrypted) });
-      if (e.label) items.push({ w: textW(e.label, FONT.edge), draw: x => { el('text', { x, y: 4 }, label).textContent = e.label; } });
+      // La etiqueta puede tener varias líneas (\n): se centran y la píldora crece con ellas
+      const lines = e.label ? String(e.label).split('\n') : [], LH = 14;
+      if (e.label) items.push({ w: Math.max(...lines.map(l => textW(l, FONT.edge))), draw: (x, w) => {
+        const tx = el('text', { x: x + w / 2, y: 4 - (lines.length - 1) * LH / 2, 'text-anchor': 'middle' }, label);
+        lines.forEach((l, i) => { el('tspan', i ? { x: x + w / 2, dy: LH } : null, tx).textContent = l; });
+      } });
       tags.forEach(t => items.push({ w: Math.ceil(textW(t.short, FONT.dtag)) + 12, draw: x => dataTag(label, x, -7, t, 14) }));
       const gap = 5, w = items.reduce((sum, it) => sum + it.w, 0) + gap * (items.length - 1) + 16;
-      el('rect', { x: -w / 2, y: -10, width: w, height: 20, rx: 10 }, label);
+      const ph = Math.max(20, lines.length * LH + 6);
+      el('rect', { x: -w / 2, y: -ph / 2, width: w, height: ph, rx: Math.min(10, ph / 2) }, label);
       let x = -w / 2 + 8;
-      items.forEach(it => { it.draw(x); x += it.w + gap; });
+      items.forEach(it => { it.draw(x, it.w); x += it.w + gap; });
     }
     R.edges.set(e.id, { g, e, hit, line, arrow, label, parts, len: 0, phase: Math.random() });
   }
@@ -902,7 +910,14 @@
       const p = r.line.getPointAtLength(r.len), q = r.line.getPointAtLength(Math.max(0, r.len - 9));
       const ang = Math.atan2(p.y - q.y, p.x - q.x), c = Math.cos(ang), s = Math.sin(ang);
       const bx = p.x - 10 * c, by = p.y - 10 * s;
-      r.arrow.setAttribute('d', `M${p.x},${p.y} L${bx - 5 * s},${by + 5 * c} L${bx + 5 * s},${by - 5 * c} Z`);
+      let ad = `M${p.x},${p.y} L${bx - 5 * s},${by + 5 * c} L${bx + 5 * s},${by - 5 * c} Z`;
+      if (e.both) { // segunda punta en el origen, mirando hacia fuera
+        const p0 = r.line.getPointAtLength(0), q0 = r.line.getPointAtLength(Math.min(r.len, 9));
+        const a0 = Math.atan2(p0.y - q0.y, p0.x - q0.x), c0 = Math.cos(a0), s0 = Math.sin(a0);
+        const bx0 = p0.x - 10 * c0, by0 = p0.y - 10 * s0;
+        ad += ` M${p0.x},${p0.y} L${bx0 - 5 * s0},${by0 + 5 * c0} L${bx0 + 5 * s0},${by0 - 5 * c0} Z`;
+      }
+      r.arrow.setAttribute('d', ad);
       if (r.label) {
         const mp = r.line.getPointAtLength(r.len / 2);
         r.label.setAttribute('transform', `translate(${mp.x} ${mp.y})`);
@@ -942,8 +957,9 @@
       while (q.length) {
         const u = q.shift();
         m.edges.forEach(e => {
-          if ((down ? e.from : e.to) !== u) return;
-          const v = down ? e.to : e.from;
+          const fwd = (down ? e.from : e.to) === u;
+          if (!fwd && !(e.both && (down ? e.to : e.from) === u)) return;
+          const v = fwd ? (down ? e.to : e.from) : (down ? e.from : e.to);
           edges.add(e.id); nodes.add(v);
           if (!seen.has(v)) { seen.add(v); q.push(v); }
         });
@@ -960,7 +976,7 @@
     if (a === b || !model.nodes.some(n => n.id === a) || !model.nodes.some(n => n.id === b)) return null;
     // Pasos posibles desde u: [arista, vecino]; hacia atrás si rev
     const steps = (u, rev) => model.edges.flatMap(e =>
-      (rev ? e.to : e.from) === u ? [[e, rev ? e.from : e.to]] : !directed && (rev ? e.from : e.to) === u ? [[e, rev ? e.to : e.from]] : []);
+      (rev ? e.to : e.from) === u ? [[e, rev ? e.from : e.to]] : (!directed || e.both) && (rev ? e.from : e.to) === u ? [[e, rev ? e.to : e.from]] : []);
     const bfs = (src, rev) => {
       const dist = new Map([[src, 0]]), cnt = new Map([[src, 1]]), q = [src];
       while (q.length) {
@@ -978,7 +994,7 @@
     f.dist.forEach((d, id) => { if (r.dist.has(id) && d + r.dist.get(id) === hops) { nodes.add(id); dist.set(id, d); } });
     model.edges.forEach(e => {
       const ok = (u, v) => nodes.has(u) && nodes.has(v) && dist.get(u) + 1 === dist.get(v);
-      if (ok(e.from, e.to) || (!directed && ok(e.to, e.from))) edges.add(e.id);
+      if (ok(e.from, e.to) || ((!directed || e.both) && ok(e.to, e.from))) edges.add(e.id);
     });
     return { nodes, edges, hops, count: f.cnt.get(b), dist };
   }
@@ -1074,7 +1090,7 @@
         r.phase = (r.phase + dt * C.animation.particleSpeed * f / r.len) % 1;
         const count = r.parts.length;
         r.parts.forEach((c, i) => {
-          const t = (r.phase + i / count) % 1, p = r.line.getPointAtLength(t * r.len);
+          const t = (r.phase + i / count) % 1, p = r.line.getPointAtLength((r.e.both && i % 2 ? 1 - t : t) * r.len);
           c.setAttribute('cx', p.x.toFixed(1));
           c.setAttribute('cy', p.y.toFixed(1));
           c.setAttribute('opacity', Math.min(1, t * 6, (1 - t) * 6).toFixed(2));
@@ -1190,7 +1206,7 @@
   const ORDER = {
     group: ['id', 'label', 'color', 'parent'],
     node: ['id', 'label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'x', 'y', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc'],
-    edge: ['id', 'from', 'to', 'label', 'style', 'route', 'color', 'data', 'encrypted'],
+    edge: ['id', 'from', 'to', 'label', 'style', 'route', 'both', 'color', 'data', 'encrypted'],
     note: ['id', 'x', 'y', 'w', 'h', 'text', 'color'],
     zone: ['id', 'x', 'y', 'w', 'h', 'label', 'severity', 'desc']
   };
@@ -1992,7 +2008,7 @@
   // Diferencias entre lo guardado (a) y el lienzo (b). La posición no cuenta como cambio.
   const DIFF_FIELDS = {
     node: ['label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc'],
-    edge: ['label', 'style', 'route', 'color', 'data', 'encrypted'],
+    edge: ['label', 'style', 'route', 'both', 'color', 'data', 'encrypted'],
     group: ['label', 'color', 'parent']
   };
   function diffModels(a, b) {
@@ -2133,7 +2149,7 @@
     if (!(d.count.a + d.count.r + d.count.c)) return `<p class="ver-sum">${esc(T('ver.same'))}</p>`;
     const FIELD = { label: 'insp.name', sub: 'insp.detail', type: 'insp.type', icon: 'insp.icon', group: 'insp.group', color: 'insp.color', badge: 'field.badge',
       cost: 'cost.label', costPeriod: 'cost.period', costYears: 'cost.yearsAria', desc: 'insp.desc', style: 'insp.style', parent: 'insp.parent',
-      data: 'data.label', encrypted: 'enc.label', route: 'insp.route', review: 'rev.label' };
+      data: 'data.label', encrypted: 'enc.label', route: 'insp.route', both: 'insp.dir', review: 'rev.label' };
     const fields = (fs, kind) => fs.map(f => T(kind === 'edge' && f === 'label' ? 'insp.label' : FIELD[f] || f).toLowerCase()).join(', ');
     const names = new Map([...S.compare.base.nodes, ...S.model.nodes].map(n => [n.id, n.label]));
     const edgeName = e => `${names.get(e.from) || e.from} → ${names.get(e.to) || e.to}`;
@@ -2415,10 +2431,12 @@
     } else if (kind === 'edge') {
       const a = nm(t.from), b = nm(t.to);
       html = head(colorVar(t.color) || nodeColor(a), '', T('insp.edge'), `${a.label} → ${b.label}`) + `
-        <label>${T('insp.label')}<input data-field="label" value="${esc(t.label || '')}" placeholder="${esc(T('insp.label.ph'))}"></label>
+        <label>${T('insp.label')}<textarea data-field="label" rows="2" placeholder="${esc(T('insp.label.ph'))}">${esc(t.label || '')}</textarea></label>
         <label>${T('insp.style')}<select data-field="style">${Object.entries(C.edgeStyles).map(([k, v]) => `<option value="${k}"${k === (C.edgeStyles[t.style] ? t.style : 'sync') ? ' selected' : ''}>${esc(loc(v.label))}</option>`).join('')}</select></label>
         <label>${T('insp.route')}<select data-field="route">${[['', T('route.default', { name: T(`route.${S.model.routing || 'curved'}`) })], ['curved', T('route.curved')], ['elbow', T('route.elbow')]]
           .map(([k, l]) => `<option value="${k}"${(t.route || '') === k ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select></label>
+        <div class="field">${T('insp.dir')}<div class="seg">${[['', 'dir.one'], ['both', 'dir.both']].map(([k, l]) =>
+          `<button data-dir="${k}" class="${(t.both ? 'both' : '') === k ? 'on' : ''}">${T(l)}</button>`).join('')}</div></div>
         ${encField(t)}
         ${dataField(t, true)}
         <div class="field">${T('insp.color')}${swatches(t.color)}</div>
@@ -2575,6 +2593,10 @@
       const list = [].concat(t), k = b.dataset.dclass, all = list.every(x => x.data?.includes(k));
       pushHistory();
       list.forEach(x => { const d = cleanData([...(x.data || []).filter(j => j !== k), ...(all ? [] : [k])]); if (d.length) x.data = d; else delete x.data; });
+      changed(true); renderInspector();
+    } else if (b.dataset.dir != null && t && !Array.isArray(t)) {
+      pushHistory();
+      if (b.dataset.dir) t.both = true; else delete t.both;
       changed(true); renderInspector();
     } else if (b.dataset.enc != null && t) {
       pushHistory();
@@ -2945,6 +2967,12 @@
       el('path', { class: 'edge-arrow', d: `M${x + 34},${y} L${x + 26},${y - 4} L${x + 26},${y + 4} Z` }, eg);
       textRow(x + 46, y, loc(cfg.label));
     } }));
+    if (m.edges.some(e => e.both)) conn.push({ w: 46 + textW(T('leg.both'), '400 12px'), draw: (x, y) => {
+      const eg = el('g', { class: 'edge', style: '--c:var(--muted);--w:1.8px' }, g);
+      el('path', { class: 'edge-line', d: `M${x + 4},${y} L${x + 30},${y}` }, eg);
+      el('path', { class: 'edge-arrow', d: `M${x + 34},${y} L${x + 26},${y - 4} L${x + 26},${y + 4} Z M${x},${y} L${x + 8},${y - 4} L${x + 8},${y + 4} Z` }, eg);
+      textRow(x + 46, y, T('leg.both'));
+    } });
     [[true, 'leg.encrypted'], [false, 'leg.unencrypted']].forEach(([on, key]) => {
       if (m.edges.some(e => e.encrypted === on)) conn.push({ w: 46 + textW(T(key), '400 12px'), draw: (x, y) => {
         const lg = el('g', { transform: `translate(${x + 10} ${y})` }, g);

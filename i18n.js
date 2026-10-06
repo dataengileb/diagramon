@@ -73,6 +73,7 @@ api ..&gt; cache            ..&gt; optional
 cost=0.1/hour · 120/month · 1400/year · 5000/3years  (USD)
 data=pii,pci      public internal confidential pii pci phi
 encrypted=yes|no  encryption in transit (connections)
+both=yes          arrowhead at both ends (connections)
 line=elbow        one connection with elbows (or curved)
 review db: "DB in a public subnet" by=Ana raised=2026-10-01 due=2026-11-15
                   review finding (status=resolved closed=… when fixed)
@@ -129,7 +130,7 @@ review db: "DB in a public subnet" by=Ana raised=2026-10-01 due=2026-11-15
       'reach.direct': 'Neighbors', 'reach.down': 'Targets', 'reach.up': 'Sources', 'reach.both': 'All',
       'insp.receives': 'Receives from', 'insp.sends': 'Sends to', 'insp.connect': 'Connect',
       'insp.edge': 'Connection', 'insp.label': 'Label', 'insp.label.ph': 'e.g. HTTPS, SQL, events', 'insp.style': 'Style',
-      'insp.ends': 'Endpoints', 'insp.source': 'source', 'insp.target': 'target', 'insp.reverse': 'Reverse',
+      'insp.dir': 'Arrowheads', 'dir.one': 'One way', 'dir.both': 'Both ways', 'leg.both': 'Both directions', 'insp.ends': 'Endpoints', 'insp.source': 'source', 'insp.target': 'target', 'insp.reverse': 'Reverse',
       'insp.groupNote': n => `${plural(n, 'component', 'components')} inside. Drag the group label to move it all.`,
       'insp.parent': 'Inside of', 'insp.deleteGroup': 'Delete group',
 
@@ -252,6 +253,7 @@ api ..&gt; cache            ..&gt; opcional
 costo=0.1/hora · 120/mes · 1400/año · 5000/3años  (USD)
 datos=pii,pci     public internal confidential pii pci phi
 cifrado=sí|no     cifrado en tránsito (conexiones)
+ambos=sí          punta de flecha en ambos extremos
 línea=codo        una conexión en ángulo recto (o curva)
 revisión db: "BD en subred pública" por=Ana levantada=2026-10-01 compromiso=2026-11-15
                   observación (estado=resuelta cerrada=… al corregirla)
@@ -308,7 +310,7 @@ revisión db: "BD en subred pública" por=Ana levantada=2026-10-01 compromiso=20
       'reach.direct': 'Vecinos', 'reach.down': 'Destinos', 'reach.up': 'Orígenes', 'reach.both': 'Todo',
       'insp.receives': 'Recibe de', 'insp.sends': 'Envía a', 'insp.connect': 'Conectar',
       'insp.edge': 'Conexión', 'insp.label': 'Etiqueta', 'insp.label.ph': 'p. ej. HTTPS, SQL, eventos', 'insp.style': 'Estilo',
-      'insp.ends': 'Extremos', 'insp.source': 'origen', 'insp.target': 'destino', 'insp.reverse': 'Invertir',
+      'insp.dir': 'Puntas de flecha', 'dir.one': 'Un sentido', 'dir.both': 'Ambos sentidos', 'leg.both': 'Ambos sentidos', 'insp.ends': 'Extremos', 'insp.source': 'origen', 'insp.target': 'destino', 'insp.reverse': 'Invertir',
       'insp.groupNote': n => `${plural(n, 'componente', 'componentes')} dentro. Arrastra la etiqueta del grupo para moverlo entero.`,
       'insp.parent': 'Dentro de', 'insp.deleteGroup': 'Eliminar grupo',
 
