@@ -2152,7 +2152,7 @@
       data: 'data.label', encrypted: 'enc.label', route: 'insp.route', both: 'insp.dir', review: 'rev.label' };
     const fields = (fs, kind) => fs.map(f => T(kind === 'edge' && f === 'label' ? 'insp.label' : FIELD[f] || f).toLowerCase()).join(', ');
     const names = new Map([...S.compare.base.nodes, ...S.model.nodes].map(n => [n.id, n.label]));
-    const edgeName = e => `${names.get(e.from) || e.from} → ${names.get(e.to) || e.to}`;
+    const edgeName = e => `${names.get(e.from) || e.from} ${e.both ? '↔' : '→'} ${names.get(e.to) || e.to}`;
     const rows = [];
     if (d.title) rows.push(['chg', T('field.title'), d.title.to]);
     d.nodes.added.forEach(n => rows.push(['add', n.label, '', n.id]));
@@ -2430,7 +2430,7 @@
         </div>`;
     } else if (kind === 'edge') {
       const a = nm(t.from), b = nm(t.to);
-      html = head(colorVar(t.color) || nodeColor(a), '', T('insp.edge'), `${a.label} → ${b.label}`) + `
+      html = head(colorVar(t.color) || nodeColor(a), '', T('insp.edge'), `${a.label} ${t.both ? '↔' : '→'} ${b.label}`) + `
         <label>${T('insp.label')}<textarea data-field="label" rows="2" placeholder="${esc(T('insp.label.ph'))}">${esc(t.label || '')}</textarea></label>
         <label>${T('insp.style')}<select data-field="style">${Object.entries(C.edgeStyles).map(([k, v]) => `<option value="${k}"${k === (C.edgeStyles[t.style] ? t.style : 'sync') ? ' selected' : ''}>${esc(loc(v.label))}</option>`).join('')}</select></label>
         <label>${T('insp.route')}<select data-field="route">${[['', T('route.default', { name: T(`route.${S.model.routing || 'curved'}`) })], ['curved', T('route.curved')], ['elbow', T('route.elbow')]]
