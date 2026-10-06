@@ -2693,7 +2693,9 @@
       const pre = C.presets?.[S.provider];
       const preItems = (pre?.items || []).map(p => ({ ...p, sub: loc(p.sub) })).filter(p => !q || fold(`${p.label} ${p.sub || ''} ${p.keywords || ''}`).includes(q));
       if (preItems.length) groups.set(loc(pre.title), preItems.map(p => [null, p]));
+      // Los iconos solo de grupo (AWS Cloud, Region, Subscription…) se eligen en el panel del grupo, no como componentes
       Object.entries(set.items)
+        .filter(([, it]) => it.category !== 'Grupos')
         .filter(([k, it]) => !q || fold(`${it.label} ${k} ${it.category} ${I.category(it.category)}`).includes(q) || kwHit(it.keywords, q))
         .forEach(([k, it]) => { if (!groups.has(it.category)) groups.set(it.category, []); groups.get(it.category).push([k, it]); });
       // Con búsqueda, dentro de cada categoría primero las coincidencias por nombre y luego las de palabras clave
