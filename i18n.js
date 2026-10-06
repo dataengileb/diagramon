@@ -118,6 +118,11 @@ review db: "DB in a public subnet" by=Ana raised=2026-10-01 due=2026-11-15
       'cost.hint': 'Type the price in dollars and pick the period.', 'cost.label': 'Cost', 'cost.period': 'Period', 'cost.yearsAria': 'Years',
 
       'insp.close': 'Close', 'insp.auto': 'Automatic', 'insp.ownIcon': 'Own (from the type)',
+      'color.custom': 'Custom color', 'color.picker': 'Color picker', 'color.hex': 'Hex code', 'color.hexBad': 'Use #RRGGBB or #RGB',
+      'color.apply': 'Apply', 'color.recent': 'Recent', 'color.recent.none': 'Custom colors you use will show up here.',
+      'color.fav': 'Favorites', 'color.fav.none': 'Pin a recent color with the star to keep it here.',
+      'color.pin': c => `Add ${c} to favorites`, 'color.unpin': c => `Remove ${c} from favorites`, 'color.use': c => `Use ${c}`,
+      'color.favMax': n => `Favorites are full (${n} max). Remove one first.`,
       'insp.selection': 'Selection', 'insp.count': n => plural(n, 'component', 'components'),
       'insp.align': 'Align', 'insp.distribute': 'Distribute with equal spacing', 'insp.horizontal': 'Horizontal', 'insp.vertical': 'Vertical',
       'insp.group': 'Group', 'insp.mixed': 'Mixed', 'insp.none': 'None', 'insp.newGroup': '+ New group…', 'insp.color': 'Color',
@@ -303,6 +308,11 @@ revisión db: "BD en subred pública" por=Ana levantada=2026-10-01 compromiso=20
       'cost.hint': 'Escribe el precio en dólares y elige el periodo.', 'cost.label': 'Costo', 'cost.period': 'Periodo', 'cost.yearsAria': 'Años',
 
       'insp.close': 'Cerrar', 'insp.auto': 'Automático', 'insp.ownIcon': 'Propio (según el tipo)',
+      'color.custom': 'Color personalizado', 'color.picker': 'Selector de color', 'color.hex': 'Código hex', 'color.hexBad': 'Usa #RRGGBB o #RGB',
+      'color.apply': 'Aplicar', 'color.recent': 'Recientes', 'color.recent.none': 'Aquí aparecerán los colores personalizados que uses.',
+      'color.fav': 'Favoritos', 'color.fav.none': 'Fija un color reciente con la estrella para tenerlo siempre aquí.',
+      'color.pin': c => `Añadir ${c} a favoritos`, 'color.unpin': c => `Quitar ${c} de favoritos`, 'color.use': c => `Usar ${c}`,
+      'color.favMax': n => `Favoritos lleno (máximo ${n}). Quita alguno antes.`,
       'insp.selection': 'Selección', 'insp.count': n => plural(n, 'componente', 'componentes'),
       'insp.align': 'Alinear', 'insp.distribute': 'Repartir con el mismo espacio', 'insp.horizontal': 'Horizontal', 'insp.vertical': 'Vertical',
       'insp.group': 'Grupo', 'insp.mixed': 'Varios', 'insp.none': 'Ninguno', 'insp.newGroup': '+ Nuevo grupo…', 'insp.color': 'Color',
