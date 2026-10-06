@@ -880,6 +880,8 @@
   const nodeSens = n => [...new Set(n.data || [])].filter(k => DATA[k]?.sensitive).sort((a, b) => Object.keys(DATA).indexOf(a) - Object.keys(DATA).indexOf(b));
   function ruleFindings(m) {
     const out = [], byId = new Map(m.nodes.map(n => [n.id, n])), get = id => byId.get(id);
+    // «Sin dueño» solo si el diagrama ya asigna dueños o responsables en algún sitio
+    const usesGov = [...m.nodes, ...m.groups].some(x => x.owner || x.steward || x.team);
     const add = (rule, kind, o, title, detail, fix) => out.push({ id: `rule:${rule}:${kind}:${o.id}`, source: 'rule', rule, severity: srSev(rule), target: { kind, id: o.id }, title, ...(detail ? { detail } : {}), fix });
     m.edges.forEach(e => {
       const a = get(e.from), b = get(e.to);
@@ -896,7 +898,7 @@
       const ns = nodeSens(n), ds = isDataStore(n) && !isBackupNode(n), ex = exposureOf(n, m);
       if (srOn('sec.public-sensitive') && ns.length && !isClientNode(n) && ex.value === 'public') add('sec.public-sensitive', 'node', n, T('sec.f.pubsens.t', { n: n.label, cls: classShorts(ns).join(', '), c: ns.length }), ex.why, T('sec.f.pubsens.fix'));
       if (srOn('sec.datastore-backup') && ds && !backupOf(n, m).value) add('sec.datastore-backup', 'node', n, T('sec.f.bk.t', n.label), T('sec.f.bk.d'), T('sec.f.bk.fix'));
-      if (srOn('sec.sensitive-no-owner') && ns.length && !govOf(n, 'owner', m).value && !govOf(n, 'steward', m).value) add('sec.sensitive-no-owner', 'node', n, T('sec.f.owner.t', { n: n.label, cls: classShorts(ns).join(', '), c: ns.length }), '', T('sec.f.owner.fix'));
+      if (srOn('sec.sensitive-no-owner') && usesGov && ns.length && !govOf(n, 'owner', m).value && !govOf(n, 'steward', m).value) add('sec.sensitive-no-owner', 'node', n, T('sec.f.owner.t', { n: n.label, cls: classShorts(ns).join(', '), c: ns.length }), '', T('sec.f.owner.fix'));
       if (srOn('sec.public-datastore') && ds && ex.value === 'public') add('sec.public-datastore', 'node', n, T('sec.f.pubds.t', n.label), ex.why, T('sec.f.pubds.fix'));
     });
     return out;
@@ -1004,7 +1006,8 @@
   const hasRes = n => hasSla(n) || n.rpo != null || n.rto != null || cleanReplicas(n.replicas) != null;
   // Disponibilidad efectiva (fracción 0–1) con réplicas en paralelo; null sin SLA
   const availOf = n => (hasSla(n) ? 1 - Math.pow(1 - cleanSla(n.sla) / 100, replicasOf(n)) : null);
-  const fmtPct = a => `${numFmt(+(a * 100).toFixed(6), 6)}%`;
+  // Decimales según los nueves que importan: 99.27% · 99.99% · 99.9999% (sin ruido de cifras)
+  const fmtPct = a => { const d = a >= 1 ? 2 : clamp(Math.ceil(-Math.log10(1 - a)) - 1, 2, 6); return `${numFmt(+(a * 100).toFixed(d), d)}%`; };
   // Tiempo aproximado: «4.4 h», «22 min», «32 s»
   const fmtApprox = s => {
     if (s < 1) return `<1 ${T('res.u.s')}`;
@@ -1113,6 +1116,8 @@
   const RES_TIERS = [{ k: 't4', min: 0.9999, color: 'var(--p-menta)' }, { k: 't3', min: 0.999, color: 'var(--p-limon)' }, { k: 't2', min: 0.99, color: 'var(--p-melocoton)' }, { k: 't1', min: 0, color: 'var(--p-coral)' }];
   const resTier = n => { const a = availOf(n); return a == null ? null : RES_TIERS.find(t => a >= t.min - 1e-12); };
   addFindingSource('sla', m => {
+    // Solo si el diagrama ya usa datos de disponibilidad: sin ellos los servicios gestionados (CDN, colas, Lambda…) saldrían como falsos puntos únicos
+    if (!m.nodes.some(n => n.sla != null || n.replicas != null || n.rpo != null || n.rto != null)) return [];
     const out = [], sp = spofList(m), spIds = new Set(sp.map(x => x.id)), sev = (k, d) => (SEVERITY.includes(RSL[k]) ? RSL[k] : d);
     const usesRto = m.nodes.some(n => n.rpo != null || n.rto != null);
     sp.forEach(x => out.push({ id: `sla:spof:node:${x.id}`, source: 'sla', rule: 'spof', severity: sev('spofSeverity', 'high'), target: { kind: 'node', id: x.id }, title: T('res.f.spof.t', x.label), detail: x.reason, fix: T('res.f.spof.fix') }));
