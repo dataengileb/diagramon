@@ -320,6 +320,15 @@ Algunas zonas son **fronteras de confianza** en vez de zonas de riesgo: abre una
 - Los textos salen en el idioma actual de la interfaz, con fechas y dinero en sus formatos, y todo va escapado.
 - Desde la consola: `Diagramon.exportReport({ format: 'pdf' | 'md' | 'html', sections?: [...], views?: [...], scopes?: true | false, theme?: 'light' | 'current', separateImages?: boolean })` devuelve una promesa con el HTML o Markdown generado tras iniciar la descarga o el diálogo de impresión. Claves de sección: `summary diagram components connections data owners layers costs findings compliance threats decisions versions notes`.
 
+#### Inventario (CSV / Excel)
+
+**Exportar › Inventario (Excel)** e **Inventario (CSV)…** convierten el diagrama en una tabla para una CMDB o una auditoría, sin conexión y sin librerías.
+
+- **Componentes** (una fila por componente, todos los niveles C4): ID, nombre, detalle, tipo, proveedor, servicio, categoría, tipo C4 y ruta de nivel, ruta de grupos, dueño, responsable de datos, equipo y centro de costo (el valor efectivo, más una columna *Heredado de* cuando lo aporta un grupo), región y jurisdicción, clases de datos, sensible (sí/no), capa del data lake, exposición y respaldo (efectivos), conexiones cifradas entrantes y salientes, conexiones sensibles sin cifrar, SLA, RPO, RTO, réplicas, costo como se ingresó, periodo, costo por mes y por año, estado de revisión, hallazgos abiertos, ADR vinculados, un resumen de cumplimiento (por ejemplo *ISO 27001: 3 cumple / 1 brecha*) y la descripción.
+- **Excel** (`.xlsx`) trae una hoja por tabla: Componentes, Conexiones (cifrado, clases de datos, datasets, cruza fronteras, transferencia aprobada, amenazas STRIDE abiertas), Grupos, Dueños (por equipo), Decisiones, Hallazgos (con los descartados y su motivo) y Versiones. Las tablas vacías se omiten. La fila de títulos va en negrita, inmovilizada y con filtro; las columnas se ajustan al contenido, los costos usan formato de moneda y el SLA conserva tres decimales.
+- **CSV** abre un diálogo pequeño: *Solo componentes* (`<diagrama>-inventory.csv`) o *Todas las tablas como CSV separados* (una descarga por tabla, con nombre `<diagrama>-inventory-<tabla>.csv`). Los archivos llevan BOM para que Excel respete las tildes.
+- Desde la consola: `Diagramon.inventory()` devuelve las filas de componentes y `Diagramon.exportInventory('xlsx' | 'csv' | 'csv-all')` inicia la descarga.
+
 ### Vistas
 
 Una **vista** es una forma de mirar el mismo diagrama: solo decide qué se ve, con cuánto detalle y qué destaca. Nunca cambia tus componentes ni posiciones. Elígela en el selector **Vista** de la barra superior, con las teclas **`1`**–**`8`**, o desde la consola (`Diagramon.setView('security')`). Cuando la vista no es *Completa*, una pastilla sobre el lienzo la nombra, cuenta lo que oculta o atenúa y tiene una **×** para volver. La ficha del documento y la leyenda de las exportaciones siguen la vista activa.
@@ -545,7 +554,7 @@ Todo lo personalizable está en **`config.js`**. Guarda y recarga `index.html`.
 <summary><b>API para extensiones</b></summary>
 
 `window.Diagramon` expone `model`, `load()`, `addNode()`, `addEdge()`, `select()`, `align()`, `relayout()`,
-`fitView()`, `togglePlay()`, `toggleTheme()`, `toggleLang()`, `lang`, `saveVersion()`, `openVersion()`, `compareVersion()`, `deleteVersion()`, `exportSVG()`, `exportPNG()`, `exportJSON()`, `lineage()`, `datasets()`, `owners()`, `crossBorder()`, `layers()`, `setLayerNames()`, `compliance()`, `exportCompliance()`, `decisions()`, `addDecision()`, `updateDecision()`, `removeDecision()`, `exportDecisions()`, `config` e `icons`.
+`fitView()`, `togglePlay()`, `toggleTheme()`, `toggleLang()`, `lang`, `saveVersion()`, `openVersion()`, `compareVersion()`, `deleteVersion()`, `exportSVG()`, `exportPNG()`, `exportJSON()`, `lineage()`, `datasets()`, `owners()`, `crossBorder()`, `layers()`, `setLayerNames()`, `compliance()`, `exportCompliance()`, `inventory()`, `exportInventory()`, `decisions()`, `addDecision()`, `updateDecision()`, `removeDecision()`, `exportDecisions()`, `config` e `icons`.
 Además: `setScope(id | null)`, `scope`, `scopes()` y `exportLevels(formato)` para los niveles C4.
 El lenguaje de texto está en `window.DiagramonText` (`parse` y `stringify`).
 
@@ -564,6 +573,7 @@ El lenguaje de texto está en `window.DiagramonText` (`parse` y `stringify`).
 | `text-lang.js` | Lenguaje de texto (diagrama como código) |
 | `examples.js` | Plantillas |
 | `export-mermaid.js`, `export-plantuml.js`, `export-drawio.js` | Exportadores a Mermaid, PlantUML y draw.io |
+| `export-xlsx.js` | Generador mínimo de ZIP y Excel (`.xlsx`) sin librerías (lo usa la exportación del inventario) |
 | `share.js` | Visor HTML cifrado y autosuficiente para compartir |
 | `iac.js` | Importación de infraestructura como código (Terraform, CloudFormation, Kubernetes, Compose) |
 | `samples/` | Archivos de IaC de ejemplo para probar la importación |
@@ -598,6 +608,7 @@ Cosas que funcionan pero aún no se han revisado a fondo. Probablemente necesite
 - El catálogo de cumplimiento es un subconjunto práctico de cada norma con títulos parafraseados; revísalo antes de usarlo en una auditoría.
 - **Informe de arquitectura**: aún no se ha probado el diálogo de impresión a PDF (sí el HTML y el Markdown). El PDF depende del diálogo de impresión del navegador (los encabezados y números de página solo salen donde el navegador admite los márgenes `@page` de CSS). Los visores de Markdown que bloquean imágenes `data:` no muestran los diagramas salvo que guardes las imágenes aparte. Los diagramas grandes con muchas vistas y niveles internos pueden tardar unos segundos. No se han revisado tablas muy anchas al imprimir, y la matriz de cumplimiento se lista por control y por componente, no como cuadrícula.
 - **Niveles C4**: se probaron en el navegador entrar y salir de niveles (`Intro`, `Esc`, `Alt+↑`, ruta de navegación), el marco de límite, las tarjetas fantasma, añadir componentes dentro de un nivel, deshacer, *Exportar todos los niveles* y el informe con diagramas internos; falta probar *Mover dentro de…* / *Subir un nivel*, borrar un componente con diagrama interno, doble clic en la tarjeta frente al nombre y el orden automático dentro de un nivel. Las etiquetas de las conexiones fantasma pueden solaparse cuando varias salen del límite muy juntas. *Duplicar* no copia el diagrama interno de un componente duplicado, y Mermaid, PlantUML y draw.io exportan el modelo plano completo (sin niveles; `in` y `c4` se ignoran). Pestaña Texto: los nodos sin `dentro=` van al nivel superior, así que para editar un nivel desde la pestaña Texto escribe `dentro=` en sus nodos. Las tarjetas fantasma son como máximo 8 por lado. Lo que cruza niveles (una conexión entre dos niveles distintos) solo se dibuja como fantasma y no se puede seleccionar en el lienzo; llega a ello desde los enlaces del inspector.
+- **Inventario (Excel)**: el `.xlsx` lo escribe un generador mínimo propio (un ZIP sin compresión), así que pesa más que uno guardado por Excel. No tiene fórmulas (los totales no se calculan en el archivo), cadenas compartidas ni gráficos. Se comprobó que es un ZIP válido con partes XML bien formadas, pero aún no se ha abierto en Excel, Numbers ni LibreOffice. Varias descargas CSV seguidas pueden activar el aviso de «descargar varios archivos» en algunos navegadores.
 
 ---
 

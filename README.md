@@ -336,6 +336,15 @@ Some zones are **trust boundaries** instead of risk zones: open a zone and switc
 - Texts come out in the current interface language, dates and money in the document's formats, and everything is escaped.
 - From the console: `Diagramon.exportReport({ format: 'pdf' | 'md' | 'html', sections?: [...], views?: [...], scopes?: true | false, theme?: 'light' | 'current', separateImages?: boolean })` returns a promise with the generated HTML or Markdown after starting the download or the print dialog. Section keys: `summary diagram components connections data owners layers costs findings compliance threats decisions versions notes`.
 
+#### Inventory (CSV / Excel)
+
+**Export › Inventory (Excel)** and **Export › Inventory (CSV)…** turn the diagram into a table for a CMDB or an audit, fully offline and with no libraries.
+
+- **Components** (one row per component, every C4 level): ID, name, detail, type, provider, service, category, C4 kind and level path, group path, owner, data steward, team and cost center (the effective value, plus an *Inherited from* column when a group supplies it), region and jurisdiction, data classes, sensitive (yes/no), data lake layer, exposure and backup (effective), encrypted connections in and out, unencrypted sensitive connections, SLA, RPO, RTO, replicas, cost as entered, period, cost per month and per year, review status, open findings, linked ADRs, a compliance summary (for example *ISO 27001: 3 met / 1 gap*) and the description.
+- **Excel** (`.xlsx`) has one sheet per table: Components, Connections (encryption, data classes, datasets, cross-border, transfer approved, open STRIDE threats), Groups, Owners (per team), Decisions, Findings (with dismissed ones and their reason) and Versions. Empty tables are skipped. The header row is bold, frozen and filterable, columns are sized to their content, costs use a currency number format and SLA keeps three decimals.
+- **CSV** opens a small dialog: *Components only* (`<diagram>-inventory.csv`) or *All tables as separate CSV files* (one download per table, named `<diagram>-inventory-<table>.csv`). The files include the BOM so Excel respects accents.
+- From the console: `Diagramon.inventory()` returns the component rows, and `Diagramon.exportInventory('xlsx' | 'csv' | 'csv-all')` starts the download.
+
 ### Views
 
 A **view** is a way of looking at the same diagram: it only decides what is shown, how much detail and what stands out. It never changes your components or positions. Pick one from the **View** selector in the top bar, with keys **`1`**–**`8`**, or from the console (`Diagramon.setView('security')`). When the view is not *Full*, a pill above the canvas names it, counts what it hides or dims, and has an **×** to go back. The document card and the legend of exports follow the active view.
@@ -561,7 +570,7 @@ Set `"icons": { "enabled": false }` in `config.js` to turn them off.
 <summary><b>Extension API</b></summary>
 
 `window.Diagramon` exposes `model`, `load()`, `addNode()`, `addEdge()`, `select()`, `align()`, `relayout()`,
-`fitView()`, `togglePlay()`, `toggleTheme()`, `toggleLang()`, `lang`, `saveVersion()`, `openVersion()`, `compareVersion()`, `deleteVersion()`, `exportSVG()`, `exportPNG()`, `exportJSON()`, `lineage()`, `datasets()`, `owners()`, `crossBorder()`, `layers()`, `setLayerNames()`, `compliance()`, `exportCompliance()`, `decisions()`, `addDecision()`, `updateDecision()`, `removeDecision()`, `exportDecisions()`, `config` and `icons`.
+`fitView()`, `togglePlay()`, `toggleTheme()`, `toggleLang()`, `lang`, `saveVersion()`, `openVersion()`, `compareVersion()`, `deleteVersion()`, `exportSVG()`, `exportPNG()`, `exportJSON()`, `lineage()`, `datasets()`, `owners()`, `crossBorder()`, `layers()`, `setLayerNames()`, `compliance()`, `exportCompliance()`, `inventory()`, `exportInventory()`, `decisions()`, `addDecision()`, `updateDecision()`, `removeDecision()`, `exportDecisions()`, `config` and `icons`.
 Also: `setScope(id | null)`, `scope`, `scopes()` and `exportLevels(format)` for C4 levels.
 The text language is in `window.DiagramonText` (`parse` and `stringify`). UI translations are in `window.DiagramonI18n`.
 
@@ -580,6 +589,7 @@ The text language is in `window.DiagramonText` (`parse` and `stringify`). UI tra
 | `text-lang.js` | Text language (diagram as code) |
 | `examples.js` | Templates |
 | `export-mermaid.js`, `export-plantuml.js`, `export-drawio.js` | Exporters to Mermaid, PlantUML and draw.io |
+| `export-xlsx.js` | Minimal ZIP and Excel (`.xlsx`) writer, no libraries (used by the inventory export) |
 | `share.js` | Encrypted, self-contained HTML viewer for sharing |
 | `iac.js` | Infrastructure-as-code import (Terraform, CloudFormation, Kubernetes, Compose) |
 | `samples/` | Sample IaC files to try the import |
@@ -614,6 +624,7 @@ Things that work but have not been checked in depth yet. They probably need some
 - The compliance catalog is a practical subset of each standard with paraphrased titles; check it before relying on it for an audit.
 - **Architecture report**: the PDF print dialog itself has not been tried yet (HTML and Markdown were checked). The PDF depends on the browser print dialog (page headers and numbers appear only where the browser supports CSS `@page` margin boxes). Markdown viewers that block `data:` images show nothing for the diagrams unless you save the images as separate files. Large diagrams with many views and internal levels can take several seconds. The report has not been checked on very wide tables in print, and the Compliance matrix is listed per control and per component rather than as a grid.
 - **C4 levels**: entering and leaving levels (`Enter`, `Esc`, `Alt+↑`, breadcrumb), the boundary frame, ghost cards, adding components inside a level, undo, *Export all levels* and the report with internal diagrams were checked in the browser; *Move into…* / *Move up a level*, deleting a component with an internal diagram, double-click on the card vs the name, and Auto layout inside a level have not been tried yet. Ghost edge labels can overlap when several connections leave the boundary close together. *Duplicate* does not copy the internal diagram of a duplicated component, and Mermaid, PlantUML and draw.io export the whole flat model (no levels, `in` and `c4` are ignored). Text tab: nodes without `in=` go to the top level, so edit a level from the Text tab by writing `in=` on its nodes. Ghost cards show at most 8 per side. Elements that cross levels (an edge between two different levels) are only drawn as ghosts, they cannot be selected on the canvas; reach them from the inspector links.
+- **Inventory (Excel)**: the `.xlsx` file is written by a minimal built-in writer (a ZIP without compression), so it is larger than one saved by Excel. It has no formulas (totals are not calculated in the file), no shared strings and no charts. It was checked as a valid ZIP with well-formed XML parts, but not opened in Excel, Numbers or LibreOffice yet. Several CSV downloads in a row may trigger a "download multiple files" prompt in some browsers.
 
 ---
 
