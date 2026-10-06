@@ -215,7 +215,9 @@ Usa los dos botones junto al zoom (abajo a la derecha del lienzo).
 | `⌘D` | Duplicar |
 | `⌘A` | Seleccionar todo |
 | `Supr` | Borrar |
-| Flechas (`⇧` = más rápido) | Mover la selección |
+| Flechas (`⇧` = más rápido) | Mover la selección (nodos, notas y zonas de riesgo) |
+| `Alt`+clic | Seleccionar la zona de riesgo bajo el puntero, aunque la tapen nodos o grupos |
+| `Z` / `⇧Z` | Seleccionar la zona de riesgo siguiente / anterior |
 | `C` | Conectar |
 | `R` | Ver el camino entre dos nodos seleccionados |
 | `F` | Ajustar a la vista |

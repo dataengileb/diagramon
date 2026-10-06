@@ -61,7 +61,7 @@
   const R = { nodes: new Map(), edges: new Map(), groups: new Map(), width: new Map(), gbox: new Map(), notes: new Map(), zones: new Map() };
 
   const svg = $('#canvas'), viewport = $('#viewport'), stage = $('#stage');
-  const L = { zones: $('#l-zones'), groups: $('#l-groups'), edges: $('#l-edges'), ghosts: $('#l-ghosts'), nodes: $('#l-nodes'), notes: $('#l-notes'), guides: $('#l-guides') };
+  const L = { zones: $('#l-zones'), groups: $('#l-groups'), edges: $('#l-edges'), ghosts: $('#l-ghosts'), nodes: $('#l-nodes'), zoneTop: $('#l-zone-top'), notes: $('#l-notes'), guides: $('#l-guides') };
 
   const ICON = {
     x: '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>',
@@ -666,8 +666,12 @@
     el('rect', { class: 'zone-hatch', width: z.w, height: z.h, rx: 14, fill: `url(#hatch-${sev})` }, g);
     el('rect', { class: 'zone-line', width: z.w, height: z.h, rx: 14 }, g);
     el('rect', { class: 'zone-hit', width: z.w, height: z.h, rx: 14 }, g);
+    // Etiqueta, contorno de selección y tirador van en otra capa, por encima de nodos y aristas:
+    // si un diagrama tapa la zona, sigue pudiéndose agarrar. El relleno y el borde se quedan debajo.
+    const top = el('g', { class: `zone zone-over zone-${sev}`, 'data-id': z.id }, L.zoneTop);
+    el('rect', { class: 'zone-line zone-top-line', width: z.w, height: z.h, rx: 14 }, top);
     // Etiqueta abajo a la izquierda: arriba suele estar la del grupo que la zona rodea
-    const tag = el('g', { class: 'zone-tag', transform: `translate(10 ${z.h - 32})` }, g);
+    const tag = el('g', { class: 'zone-tag', transform: `translate(10 ${z.h - 32})` }, top);
     // El CSS añade .04em de espaciado entre letras (11px → 0,44px por carácter)
     const tagW = t => textW(t, FONT.tag) + String(t).length * 0.44;
     const head = `⚠ ${sevLabel(sev).toUpperCase()}`, label = fitText(z.label ? ` · ${z.label}` : '', FONT.tag, Math.max(20, z.w - 24 - tagW(head) - 22));
@@ -676,9 +680,9 @@
     const tx = el('text', { x: 10, y: 15 }, tag);
     el('tspan', { class: 'zone-sev' }, tx).textContent = head;
     tx.appendChild(document.createTextNode(label));
-    if (z.desc) el('title', null, g).textContent = z.desc;
-    handle(g, z.w, z.h);
-    R.zones.set(z.id, { g, tag, tw });
+    if (z.desc) el('title', null, top).textContent = z.desc;
+    handle(top, z.w, z.h);
+    R.zones.set(z.id, { g, top, tag, tw });
   }
   function buildNote(n) {
     const g = el('g', { class: 'note', 'data-id': n.id }, L.notes);
@@ -695,7 +699,7 @@
   }
   // Redibuja las dos capas desde el modelo (al crear, borrar, redimensionar o editar el texto)
   function drawItems() {
-    L.zones.textContent = ''; L.notes.textContent = '';
+    L.zones.textContent = ''; L.zoneTop.textContent = ''; L.notes.textContent = '';
     R.zones.clear(); R.notes.clear();
     S.model.zones.forEach(buildZone);
     S.model.notes.forEach(buildNote);
@@ -703,11 +707,15 @@
     markItems();
   }
   function updateItems() {
-    [[S.model.zones, R.zones], [S.model.notes, R.notes]].forEach(([list, map]) => list.forEach(o => map.get(o.id)?.g.setAttribute('transform', `translate(${o.x} ${o.y})`)));
+    [[S.model.zones, R.zones], [S.model.notes, R.notes]].forEach(([list, map]) => list.forEach(o => {
+      const r = map.get(o.id), t = `translate(${o.x} ${o.y})`;
+      r?.g.setAttribute('transform', t);
+      r?.top?.setAttribute('transform', t);
+    }));
   }
   const markItems = () => {
     const s = itemSel();
-    R.zones.forEach((r, id) => r.g.classList.toggle('sel', s?.kind === 'zone' && s.id === id));
+    R.zones.forEach((r, id) => { const on = s?.kind === 'zone' && s.id === id; r.g.classList.toggle('sel', on); r.top.classList.toggle('sel', on); });
     R.notes.forEach((r, id) => r.g.classList.toggle('sel', s?.kind === 'note' && s.id === id));
   };
 
@@ -1557,6 +1565,15 @@
     changed(true);
     renderInspector();
     toast(T('toast.deleted'));
+  }
+
+  // Tecla Z: selecciona la zona siguiente (Mayús, la anterior); red de seguridad si una zona queda tapada
+  function cycleZone(dir) {
+    const zs = S.model.zones;
+    if (!zs.length) return;
+    const i = S.sel?.kind === 'zone' ? zs.findIndex(z => z.id === S.sel.id) : -1;
+    const z = zs[(i < 0 ? (dir > 0 ? 0 : zs.length - 1) : i + dir + zs.length) % zs.length];
+    select({ kind: 'zone', id: z.id });
   }
 
   // Duplica los nodos elegidos y las conexiones entre ellos, debajo del original
@@ -3286,7 +3303,7 @@
     out.setAttribute('height', Ht);
     out.setAttribute('viewBox', `0 0 ${W} ${Ht}`);
     out.classList.remove('focusing', 'hovering', 'playing', 'dragging', 'panning', 'connecting', 'filtering');
-    out.querySelectorAll('.particle, .edge-hit, .node-halo, .guide, .marquee, .path-badge').forEach(n => n.remove());
+    out.querySelectorAll('.particle, .edge-hit, .node-halo, .guide, .marquee, .path-badge, .resize-handle, .zone-top-line').forEach(n => n.remove());
     out.querySelectorAll('.lit, .sel, .pulse, .pulse-node, .enter, .connect-src, .fdim').forEach(n => n.classList.remove('lit', 'sel', 'pulse', 'pulse-node', 'enter', 'connect-src', 'fdim'));
     const vp = out.querySelector('#viewport');
     vp.removeAttribute('id');
@@ -3461,13 +3478,18 @@
     if (!e || !(h || e.classList.contains('note') || t.closest('.zone-tag, .zone-hit'))) return null;
     return { kind: e.classList.contains('note') ? 'note' : 'zone', id: e.dataset.id, resize: !!h };
   };
+  // Zona que contiene el punto (la más pequeña si hay varias): Alt+clic la elige aunque haya algo encima
+  const zoneAt = p => {
+    const hit = S.model.zones.filter(z => p.x >= z.x && p.x <= z.x + z.w && p.y >= z.y && p.y <= z.y + z.h).sort((a, b) => a.w * a.h - b.w * b.h)[0];
+    return hit ? { kind: 'zone', id: hit.id, resize: false } : null;
+  };
   svg.addEventListener('pointerdown', ev => {
     if (ev.button !== 0 && ev.button !== 1) return;
     if (P) { if (ev.button === 0) presentGo(1); return; }
     if (S.play) stopPlay();
     const nodeEl = ev.target.closest('.node'), tagEl = ev.target.closest('.group-tag'), edgeEl = ev.target.closest('.edge');
     const p = toWorld(ev.clientX, ev.clientY), now = performance.now();
-    const item = !S.connecting && ev.button === 0 ? itemOf(ev.target) : null;
+    const item = !S.connecting && ev.button === 0 ? itemOf(ev.target) || (ev.altKey ? zoneAt(p) : null) : null;
     const key = item ? 'i:' + item.id : nodeEl ? 'n:' + nodeEl.dataset.id : tagEl ? 'g:' + tagEl.parentNode.dataset.id : edgeEl ? 'e:' + edgeEl.dataset.id : 'bg';
     const last = S.lastDown;
     const dbl = ev.button === 0 && last && last.key === key && now - last.t < 350 && Math.hypot(ev.clientX - last.x, ev.clientY - last.y) < 6;
@@ -3638,13 +3660,16 @@
     else if (k === 'e') toggleRouting();
     else if (k === 'g') filterMenu.open = !filterMenu.open;
     else if (k === 'c' && S.sel?.kind === 'node') startConnect(S.sel.id);
+    else if (k === 'z') cycleZone(ev.shiftKey ? -1 : 1);
     else if (k === '+' || k === '=') animateView(zoomTarget(1.25), 200);
     else if (k === '-') animateView(zoomTarget(1 / 1.25), 200);
-    else if (ev.key.startsWith('Arrow') && selIds().length) {
+    else if (ev.key.startsWith('Arrow') && (selIds().length || itemSel())) {
       ev.preventDefault();
       const step = C.grid.snap * (ev.shiftKey ? 5 : 1);
       pushHistory();
-      selNodes().forEach(n => {
+      // Nodos elegidos, o la nota / zona seleccionada
+      const it = itemSel() && S.model[S.sel.kind === 'note' ? 'notes' : 'zones'].find(x => x.id === S.sel.id);
+      (it ? [it] : selNodes()).forEach(n => {
         if (ev.key === 'ArrowLeft') n.x -= step;
         if (ev.key === 'ArrowRight') n.x += step;
         if (ev.key === 'ArrowUp') n.y -= step;
