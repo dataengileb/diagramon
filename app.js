@@ -6501,7 +6501,9 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
         add('threats', Object.entries(x.threats || {}).map(([k, d]) => `${k}=${T(`stride.st.${d.status}`)}${d.note ? ` (${d.note})` : ''}`).join('; '));
       } else if ('type' in x) {
         const r = rows.get(x.id) || {};
-        NODE_KEYS.forEach(k => add(k, r[k]));
+        // Exposición y respaldo deducidos solo cuando aportan: exposición pública o valores puestos a mano
+        const skip = k => (k === 'backup' && typeof x.backup !== 'boolean') || (k === 'exposure' && !x.exposure && r.exposure !== T('sec.expo.public'));
+        NODE_KEYS.forEach(k => { if (!skip(k)) add(k, r[k]); });
       } else {
         ['owner', 'steward', 'team', 'costCenter'].forEach(k => add(k, String(x[k] ?? '').trim()));
         add('region', String(x.region ?? '').trim());
