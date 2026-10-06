@@ -2529,6 +2529,7 @@
       if (list.length > shown.length) more.push({ s, k: list.length - shown.length, y: top + shown.length * ROW });
     });
     const target = id => { const n = id && inner.has(id) && !VW.hideNodes.has(id) ? byId.get(id) : null; return n ? { x: n.x, y: n.y, w: R.width.get(n.id) || nodeWidth(n), h: H } : fr; };
+    const labelBoxes = [...rects.values()].map(r => ({ x0: r.x - 4, x1: r.x + r.w + 4, y0: r.y - 4, y1: r.y + r.h + 4 })); // etiquetas ya colocadas y tarjetas fantasma
     links.forEach(l => {
       const gr = rects.get(l.gid);
       if (!gr || collapse) return;
@@ -2536,7 +2537,23 @@
       const d = m.routing === 'elbow' ? elbowPath(A, B, 0, []) : curvePath(A, B, 0);
       const g = el('g', { class: 'xs-edge' }, L.scope), line = el('path', { class: 'xs-edge-line', d }, g);
       el('path', { class: 'xs-edge-arrow', d: arrowD(line, line.getTotalLength(), l.both) }, g);
-      if (l.label) { const mp = line.getPointAtLength(line.getTotalLength() / 2); el('text', { class: 'xs-edge-label', x: mp.x, y: mp.y - 4 }, g).textContent = fitText(String(l.label).split('\n')[0], FONT.edge, 150); }
+      if (l.label) {
+        const txt = fitText(String(l.label).split('\n')[0], FONT.edge, 150), len = line.getTotalLength(), w = Math.ceil(textW(txt, FONT.edge)) + 10, hit = (a, b) => a.x0 < b.x1 && a.x1 > b.x0 && a.y0 < b.y1 && a.y1 > b.y0;
+        const boxAt = (p, dy = 0) => ({ x0: p.x - w / 2, x1: p.x + w / 2, y0: p.y - 15 + dy, y1: p.y + 4 + dy });
+        let pos = null, p;
+        for (const t of [0.5, 0.35, 0.65, 0.25, 0.75, 0.18, 0.82]) { // se prueban posiciones a lo largo de la línea y se toma la primera libre
+          p = line.getPointAtLength(len * t);
+          if (!labelBoxes.some(b => hit(boxAt(p), b))) { pos = { x: p.x, y: p.y }; break; }
+        }
+        if (!pos) { // sin hueco: punto medio, desplazado en vertical hasta quedar libre (o lo menos solapado)
+          p = line.getPointAtLength(len / 2);
+          let dy = 0;
+          for (const k of [1, -1, 2, -2, 3, -3, 4, -4]) { if (!labelBoxes.some(b => hit(boxAt(p, k * 15), b))) { dy = k * 15; break; } }
+          pos = { x: p.x, y: p.y + dy };
+        }
+        labelBoxes.push(boxAt(pos));
+        el('text', { class: 'xs-edge-label', x: pos.x, y: pos.y - 4 }, g).textContent = txt;
+      }
     });
     rects.forEach((r, id) => {
       const n = byId.get(id), g = el('g', { class: 'xs-ghost', 'data-xs': id, transform: `translate(${r.x} ${r.y})` }, L.scope);
@@ -3387,11 +3404,37 @@
       ids.set(n.id, copy.id);
       S.model.nodes.push(copy);
     });
+    const top = [...ids.values()];
+    copyInner(ids);
     S.model.edges.filter(e => ids.has(e.from) && ids.has(e.to)).forEach(e => {
       S.model.edges.push({ ...clone(e), id: uniqueId('e'), from: ids.get(e.from), to: ids.get(e.to) });
     });
     changed(true);
-    select({ kind: 'multi', ids: [...ids.values()] });
+    select({ kind: 'multi', ids: top });
+  }
+  // Copia en profundidad el diagrama interno (niveles C4) de los nodos duplicados. `ids`: mapa id original -> id de la copia; se amplía con los nodos
+  // internos. Posiciones y etiquetas se mantienen. Las decisiones (ADR) y los hallazgos descartados no se copian: referencian ids del original.
+  function copyInner(ids) {
+    const m = S.model, tops = new Set(ids.keys()), deep = innerDeep([...tops]);
+    if (!deep.size) return;
+    const own = new Set([...tops, ...deep]); // nodos de origen: los duplicados y todo lo que cuelga de ellos
+    const gmap = new Map();
+    // Orden de copia: nodos por profundidad (el padre antes que sus hijos), para que `in` ya esté remapeado
+    const depth = n => { let d = 0, c = n; while (c.in && d < 50) { c = m.nodes.find(x => x.id === c.in) || {}; d++; } return d; };
+    const src = m.nodes.filter(n => deep.has(n.id)).sort((a, b) => depth(a) - depth(b));
+    const copies = src.map(n => { const c = { ...clone(n), id: uniqueId(`${n.type}-`) }; ids.set(n.id, c.id); m.nodes.push(c); return c; }); // el id se reserva al insertar
+    const inOwn = x => x.in && own.has(x.in);
+    const gcopies = m.groups.filter(inOwn).map(g => { const c = { ...clone(g), id: uniqueId('grupo-') }; gmap.set(g.id, c.id); m.groups.push(c); return c; });
+    copies.forEach(n => {
+      n.in = ids.get(n.in);
+      if (n.group) { if (gmap.has(n.group)) n.group = gmap.get(n.group); else delete n.group; }
+    });
+    gcopies.forEach(g => {
+      g.in = ids.get(g.in);
+      if (g.parent) { if (gmap.has(g.parent)) g.parent = gmap.get(g.parent); else delete g.parent; }
+    });
+    ['notes', 'zones'].forEach(k => m[k].filter(inOwn).forEach(o => m[k].push({ ...clone(o), id: uniqueId(k === 'notes' ? 'note' : 'zone'), in: ids.get(o.in) })));
+    // Las conexiones (también las que cruzan niveles) las copia duplicateSelection: `ids` ya incluye los nodos internos
   }
 
   /* ---------- crear y editar notas y zonas ---------- */
