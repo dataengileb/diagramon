@@ -2017,6 +2017,16 @@
     versionsChanged();
     toast(T('ver.deleted', { name: verLabel(v) }));
   }
+  // Borra solo el historial de estados; el estado actual, quién decidió y el motivo no se tocan. Entra en Deshacer
+  async function clearVerHistory(id) {
+    const v = findVersion(id);
+    if (!v?.history?.length) return;
+    if (!(await phraseBox({ title: T('ver.cf.histTitle', { name: verLabel(v) }), text: T('ver.cf.histText', { name: verLabel(v) }), phrase: T('ver.cf.phrase'), ok: T('ver.clearHist'), cancel: T('ver.cf.cancel') }))) return;
+    pushHistory();
+    delete v.history;
+    versionsChanged();
+    toast(T('ver.histCleared', { name: verLabel(v) }));
+  }
   function compareVersion(id) {
     S.compare = id && S.compare?.id !== id && findVersion(id) ? { id } : null;
     applyCompare();
@@ -2128,7 +2138,7 @@
             <label>${T('ver.updatedOn')}<input type="date" data-vfield="updated" value="${esc(v.updated)}"></label>
           </div>
           <label>${T('ver.note')}<textarea data-vfield="note" rows="2" placeholder="${esc(T('ver.note.ph'))}">${esc(v.note || '')}</textarea></label>
-          ${v.history?.length ? `<div class="ver-hist"><span>${T('ver.history')}</span><ul>${v.history.map(h => `<li style="--s:${VSTATUS[h.status]}">${[fmtDay(h.date), T(`ver.st.${h.status}`), h.by, h.reason].filter(Boolean).map((x, i) => i === 1 ? `<b>${esc(x)}</b>` : esc(x)).join(' · ')}</li>`).join('')}</ul></div>` : ''}
+          ${v.history?.length ? `<div class="ver-hist"><span>${T('ver.history')}<button class="ver-hist-clear" data-ver="clearHist">${T('ver.clearHist')}</button></span><ul>${v.history.map(h => `<li style="--s:${VSTATUS[h.status]}">${[fmtDay(h.date), T(`ver.st.${h.status}`), h.by, h.reason].filter(Boolean).map((x, i) => i === 1 ? `<b>${esc(x)}</b>` : esc(x)).join(' · ')}</li>`).join('')}</ul></div>` : ''}
         </div>` : ''}
         ${cmp && S.compare.diff ? diffList(S.compare.diff) : ''}
         <div class="ver-actions">
@@ -2254,6 +2264,7 @@
     else if (b.dataset.ver === 'compare') compareVersion(id);
     else if (b.dataset.ver === 'update') { const v = findVersion(id); if (v) saveVersion('env', v.env); }
     else if (b.dataset.ver === 'delete') deleteVersion(id);
+    else if (b.dataset.ver === 'clearHist') clearVerHistory(id);
     else if (b.dataset.ver === 'edit') {
       S.verEdit = S.verEdit === id ? null : id;
       renderVersions();
@@ -3493,6 +3504,49 @@
       document.addEventListener('keydown', key, true);
       document.body.appendChild(back);
       back.querySelector('[data-cf="no"]').focus();
+    });
+  }
+
+  // Confirmación escrita: el botón sigue deshabilitado hasta teclear la frase (sin pegar ni arrastrar)
+  const normPhrase = x => String(x).trim().replace(/\s+/g, ' ').toLowerCase();
+  function phraseBox({ title, text, phrase, ok, cancel }) {
+    return new Promise(done => {
+      const prev = document.activeElement, id = `cf${Date.now()}`;
+      const back = document.createElement('div');
+      back.className = 'cf-back';
+      back.innerHTML = `<div class="cf" role="dialog" aria-modal="true" aria-labelledby="${id}t" aria-describedby="${id}d">
+        <h3 id="${id}t">${esc(title)}</h3>
+        <div id="${id}d"><p>${esc(text)}</p><p>${esc(T('ver.cf.phraseIntro'))}</p><p class="cf-phrase" id="${id}p">${esc(phrase)}</p></div>
+        <input class="cf-type" type="text" aria-labelledby="${id}p" aria-describedby="${id}h" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off">
+        <div class="cf-hint" id="${id}h" role="status" aria-live="polite"></div>
+        <div class="cf-actions"><button class="btn" data-cf="no">${esc(cancel)}</button><button class="btn danger" data-cf="ok" disabled>${esc(ok)}</button></div></div>`;
+      const input = back.querySelector('input'), okBtn = back.querySelector('[data-cf="ok"]'), hint = back.querySelector('.cf-hint');
+      const want = normPhrase(phrase);
+      let hintTimer;
+      const close = r => { clearTimeout(hintTimer); document.removeEventListener('keydown', key, true); back.remove(); prev?.focus?.(); done(r); };
+      const noPaste = ev => {
+        ev.preventDefault();
+        hint.textContent = T('ver.cf.noPaste');
+        clearTimeout(hintTimer);
+        hintTimer = setTimeout(() => { hint.textContent = ''; }, 2600);
+      };
+      ['paste', 'drop'].forEach(t => input.addEventListener(t, noPaste));
+      input.addEventListener('beforeinput', ev => { if (['insertFromPaste', 'insertFromDrop', 'insertReplacementText', 'insertFromYank'].includes(ev.inputType)) noPaste(ev); });
+      input.addEventListener('input', () => { okBtn.disabled = normPhrase(input.value) !== want; });
+      const key = ev => {
+        if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); close(false); }
+        else if (ev.key === 'Enter') {
+          ev.preventDefault(); ev.stopPropagation();
+          if (document.activeElement?.dataset?.cf === 'no') close(false);
+          else if (!okBtn.disabled) close(true);
+        }
+        else if (ev.key === 'Tab') { ev.preventDefault(); const b = [input, ...back.querySelectorAll('button:not(:disabled)')]; b[(b.indexOf(document.activeElement) + (ev.shiftKey ? b.length - 1 : 1)) % b.length].focus(); }
+      };
+      back.addEventListener('mousedown', ev => { if (ev.target === back) close(false); });
+      back.addEventListener('click', ev => { const b = ev.target.closest('[data-cf]'); if (b && !b.disabled) close(b.dataset.cf === 'ok'); });
+      document.addEventListener('keydown', key, true);
+      document.body.appendChild(back);
+      input.focus();
     });
   }
 
