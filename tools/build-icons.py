@@ -282,6 +282,34 @@ KEYWORDS = {
     'fabric/datascience': 'ml machine learning aprendizaje automatico ai ia python',
     'fabric/copilot': 'ai ia assistant asistente genai llm',
     'fabric/purview': 'governance gobierno catalog catalogo lineage linaje compliance',
+    # Iconos de grupo (esquina del recuadro)
+    'aws/group-cloud': 'aws cloud nube group grupo contenedor container boundary limite',
+    'aws/group-cloudlogo': 'aws cloud logo nube group grupo contenedor',
+    'aws/group-account': 'account cuenta aws account organization organizacion group grupo contenedor',
+    'aws/group-region': 'region regiao zona geografica geography location ubicacion group grupo contenedor',
+    'aws/group-vpc': 'vpc virtual private cloud red network vnet virtual network red virtual group grupo contenedor',
+    'aws/group-publicsubnet': 'public subnet subred publica red network subnet igw internet group grupo contenedor',
+    'aws/group-privatesubnet': 'private subnet subred privada red network subnet group grupo contenedor',
+    'aws/group-autoscaling': 'auto scaling group asg escalado automatico grupo de escalado vmss group contenedor',
+    'aws/group-datacenter': 'corporate data center centro de datos corporativo on premises on-prem local onprem group grupo contenedor',
+    'aws/group-servercontents': 'server contents contenido del servidor on premises on-prem host group grupo contenedor',
+    'aws/group-ec2contents': 'ec2 instance contents contenido de la instancia vm virtual machine maquina virtual group grupo contenedor',
+    'aws/group-spotfleet': 'spot fleet flota spot ec2 compute group grupo contenedor',
+    'aws/group-greengrass': 'iot greengrass deployment despliegue edge borde group grupo contenedor',
+    'azure/group-managementgroup': 'management group grupo de administracion governance gobierno jerarquia hierarchy group grupo contenedor',
+    'azure/group-subscription': 'subscription suscripcion cuenta account group grupo contenedor',
+    'azure/group-resourcegroup': 'resource group grupo de recursos rg group grupo contenedor',
+}
+
+# Elementos que sirven de icono de grupo ('proveedor/clave'): se marcan con "group": true.
+# Los de la categoría «Grupos» son iconos de ámbito del paquete oficial; el resto son iconos de servicio
+# que las guías de la nube usan también como icono de recuadro (red virtual, subred, VPC, entornos de SAP).
+GROUP_REFS = {
+    'aws/group-cloud', 'aws/group-cloudlogo', 'aws/group-account', 'aws/group-region', 'aws/group-vpc',
+    'aws/group-publicsubnet', 'aws/group-privatesubnet', 'aws/group-autoscaling', 'aws/group-datacenter',
+    'aws/group-servercontents', 'aws/group-ec2contents', 'aws/group-spotfleet', 'aws/group-greengrass',
+    'azure/group-managementgroup', 'azure/group-subscription', 'azure/group-resourcegroup',
+    'azure/vnet', 'azure/subnet', 'gcp/vpc', 'sap/cloudfoundry', 'sap/kyma',
 }
 
 # Cada entrada: (clave, archivo a buscar, nombre visible, tipo de Diagramon, categoría)
@@ -356,6 +384,20 @@ AWS = [
     ('q', 'Amazon-Q', 'Amazon Q', 'ai', 'IA'),
     ('rekognition', 'Amazon-Rekognition', 'Rekognition', 'ai', 'IA'),
     ('textract', 'Amazon-Textract', 'Textract', 'ai', 'IA'),
+    # Iconos de grupo: Architecture-Group-Icons del paquete (nombre de archivo «Nombre_32.svg», se indexa como «Group-Nombre»)
+    ('group-cloud', 'Group-AWS-Cloud', 'AWS Cloud', 'generic', 'Grupos'),
+    ('group-cloudlogo', 'Group-AWS-Cloud-logo', 'AWS Cloud (logo)', 'generic', 'Grupos'),
+    ('group-account', 'Group-AWS-Account', 'AWS Account', 'generic', 'Grupos'),
+    ('group-region', 'Group-Region', 'Region', 'generic', 'Grupos'),
+    ('group-vpc', 'Group-Virtual-private-cloud-VPC', 'Virtual private cloud (VPC)', 'firewall', 'Grupos'),
+    ('group-publicsubnet', 'Group-Public-subnet', 'Public subnet', 'firewall', 'Grupos'),
+    ('group-privatesubnet', 'Group-Private-subnet', 'Private subnet', 'firewall', 'Grupos'),
+    ('group-autoscaling', 'Group-Auto-Scaling-group', 'Auto Scaling group', 'compute', 'Grupos'),
+    ('group-datacenter', 'Group-Corporate-data-center', 'Corporate data center', 'external', 'Grupos'),
+    ('group-servercontents', 'Group-Server-contents', 'Server contents', 'compute', 'Grupos'),
+    ('group-ec2contents', 'Group-EC2-instance-contents', 'EC2 instance contents', 'compute', 'Grupos'),
+    ('group-spotfleet', 'Group-Spot-Fleet', 'Spot Fleet', 'compute', 'Grupos'),
+    ('group-greengrass', 'Group-AWS-IoT-Greengrass-Deployment', 'IoT Greengrass Deployment', 'compute', 'Grupos'),
 ]
 
 AZURE = [
@@ -425,6 +467,10 @@ AZURE = [
     ('ml', 'Azure-Machine-Learning', 'Machine Learning', 'ai', 'IA'),
     ('aiservices', 'Cognitive-Services', 'AI Services', 'ai', 'IA'),
     ('aisearch', 'Cognitive-Search', 'AI Search', 'ai', 'IA'),
+    # Iconos de grupo (carpeta general del paquete)
+    ('group-managementgroup', 'Management-Groups', 'Management group', 'generic', 'Grupos'),
+    ('group-subscription', 'Subscriptions', 'Subscription', 'generic', 'Grupos'),
+    ('group-resourcegroup', 'Resource-Groups', 'Resource group', 'generic', 'Grupos'),
 ]
 
 # Google Cloud: desde 2025 los productos principales tienen icono propio y el
@@ -646,6 +692,8 @@ def build(provider, label, entries, files, licence):
         out['items'][key] = {'label': title, 'type': ntype, 'category': cat, 'file': fkey}
         if f'{provider}/{key}' in KEYWORDS:
             out['items'][key]['keywords'] = KEYWORDS[f'{provider}/{key}']
+        if f'{provider}/{key}' in GROUP_REFS:
+            out['items'][key]['group'] = True  # sirve como icono de grupo (recuadro)
     if ALL:
         used = {e[1] for e in entries}
         for name, path in sorted(files.items()):
@@ -675,6 +723,11 @@ def main():
     os.makedirs(out_dir, exist_ok=True)
 
     aws_files = index_files(os.path.join(src, 'aws'), re.compile(r'^Arch_(.+)_48\.svg$'))
+    # Iconos de grupo de AWS: «Nombre_32.svg» (sin las variantes _Dark), se indexan como «Group-Nombre»
+    for d, _, _ in os.walk(os.path.join(src, 'aws')):
+        if os.path.basename(d).startswith('Architecture-Group-Icons') and '__MACOSX' not in d:
+            for name, path in index_files(d, re.compile(r'^(.+)_32\.svg$')).items():
+                aws_files.setdefault(f'Group-{name}', path)
     azure_files = index_files(os.path.join(src, 'azure'), re.compile(r'^\d+\s*-icon-service-(.+?)\s*\.svg$'))
     gcp_files = {}
     for sub in ('gcp-core', 'gcp-cat'):

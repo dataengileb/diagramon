@@ -95,7 +95,10 @@
       const pid = anchor(g.parent);
       const pb = pid ? boxes[pid] : null;
       const color = ctx.color(g);
-      const style = `rounded=1;arcSize=3;container=1;collapsible=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=6 4;strokeColor=${color};strokeWidth=1.5;fillColor=${color};fillOpacity=10;verticalAlign=top;align=left;spacingLeft=10;spacingTop=4;fontStyle=1;fontSize=13;fontColor=#444444;`;
+      // Con icono de grupo, el contenedor es una forma "label": el icono arriba a la izquierda y el texto desplazado
+      const gIcon = g.icon ? ctx.icon(g.icon) : null, gUri = gIcon ? imageUri(gIcon.src) : null;
+      const style = (gUri ? `shape=label;image=${gUri};imageWidth=18;imageHeight=18;imageAlign=left;imageVerticalAlign=top;` : '') +
+        `rounded=1;arcSize=3;container=1;collapsible=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=6 4;strokeColor=${color};strokeWidth=1.5;fillColor=${color};fillOpacity=10;verticalAlign=top;align=left;spacingLeft=${gUri ? 32 : 10};spacingTop=4;fontStyle=1;fontSize=13;fontColor=#444444;`;
       cells.push(`<mxCell id="g-${esc(g.id)}" value="${esc(h(g.label || g.id))}" style="${style}" vertex="1" parent="${pid ? 'g-' + esc(pid) : '1'}"><mxGeometry x="${num(b.x - (pb ? pb.x : 0))}" y="${num(b.y - (pb ? pb.y : 0))}" width="${num(b.w)}" height="${num(b.h)}" as="geometry"/></mxCell>`);
     });
 

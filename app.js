@@ -258,6 +258,7 @@
 
     list(raw.groups).forEach((g, i) => m.groups.push({ ...g, id: take(g.id, 'g', i), label: String(g.label ?? g.id ?? T('model.group')) }));
     const gids = new Set(m.groups.map(g => g.id));
+    m.groups.forEach(g => { if (typeof g.icon !== 'string' || !g.icon.includes('/')) delete g.icon; }); // icono opcional 'proveedor/clave'
     m.groups.forEach(g => {
       if (g.parent == null || g.parent === '') return void delete g.parent;
       g.parent = String(g.parent);
@@ -619,9 +620,12 @@
     if (animate) endEnter(root);
     const box = el('rect', { class: 'group-box', rx: C.group.radius }, root);
     const tag = el('g', { class: 'group-tag' }, root);
-    const tw = Math.ceil(textW(g.label, FONT.tag) + 22);
+    // Icono de grupo opcional (16 px) a la izquierda de la etiqueta; el CSS añade .04em de espaciado entre letras
+    const info = iconInfo(g.icon), ix = info ? 18 : 0;
+    const tw = Math.ceil(textW(g.label, FONT.tag) + String(g.label).length * 0.44 + 22 + ix);
     el('rect', { width: tw, height: 22, rx: 7 }, tag);
-    el('text', { x: 10, y: 15 }, tag).textContent = g.label;
+    if (info) el('image', { href: info.src, x: 6, y: 3, width: 16, height: 16 }, tag);
+    el('text', { x: 10 + ix, y: 15 }, tag).textContent = g.label;
     R.groups.set(g.id, { g: root, box, tag, tw });
   }
 
@@ -1204,7 +1208,7 @@
   const save = debounce(() => { store.set('model', S.model); updateMeta(); renderVersions(); }, 250);
 
   const ORDER = {
-    group: ['id', 'label', 'color', 'parent'],
+    group: ['id', 'label', 'icon', 'color', 'parent'],
     node: ['id', 'label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'x', 'y', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc'],
     edge: ['id', 'from', 'to', 'label', 'style', 'route', 'both', 'color', 'data', 'encrypted'],
     note: ['id', 'x', 'y', 'w', 'h', 'text', 'color'],
@@ -2037,7 +2041,7 @@
   const DIFF_FIELDS = {
     node: ['label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc'],
     edge: ['label', 'style', 'route', 'both', 'color', 'data', 'encrypted'],
-    group: ['label', 'color', 'parent']
+    group: ['label', 'icon', 'color', 'parent']
   };
   function diffModels(a, b) {
     const val = (f, x) => (f === 'style' ? x || 'sync' : x == null ? '' : typeof x === 'object' ? JSON.stringify(x) : String(x));
@@ -2443,28 +2447,32 @@
   // Todos los iconos oficiales en una lista plana, con el texto donde se busca ya preparado
   let iconIndex = null;
   const allIcons = () => iconIndex || (iconIndex = Object.entries(ICONS).flatMap(([p, set]) => Object.entries(set.items).map(([k, it]) => ({
-    ref: `${p}/${k}`, label: it.label, provider: set.label, category: it.category, src: set.files[it.file],
+    ref: `${p}/${k}`, prov: p, group: !!it.group, label: it.label, provider: set.label, category: it.category, src: set.files[it.file],
     text: fold(`${it.label} ${k} ${set.label} ${set.short || ''} ${it.category}`), kw: it.keywords || '', name: fold(it.label)
   }))));
   // Las palabras clave valen desde el inicio de una palabra: "sql" no debe encontrar "nosql"
   const kwHit = (kw, q) => !!kw && ` ${fold(kw)}`.includes(` ${q}`);
   // Orden: etiqueta empieza por lo escrito, tiene una palabra que empieza así, la contiene, y al final solo por palabras clave
   const iconRank = (name, w) => (name.startsWith(w) ? 0 : name.split(/[\s/()-]+/).some(x => x.startsWith(w)) ? 1 : name.includes(w) ? 2 : 3);
-  function searchIcons(q, max = 40) {
+  // grp = true: solo los iconos de grupo, con los de la nube activa del panel primero
+  function searchIcons(q, max = 40, grp = false) {
     const words = fold(q).trim().split(/\s+/).filter(Boolean);
-    if (!words.length) return allIcons().slice(0, max);
+    const pool = grp ? allIcons().filter(it => it.group) : allIcons();
+    const mine = it => (grp && it.prov !== S.provider ? 1 : 0);
+    if (!words.length) return grp ? [...pool].sort((a, b) => mine(a) - mine(b)).slice(0, max) : pool.slice(0, max);
     const rank = it => iconRank(it.name, words[0]);
-    return allIcons().filter(it => words.every(w => it.text.includes(w) || kwHit(it.kw, w)))
-      .sort((a, b) => rank(a) - rank(b) || a.label.localeCompare(b.label)).slice(0, max);
+    return pool.filter(it => words.every(w => it.text.includes(w) || kwHit(it.kw, w)))
+      .sort((a, b) => mine(a) - mine(b) || rank(a) - rank(b) || a.label.localeCompare(b.label)).slice(0, max);
   }
-  const iconPicker = n => {
-    const cur = iconInfo(n.icon);
+  const NO_ICON = '<svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2.5" stroke-dasharray="3 2.6"/></svg>';
+  const iconPicker = (n, grp = false) => {
+    const cur = iconInfo(n.icon), clr = T(grp ? 'icon.group.none' : 'insp.ownIcon');
     return `<div class="field">${T('insp.icon')}
       <div class="ipick">
-        <span class="ipick-cur${cur ? ' logo' : ''}" style="--c:${nodeColor(n)}">${nodeIconHtml(n)}</span>
-        <input id="icon-q" class="ipick-in" value="${esc(cur ? `${cur.label} · ${cur.providerLabel}` : '')}" placeholder="${esc(T('icon.ph'))}" autocomplete="off" spellcheck="false"
+        <span class="ipick-cur${cur ? ' logo' : ''}" style="--c:${grp ? colorVar(n.color) || 'var(--muted)' : nodeColor(n)}">${grp ? (cur ? `<img src="${cur.src}" alt="">` : NO_ICON) : nodeIconHtml(n)}</span>
+        <input id="icon-q" class="ipick-in" value="${esc(cur ? `${cur.label} · ${cur.providerLabel}` : '')}" placeholder="${esc(T(grp ? 'icon.group.ph' : 'icon.ph'))}" autocomplete="off" spellcheck="false"
           role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="icon-list" aria-label="${esc(T('insp.icon'))}">
-        ${cur ? `<button class="ipick-clear" data-icon-clear title="${esc(T('insp.ownIcon'))}" aria-label="${esc(T('insp.ownIcon'))}">${ICON.x}</button>` : ''}
+        ${cur ? `<button class="ipick-clear" data-icon-clear title="${esc(clr)}" aria-label="${esc(clr)}">${ICON.x}</button>` : ''}
       </div>
       <div class="ipick-list" id="icon-list" role="listbox" hidden></div>
     </div>`;
@@ -2472,8 +2480,11 @@
   function showIconList(q) {
     const list = $('#icon-list'), box = $('#icon-q');
     if (!list) return;
-    const found = searchIcons(q);
-    list.innerHTML = found.map((it, i) => `<div class="ipick-opt${i ? '' : ' on'}" role="option" data-ref="${esc(it.ref)}"><i><img src="${it.src}" alt=""></i><span>${esc(it.label)}</span><em>${esc(it.provider)} · ${esc(I.category(it.category))}</em></div>`).join('')
+    const grp = S.sel?.kind === 'group';
+    const rows = searchIcons(q, 40, grp).map(it => `<div class="ipick-opt" role="option" data-ref="${esc(it.ref)}"><i><img src="${it.src}" alt=""></i><span>${esc(it.label)}</span><em>${esc(it.provider)} · ${esc(I.category(it.category))}</em></div>`);
+    // Los grupos añaden «Sin icono»: arriba si no se ha escrito nada, al final si hay búsqueda
+    if (grp) { const none = `<div class="ipick-opt" role="option" data-ref=""><i>${NO_ICON}</i><span>${esc(T('icon.group.none'))}</span></div>`; if (q.trim() && rows.length) rows.push(none); else rows.unshift(none); }
+    list.innerHTML = rows.map((r, i) => (i ? r : r.replace('class="ipick-opt"', 'class="ipick-opt on"'))).join('')
       || `<p class="ipick-none">${esc(T('icon.none'))}</p>`;
     list.hidden = false;
     list.scrollTop = 0;
@@ -2488,7 +2499,7 @@
     const t = selTarget();
     if (!t || Array.isArray(t)) return;
     pushHistory();
-    if (ref && iconInfo(ref)) { t.icon = ref; t.type = iconInfo(ref).type; } else delete t.icon;
+    if (ref && iconInfo(ref)) { t.icon = ref; if (S.sel.kind !== 'group') t.type = iconInfo(ref).type; } else delete t.icon;
     changed(true);
     renderInspector();
   }
@@ -2658,6 +2669,7 @@
       html = head(colorVar(t.color) || 'var(--muted)', '', T('insp.group'), t.label) + `
         <p class="note">${T('insp.groupNote', count)}</p>
         <label>${T('insp.name')}<input data-field="label" value="${esc(t.label)}"></label>
+        ${allIcons().some(i => i.group) ? iconPicker(t, true) : ''}
         <label>${T('insp.parent')}<select data-field="parent"><option value="">${T('insp.none')}</option>${m.groups.filter(g => !blocked.has(g.id)).map(g => `<option value="${esc(g.id)}"${g.id === t.parent ? ' selected' : ''}>${esc(g.label)}</option>`).join('')}</select></label>
         <div class="field">${T('insp.color')}${swatches(t.color)}</div>
         <div class="insp-actions"><button class="btn danger" data-act="delete">${T('insp.deleteGroup')}</button></div>`;
@@ -2837,7 +2849,9 @@
       const pre = C.presets?.[S.provider];
       const preItems = (pre?.items || []).map(p => ({ ...p, sub: loc(p.sub) })).filter(p => !q || fold(`${p.label} ${p.sub || ''} ${p.keywords || ''}`).includes(q));
       if (preItems.length) groups.set(loc(pre.title), preItems.map(p => [null, p]));
+      // Los iconos solo de grupo (AWS Cloud, Region, Subscription…) se eligen en el panel del grupo, no como componentes
       Object.entries(set.items)
+        .filter(([, it]) => it.category !== 'Grupos')
         .filter(([k, it]) => !q || fold(`${it.label} ${k} ${it.category} ${I.category(it.category)}`).includes(q) || kwHit(it.keywords, q))
         .forEach(([k, it]) => { if (!groups.has(it.category)) groups.set(it.category, []); groups.get(it.category).push([k, it]); });
       // Con búsqueda, dentro de cada categoría primero las coincidencias por nombre y luego las de palabras clave
