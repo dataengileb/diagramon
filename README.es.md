@@ -102,7 +102,7 @@ de verdad. Ese tipo de información no debería viajar a un servicio de terceros
 3. En **Componentes**, abre la lista **Proveedor** y elige **Genéricos**, **AWS**, **Azure**, **Google Cloud**, **SAP BTP** o **Microsoft Fabric**.
    Solo verás los componentes de ese proveedor. Usa el buscador: `lambda`, `s3`, `hana`…
    También entiende sinónimos y equivalentes, en español e inglés: `sql` encuentra RDS, Cloud SQL y Azure SQL; `k8s` encuentra EKS, AKS y GKE; `cola` encuentra SQS y Service Bus.
-   En **SAP**, arriba salen los **sistemas SAP** sin icono oficial (S/4HANA, ECC, TM, EWM…).
+   En **SAP**, arriba salen los **sistemas de negocio SAP** (S/4HANA, ECC, TM, EWM…) con el logotipo de SAP.
 4. Haz **clic** en un componente para añadirlo al centro, o **arrástralo** al lienzo.
    Doble clic en un hueco del lienzo añade otro igual al último.
 
@@ -402,8 +402,23 @@ El lenguaje de texto está en `window.DiagramonText` (`parse` y `stringify`).
 | `samples/` | Archivos de IaC de ejemplo para probar la importación |
 | `icons/*.js` | Iconos oficiales de AWS, Azure, Google Cloud, SAP BTP y Microsoft Fabric, incrustados |
 | `tools/build-icons.py` | Genera `icons/*.js` desde los paquetes oficiales |
+| `icons/logos.js`, `tools/build-logos.py` | Logotipos de Azure, Google Cloud y SAP para grupos, generados desde `tools/logos/` |
 | `fonts/` | Tipografías incluidas (`.woff2`, licencias OFL) y el `fonts.js` generado |
 | `tools/build-fonts.py` | Genera `fonts/fonts.js` desde `fonts/*.woff2` |
+
+---
+
+## 🧭 Pendientes conocidos
+
+Cosas que funcionan pero aún no se han revisado a fondo. Probablemente necesiten depurarse; se agradecen avisos y *pull requests*.
+
+- **Importación de infraestructura como código de Azure y Google Cloud**: la correspondencia de iconos existe, pero no se ha probado con archivos reales de Azure ni de Google Cloud.
+- **Exportaciones a Mermaid, PlantUML y draw.io**: cubren los casos principales, pero en diagramas complejos pueden perder detalles o necesitar ajustes.
+  Los iconos de grupo en la exportación a draw.io aún no se han abierto en draw.io.
+- **Temas claro y negro** con iconos de grupo y colores personalizados: sin revisar. Un color personalizado muy claro puede leerse mal en el tema claro, porque los colores personalizados no cambian con el tema.
+- **Ida y vuelta en la pestaña Texto** de conexiones bidireccionales (`ambos=sí`) y etiquetas con saltos de línea: escribirlas funciona; editarlas y volver a leerlas no se ha probado del todo.
+- *Reproducir flujo* y el modo presentación siguen las conexiones bidireccionales solo en un sentido.
+- Las notas y las zonas de riesgo no se exportan a Mermaid, PlantUML ni draw.io.
 
 ---
 
@@ -441,8 +456,10 @@ Los iconos de SAP BTP vienen de [SAP/btp-solution-diagrams](https://github.com/S
 bajo la licencia Apache 2.0 (copia en [`icons/LICENSE-SAP.txt`](icons/LICENSE-SAP.txt)).
 Los iconos de Microsoft Fabric vienen del paquete oficial `@fabric-msft/svg-icons` de Microsoft, con licencia MIT
 (copia en [`icons/LICENSE-FABRIC.txt`](icons/LICENSE-FABRIC.txt)), y siguen las mismas reglas de uso que los de Azure.
-SAP solo publica iconos para sus servicios BTP. Sus aplicaciones de negocio (S/4HANA, ECC, TM, EWM…) no tienen icono oficial:
-la guía de SAP las dibuja como cajas con nombre, y Diagramon hace lo mismo con un icono genérico propio.
+SAP solo publica iconos para sus servicios BTP. Sus aplicaciones de negocio (S/4HANA, ECC, TM, EWM…) no tienen icono oficial,
+así que Diagramon las muestra con el logotipo de SAP.
+Los **logotipos** de Azure, Google Cloud y SAP que se ofrecen como icono de grupo (una suscripción de Azure, un proyecto de Google Cloud, una cuenta de SAP BTP)
+son marcas de sus dueños y solo identifican el servicio. Origen y condiciones en [`icons/LICENSE-LOGOS.txt`](icons/LICENSE-LOGOS.txt).
 Diagramon los muestra sin cambios: no los recortes, gires ni deformes, y no los uses para representar un producto propio.
 AWS, Azure, Microsoft Fabric, Google Cloud y SAP son marcas de sus respectivos dueños. Diagramon no está afiliado a ninguno de ellos.
 

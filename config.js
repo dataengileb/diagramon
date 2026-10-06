@@ -75,24 +75,24 @@ window.DIAGRAMON_CONFIG = {
 
   /* Atajos sin icono oficial. Salen arriba de la pestaña de su nube.
      SAP solo publica iconos para sus servicios BTP. Sus aplicaciones de negocio
-     (S/4HANA, ECC, TM, EWM…) se dibujan como cajas con nombre, sin icono propio. */
+     (S/4HANA, ECC, TM, EWM…) llevan el logotipo de SAP (`icon`, de icons/logos.js). */
   presets: {
     sap: {
-      title: { en: 'SAP systems (no official icon)', es: 'Sistemas SAP (sin icono oficial)' },
+      title: { en: 'SAP business systems', es: 'Sistemas de negocio SAP' },
       items: [
-        { label: 'SAP S/4HANA', sub: 'ERP', type: 'erp', keywords: 's4 s4hana' },
-        { label: 'SAP S/4HANA Cloud', sub: { en: 'Cloud ERP', es: 'ERP en la nube' }, type: 'erp', keywords: 's4 s4hana rise' },
-        { label: 'SAP ECC', sub: 'ERP · ECC 6.0', type: 'erp', keywords: 'r3 erp central component' },
-        { label: 'SAP TM', sub: 'Transportation Management', type: 'erp', keywords: 'transporte logistica transport logistics' },
-        { label: 'SAP EWM', sub: 'Extended Warehouse Mgmt.', type: 'erp', keywords: 'almacen bodega warehouse' },
-        { label: 'SAP BW/4HANA', sub: 'Data warehouse', type: 'analytics', keywords: 'bw bi' },
-        { label: 'SAP PI/PO', sub: { en: 'On-premise integration', es: 'Integración on-premise' }, type: 'queue', keywords: 'pi po process integration orchestration' },
-        { label: 'SAP SuccessFactors', sub: { en: 'HR', es: 'RR. HH.' }, type: 'erp', keywords: 'hcm recursos humanos hr human resources' },
-        { label: 'SAP Ariba', sub: { en: 'Procurement', es: 'Compras' }, type: 'erp', keywords: 'procurement compras purchasing' },
-        { label: 'SAP Concur', sub: { en: 'Travel & expenses', es: 'Viajes y gastos' }, type: 'erp', keywords: 'gastos viajes travel expenses' },
-        { label: 'SAP Commerce Cloud', sub: { en: 'Commerce', es: 'Comercio' }, type: 'web', keywords: 'hybris cx ecommerce' },
-        { label: 'SAP Business One', sub: { en: 'SME ERP', es: 'ERP para pymes' }, type: 'erp', keywords: 'b1 pyme' },
-        { label: 'SAP GUI', sub: { en: 'Desktop client', es: 'Cliente de escritorio' }, type: 'user', keywords: 'gui cliente' }
+        { label: 'SAP S/4HANA', sub: 'ERP', icon: 'sap/logo', type: 'erp', keywords: 's4 s4hana' },
+        { label: 'SAP S/4HANA Cloud', sub: { en: 'Cloud ERP', es: 'ERP en la nube' }, icon: 'sap/logo', type: 'erp', keywords: 's4 s4hana rise' },
+        { label: 'SAP ECC', sub: 'ERP · ECC 6.0', icon: 'sap/logo', type: 'erp', keywords: 'r3 erp central component' },
+        { label: 'SAP TM', sub: 'Transportation Management', icon: 'sap/logo', type: 'erp', keywords: 'transporte logistica transport logistics' },
+        { label: 'SAP EWM', sub: 'Extended Warehouse Mgmt.', icon: 'sap/logo', type: 'erp', keywords: 'almacen bodega warehouse' },
+        { label: 'SAP BW/4HANA', sub: 'Data warehouse', icon: 'sap/logo', type: 'analytics', keywords: 'bw bi' },
+        { label: 'SAP PI/PO', sub: { en: 'On-premise integration', es: 'Integración on-premise' }, icon: 'sap/logo', type: 'queue', keywords: 'pi po process integration orchestration' },
+        { label: 'SAP SuccessFactors', sub: { en: 'HR', es: 'RR. HH.' }, icon: 'sap/logo', type: 'erp', keywords: 'hcm recursos humanos hr human resources' },
+        { label: 'SAP Ariba', sub: { en: 'Procurement', es: 'Compras' }, icon: 'sap/logo', type: 'erp', keywords: 'procurement compras purchasing' },
+        { label: 'SAP Concur', sub: { en: 'Travel & expenses', es: 'Viajes y gastos' }, icon: 'sap/logo', type: 'erp', keywords: 'gastos viajes travel expenses' },
+        { label: 'SAP Commerce Cloud', sub: { en: 'Commerce', es: 'Comercio' }, icon: 'sap/logo', type: 'web', keywords: 'hybris cx ecommerce' },
+        { label: 'SAP Business One', sub: { en: 'SME ERP', es: 'ERP para pymes' }, icon: 'sap/logo', type: 'erp', keywords: 'b1 pyme' },
+        { label: 'SAP GUI', sub: { en: 'Desktop client', es: 'Cliente de escritorio' }, icon: 'sap/logo', type: 'user', keywords: 'gui cliente' }
       ]
     }
   },
@@ -102,7 +102,7 @@ window.DIAGRAMON_CONFIG = {
   environments: {
     dev:  { label: { en: 'Development', es: 'Desarrollo' }, short: 'DEV', color: 'cielo' },
     qa:   { label: { en: 'Quality (QA)', es: 'Calidad (QA)' }, short: 'QA', color: 'limon' },
-    prod: { label: { en: 'Production', es: 'Producción' }, short: 'PROD', color: 'coral' }
+    prod: { label: { en: 'Production', es: 'Producción' }, short: 'PROD', color: 'menta' }
   },
 
   /* Clasificación de datos: etiquetas de color arriba de cada nodo y en las conexiones.

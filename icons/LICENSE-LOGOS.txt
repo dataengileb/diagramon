@@ -1,0 +1,12 @@
+Brand logos in icons/logos.js (built by tools/build-logos.py from tools/logos/)
+
+- Azure: "Azure A" icon from Microsoft's official Azure Public Service Icons package
+  (https://learn.microsoft.com/azure/architecture/icons), under Microsoft's terms for architecture diagrams.
+- Google Cloud: Google Cloud mark as published by Google at https://www.gstatic.com/cgc/super_cloud_gradient.png
+- SAP: SAP logo from https://github.com/SAP/btp-solution-diagrams (guideline/static/img/logo.svg).
+- Microsoft Fabric: the existing logo in icons/fabric.js (see LICENSE-FABRIC.txt).
+
+These logos are trademarks of Microsoft Corporation, Google LLC and SAP SE. They are NOT covered by
+Diagramon's MIT license. Diagramon uses them only to identify the corresponding service in a diagram
+(for example, an Azure subscription or a Google Cloud project), unchanged, and is not affiliated with,
+sponsored or endorsed by any of these companies. Follow each owner's brand guidelines when you use them.
