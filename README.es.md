@@ -207,6 +207,22 @@ Usa los dos botones junto al zoom (abajo a la derecha del lienzo).
   Los archivos SVG y PNG llevan entonces un panel abajo con solo lo que usa el diagrama (estilos de conexión, candados,
   colores de los componentes, clasificaciones de datos) y un cajetín con título, autor, versión, fecha y costo estimado.
 
+### Vistas
+
+Una **vista** es una forma de mirar el mismo diagrama: solo decide qué se ve, con cuánto detalle y qué destaca. Nunca cambia tus componentes ni posiciones. Elígela en el selector **Vista** de la barra superior, con las teclas **`1`**–**`7`**, o desde la consola (`Diagramon.setView('security')`). Cuando la vista no es *Completa*, una pastilla sobre el lienzo la nombra, cuenta lo que oculta o atenúa y tiene una **×** para volver. La ficha del documento y la leyenda de las exportaciones siguen la vista activa.
+
+| Tecla | Vista | Qué ves |
+|---|---|---|
+| `1` | **Completa** | Todo: componentes, grupos, etiquetas, marcas, costos, zonas y notas |
+| `2` | **Contexto** | Grupos de primer nivel como cajas cerradas con flujos combinados entre ellas (solo lectura; doble clic en una caja la abre en Completa) |
+| `3` | **Lógica** | Servicios y flujos sin los grupos físicos (VPC, subredes, regiones, cuentas…) |
+| `4` | **Física** | Dónde corre cada cosa: todos los grupos y zonas de riesgo, sin etiquetas de conexión |
+| `5` | **Seguridad** | Datos sensibles y cifrado en tránsito resaltados (sin cifrar, o sin indicar, con datos sensibles); el resto se atenúa |
+| `6` | **Datos** | Almacenes y flujos de datos, coloreados por su clasificación más sensible |
+| `7` | **Costo** | Costo mensual como mapa de calor, con el total |
+
+Las reglas de cada vista están en `config.js` › `views`; en el inspector puedes marcar un grupo como `lógico` o `físico`.
+
 ### Atajos de teclado
 
 | Tecla | Acción |
@@ -227,6 +243,7 @@ Usa los dos botones junto al zoom (abajo a la derecha del lienzo).
 | `L` | Cambiar entre inglés y español |
 | `E` | Cambiar entre conectores curvos y en ángulo recto |
 | `G` | Abrir el panel de filtros (`Esc` lo cierra) |
+| `1`–`7` | Cambiar de vista: Completa, Contexto, Lógica, Física, Seguridad, Datos, Costo |
 | `Esc` | Cancelar o quitar la selección |
 
 ---

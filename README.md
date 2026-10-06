@@ -223,6 +223,22 @@ Use the two buttons next to the zoom controls (bottom right of the canvas).
   SVG and PNG files then get a panel at the bottom with only what the diagram uses (connection styles, padlocks,
   component colors, data classes) and a title block with title, author, version, date and estimated cost.
 
+### Views
+
+A **view** is a way of looking at the same diagram: it only decides what is shown, how much detail and what stands out. It never changes your components or positions. Pick one from the **View** selector in the top bar, with keys **`1`**–**`7`**, or from the console (`Diagramon.setView('security')`). When the view is not *Full*, a pill above the canvas names it, counts what it hides or dims, and has an **×** to go back. The document card and the legend of exports follow the active view.
+
+| Key | View | What you see |
+|---|---|---|
+| `1` | **Full** | Everything: components, groups, labels, tags, costs, zones and notes |
+| `2` | **Context** | Top-level groups as closed boxes with combined flows between them (read-only; double-click a box to open it in Full) |
+| `3` | **Logical** | Services and flows without the physical groups (VPCs, subnets, regions, accounts…) |
+| `4` | **Physical** | Where things run: all groups and risk zones, without connection labels |
+| `5` | **Security** | Sensitive data and encryption in transit highlighted (unencrypted, or not stated, with sensitive data); the rest fades |
+| `6` | **Data** | Data stores and flows, colored by their most sensitive classification |
+| `7` | **Cost** | Monthly cost as a heat map, with the total |
+
+The rules of each view live in `config.js` › `views`; groups can be marked `logical` or `physical` in the inspector.
+
 ### Keyboard shortcuts
 
 | Key | Action |
@@ -243,6 +259,7 @@ Use the two buttons next to the zoom controls (bottom right of the canvas).
 | `L` | Switch English / Spanish |
 | `E` | Switch curved / elbow connectors |
 | `G` | Open the filter panel (`Esc` closes it) |
+| `1`–`7` | Switch view: Full, Context, Logical, Physical, Security, Data, Cost |
 | `Esc` | Cancel or clear the selection |
 
 ---

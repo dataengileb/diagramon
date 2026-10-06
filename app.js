@@ -44,7 +44,7 @@
   const fontKey = k => FONTS[k] ? k : FONTS[C.fonts.default] ? C.fonts.default : 'system';
 
   /* ---------- vistas: filtros de presentación del mismo modelo (reglas en config.js › views) ---------- */
-  const VIEW_DEFAULTS = { groups: 'all', nodeDetail: 'full', edgeLabels: true, dataTags: true, locks: true, cost: true, zones: true, notes: true, review: true, emphasis: null };
+  const VIEW_DEFAULTS = { groups: 'all', nodeDetail: 'full', edgeLabels: true, dataTags: true, locks: true, cost: true, zones: true, notes: true, review: true, emphasis: null, legendGroups: false };
   const VIEWS = {};
   for (const [k, v] of Object.entries(C.views || {})) if (v && typeof v === 'object') VIEWS[k] = { ...VIEW_DEFAULTS, ...v };
   if (!VIEWS.full) VIEWS.full = { label: { en: 'Full', es: 'Completa' }, ...VIEW_DEFAULTS };
@@ -73,7 +73,7 @@
   // Referencias a elementos SVG y medidas calculadas (nunca se guardan en el modelo)
   const R = { nodes: new Map(), edges: new Map(), groups: new Map(), width: new Map(), gbox: new Map(), notes: new Map(), zones: new Map() };
   // Lo que la vista activa oculta o resume (se recalcula en applyViewMode / updateContext) y el último resaltado
-  const VW = { hideNodes: new Set(), hideEdges: new Set(), hideGroups: new Set(), flows: new Map(), ctxBoxes: new Map(), ctxEdges: new Map(), gcost: null };
+  const VW = { dimNodes: 0, dimEdges: 0, hideNodes: new Set(), hideEdges: new Set(), hideGroups: new Set(), flows: new Map(), ctxBoxes: new Map(), ctxEdges: new Map(), gcost: null };
   const HL = { f: null, fr: null };
 
   const svg = $('#canvas'), viewport = $('#viewport'), stage = $('#stage');
@@ -1156,6 +1156,11 @@
   // applyViewMode pone clases en el SVG (vw-*, data-view) y en cada elemento (v-*); el CSS está en #diagram-css,
   // así que las exportaciones SVG/PNG y el HTML cifrado se ven igual que el lienzo.
   const vc = () => VIEWS[S.viewKey] || VIEWS.full;
+  // Vista Seguridad: clase de una conexión. Sin cifrar: alta (crítica si lleva datos sensibles) · sin indicar con datos sensibles: aviso · cifrada: normal
+  const secClass = (e, byId) => {
+    const sens = isSensitive(e) || isSensitive(byId.get(e.from)) || isSensitive(byId.get(e.to));
+    return e.encrypted === false ? (sens ? 'v-hl v-crit' : 'v-hl v-high') : e.encrypted == null ? (sens ? 'v-hl v-warn' : 'v-dim') : '';
+  };
   const VCLS = ['v-hide', 'v-hl', 'v-dim', 'v-heat', 'v-crit', 'v-high', 'v-warn', 'v-hlc'];
   // De menos a más costo: tramos de VR.costHeat mezclados con color-mix
   const heatColor = t => {
@@ -1194,11 +1199,7 @@
 
     if (emph === 'security') {
       m.nodes.forEach(n => nodeCls.set(n.id, isSensitive(n) ? 'v-hl' : 'v-dim'));
-      m.edges.forEach(e => {
-        const sens = isSensitive(e) || isSensitive(byId.get(e.from)) || isSensitive(byId.get(e.to));
-        // Sin cifrar: alta (crítica si lleva datos sensibles) · sin indicar con datos sensibles: aviso · cifrada: normal con su candado
-        edgeCls.set(e.id, e.encrypted === false ? (sens ? 'v-hl v-crit' : 'v-hl v-high') : e.encrypted == null ? (sens ? 'v-hl v-warn' : 'v-dim') : '');
-      });
+      m.edges.forEach(e => edgeCls.set(e.id, secClass(e, byId)));
     } else if (emph === 'data') {
       const rank = k => Object.keys(DATA).indexOf(k);
       const isData = n => VR.dataTypes.includes(n.type) || VR.dataIconCategories.includes(iconInfo(n.icon)?.category);
@@ -1232,6 +1233,10 @@
     R.edges.forEach((r, id) => paint(r.g, id, hideE, edgeCls, edgeVar, '--vc'));
     R.groups.forEach((r, id) => r.g.classList.toggle('v-hide', hideG.has(id) || top.has(id)));
     VW.hideNodes = hideN; VW.hideEdges = hideE; VW.hideGroups = hideG;
+    // Atenuados (no ocultos): los muestra la pastilla de la vista
+    const dim = cls => [...cls].filter(([id, c]) => /\bv-dim\b/.test(c)).length;
+    VW.dimNodes = dim(nodeCls); VW.dimEdges = dim(edgeCls);
+    syncViewUI();
   }
   // La selección no puede apuntar a algo que esta vista oculta
   function visibleSel(sel) {
@@ -1270,6 +1275,76 @@
     if (opts.toast !== false) toast(T('view.toast', { name: viewLabel(key) }));
     return key;
   }
+  /* ---------- selector de vistas (barra superior) y pastilla de vista activa (lienzo) ---------- */
+  const viewMenu = $('#view-menu'), viewBtn = $('#btn-view'), viewList = $('#view-list'), viewPill = $('#stage-view');
+  const VIEW_ICON = '<circle cx="12" cy="12" r="8"/>';
+  const viewIcon = k => VIEWS[k]?.icon || VIEW_ICON;
+  const viewDesc = k => { const dk = `view.desc.${k}`, d = T(dk); return d === dk ? '' : d; };
+  // Lo que la vista oculta (componentes, grupos, conexiones, y zonas / notas si la vista no las muestra) y lo que atenúa.
+  // En Contexto: componentes que quedan dentro de cajas cerradas.
+  function viewCounts() {
+    const m = S.model, v = vc();
+    if (v.groups === 'collapse-top') return { ctx: [...VW.ctxBoxes.values()].reduce((a, b) => a + b.ids.length, 0), hidden: 0, dim: 0 };
+    const hidden = VW.hideNodes.size + VW.hideGroups.size + VW.hideEdges.size + (v.zones ? 0 : m.zones.length) + (v.notes ? 0 : m.notes.length);
+    return { hidden, dim: VW.dimNodes + VW.dimEdges };
+  }
+  function renderViewMenu() {
+    viewList.innerHTML = VIEW_KEYS.map((k, i) => `<button class="vopt" role="option" tabindex="-1" data-view="${esc(k)}" aria-selected="false"><svg viewBox="0 0 24 24" aria-hidden="true">${viewIcon(k)}</svg><span><b>${esc(viewLabel(k))}</b>${viewDesc(k) ? `<em>${esc(viewDesc(k))}</em>` : ''}</span>${i < 9 ? `<kbd>${i + 1}</kbd>` : ''}</button>`).join('');
+    syncViewUI();
+  }
+  function syncViewUI() {
+    if (!S.model) return;
+    const key = S.viewKey, name = viewLabel(key), tip = T('view.menu', { name });
+    $('#view-ico').innerHTML = viewIcon(key);
+    $('#view-lbl').textContent = name;
+    viewBtn.title = tip; viewBtn.setAttribute('aria-label', tip);
+    viewBtn.classList.toggle('on', key !== 'full');
+    renderDocbar();  // la ficha del documento y su leyenda siguen a la vista
+    viewList.querySelectorAll('.vopt').forEach(b => b.setAttribute('aria-selected', b.dataset.view === key));
+    // Pastilla: solo cuando la vista no es Completa
+    viewPill.hidden = key === 'full';
+    if (key === 'full') return;
+    const c = viewCounts(), parts = c.ctx != null ? [T('view.pill.ctx', c.ctx)] : [c.hidden && T('view.pill.hidden', c.hidden), c.dim && T('view.pill.dim', c.dim)].filter(Boolean);
+    const lbl = `${T('view.pill')}: ${name}${parts.length ? ` · ${parts.join(' · ')}` : ''}`;
+    viewPill.title = c.ctx != null ? '' : T('view.pill.tip', { hidden: c.hidden, dim: c.dim });
+    viewPill.innerHTML = `<svg class="vi" viewBox="0 0 24 24" aria-hidden="true">${viewIcon(key)}</svg><span>${esc(lbl)}</span><button class="icon-btn" data-view-back title="${esc(T('view.back'))}" aria-label="${esc(T('view.back'))}"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>`;
+  }
+  viewPill.addEventListener('click', ev => { if (ev.target.closest('[data-view-back]')) setView('full'); });
+  const optList = () => [...viewList.querySelectorAll('.vopt')];
+  function placeViewMenu() {
+    const r = viewBtn.getBoundingClientRect();
+    viewList.style.top = `${r.bottom}px`;
+    viewList.style.right = `${Math.max(8, innerWidth - r.right)}px`;
+  }
+  viewMenu.addEventListener('toggle', () => {
+    viewBtn.setAttribute('aria-expanded', viewMenu.open);
+    if (!viewMenu.open) return;
+    placeViewMenu();
+    (optList().find(b => b.getAttribute('aria-selected') === 'true') || optList()[0])?.focus();
+  });
+  document.addEventListener('pointerdown', ev => { if (viewMenu.open && !viewMenu.contains(ev.target)) viewMenu.open = false; });
+  viewList.addEventListener('click', ev => {
+    const b = ev.target.closest('.vopt');
+    if (!b) return;
+    setView(b.dataset.view);
+    viewMenu.open = false;
+    viewBtn.focus();
+  });
+  // Teclado: ↑↓ Inicio Fin mueven, Enter elige (clic nativo del botón), Esc cierra
+  viewMenu.addEventListener('keydown', ev => {
+    const opts = optList(), i = opts.indexOf(document.activeElement);
+    if (ev.target === viewBtn && ev.key === 'ArrowDown') { ev.preventDefault(); ev.stopPropagation(); viewMenu.open = true; return; }
+    if (!viewMenu.open) return;
+    const go = n => { ev.preventDefault(); ev.stopPropagation(); opts[(n + opts.length) % opts.length]?.focus(); };
+    if (ev.key === 'ArrowDown') go(i + 1);
+    else if (ev.key === 'ArrowUp') go(i < 0 ? opts.length - 1 : i - 1);
+    else if (ev.key === 'Home') go(0);
+    else if (ev.key === 'End') go(opts.length - 1);
+    else if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); viewMenu.open = false; viewBtn.focus(); }
+    else if (ev.key === 'Tab') viewMenu.open = false;
+    else if (/^[1-9]$/.test(ev.key)) viewMenu.open = false;  // el atajo numérico (global) cambia de vista; el menú se cierra
+  });
+  renderViewMenu();
   // Al abrir un diagrama (plantilla, archivo, nuevo): si trae meta.view y el usuario no ha elegido otra vista en esta sesión, se respeta;
   // si no, la última que eligió (guardada) o la de config.js. Deshacer, versiones y editores no la cambian.
   const adoptMetaView = m => { if (!S.viewChosen) S.viewKey = viewKey(m.meta?.view || store.get('view')); };
@@ -1278,7 +1353,7 @@
   function updateContext() {
     L.ctx.textContent = '';
     VW.ctxBoxes = new Map(); VW.ctxEdges = new Map(); VW.flows = new Map();
-    if (vc().groups !== 'collapse-top') { S.flow = null; return; }
+    if (vc().groups !== 'collapse-top') { S.flow = null; return syncViewUI(); }
     const m = S.model, gmap = new Map(m.groups.map(g => [g.id, g])), byId = new Map(m.nodes.map(n => [n.id, n]));
     const topOf = gid => { let g = gmap.get(gid), i = 0; while (g?.parent && gmap.has(g.parent) && i++ < 50) g = gmap.get(g.parent); return g; };
     // Representante visible de cada nodo: la caja cerrada de su grupo de primer nivel, o él mismo
@@ -1356,6 +1431,7 @@
     });
     if (S.flow && !VW.flows.has(S.flow)) { S.flow = null; renderInspector(); }
     ctxMark();
+    syncViewUI();
   }
   // Estado de las cajas y conexiones agregadas: foco, selección, filtro y comparación (como los elementos reales)
   function ctxMark() {
@@ -1665,12 +1741,17 @@
     const pill = $('#docbar-pill');
     pill.hidden = !v;
     if (v) { pill.style.setProperty('--s', VSTATUS[v.status]); pill.textContent = `${verLabel(v)} · ${T(`ver.st.${v.status}`)}`; }
-    const types = open ? legendTypes() : [];
-    $('#docbar-body').innerHTML = open ? `<dl>${d.info.map(([k, x]) => `<dt>${esc(k)}</dt><dd>${esc(x)}</dd>`).join('')}</dl>${types.length ? `<details class="docbar-leg"${store.get('docbarLeg', false) ? ' open' : ''}><summary>${esc(T('leg.components'))} · ${types.length}</summary><ul>${types.map(r => `<li style="--c:${esc(r.color)}"><i></i>${esc(r.label)}</li>`).join('')}</ul></details>` : ''}` : '';
+    const types = open ? legendTypes() : [], ex = open ? viewLegend() : null, sw = c => (Array.isArray(c) && c.length > 1 ? `linear-gradient(90deg,${c.join(',')})` : [].concat(c)[0]);
+    // Leyenda compacta de la vista (solo si aporta algo): niveles, escala de calor, grupos visibles
+    const vrows = ex ? [...ex.conn.map(r => `<li class="sw" style="--c:${esc(r.lock ? 'var(--muted)' : sw(r.color))}"><i></i>${esc(r.label)}</li>`),
+      ...(ex.heat ? [`<li><i class="heat" style="background:linear-gradient(90deg,${esc(ex.heat.stops.join(','))})"></i>${esc(`${ex.heat.min} – ${ex.heat.max}`)}</li>`, `<li>${esc(`${T('leg.total')}: ${ex.heat.total}`)}</li>`] : []),
+      ...(ex.groups ? [`<li class="sw" style="--c:var(--muted)"><i></i>${esc(ex.groups)}</li>`] : [])] : [];
+    const det = (k, head, rows) => `<details class="docbar-leg" data-k="${k}"${store.get(k, false) ? ' open' : ''}><summary>${esc(head)} · ${rows.length}</summary><ul>${rows.join('')}</ul></details>`;
+    $('#docbar-body').innerHTML = open ? `<dl>${d.info.map(([k, x]) => `<dt>${esc(k)}</dt><dd>${esc(x)}</dd>`).join('')}</dl>${types.length ? det('docbarLeg', T('leg.components'), types.map(r => `<li style="--c:${esc(r.color)}"><i></i>${esc(r.label)}</li>`)) : ''}${vrows.length ? det('docbarLegV', `${T('leg.view')}: ${viewLabel(S.viewKey)}`, vrows) : ''}` : '';
   }
   function toggleDocbar() { store.set('docbar', !store.get('docbar', true)); renderDocbar(); }
   $('#docbar-toggle').addEventListener('click', toggleDocbar);
-  $('#docbar-body').addEventListener('toggle', ev => { if (ev.target.matches('details')) store.set('docbarLeg', ev.target.open); }, true);
+  $('#docbar-body').addEventListener('toggle', ev => { if (ev.target.matches('details')) store.set(ev.target.dataset.k || 'docbarLeg', ev.target.open); }, true);
 
   /* ---------- filtros ("lentes"): atenúan lo que no coincide ---------- */
   // Filtro: { data: [clase | '@insecure'], review: ['open','overdue'], provider, category, group, cost: ['cost'] }
@@ -3410,6 +3491,7 @@
     [...paletteSel.options].forEach(o => { o.textContent = loc(C.palettes[o.value]?.label) || o.value; });
     [...fontSel.options].forEach(o => { o.textContent = loc(FONTS[o.value]?.label) || o.value; });
     textCtx = null;
+    renderViewMenu();
     renderProviders();
     renderPalette();
     renderExamples();
@@ -3506,17 +3588,40 @@
   /* ---------- leyenda y cajetín de las exportaciones ---------- */
   // Ficha del documento (la usan el cajetín exportado y la franja del lienzo): { title, info: [[clave, valor]] }
   function docInfo() {
-    const m = S.model, av = activeVersion(), cost = m.nodes.some(hasCost) ? `≈ ${money(round2(monthlyTotal(m.nodes)))}${T('cost.mo')}` : '';
+    const m = S.model, av = activeVersion(), v = vc(), cost = v.cost && m.nodes.some(hasCost) ? `≈ ${money(round2(monthlyTotal(m.nodes)))}${T('cost.mo')}` : '';
     const info = [[T('leg.author'), m.meta?.author || av?.author || '—'], [T('leg.version'), m.meta?.version || (av ? av.name || verLabel(av) : '—')],
+      ...(S.viewKey !== 'full' ? [[T('leg.view'), viewLabel(S.viewKey)]] : []),
       ...(av ? [[T('leg.status'), T(`ver.st.${av.status}`)], ...(decided(av) ? [[decLabel(av), [av.decidedBy, fmtDay(av.decidedOn)].filter(Boolean).join(' · ')]] : []), [T('ver.created'), fmtDay(av.created)], [T('ver.updatedOn'), fmtDay(av.updated)]] : [[T('leg.date'), new Intl.DateTimeFormat(I.lang, { dateStyle: 'long' }).format(new Date())]]),
       ...(cost ? [[T('leg.cost'), cost]] : [])];
     return { title: m.title, info, av };
   }
   // Tipos de componente que usa el diagrama, con el color con que se ven (el propio del nodo o el del tipo).
   // Una fila por tipo+color: un mismo tipo con colores distintos se distingue en el lienzo y en la leyenda.
+  const visNodes = () => S.model.nodes.filter(n => !VW.hideNodes.has(n.id));
+  // Conexiones que se ven: las reales no ocultas o, en Contexto, las que cruzan cajas (agregadas)
+  const visEdges = () => (vc().groups === 'collapse-top' ? [...VW.flows.values()].flatMap(f => f.edges) : S.model.edges.filter(e => !VW.hideEdges.has(e.id)));
+  // Filas de leyenda propias de la vista activa, según sus reglas en config.js (emphasis, groups, legendGroups)
+  function viewLegend() {
+    const v = vc(), m = S.model, byId = new Map(m.nodes.map(n => [n.id, n])), es = visEdges(), r = { conn: [], groups: '', heat: null };
+    if (v.emphasis === 'security') {
+      const cls = new Set(es.map(e => secClass(e, byId)));
+      r.conn.push({ color: 'var(--sev-critical)', label: T('leg.sec.crit') });
+      if ([...cls].some(c => c.includes('v-high'))) r.conn.push({ color: 'var(--sev-high)', label: T('leg.sec.high') });
+      r.conn.push({ color: 'var(--sev-medium)', label: T('leg.sec.warn') }, { lock: true, label: T('leg.sec.enc') });
+    } else if (v.emphasis === 'data') {
+      const used = new Set([...visNodes(), ...es].flatMap(x => x.data || []));
+      const colors = Object.keys(DATA).filter(k => used.has(k)).slice(-3).map(k => colorVar(DATA[k].color));
+      r.conn.push({ color: colors.length ? colors : ['var(--accent)'], label: T('leg.dataflow') });
+    } else if (v.emphasis === 'cost') {
+      const vals = m.nodes.filter(hasCost).map(perMonth);
+      if (vals.length) r.heat = { min: `${money(round2(Math.min(...vals)))}${T('cost.mo')}`, max: `${money(round2(Math.max(...vals)))}${T('cost.mo')}`, total: `≈ ${money(round2(monthlyTotal(m.nodes)))}${T('cost.mo')}`, stops: VR.costHeat };
+    }
+    if (m.groups.length && (v.groups !== 'all' || v.legendGroups)) r.groups = T(v.groups === 'collapse-top' ? 'leg.g.collapse' : v.groups === 'logical' ? 'leg.g.logical' : 'leg.g.all');
+    return r;
+  }
   function legendTypes() {
     const seen = new Map();
-    S.model.nodes.forEach(n => {
+    visNodes().forEach(n => {
       const type = C.types[n.type] ? n.type : 'generic', color = nodeColor({ ...n, type }), k = `${type}|${color}`;
       if (!seen.has(k)) seen.set(k, { type, color, label: typeLabel(type) });
     });
@@ -3530,27 +3635,38 @@
     const cols = [], RH = 22;
     const col = (head, rows, rh = RH) => rows.length && cols.push({ head, rows, rh });
     const textRow = (x, y, txt, cls = 'legend-text') => { const t = el('text', { class: cls, x, y: y + 4 }, g); t.textContent = txt; return textW(txt, '400 12px'); };
+    // Solo lo que la vista activa muestra (reglas en config.js › views)
+    const v = vc(), ex = viewLegend(), es = visEdges(), vn = visNodes();
     // Conexiones
-    const styles = [...new Set(m.edges.map(e => (C.edgeStyles[e.style] ? e.style : 'sync')))];
+    const styles = [...new Set(es.map(e => (C.edgeStyles[e.style] ? e.style : 'sync')))];
+    const lockRow = (on, label) => ({ w: 46 + textW(label, '400 12px'), draw: (x, y) => {
+      const lg = el('g', { transform: `translate(${x + 10} ${y})` }, g);
+      lockIcon(lg, 0, on);
+      textRow(x + 46, y, label);
+    } });
     const conn = styles.map(st => ({ w: 46 + textW(loc(C.edgeStyles[st].label), '400 12px'), draw: (x, y) => {
       const cfg = C.edgeStyles[st], eg = el('g', { class: `edge edge-${st}${cfg.dash ? ' edge-dashed' : ''}`, style: `--c:var(--muted);--w:${cfg.width}px` }, g);
       el('path', { class: 'edge-line', d: `M${x},${y} L${x + 30},${y}`, ...(cfg.dash ? { 'stroke-dasharray': cfg.dash } : {}) }, eg);
       el('path', { class: 'edge-arrow', d: `M${x + 34},${y} L${x + 26},${y - 4} L${x + 26},${y + 4} Z` }, eg);
       textRow(x + 46, y, loc(cfg.label));
     } }));
-    if (m.edges.some(e => e.both)) conn.push({ w: 46 + textW(T('leg.both'), '400 12px'), draw: (x, y) => {
+    if (es.some(e => e.both)) conn.push({ w: 46 + textW(T('leg.both'), '400 12px'), draw: (x, y) => {
       const eg = el('g', { class: 'edge', style: '--c:var(--muted);--w:1.8px' }, g);
       el('path', { class: 'edge-line', d: `M${x + 4},${y} L${x + 30},${y}` }, eg);
       el('path', { class: 'edge-arrow', d: `M${x + 34},${y} L${x + 26},${y - 4} L${x + 26},${y + 4} Z M${x},${y} L${x + 8},${y - 4} L${x + 8},${y + 4} Z` }, eg);
       textRow(x + 46, y, T('leg.both'));
     } });
-    [[true, 'leg.encrypted'], [false, 'leg.unencrypted']].forEach(([on, key]) => {
-      if (m.edges.some(e => e.encrypted === on)) conn.push({ w: 46 + textW(T(key), '400 12px'), draw: (x, y) => {
-        const lg = el('g', { transform: `translate(${x + 10} ${y})` }, g);
-        lockIcon(lg, 0, on);
-        textRow(x + 46, y, T(key));
-      } });
-    });
+    // Filas propias de la vista (Seguridad: niveles de riesgo; Datos: color por clasificación); si no, candados genéricos
+    ex.conn.forEach(r => conn.push(r.lock ? lockRow(true, r.label) : { w: 46 + textW(r.label, '400 12px'), draw: (x, y) => {
+      const cs = [].concat(r.color), n = cs.length;
+      cs.forEach((c, i) => {
+        const eg = el('g', { class: 'edge', style: `--c:${c};--w:2.6px` }, g);
+        el('path', { class: 'edge-line', d: `M${x + 30 * i / n},${y} L${x + 30 * (i + 1) / n},${y}` }, eg);
+        if (i === n - 1) el('path', { class: 'edge-arrow', d: `M${x + 34},${y} L${x + 26},${y - 4} L${x + 26},${y + 4} Z` }, eg);
+      });
+      textRow(x + 46, y, r.label);
+    } }));
+    if (v.locks && v.emphasis !== 'security') [[true, 'leg.encrypted'], [false, 'leg.unencrypted']].forEach(([on, key]) => { if (es.some(e => e.encrypted === on)) conn.push(lockRow(on, T(key))); });
     col(T('leg.connections'), conn);
     // Componentes: una fila por tipo y color tal como se ven; en columnas de hasta 8 (más si son muchos)
     const MAXT = 40, all = legendTypes(), shown = all.length > MAXT ? all.slice(0, MAXT - 1) : all;
@@ -3561,15 +3677,32 @@
     if (all.length > shown.length) { const more = T('leg.more', all.length - shown.length); comp.push({ w: 22 + textW(more, '400 12px'), draw: (x, y) => textRow(x + 22, y, more, 'legend-muted') }); }
     const per = Math.max(8, Math.ceil(comp.length / 4));
     for (let i = 0; i < comp.length; i += per) col(i ? '' : T('leg.components'), comp.slice(i, i + per));
+    // Grupos que se ven (Contexto, Lógica, Física)
+    if (ex.groups) col(T('leg.groups'), [{ w: 30 + textW(ex.groups, '400 12px'), draw: (x, y) => {
+      el('rect', { x, y: y - 6, width: 20, height: 14, rx: 3, style: 'fill:none;stroke:var(--muted);stroke-width:1.3', 'stroke-dasharray': '4 3' }, g);
+      textRow(x + 30, y, ex.groups);
+    } }]);
+    // Escala de calor de la vista Costo
+    if (ex.heat) {
+      const hc = ex.heat, n = hc.stops.length, tot = `${T('leg.total')}: ${hc.total}`, BW = 104;
+      const gr = el('linearGradient', { id: 'leg-heat', x1: 0, y1: 0, x2: 1, y2: 0 }, el('defs', null, g));
+      hc.stops.forEach((c, i) => el('stop', { offset: `${n > 1 ? i / (n - 1) * 100 : 0}%`, style: `stop-color:${c}` }, gr));
+      col(T('leg.heat'), [{ w: textW(hc.min, '400 12px') + textW(hc.max, '400 12px') + BW + 16, draw: (x, y) => {
+        const lw = textW(hc.min, '400 12px');
+        textRow(x, y, hc.min);
+        el('rect', { x: x + lw + 8, y: y - 5, width: BW, height: 10, rx: 5, fill: 'url(#leg-heat)' }, g);
+        textRow(x + lw + BW + 16, y, hc.max);
+      } }, { w: textW(tot, '400 12px'), draw: (x, y) => textRow(x, y, tot) }]);
+    }
     // Datos
-    const used = new Set([...m.nodes, ...m.edges].flatMap(x => x.data || []));
-    col(T('leg.data'), dataTags({ data: [...used] }).map(t => ({ w: Math.ceil(textW(t.short, FONT.dtag)) + 20 + textW(t.label, '400 12px'), draw: (x, y) => {
+    const used = new Set([...vn, ...es].flatMap(x => x.data || []));
+    if (v.dataTags) col(T('leg.data'), dataTags({ data: [...used] }).map(t => ({ w: Math.ceil(textW(t.short, FONT.dtag)) + 20 + textW(t.label, '400 12px'), draw: (x, y) => {
       const tw = dataTag(g, x, y - 8, t, 16);
       textRow(x + tw + 8, y, t.label);
     } })));
     // Zonas de riesgo, de la más grave a la más leve
     const zs = [...m.zones].sort((a, b) => SEVERITY.indexOf(b.severity) - SEVERITY.indexOf(a.severity)).slice(0, 8);
-    col(T('leg.zones'), zs.map(z => {
+    if (v.zones) col(T('leg.zones'), zs.map(z => {
       const txt = fitText(`${sevLabel(z.severity)}${z.label ? ` · ${z.label}` : ''}`, '400 12px', 260);
       return { w: 30 + textW(txt, '400 12px'), draw: (x, y) => {
         const zg = el('g', { class: `zone zone-${z.severity}` }, g);
@@ -3580,7 +3713,7 @@
       } };
     }));
     // Observaciones de revisión abiertas, con su fecha compromiso
-    const findings = m.nodes.filter(n => n.review && n.review.status !== 'resolved')
+    const findings = (v.review ? vn : []).filter(n => n.review && n.review.status !== 'resolved')
       .sort((a, b) => (a.review.due || '9999').localeCompare(b.review.due || '9999')).slice(0, 8);
     col(T('leg.review'), findings.map(n => {
       const tg = reviewTag(n.review), txt = fitText([n.label, n.review.note].filter(Boolean).join(' — '), '400 12px', 260);
