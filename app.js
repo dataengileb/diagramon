@@ -316,6 +316,7 @@
       if (enc === true || enc === false) o.encrypted = enc; else delete o.encrypted;
       if (o.route !== 'curved' && o.route !== 'elbow') delete o.route;
       if (o.both === true || (typeof o.both === 'string' && /^(yes|true|si|sí)$/i.test(o.both))) o.both = true; else delete o.both;
+      const dsl = cleanDatasets(o.datasets); if (dsl.length) o.datasets = dsl; else delete o.datasets;
       m.edges.push(o);
     });
     m.notes = []; m.zones = [];
@@ -773,7 +774,9 @@
     if (isInsecure(e, byId)) g.classList.add('insecure');
     const r = { g, e, hit, line, arrow, label: null, parts, len: 0, phase: Math.random() };
     R.edges.set(e.id, r);
+    if (e.datasets?.length) el('title', null, g).textContent = T('lin.tip', { list: e.datasets.join(', ') });
     edgeLabel(r);
+    edgeDatasets(r);
   }
   // Etiqueta: candado de cifrado, texto y clasificaciones de los datos que viajan (según lo que la vista muestre)
   function edgeLabel(r) {
@@ -978,9 +981,10 @@
       r.line.setAttribute('d', d);
       r.len = r.line.getTotalLength();
       r.arrow.setAttribute('d', arrowD(r.line, r.len, e.both));
-      if (r.label) {
+      if (r.label || r.ds) {
         const mp = r.line.getPointAtLength(r.len / 2);
-        r.label.setAttribute('transform', `translate(${mp.x} ${mp.y})`);
+        r.label?.setAttribute('transform', `translate(${mp.x} ${mp.y})`);
+        r.ds?.setAttribute('transform', `translate(${mp.x} ${mp.y})`);
       }
     });
 
@@ -1094,6 +1098,127 @@
     $$('.path-badge', L.guides).forEach(x => x.remove());
     applyHighlight();
   }
+  /* ---------- linaje de datos: qué tablas viajan por cada conexión y su ruta de origen a consumo ---------- */
+  // Lista de nombres: admite array o texto separado por comas / punto y coma; recorta, quita vacíos y repetidos
+  function cleanDatasets(v) {
+    const out = [], seen = new Set();
+    (Array.isArray(v) ? v : typeof v === 'string' ? v.split(/[,;]/) : []).forEach(x => {
+      const s = String(x ?? '').trim(), k = s.toLowerCase();
+      if (s && !seen.has(k)) { seen.add(k); out.push(s); }
+    });
+    return out;
+  }
+  const dsKey = s => String(s).trim().toLowerCase();
+  // Conjuntos de datos usados en el diagrama: [{ name, edges }] (primera grafía), por uso y luego alfabético
+  function datasetList(model = S.model) {
+    const map = new Map();
+    model.edges.forEach(e => (e.datasets || []).forEach(d => {
+      const k = dsKey(d), r = map.get(k) || { name: d, edges: 0 };
+      r.edges++; map.set(k, r);
+    }));
+    return [...map.values()].sort((a, b) => b.edges - a.edges || a.name.localeCompare(b.name));
+  }
+  // Subgrafo de las conexiones que llevan ds. Origen = sin entrada; consumo = sin salida. Profundidad = rango más largo desde los orígenes
+  function lineageOf(model, ds) {
+    const k = dsKey(ds), es = model.edges.filter(e => (e.datasets || []).some(d => dsKey(d) === k));
+    if (!es.length) return null;
+    const name = es[0].datasets.find(d => dsKey(d) === k);
+    // Pasos dirigidos u → v (las aristas "both" valen en los dos sentidos)
+    const steps = es.flatMap(e => e.from === e.to ? [] : [[e.from, e.to, e.id], ...(e.both ? [[e.to, e.from, e.id]] : [])]);
+    const nodes = new Set(es.flatMap(e => [e.from, e.to])), edges = new Set(es.map(e => e.id));
+    const hasIn = new Set(steps.map(s => s[1])), hasOut = new Set(steps.map(s => s[0]));
+    const ids = [...nodes];
+    let origins = ids.filter(id => !hasIn.has(id)), consumers = ids.filter(id => !hasOut.has(id));
+    // Solo ciclos (sin origen claro): se parte de los nodos con salida para que haya algo que mostrar
+    const seeds = origins.length ? origins : ids.slice(0, 1);
+    // Capas por BFS con tope de relajaciones: un ciclo no puede colgar el cálculo
+    const dist = new Map(seeds.map(id => [id, 0])), q = [...seeds], cap = ids.length * steps.length + 8;
+    for (let n = 0; q.length && n < cap; n++) {
+      const u = q.shift();
+      steps.forEach(([a, b]) => {
+        if (a === u && dist.get(u) + 1 > (dist.get(b) ?? -1) && dist.get(u) + 1 < ids.length) { dist.set(b, dist.get(u) + 1); q.push(b); }
+      });
+    }
+    ids.forEach(id => dist.has(id) || dist.set(id, 0));
+    const hops = Math.max(0, ...dist.values());
+    return { nodes, edges, dist, origins, consumers, hops, name };
+  }
+  // Conjuntos de datos que entran y salen de un nodo (para el inspector): [nombre]
+  function datasetsOfNode(id) {
+    const seen = new Map();
+    S.model.edges.filter(e => e.from === id || e.to === id).forEach(e => (e.datasets || []).forEach(d => seen.has(dsKey(d)) || seen.set(dsKey(d), d)));
+    return [...seen.values()];
+  }
+  function showLineage(ds) {
+    if (vc().groups === 'collapse-top') { toast(T('ctx.noPath')); return null; }
+    const m = S.model, res = lineageOf(m, ds);
+    if (!res) { toast(T('lin.unknown', { name: String(ds) })); return null; }
+    clearPath();
+    S.path = { lineage: res.name, res, directed: true };
+    $('#path-text').innerHTML = T('lin.summary', { name: esc(res.name), src: res.origins.length, dst: res.consumers.length, hops: res.hops });
+    const bar = $('#path-bar');
+    bar.style.top = S.compare ? '54px' : '';
+    bar.hidden = false;
+    res.nodes.forEach(id => {
+      const n = m.nodes.find(x => x.id === id);
+      if (!n) return;
+      const g = el('g', { class: `path-badge${res.origins.includes(id) ? ' lin-src' : ''}${res.consumers.includes(id) ? ' lin-dst' : ''}`, transform: `translate(${n.x + 2} ${n.y + 2})` }, L.guides);
+      el('circle', { r: 9 }, g);
+      el('text', {}, g).textContent = res.dist.get(id) + 1;
+    });
+    fitNodes([...res.nodes]);
+    applyHighlight();
+    return res;
+  }
+  // Nombres de los conjuntos bajo la etiqueta de la conexión (solo se ve en la vista Datos; va en el SVG para que se exporte)
+  function edgeDatasets(r) {
+    r.ds?.remove(); r.ds = null;
+    const ds = r.e.datasets;
+    if (!ds?.length) return;
+    const lines = r.e.label ? String(r.e.label).split('\n').length : 0, dy = (lines ? Math.max(20, lines * 14 + 6) / 2 : 0) + 11;
+    const txt = ds.slice(0, 3).join(' · ') + (ds.length > 3 ? ` +${ds.length - 3}` : '');
+    const g = el('g', { class: 'edge-ds' }, r.g);
+    el('text', { y: dy, 'text-anchor': 'middle' }, g).textContent = fitText(txt, '400 9.5px', 240);
+    r.ds = g;
+  }
+  // Selector de conjuntos (tecla D): ventana pequeña con filtro, ↑↓ y Intro
+  const dsPick = { box: null, sel: 0, q: '' };
+  function closeDatasetPicker() { dsPick.box?.remove(); dsPick.box = null; }
+  function openDatasetPicker() {
+    if (dsPick.box) return closeDatasetPicker();
+    const box = document.createElement('div');
+    box.className = 'menu-pop ds-pop'; box.setAttribute('role', 'dialog'); box.setAttribute('aria-label', T('lin.picker'));
+    box.innerHTML = `<input class="ds-q" type="text" placeholder="${esc(T('lin.picker.ph'))}" aria-label="${esc(T('lin.picker.ph'))}" autocomplete="off" spellcheck="false"><div class="ds-list" role="listbox"></div>`;
+    document.body.appendChild(box);
+    dsPick.box = box; dsPick.sel = 0; dsPick.q = '';
+    const input = box.querySelector('input'), listEl = box.querySelector('.ds-list');
+    const rows = () => datasetList().filter(d => dsKey(d.name).includes(dsKey(dsPick.q)));
+    const draw = () => {
+      const rs = rows();
+      dsPick.sel = Math.min(dsPick.sel, Math.max(0, rs.length - 1));
+      listEl.innerHTML = rs.length ? rs.map((d, i) => `<button role="option" aria-selected="${i === dsPick.sel}" class="${i === dsPick.sel ? 'on' : ''}" data-ds="${esc(d.name)}"><span>${esc(d.name)}</span><small>${esc(T('lin.picker.count', d.edges))}</small></button>`).join('')
+        : `<p class="menu-note">${esc(T(datasetList().length ? 'lin.picker.nomatch' : 'lin.picker.empty'))}</p>`;
+      listEl.querySelector('.on')?.scrollIntoView({ block: 'nearest' });
+    };
+    const pick = name => { closeDatasetPicker(); showLineage(name); };
+    input.addEventListener('input', () => { dsPick.q = input.value; dsPick.sel = 0; draw(); });
+    input.addEventListener('keydown', ev => {
+      const rs = rows();
+      if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') { ev.preventDefault(); if (rs.length) { dsPick.sel = (dsPick.sel + (ev.key === 'ArrowDown' ? 1 : rs.length - 1)) % rs.length; draw(); } }
+      else if (ev.key === 'Enter') { ev.preventDefault(); if (rs[dsPick.sel]) pick(rs[dsPick.sel].name); }
+      else if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); closeDatasetPicker(); }
+    });
+    listEl.addEventListener('click', ev => { const b = ev.target.closest('button[data-ds]'); if (b) pick(b.dataset.ds); });
+    // Se cierra al pulsar fuera
+    setTimeout(() => document.addEventListener('pointerdown', function off(ev) {
+      if (!dsPick.box) return document.removeEventListener('pointerdown', off, true);
+      if (!dsPick.box.contains(ev.target)) { closeDatasetPicker(); document.removeEventListener('pointerdown', off, true); }
+    }, true));
+    const tb = $('#btn-view')?.getBoundingClientRect();
+    box.style.top = `${(tb ? tb.bottom : 60) + 6}px`; box.style.left = `${Math.max(8, Math.min(innerWidth - 268, tb ? tb.left : 80))}px`;
+    draw(); input.focus();
+  }
+
   // Encuadra solo algunos nodos (suave); no aleja más de lo necesario
   function fitNodes(ids) {
     const ns = S.model.nodes.filter(n => ids.includes(n.id)), r = svg.getBoundingClientRect();
@@ -1611,7 +1736,7 @@
   const ORDER = {
     group: ['id', 'label', 'icon', 'color', 'parent', 'kind'],
     node: ['id', 'label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'x', 'y', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc'],
-    edge: ['id', 'from', 'to', 'label', 'style', 'route', 'both', 'color', 'data', 'encrypted'],
+    edge: ['id', 'from', 'to', 'label', 'style', 'route', 'both', 'color', 'data', 'encrypted', 'datasets'],
     note: ['id', 'x', 'y', 'w', 'h', 'text', 'color'],
     zone: ['id', 'x', 'y', 'w', 'h', 'label', 'severity', 'desc']
   };
@@ -1746,11 +1871,14 @@
     const vrows = ex ? [...ex.conn.map(r => `<li class="sw" style="--c:${esc(r.lock ? 'var(--muted)' : sw(r.color))}"><i></i>${esc(r.label)}</li>`),
       ...(ex.heat ? [`<li><i class="heat" style="background:linear-gradient(90deg,${esc(ex.heat.stops.join(','))})"></i>${esc(`${ex.heat.min} – ${ex.heat.max}`)}</li>`, `<li>${esc(`${T('leg.total')}: ${ex.heat.total}`)}</li>`] : []),
       ...(ex.groups ? [`<li class="sw" style="--c:var(--muted)"><i></i>${esc(ex.groups)}</li>`] : [])] : [];
+    // Conjuntos de datos del diagrama: cada fila es un botón que muestra su linaje
+    const dsRows = open ? datasetList().map(d => `<li><button class="ds-row" data-lin="${esc(d.name)}" title="${esc(T('lin.show', { name: d.name }))}"><span>${esc(d.name)}</span><small>${d.edges}</small></button></li>`) : [];
     const det = (k, head, rows) => `<details class="docbar-leg" data-k="${k}"${store.get(k, false) ? ' open' : ''}><summary>${esc(head)} · ${rows.length}</summary><ul>${rows.join('')}</ul></details>`;
-    $('#docbar-body').innerHTML = open ? `<dl>${d.info.map(([k, x]) => `<dt>${esc(k)}</dt><dd>${esc(x)}</dd>`).join('')}</dl>${types.length ? det('docbarLeg', T('leg.components'), types.map(r => `<li style="--c:${esc(r.color)}"><i></i>${esc(r.label)}</li>`)) : ''}${vrows.length ? det('docbarLegV', `${T('leg.view')}: ${viewLabel(S.viewKey)}`, vrows) : ''}` : '';
+    $('#docbar-body').innerHTML = open ? `<dl>${d.info.map(([k, x]) => `<dt>${esc(k)}</dt><dd>${esc(x)}</dd>`).join('')}</dl>${types.length ? det('docbarLeg', T('leg.components'), types.map(r => `<li style="--c:${esc(r.color)}"><i></i>${esc(r.label)}</li>`)) : ''}${vrows.length ? det('docbarLegV', `${T('leg.view')}: ${viewLabel(S.viewKey)}`, vrows) : ''}${dsRows.length ? det('docbarLegD', T('lin.leg'), dsRows) : ''}` : '';
   }
   function toggleDocbar() { store.set('docbar', !store.get('docbar', true)); renderDocbar(); }
   $('#docbar-toggle').addEventListener('click', toggleDocbar);
+  $('#docbar-body').addEventListener('click', ev => { const b = ev.target.closest('button[data-lin]'); if (b) showLineage(b.dataset.lin); });
   $('#docbar-body').addEventListener('toggle', ev => { if (ev.target.matches('details')) store.set(ev.target.dataset.k || 'docbarLeg', ev.target.open); }, true);
 
   /* ---------- filtros ("lentes"): atenúan lo que no coincide ---------- */
@@ -2478,7 +2606,7 @@
   // Diferencias entre lo guardado (a) y el lienzo (b). La posición no cuenta como cambio.
   const DIFF_FIELDS = {
     node: ['label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc'],
-    edge: ['label', 'style', 'route', 'both', 'color', 'data', 'encrypted'],
+    edge: ['label', 'style', 'route', 'both', 'color', 'data', 'encrypted', 'datasets'],
     group: ['label', 'icon', 'color', 'parent', 'kind']
   };
   function diffModels(a, b) {
@@ -2973,6 +3101,18 @@
       return `<button class="dchip${n === list.length ? ' on' : n ? ' some' : ''}" data-dclass="${esc(k)}" style="--c:${colorVar(c.color) || 'var(--accent)'}" title="${esc(loc(c.label) || k)}">${esc(loc(c.short) || k.toUpperCase())}</button>`;
     }).join('')}</div><span class="cost-hint">${esc(on.length ? on.map(([, c]) => loc(c.label)).join(' · ') : T(edge ? 'data.noneEdge' : 'data.none'))}</span></div>`;
   };
+  // Conjuntos de datos de una conexión: fichas (nombre = ver linaje, × = quitar) y campo para añadir
+  const dsField = e => {
+    const list = e.datasets || [], more = datasetList().map(d => d.name).filter(n => !list.some(x => dsKey(x) === dsKey(n)));
+    return `<div class="field">${T('lin.label')}<div class="ds-chips">${list.map(d => `<span class="ds-chip"><button class="ds-name" data-lin="${esc(d)}" title="${esc(T('lin.show', { name: d }))}">${esc(d)}</button><button class="ds-x" data-ds-rm="${esc(d)}" title="${esc(T('lin.remove', { name: d }))}" aria-label="${esc(T('lin.remove', { name: d }))}">×</button></span>`).join('')}</div>
+      <input class="ds-add" list="ds-suggest" placeholder="${esc(T('lin.add.ph'))}" aria-label="${esc(T('lin.add.aria'))}" autocomplete="off" spellcheck="false">
+      <datalist id="ds-suggest">${more.map(n => `<option value="${esc(n)}"></option>`).join('')}</datalist>${list.length ? '' : `<span class="cost-hint">${T('lin.none')}</span>`}</div>`;
+  };
+  // Conjuntos que pasan por las conexiones de un nodo (solo lectura; pulsar uno muestra su linaje)
+  const nodeDsField = n => {
+    const list = datasetsOfNode(n.id);
+    return list.length ? `<div class="field">${T('lin.node')}<div class="ds-chips">${list.map(d => `<span class="ds-chip"><button class="ds-name" data-lin="${esc(d)}" title="${esc(T('lin.show', { name: d }))}">${esc(d)}</button></span>`).join('')}</div><span class="cost-hint">${T('lin.node.hint')}</span></div>` : '';
+  };
   const encField = e => {
     const cur = e.encrypted === true ? 'yes' : e.encrypted === false ? 'no' : '';
     const byId = id => S.model.nodes.find(n => n.id === id);
@@ -3054,6 +3194,7 @@
         ${reviewField(t)}
         <label>${T('insp.desc')}<textarea data-field="desc" rows="3" placeholder="${esc(T('insp.desc.ph'))}">${esc(t.desc || '')}</textarea></label>
         <div class="field">${T('insp.reach')}<div class="seg">${modes.map(([k, l]) => `<button data-reach="${k}" class="${S.reach === k ? 'on' : ''}">${l}</button>`).join('')}</div></div>
+        ${nodeDsField(t)}
         ${ins.length || outs.length ? `<div class="conns">
           ${ins.length ? `<div class="conn-title">${T('insp.receives')} · ${ins.length}</div>${ins.map(e => conn(e, e.from)).join('')}` : ''}
           ${outs.length ? `<div class="conn-title">${T('insp.sends')} · ${outs.length}</div>${outs.map(e => conn(e, e.to)).join('')}` : ''}
@@ -3074,6 +3215,7 @@
           `<button data-dir="${k}" class="${(t.both ? 'both' : '') === k ? 'on' : ''}">${T(l)}</button>`).join('')}</div></div>
         ${encField(t)}
         ${dataField(t, true)}
+        ${dsField(t)}
         <div class="field">${T('insp.color')}${swatches(t.color)}</div>
         <div class="conns"><div class="conn-title">${T('insp.ends')}</div>
           <button class="conn" data-goto="${esc(a.id)}" style="--c:${nodeColor(a)}"><span class="dot"></span>${esc(a.label)}<em>${T('insp.source')}</em></button>
@@ -3202,6 +3344,21 @@
   inspector.addEventListener('focusout', endEdit);
   inspector.addEventListener('input', ev => { if (ev.target.matches('input[data-field], textarea[data-field]')) onField(ev.target); });
   inspector.addEventListener('change', ev => { if (ev.target.matches('select[data-field]')) onField(ev.target); });
+  // Añadir conjuntos de datos a la conexión elegida (Intro o coma; también al elegir de la lista o salir del campo)
+  function addDatasets(inp) {
+    const t = selTarget(), add = cleanDatasets(inp.value);
+    if (!t || Array.isArray(t) || S.sel?.kind !== 'edge') return;
+    inp.value = '';
+    if (!add.length) return;
+    pushHistory();
+    t.datasets = cleanDatasets([...(t.datasets || []), ...add]);
+    changed(true); renderInspector();
+    $('#inspector .ds-add')?.focus();
+  }
+  inspector.addEventListener('keydown', ev => {
+    if (ev.target.matches('.ds-add') && (ev.key === 'Enter' || ev.key === ',' || ev.key === ';')) { ev.preventDefault(); addDatasets(ev.target); }
+  });
+  inspector.addEventListener('change', ev => { if (ev.target.matches('.ds-add')) addDatasets(ev.target); });
   inspector.addEventListener('click', ev => {
     const b = ev.target.closest('button');
     if (!b) return;
@@ -3230,6 +3387,13 @@
       const list = [].concat(t), k = b.dataset.dclass, all = list.every(x => x.data?.includes(k));
       pushHistory();
       list.forEach(x => { const d = cleanData([...(x.data || []).filter(j => j !== k), ...(all ? [] : [k])]); if (d.length) x.data = d; else delete x.data; });
+      changed(true); renderInspector();
+    } else if (b.dataset.lin) {
+      showLineage(b.dataset.lin);
+    } else if (b.dataset.dsRm && t && !Array.isArray(t)) {
+      pushHistory();
+      t.datasets = (t.datasets || []).filter(d => dsKey(d) !== dsKey(b.dataset.dsRm));
+      if (!t.datasets.length) delete t.datasets;
       changed(true); renderInspector();
     } else if (b.dataset.dir != null && t && !Array.isArray(t)) {
       pushHistory();
@@ -4223,6 +4387,7 @@
     else if (k === 'r' && selIds().length === 2) showPath(...selIds());
     else if (k === 'v') present({ views: ev.shiftKey });
     else if (k === 'i') toggleDocbar();
+    else if (k === 'd') openDatasetPicker();
     else if (k === 't') toggleTheme();
     else if (k === 'l') toggleLang();
     else if (k === 'e') toggleRouting();
@@ -4349,6 +4514,8 @@
     get lang() { return I.lang; },
     select: ids => select({ kind: 'multi', ids: [].concat(ids) }), align: alignNodes,
     showPath, clearPath,
+    lineage: ds => { const r = showLineage(ds); return r ? { origins: [...r.origins], consumers: [...r.consumers], hops: r.hops, nodes: [...r.nodes], edges: [...r.edges] } : null; },
+    datasets: () => datasetList().map(d => ({ ...d })),
     saveVersion, openVersion, compareVersion, deleteVersion,
     setFilter, clearFilter, get filter() { return clone(S.filter); },
     setView, get view() { return S.viewKey; }, get views() { return [...VIEW_KEYS]; },

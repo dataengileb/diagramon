@@ -164,6 +164,16 @@ The tags appear on top of each node and on the connection's label, next to a pad
 When a connection marked *Not encrypted* carries sensitive data, or links a component with sensitive data, it turns red and a warning appears above the canvas.
 With several components selected, the tags apply to all of them.
 
+#### Data lineage
+
+Mark which tables or datasets travel through each connection, then follow one from its origin to where it is consumed.
+
+1. Select a connection. Under **Datasets**, type a table name and press `Enter` or `,` to add it (the field suggests names already used in the diagram). Click the **×** on a chip to remove it.
+2. Click a dataset chip (or press `D` and pick one from the list, or click a row in the **Datasets** legend of the document card) to see its lineage: the whole route is highlighted, and each component gets a number (its depth). Origins are green, consumers orange.
+3. The bar above the canvas summarizes it (*origins → consumers · hops*). `Esc` clears it.
+
+Selecting a component lists the datasets on its connections. In the **Data** view the dataset names are drawn under each connection's label, and they are included in the exports. Connections drawn with arrows on both ends count in both directions.
+
 ### 7. Review findings
 
 1. Select a component and click **⚑ Raise a review finding**.
@@ -254,6 +264,7 @@ The rules of each view live in `config.js` › `views`; groups can be marked `lo
 | `F` | Fit to view |
 | `P` | Play the flow |
 | `R` | Show the path between two selected nodes |
+| `D` | Pick a dataset to show its lineage (type to filter, `↑` `↓` `Enter`, `Esc` closes) |
 | `V` | Present full screen (`→` `←` `Space` `Home` `End` `1`–`9`, `Esc` to exit) |
 | `T` | Cycle light → dark → high-contrast black mode |
 | `L` | Switch English / Spanish |
@@ -330,6 +341,7 @@ api ~> queue : events
 | `cost=120/month` · `0.1/hour` · `1400/year` · `5000/3years` | Cost in USD (no period = monthly) |
 | `data=pii,pci` | Data classification of a node or a connection |
 | `a -> b : TLS encrypted=yes` | Encryption in transit (`yes` or `no`) |
+| `a -> b : SQL datasets=orders,customers` | Datasets carried by a connection (Spanish: `tablas=`); quote names with spaces: `datasets="sales orders,crm.customers"` |
 | `group id "Name" color=… { … }` | Group; groups can be nested |
 | `a -> b` · `a => b` · `a ~> b` · `a ..> b` | Request · data · event · optional |
 | `a -> b -> c : label` | Chain; the label goes on the last arrow |

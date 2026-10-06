@@ -490,6 +490,30 @@
   .path-badge { pointer-events: none; }
   .path-badge circle { fill: var(--accent); stroke: var(--panel); stroke-width: 2; }
   .path-badge text { fill: #fff; font: 700 10px var(--font, inherit); text-anchor: middle; dominant-baseline: central; }
+  .path-badge.lin-src circle { fill: var(--p-menta); }
+  .path-badge.lin-dst circle { fill: var(--p-melocoton); }
+  .path-badge.lin-src.lin-dst circle { fill: var(--p-limon); }
+  .path-badge.lin-src text, .path-badge.lin-dst text { fill: #10161c; }
+  .ds-chips { display: flex; flex-wrap: wrap; gap: 5px; margin: 4px 0 6px; }
+  .ds-chips:empty { display: none; }
+  .ds-chip { display: inline-flex; align-items: center; max-width: 100%; border: 1px solid var(--border); border-radius: 999px; background: var(--surface2); overflow: hidden; }
+  .ds-chip button { border: 0; background: none; color: inherit; font: inherit; font-size: 12px; cursor: pointer; padding: 3px 9px; }
+  .ds-chip .ds-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+  .ds-chip .ds-name:hover { color: var(--accent); }
+  .ds-chip .ds-x { padding: 3px 8px 3px 2px; color: var(--muted); }
+  .ds-chip .ds-x:hover { color: var(--p-coral); }
+  .ds-chip:not(:has(.ds-x)) .ds-name { padding-right: 10px; }
+  .ds-add { display: block; width: 100%; box-sizing: border-box; margin-top: 3px; padding: 7px 9px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); font: inherit; font-size: 12.5px; }
+  .ds-add:focus { outline: none; border-color: var(--accent); }
+  .ds-pop { width: 260px; max-width: calc(100vw - 16px); z-index: 40; }
+  .ds-q { display: block; width: 100%; box-sizing: border-box; padding: 7px 9px; margin-bottom: 4px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); font: inherit; font-size: 12.5px; }
+  .ds-q:focus { outline: none; border-color: var(--accent); }
+  .ds-list { max-height: min(40vh, 280px); overflow: auto; }
+  .ds-list button > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .menu-pop .ds-list button.on { background: var(--surface2); box-shadow: inset 2px 0 0 var(--accent); }
+  .docbar-leg .ds-row { display: flex; align-items: baseline; gap: 8px; width: 100%; padding: 2px 4px; border: 0; border-radius: 6px; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+  .docbar-leg .ds-row:hover { background: color-mix(in srgb, var(--text) 8%, transparent); color: var(--accent); }
+  .docbar-leg .ds-row small { margin-left: auto; color: var(--muted); }
 
   .cf-back { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 16px; background: rgba(0,0,0,.45); }
   .cf { width: min(400px, 100%); padding: 18px 18px 14px; border: 1px solid var(--border); border-radius: 16px; background: var(--panel); box-shadow: var(--shadow); }
@@ -614,6 +638,10 @@
   .edge-label { pointer-events: none; }
   .edge-label > rect { fill: var(--surface); stroke: var(--c); stroke-opacity: .35; transition: fill .4s, stroke .4s; }
   .edge-label > text { fill: var(--text); font-size: 11px; font-weight: 500; opacity: .85; }
+  /* Linaje: nombres de los conjuntos de datos bajo la etiqueta (solo en la vista Datos) */
+  .edge-ds { display: none; pointer-events: none; }
+  .vw-data .edge-ds { display: inline; }
+  .edge-ds text { fill: var(--muted); font-size: 9.5px; font-weight: 500; paint-order: stroke; stroke: var(--surface); stroke-width: 3px; stroke-linejoin: round; }
   .edge.insecure .edge-label > rect { stroke: var(--p-coral); stroke-opacity: 1; stroke-width: 1.5; }
   .edge-lock rect, .edge-lock path { fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
   .edge-lock.on rect, .edge-lock.on path { stroke: var(--p-menta); }

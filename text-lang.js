@@ -23,6 +23,7 @@
    Vista:    view: security   (vista con la que se abre: full, context, logical, physical, security, data, cost; opcional)
    Conexión: a -> b -> c : etiqueta color=…   (la etiqueta va en la última flecha)
    Datos:    nodo … data=pii,pci · conexión a -> b : SQL data=pii encrypted=yes
+   Linaje:   conexión a -> b : SQL datasets=orders,customers   (es: tablas= o conjuntos=; con espacios: datasets="sales orders,crm.customers")
    Comentario: líneas que empiezan por # o //
 
    Acepta las palabras clave en inglés y en español (title/título, group/grupo,
@@ -42,7 +43,11 @@
   const REVIEW_KEYS = { by: 'by', por: 'by', raised: 'raised', levantada: 'raised', due: 'due', compromiso: 'due', status: 'status', estado: 'status', closed: 'closed', cerrada: 'closed' };
   const isDay = v => /^\d{4}-\d{2}-\d{2}$/.test(v) && !isNaN(new Date(`${v}T12:00Z`)) && new Date(`${v}T12:00Z`).toISOString().slice(0, 10) === v;
   // Opciones al final de una conexión: a -> b : etiqueta color=… data=pii encrypted=yes
-  const EDGE_OPT = /(?:^|\s)(color|data|datos|encrypted|cifrado|both|ambos|line|linea|línea)=(\S+)\s*$/i;
+  // (el valor puede ir entre comillas: datasets="sales orders,crm.customers")
+  const EDGE_OPT = /(?:^|\s)(color|data|datos|encrypted|cifrado|both|ambos|line|linea|línea|datasets|tablas|conjuntos)=("(?:[^"\\]|\\.)*"|\S+)\s*$/i;
+  /* ---------- linaje: datasets=a,b ---------- */
+  const DS_KEY = { en: 'datasets', es: 'tablas' };
+  const parseDatasets = v => [...new Set(String(v).replace(/^"([\s\S]*)"$/, (_, x) => { try { return JSON.parse(`"${x}"`); } catch { return x; } }).split(/[,;]/).map(s => s.trim()).filter(Boolean))];
   // curved | elbow (también curva/curvas, codo/codos, orthogonal)
   const parseRoute = v => (/^(elbows?|codos?|orthogonal|ortogonal(es)?|angle|ángulos?)$/i.test(v) ? 'elbow' : /^(curved?|curvas?)$/i.test(v) ? 'curved' : null);
   // data=pii,pci → ['pii', 'pci'] · encrypted=yes|no (también sí/no, true/false)
@@ -221,6 +226,7 @@
         let label = right, km;
         const kv = {};
         while ((km = label.match(EDGE_OPT))) { kv[km[1].toLowerCase()] = km[2]; label = label.slice(0, km.index).trim(); }
+        const dsV = kv.datasets ?? kv.tablas ?? kv.conjuntos, dsets = dsV == null ? [] : parseDatasets(dsV);
         const color = kv.color, data = checkData(kv.data ?? kv.datos, ln), encV = kv.encrypted ?? kv.cifrado;
         const enc = encV == null ? null : parseBool(encV);
         if (encV != null && enc == null) err(ln, msg.enc(encV));
@@ -238,6 +244,7 @@
           if (k + 3 === parts.length && label) e.label = label;
           if (color) e.color = color;
           if (data?.length) e.data = data;
+          if (dsets.length) e.datasets = [...dsets];
           if (enc != null) e.encrypted = enc;
           if (route) e.route = route;
           if (both) e.both = true;
@@ -308,7 +315,7 @@
     m.edges.forEach(e => {
       const arrow = ARROW_OF[e.style] || '->';
       const tail = [e.label ? (EDGE_OPT.test(e.label) || /^".*"$/.test(e.label) || /[\n\\]/.test(e.label) ? quote(e.label) : e.label) : '', e.color ? `color=${bare(e.color)}` : '',
-        e.data?.length ? `${w.data}=${e.data.join(',')}` : '', e.encrypted != null ? `${w.encrypted}=${e.encrypted ? w.yes : w.no}` : '',
+        e.data?.length ? `${w.data}=${e.data.join(',')}` : '', e.datasets?.length ? `${DS_KEY[lang] || DS_KEY.en}=${bare(e.datasets.join(','))}` : '', e.encrypted != null ? `${w.encrypted}=${e.encrypted ? w.yes : w.no}` : '',
         e.both ? `${w.both}=${w.yes}` : '', e.route ? `${w.line}=${e.route === 'elbow' ? w.elbowOne : w.curvedOne}` : ''].filter(Boolean).join(' ');
       out.push(`${e.from} ${arrow} ${e.to}${tail ? ` : ${tail}` : ''}`);
     });
