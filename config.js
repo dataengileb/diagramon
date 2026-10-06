@@ -156,6 +156,131 @@ window.DIAGRAMON_CONFIG = {
     serving: 'gold', oro: 'gold', consumo: 'gold'
   },
 
+  /* Cumplimiento normativo: controles que se marcan en componentes y grupos (inspector › Cumplimiento) y la matriz que los cruza.
+     frameworks: mapa ORDENADO clave → { label, short, url?, controls: { '<id>': { label: { en, es } } } }.
+       · El orden de las claves es el de la matriz y los filtros; `short` es la sigla corta (chips, columnas, CSV).
+       · Los títulos son resúmenes cortos con palabras propias, no el texto de la norma; `url` (opcional) enlaza a la fuente.
+       · En el diagrama un control se guarda como `controls: { 'iso27001:A.8.24': 'met' }` (clave de marco + ':' + id),
+         con estado met | partial | gap | na.
+     Para AÑADIR un control: pon una línea nueva dentro de `controls` del marco (id tal como lo cita la norma).
+     Para AÑADIR un marco (p. ej. NIST CSF, ENS, DORA): copia un bloque, cambia clave, `label`, `short` y sus controles.
+       Se acepta cualquier clave de marco al leer JSON/Texto aunque no esté aquí: se muestra con su id, sin título.
+     suggest: qué sugerir según la clasificación de datos del componente (clave = clase de config.js › dataClasses).
+       El PRIMER control de cada lista es el «principal»: si falta, la revisión automática avisa (severidad baja).
+       crossBorder: se sugiere a los componentes en un extremo de una conexión con datos sensibles entre jurisdicciones. */
+  compliance: {
+    frameworks: {
+      iso27001: { label: 'ISO/IEC 27001:2022 (Annex A)', short: 'ISO 27001', url: 'https://www.iso.org/standard/27001', controls: {
+        'A.5.15': { label: { en: 'Access control', es: 'Control de acceso' } },
+        'A.5.17': { label: { en: 'Authentication information', es: 'Información de autenticación' } },
+        'A.5.18': { label: { en: 'Access rights', es: 'Derechos de acceso' } },
+        'A.5.23': { label: { en: 'Information security for use of cloud services', es: 'Seguridad de la información en el uso de servicios en la nube' } },
+        'A.5.30': { label: { en: 'ICT readiness for business continuity', es: 'Preparación de las TIC para la continuidad del negocio' } },
+        'A.5.34': { label: { en: 'Privacy and protection of PII', es: 'Privacidad y protección de datos personales' } },
+        'A.8.2': { label: { en: 'Privileged access rights', es: 'Derechos de acceso privilegiado' } },
+        'A.8.3': { label: { en: 'Information access restriction', es: 'Restricción del acceso a la información' } },
+        'A.8.5': { label: { en: 'Secure authentication', es: 'Autenticación segura' } },
+        'A.8.8': { label: { en: 'Management of technical vulnerabilities', es: 'Gestión de vulnerabilidades técnicas' } },
+        'A.8.9': { label: { en: 'Configuration management', es: 'Gestión de la configuración' } },
+        'A.8.11': { label: { en: 'Data masking', es: 'Enmascaramiento de datos' } },
+        'A.8.12': { label: { en: 'Data leakage prevention', es: 'Prevención de fuga de datos' } },
+        'A.8.13': { label: { en: 'Information backup', es: 'Copias de seguridad de la información' } },
+        'A.8.14': { label: { en: 'Redundancy of information processing facilities', es: 'Redundancia de las instalaciones de procesamiento' } },
+        'A.8.15': { label: { en: 'Logging', es: 'Registro de eventos' } },
+        'A.8.16': { label: { en: 'Monitoring activities', es: 'Actividades de monitorización' } },
+        'A.8.20': { label: { en: 'Networks security', es: 'Seguridad de redes' } },
+        'A.8.22': { label: { en: 'Segregation of networks', es: 'Segregación de redes' } },
+        'A.8.24': { label: { en: 'Use of cryptography', es: 'Uso de criptografía' } },
+        'A.8.25': { label: { en: 'Secure development life cycle', es: 'Ciclo de vida de desarrollo seguro' } }
+      } },
+      soc2: { label: 'SOC 2 Trust Services Criteria (2017, rev. 2022)', short: 'SOC 2', url: 'https://www.aicpa-cima.com/topic/audit-assurance/audit-and-assurance-greater-than-soc-2', controls: {
+        'CC6.1': { label: { en: 'Logical access security', es: 'Seguridad de acceso lógico' } },
+        'CC6.2': { label: { en: 'User registration and authorization', es: 'Alta y autorización de usuarios' } },
+        'CC6.3': { label: { en: 'Role-based access and least privilege', es: 'Acceso por roles y mínimo privilegio' } },
+        'CC6.6': { label: { en: 'Protection against external threats (boundaries)', es: 'Protección frente a amenazas externas (perímetro)' } },
+        'CC6.7': { label: { en: 'Restricted transmission and movement of data', es: 'Transmisión y movimiento de datos restringidos' } },
+        'CC6.8': { label: { en: 'Malicious software prevention', es: 'Prevención de software malicioso' } },
+        'CC7.1': { label: { en: 'Vulnerability detection', es: 'Detección de vulnerabilidades' } },
+        'CC7.2': { label: { en: 'Monitoring for anomalies', es: 'Monitorización de anomalías' } },
+        'CC7.3': { label: { en: 'Security event evaluation', es: 'Evaluación de eventos de seguridad' } },
+        'CC7.4': { label: { en: 'Incident response', es: 'Respuesta a incidentes' } },
+        'CC7.5': { label: { en: 'Incident recovery', es: 'Recuperación tras incidentes' } },
+        'CC8.1': { label: { en: 'Change management', es: 'Gestión de cambios' } },
+        'CC9.1': { label: { en: 'Business disruption risk mitigation', es: 'Mitigación del riesgo de interrupción del negocio' } },
+        'A1.1': { label: { en: 'Capacity management', es: 'Gestión de la capacidad' } },
+        'A1.2': { label: { en: 'Environmental protections, backup and recovery infrastructure', es: 'Protecciones ambientales, respaldo e infraestructura de recuperación' } },
+        'A1.3': { label: { en: 'Recovery plan testing', es: 'Pruebas del plan de recuperación' } },
+        'C1.1': { label: { en: 'Confidential information identified and protected', es: 'Información confidencial identificada y protegida' } },
+        'C1.2': { label: { en: 'Confidential information disposal', es: 'Eliminación de información confidencial' } },
+        'PI1.2': { label: { en: 'Processing inputs: complete and accurate', es: 'Entradas del procesamiento completas y exactas' } },
+        'PI1.3': { label: { en: 'Processing: complete and accurate', es: 'Procesamiento completo y exacto' } },
+        'PI1.5': { label: { en: 'Stored items protected', es: 'Elementos almacenados protegidos' } }
+      } },
+      gdpr: { label: 'GDPR (Regulation (EU) 2016/679)', short: 'GDPR', url: 'https://eur-lex.europa.eu/eli/reg/2016/679/oj', controls: {
+        'Art.5': { label: { en: 'Principles of processing', es: 'Principios del tratamiento' } },
+        'Art.6': { label: { en: 'Lawfulness of processing', es: 'Licitud del tratamiento' } },
+        'Art.17': { label: { en: 'Right to erasure', es: 'Derecho de supresión' } },
+        'Art.20': { label: { en: 'Right to data portability', es: 'Derecho a la portabilidad' } },
+        'Art.25': { label: { en: 'Data protection by design and by default', es: 'Protección de datos desde el diseño y por defecto' } },
+        'Art.28': { label: { en: 'Processor', es: 'Encargado del tratamiento' } },
+        'Art.30': { label: { en: 'Records of processing activities', es: 'Registro de actividades de tratamiento' } },
+        'Art.32': { label: { en: 'Security of processing', es: 'Seguridad del tratamiento' } },
+        'Art.33': { label: { en: 'Breach notification to the authority', es: 'Notificación de brechas a la autoridad' } },
+        'Art.34': { label: { en: 'Breach communication to data subjects', es: 'Comunicación de brechas a los interesados' } },
+        'Art.35': { label: { en: 'Data protection impact assessment', es: 'Evaluación de impacto (EIPD)' } },
+        'Art.44': { label: { en: 'Transfers: general principle', es: 'Transferencias: principio general' } },
+        'Art.45': { label: { en: 'Transfers on an adequacy decision', es: 'Transferencias con decisión de adecuación' } },
+        'Art.46': { label: { en: 'Transfers subject to safeguards', es: 'Transferencias con garantías adecuadas' } }
+      } },
+      hipaa: { label: 'HIPAA Security Rule (45 CFR 164 Subpart C)', short: 'HIPAA', url: 'https://www.ecfr.gov/current/title-45/subtitle-A/subchapter-C/part-164/subpart-C', controls: {
+        '164.308(a)(1)': { label: { en: 'Security management process', es: 'Proceso de gestión de seguridad' } },
+        '164.308(a)(3)': { label: { en: 'Workforce security', es: 'Seguridad del personal' } },
+        '164.308(a)(4)': { label: { en: 'Information access management', es: 'Gestión del acceso a la información' } },
+        '164.308(a)(5)': { label: { en: 'Security awareness and training', es: 'Concienciación y formación en seguridad' } },
+        '164.308(a)(6)': { label: { en: 'Security incident procedures', es: 'Procedimientos ante incidentes' } },
+        '164.308(a)(7)': { label: { en: 'Contingency plan', es: 'Plan de contingencia' } },
+        '164.308(a)(8)': { label: { en: 'Evaluation', es: 'Evaluación periódica' } },
+        '164.308(b)(1)': { label: { en: 'Business associate contracts', es: 'Contratos con asociados de negocio' } },
+        '164.310(a)(1)': { label: { en: 'Facility access controls', es: 'Control de acceso a instalaciones' } },
+        '164.310(d)(1)': { label: { en: 'Device and media controls', es: 'Control de dispositivos y soportes' } },
+        '164.312(a)(1)': { label: { en: 'Access control', es: 'Control de acceso' } },
+        '164.312(a)(2)(iv)': { label: { en: 'Encryption and decryption', es: 'Cifrado y descifrado' } },
+        '164.312(b)': { label: { en: 'Audit controls', es: 'Controles de auditoría' } },
+        '164.312(c)(1)': { label: { en: 'Integrity', es: 'Integridad' } },
+        '164.312(d)': { label: { en: 'Person or entity authentication', es: 'Autenticación de personas o entidades' } },
+        '164.312(e)(1)': { label: { en: 'Transmission security', es: 'Seguridad en la transmisión' } }
+      } },
+      pcidss: { label: 'PCI DSS v4.0', short: 'PCI DSS', url: 'https://www.pcisecuritystandards.org/document_library/', controls: {
+        '1.2': { label: { en: 'Network security controls configured and maintained', es: 'Controles de seguridad de red configurados y mantenidos' } },
+        '1.3': { label: { en: 'Network access to and from the cardholder data environment restricted', es: 'Acceso de red hacia y desde el entorno de datos de tarjetas restringido' } },
+        '1.4': { label: { en: 'Connections between trusted and untrusted networks controlled', es: 'Conexiones entre redes de confianza y no confiables controladas' } },
+        '2.2': { label: { en: 'System components securely configured', es: 'Componentes del sistema configurados de forma segura' } },
+        '3.4': { label: { en: 'Display of full card number restricted', es: 'Visualización del número de tarjeta completo restringida' } },
+        '3.5': { label: { en: 'Stored card number rendered unreadable', es: 'Número de tarjeta almacenado ilegible' } },
+        '3.6': { label: { en: 'Cryptographic keys protected', es: 'Claves criptográficas protegidas' } },
+        '4.2': { label: { en: 'Card data protected with strong cryptography in transit', es: 'Datos de tarjeta protegidos con criptografía fuerte en tránsito' } },
+        '5.2': { label: { en: 'Malware prevented or detected', es: 'Malware prevenido o detectado' } },
+        '6.2': { label: { en: 'Bespoke and custom software developed securely', es: 'Software a medida desarrollado de forma segura' } },
+        '6.4': { label: { en: 'Public-facing web applications protected', es: 'Aplicaciones web públicas protegidas' } },
+        '7.2': { label: { en: 'Access appropriately defined and assigned', es: 'Acceso definido y asignado adecuadamente' } },
+        '8.3': { label: { en: 'Strong authentication for users and administrators', es: 'Autenticación fuerte de usuarios y administradores' } },
+        '8.4': { label: { en: 'Multi-factor authentication', es: 'Autenticación multifactor' } },
+        '10.2': { label: { en: 'Audit logs implemented', es: 'Registros de auditoría implementados' } },
+        '10.4': { label: { en: 'Audit logs reviewed', es: 'Registros de auditoría revisados' } },
+        '11.3': { label: { en: 'Vulnerabilities identified and addressed', es: 'Vulnerabilidades identificadas y corregidas' } },
+        '11.4': { label: { en: 'Penetration testing performed', es: 'Pruebas de penetración realizadas' } },
+        '12.10': { label: { en: 'Suspected security incidents responded to', es: 'Respuesta a incidentes de seguridad sospechados' } }
+      } }
+    },
+    suggest: {
+      pii: ['gdpr:Art.32', 'gdpr:Art.5', 'gdpr:Art.25', 'iso27001:A.5.34', 'iso27001:A.8.11'],
+      pci: ['pcidss:3.5', 'pcidss:4.2', 'pcidss:7.2', 'pcidss:10.2', 'iso27001:A.8.24'],
+      phi: ['hipaa:164.312(e)(1)', 'hipaa:164.312(a)(1)', 'hipaa:164.312(b)', 'hipaa:164.312(c)(1)'],
+      confidential: ['iso27001:A.8.24', 'iso27001:A.8.12', 'soc2:C1.1'],
+      crossBorder: ['gdpr:Art.44', 'gdpr:Art.45', 'gdpr:Art.46']
+    }
+  },
+
   /* Costos escritos a mano en cada componente (recuadro bajo el nodo).
      hoursPerMonth: horas usadas para pasar un precio por hora a mensual.
      defaultYears: años por defecto del periodo "Multianual". */

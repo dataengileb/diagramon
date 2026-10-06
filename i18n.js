@@ -249,7 +249,23 @@ review db: "DB in a public subnet" by=Ana raised=2026-10-01 due=2026-11-15
       'leg.connections': 'CONNECTIONS', 'leg.components': 'COMPONENTS', 'leg.data': 'DATA', 'leg.document': 'DOCUMENT',
       'leg.encrypted': 'Encrypted in transit', 'leg.unencrypted': 'Not encrypted',
       'leg.author': 'Author', 'leg.version': 'Version', 'leg.date': 'Date', 'leg.cost': 'Estimated cost', 'leg.made': 'Made with Diagramon', 'leg.more': n => `+${n} more`,
-      'doc.hide': 'Collapse document card (I)', 'doc.show': 'Show document card (I)'
+      'doc.hide': 'Collapse document card (I)', 'doc.show': 'Show document card (I)',
+      /* compliance mapping */
+      'cmp.title': 'Compliance', 'cmp.none': 'No controls tagged yet. Components inherit the controls of their group; their own value wins.',
+      'cmp.met': 'Met', 'cmp.partial': 'Partial', 'cmp.gap': 'Gap', 'cmp.na': 'N/A', 'cmp.unmapped': 'Not mapped',
+      'cmp.inh': g => `inherited from ${g}`, 'cmp.some': o => `set on ${o.a} of ${o.b}`, 'cmp.mixed': 'mixed values',
+      'cmp.override': 'Choosing a status here overrides the inherited one for this item', 'cmp.rm': 'Remove control', 'cmp.rmLocal': 'Remove the local value (use the inherited one)',
+      'cmp.add': 'Add control', 'cmp.add.ph': 'Search: ISO 27001 A.8.24, GDPR Art.32, PCI 4.2…', 'cmp.unknown': 'Control not found. Pick one from the list or type framework:id (e.g. iso27001:A.8.24).',
+      'cmp.sugg': 'Suggested', 'cmp.sugg.tip': 'Suggested from the data classes of this component. Added as “Gap” until you confirm it.',
+      'cmp.matrix': 'Compliance matrix', 'cmp.mx.fw': 'Framework', 'cmp.mx.all': 'All frameworks', 'cmp.mx.csv': 'CSV', 'cmp.mx.csvLong': 'CSV (long)', 'cmp.mx.close': 'Close',
+      'cmp.mx.empty': 'No controls tagged yet. Select a component and add controls in its Compliance section.', 'cmp.mx.cov': 'Coverage', 'cmp.mx.unmapped': 'Not mapped',
+      'cmp.mx.note': 'Rows: components with controls or sensitive data. ✓ met · ◐ partial · ✗ gap · — N/A · blank = not mapped. Coverage = met ÷ components that are not N/A.',
+      'cmp.csv.comp': 'Component', 'cmp.csv.group': 'Group', 'cmp.csv.data': 'Data classes', 'cmp.csv.fw': 'Framework', 'cmp.csv.ctl': 'Control', 'cmp.csv.title': 'Title', 'cmp.csv.status': 'Status', 'cmp.csv.inh': 'Inherited from',
+      'cmp.find.gap': o => `${o.ctl} is a gap on ${o.name}`, 'cmp.find.partial': o => `${o.ctl} is only partly met on ${o.name}`,
+      'cmp.find.unmapped': o => `${o.ctl} not mapped for a component with ${o.cls}`,
+      'cmp.find.gap.d': 'Marked as a gap in the compliance mapping.', 'cmp.find.partial.d': 'Marked as partially met in the compliance mapping.',
+      'cmp.find.fix': 'Remediate and set the control to Met, or mark it N/A with a justification.',
+      'find.src.compliance': 'Compliance', 'flt.sec.compliance': 'Compliance', 'flt.gap': 'Has gaps', 'exp.compliance': 'Compliance matrix', 'exp.compliance.ext': 'view · .csv'
     },
 
     es: {
@@ -486,7 +502,23 @@ revisión db: "BD en subred pública" por=Ana levantada=2026-10-01 compromiso=20
       'leg.connections': 'CONEXIONES', 'leg.components': 'COMPONENTES', 'leg.data': 'DATOS', 'leg.document': 'DOCUMENTO',
       'leg.encrypted': 'Cifrado en tránsito', 'leg.unencrypted': 'Sin cifrar',
       'leg.author': 'Autor', 'leg.version': 'Versión', 'leg.date': 'Fecha', 'leg.cost': 'Costo estimado', 'leg.made': 'Hecho con Diagramon', 'leg.more': n => `+${n} más`,
-      'doc.hide': 'Contraer la ficha del documento (I)', 'doc.show': 'Mostrar la ficha del documento (I)'
+      'doc.hide': 'Contraer la ficha del documento (I)', 'doc.show': 'Mostrar la ficha del documento (I)',
+      /* mapeo de cumplimiento */
+      'cmp.title': 'Cumplimiento', 'cmp.none': 'Aún no hay controles. Los componentes heredan los controles de su grupo; el valor propio gana.',
+      'cmp.met': 'Cumple', 'cmp.partial': 'Parcial', 'cmp.gap': 'Brecha', 'cmp.na': 'N/A', 'cmp.unmapped': 'Sin mapear',
+      'cmp.inh': g => `heredado de ${g}`, 'cmp.some': o => `definido en ${o.a} de ${o.b}`, 'cmp.mixed': 'valores distintos',
+      'cmp.override': 'Elegir un estado aquí sustituye al heredado para este elemento', 'cmp.rm': 'Quitar control', 'cmp.rmLocal': 'Quitar el valor propio (usar el heredado)',
+      'cmp.add': 'Añadir control', 'cmp.add.ph': 'Busca: ISO 27001 A.8.24, GDPR Art.32, PCI 4.2…', 'cmp.unknown': 'No se encontró el control. Elige uno de la lista o escribe marco:id (p. ej. iso27001:A.8.24).',
+      'cmp.sugg': 'Sugeridos', 'cmp.sugg.tip': 'Sugeridos según las clases de datos de este componente. Se añaden como «Brecha» hasta que los confirmes.',
+      'cmp.matrix': 'Matriz de cumplimiento', 'cmp.mx.fw': 'Marco', 'cmp.mx.all': 'Todos los marcos', 'cmp.mx.csv': 'CSV', 'cmp.mx.csvLong': 'CSV (largo)', 'cmp.mx.close': 'Cerrar',
+      'cmp.mx.empty': 'Aún no hay controles. Selecciona un componente y añade controles en su sección Cumplimiento.', 'cmp.mx.cov': 'Cobertura', 'cmp.mx.unmapped': 'Sin mapear',
+      'cmp.mx.note': 'Filas: componentes con controles o datos sensibles. ✓ cumple · ◐ parcial · ✗ brecha · — N/A · vacío = sin mapear. Cobertura = cumple ÷ componentes que no son N/A.',
+      'cmp.csv.comp': 'Componente', 'cmp.csv.group': 'Grupo', 'cmp.csv.data': 'Clases de datos', 'cmp.csv.fw': 'Marco', 'cmp.csv.ctl': 'Control', 'cmp.csv.title': 'Título', 'cmp.csv.status': 'Estado', 'cmp.csv.inh': 'Heredado de',
+      'cmp.find.gap': o => `${o.ctl} es una brecha en ${o.name}`, 'cmp.find.partial': o => `${o.ctl} se cumple solo en parte en ${o.name}`,
+      'cmp.find.unmapped': o => `${o.ctl} sin mapear en un componente con ${o.cls}`,
+      'cmp.find.gap.d': 'Marcado como brecha en el mapeo de cumplimiento.', 'cmp.find.partial.d': 'Marcado como parcial en el mapeo de cumplimiento.',
+      'cmp.find.fix': 'Corrige y pasa el control a Cumple, o márcalo N/A con una justificación.',
+      'find.src.compliance': 'Cumplimiento', 'flt.sec.compliance': 'Cumplimiento', 'flt.gap': 'Con brechas', 'exp.compliance': 'Matriz de cumplimiento', 'exp.compliance.ext': 'vista · .csv'
     }
   };
 

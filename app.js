@@ -260,6 +260,153 @@
   const csvCell = v => { const t = v == null ? '' : String(v); return /[",\r\n]/.test(t) || /^[=+\-@]/.test(t) ? `"${(/^[=+\-@]/.test(t) ? "'" : '') + t.replace(/"/g, '""')}"` : t; };
   const toCSV = rows => '\ufeff' + rows.map(r => r.map(csvCell).join(',')).join('\r\n');
 
+  /* ---------- cumplimiento normativo (ISO 27001, SOC 2, GDPR, HIPAA, PCI DSS) ---------- */
+  // controls: { 'iso27001:A.8.24': 'met' | 'partial' | 'gap' | 'na' } en nodos y grupos; los nodos heredan de sus grupos (gana el más cercano y, al final, el propio).
+  // Catálogo, sugerencias y cómo añadir marcos o controles: config.js › compliance
+  const CMP = C.compliance || {}, FWS = CMP.frameworks || {};
+  const CTL_STATUS = ['met', 'partial', 'gap', 'na'], CTL_ALIAS = { cumple: 'met', parcial: 'partial', brecha: 'gap', 'n/a': 'na' };
+  const CTL_COLOR = { met: 'var(--p-menta)', partial: 'var(--p-limon)', gap: 'var(--p-coral)', na: 'var(--muted)' }, CTL_SYM = { met: '✓', partial: '◐', gap: '✗', na: '—' };
+  const cleanCtlStatus = v => { const k = fold(v).trim(); return CTL_STATUS.includes(k) ? k : CTL_ALIAS[k] || null; };
+  // Solo claves «marco:id» con estado válido; los marcos desconocidos se conservan (catálogos propios)
+  const cleanControls = raw => {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+    const o = {};
+    Object.entries(raw).forEach(([k, v]) => { const key = String(k).trim(), i = key.indexOf(':'), s = cleanCtlStatus(v); if (i > 0 && i < key.length - 1 && s) o[key] = s; });
+    return Object.keys(o).length ? o : null;
+  };
+  const ctlSplit = key => { const i = key.indexOf(':'); return [key.slice(0, i), key.slice(i + 1)]; };
+  const ctlInfo = key => {
+    const [fw, id] = ctlSplit(key), f = FWS[fw], c = f?.controls?.[id];
+    return { key, fw, id, short: f?.short || fw.toUpperCase(), fwLabel: f ? loc(f.label) : fw, title: c ? loc(c.label) : '', known: !!c };
+  };
+  const CTL_ALL = Object.entries(FWS).flatMap(([fw, f]) => Object.keys(f.controls || {}).map(id => `${fw}:${id}`));
+  // Orden: el del catálogo (marcos y controles en el orden de config.js); los desconocidos al final
+  const sortCtl = keys => {
+    const fws = Object.keys(FWS), rank = k => { const i = CTL_ALL.indexOf(k); return i >= 0 ? i : 1e6 + (fws.indexOf(ctlSplit(k)[0]) < 0 ? 1e3 : 0); };
+    return [...keys].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b, undefined, { numeric: true }));
+  };
+  // Controles efectivos de un nodo o grupo: Map clave → { status, from }. Primero los del grupo más lejano, luego los más cercanos y al final los propios.
+  // from = null si es propio; si no, id del grupo que lo aporta
+  function controlsOf(x, m = S.model) {
+    const out = new Map();
+    if (!x) return out;
+    const chain = [];
+    let g = 'type' in x ? x.group : x.parent, i = 0;
+    while (g && i++ < 50) { const gg = m.groups.find(q => q.id === g); if (!gg) break; chain.push(gg); g = gg.parent; }
+    chain.reverse().forEach(q => Object.entries(q.controls || {}).forEach(([k, s]) => out.set(k, { status: s, from: q.id })));
+    Object.entries(x.controls || {}).forEach(([k, s]) => out.set(k, { status: s, from: null }));
+    return out;
+  }
+  // Clases de datos que maneja un nodo: las suyas y las de sus conexiones
+  const dataClassesOf = (n, m = S.model) => [...new Set([...(n.data || []), ...m.edges.filter(e => e.from === n.id || e.to === n.id).flatMap(e => e.data || [])])]
+    .sort((a, b) => Object.keys(DATA).indexOf(a) - Object.keys(DATA).indexOf(b));
+  const nodesUnder = (x, m = S.model) => ('type' in x ? [x] : m.nodes.filter(n => inGroup(n, x.id)));
+  // Sugerencias para una lista de nodos/grupos según sus clases de datos (y las conexiones entre jurisdicciones); sin las ya marcadas en todos
+  function ctlSuggest(list, m = S.model) {
+    const sg = CMP.suggest || {}, byId = new Map(m.nodes.map(n => [n.id, n])), out = [];
+    const add = k => { if (!out.includes(k) && ctlInfo(k).known) out.push(k); };
+    const ns = [...new Set(list.flatMap(x => nodesUnder(x, m)))], cls = new Set(ns.flatMap(n => dataClassesOf(n, m)));
+    Object.keys(DATA).filter(k => cls.has(k)).forEach(k => (sg[k] || []).forEach(add));
+    if (ns.some(n => m.edges.some(e => (e.from === n.id || e.to === n.id) && crossBorder(e, byId)))) (sg.crossBorder || []).forEach(add);
+    const effs = list.map(x => controlsOf(x, m));
+    return out.filter(k => !effs.every(e => e.has(k)));
+  }
+  // Filas de la matriz: nodos con algún control o con datos sensibles
+  const cmpRows = (m = S.model) => m.nodes.map(n => ({ n, eff: controlsOf(n, m), cls: dataClassesOf(n, m).filter(k => DATA[k]?.sensitive) })).filter(r => r.eff.size || r.cls.length);
+  // { rows, keys (controles en uso, ordenados; opcionalmente de un marco), stats: Map clave → { met, partial, gap, na, unmapped } }
+  function cmpModel(m = S.model, fw = '') {
+    const rows = cmpRows(m), used = new Set(rows.flatMap(r => [...r.eff.keys()]));
+    const keys = sortCtl([...used]).filter(k => !fw || ctlSplit(k)[0] === fw), stats = new Map(keys.map(k => [k, { met: 0, partial: 0, gap: 0, na: 0, unmapped: 0 }]));
+    rows.forEach(r => keys.forEach(k => { stats.get(k)[r.eff.get(k)?.status || 'unmapped']++; }));
+    return { rows, keys, stats };
+  }
+  const cmpFrameworks = keys => [...new Set(keys.map(k => ctlSplit(k)[0]))];
+  const cmpGroupName = n => groupById(n.group)?.label || '';
+  // CSV ancho (una fila por componente, una columna por control) o largo (una fila por componente × control)
+  function complianceCSV(kind = 'wide', m = S.model, fw = '') {
+    const { rows, keys } = cmpModel(m, fw), name = (k) => { const c = ctlInfo(k); return `${c.short} ${c.id}`; };
+    if (kind === 'long') {
+      const out = [[T('cmp.csv.fw'), T('cmp.csv.ctl'), T('cmp.csv.title'), T('cmp.csv.comp'), T('cmp.csv.group'), T('cmp.csv.status'), T('cmp.csv.inh'), T('cmp.csv.data')]];
+      rows.forEach(r => keys.forEach(k => {
+        const e = r.eff.get(k);
+        if (!e) return;
+        const c = ctlInfo(k);
+        out.push([c.short, c.id, c.title, r.n.label, cmpGroupName(r.n), e.status, e.from ? groupById(e.from)?.label || e.from : '', dataClassesOf(r.n, m).join(' ')]);
+      }));
+      return toCSV(out);
+    }
+    return toCSV([[T('cmp.csv.comp'), 'ID', T('cmp.csv.group'), T('cmp.csv.data'), ...keys.map(name)],
+      ...rows.map(r => [r.n.label, r.n.id, cmpGroupName(r.n), dataClassesOf(r.n, m).join(' '), ...keys.map(k => r.eff.get(k)?.status || '')])]);
+  }
+  function exportCompliance(kind = 'wide', fw = '') {
+    const long = kind === 'long', csv = complianceCSV(kind, S.model, fw);
+    download(csv, fileName('csv', long ? 'compliance-long' : 'compliance'), 'text/csv;charset=utf-8');
+    toast(T('toast.exported', { name: T('cmp.matrix') }));
+    return csv;
+  }
+  // API: { frameworks: [{ key, label, controls: [{ key, id, label, met, partial, gap, na, unmapped }] }], rows: [{ node, label, controls: { 'marco:id': estado } }] }
+  function complianceReport(m = S.model) {
+    const { rows, keys, stats } = cmpModel(m);
+    return {
+      frameworks: cmpFrameworks(keys).map(fw => ({ key: fw, label: ctlInfo(`${fw}:x`).fwLabel, controls: keys.filter(k => ctlSplit(k)[0] === fw).map(k => ({ key: k, id: ctlSplit(k)[1], label: ctlInfo(k).title, ...stats.get(k) })) })),
+      rows: rows.map(r => ({ node: r.n.id, label: r.n.label, controls: Object.fromEntries([...r.eff].map(([k, e]) => [k, e.status])) }))
+    };
+  }
+  // Fichas del filtro «Cumplimiento»: un marco por ficha (los que usa algún nodo, con herencia) y «Con brechas»
+  function cmpOptions(m) {
+    const used = new Set();
+    m.nodes.forEach(n => controlsOf(n, m).forEach((e, k) => used.add(ctlSplit(k)[0])));
+    return [...Object.keys(FWS).filter(f => used.has(f)), ...[...used].filter(f => !FWS[f])].map(f => ({ k: f, label: ctlInfo(`${f}:x`).short })).concat(used.size ? [{ k: '@gap', label: T('flt.gap') }] : []);
+  }
+  const cmpMatch = (n, v) => { const eff = controlsOf(n); return v.some(k => (k === '@gap' ? [...eff.values()].some(e => e.status === 'gap') : [...eff.keys()].some(c => ctlSplit(c)[0] === k))); };
+  // Texto corto para el tooltip de un nodo: «Cumplimiento: ISO 27001 3 ✓ 1 ✗ · PCI DSS 1 ◐»
+  const cmpTip = n => {
+    const by = new Map();
+    controlsOf(n).forEach((e, k) => { const f = ctlInfo(k).short, c = by.get(f) || {}; c[e.status] = (c[e.status] || 0) + 1; by.set(f, c); });
+    return by.size ? `${T('cmp.title')}: ${[...by].map(([f, c]) => `${f} ${CTL_STATUS.filter(s => c[s]).map(s => `${c[s]} ${CTL_SYM[s]}`).join(' ')}`).join(' · ')}` : '';
+  };
+  // Texto escrito en el buscador del inspector → clave de control («iso27001:A.8.24 — …», «iso27001:A.8.24», «A.8.24») o null
+  function resolveCtl(text) {
+    const t = String(text || '').split(' — ')[0].trim(), f = fold(t);
+    if (!t) return null;
+    const hit = CTL_ALL.find(k => fold(k) === f);
+    if (hit) return hit;
+    const byId = CTL_ALL.filter(k => fold(ctlSplit(k)[1]) === f);
+    if (byId.length === 1) return byId[0];
+    const i = t.indexOf(':');
+    return i > 0 && i < t.length - 1 ? t : null; // catálogo propio: «marco:id» libre
+  }
+  // Fuente de hallazgos «compliance»: brecha = media (alta si el componente maneja PCI/PHI y el marco es PCI DSS/HIPAA), parcial = baja,
+  // y el control principal sugerido que falta en un componente con datos sensibles = baja. Solo cuentan los controles propios (los de un grupo se avisan una vez, en el grupo)
+  addFindingSource('compliance', m => {
+    const out = [];
+    const sevOf = (k, cls) => { const fw = ctlSplit(k)[0]; return (fw === 'pcidss' && cls.includes('pci')) || (fw === 'hipaa' && cls.includes('phi')) ? 'high' : 'medium'; };
+    const emit = (kind, x, ns) => {
+      const cls = [...new Set(ns.flatMap(n => dataClassesOf(n, m)))];
+      Object.entries(x.controls || {}).forEach(([k, s]) => {
+        if (s !== 'gap' && s !== 'partial') return;
+        // un grupo: solo si algún componente suyo sigue usando ese valor (no lo sustituye otro más cercano)
+        if (kind === 'group' && ns.length && !ns.some(n => controlsOf(n, m).get(k)?.from === x.id)) return;
+        const c = ctlInfo(k), ref = `${c.short} ${c.id}`;
+        out.push({ id: `compliance:${s}:${kind}:${x.id}:${k}`, source: 'compliance', rule: `compliance.${s}`, severity: s === 'gap' ? sevOf(k, cls) : 'low', target: { kind, id: x.id },
+          title: T(`cmp.find.${s}`, { ctl: ref, name: x.label }), detail: [c.title, T(`cmp.find.${s}.d`)].filter(Boolean).join(' · '), fix: T('cmp.find.fix') });
+      });
+    };
+    m.groups.forEach(g => emit('group', g, m.nodes.filter(n => inGroup(n, g.id))));
+    m.nodes.forEach(n => {
+      emit('node', n, [n]);
+      const eff = controlsOf(n, m);
+      dataClassesOf(n, m).filter(k => DATA[k]?.sensitive).forEach(k => {
+        const core = (CMP.suggest?.[k] || [])[0];
+        if (!core || !ctlInfo(core).known || eff.has(core)) return;
+        const c = ctlInfo(core);
+        out.push({ id: `compliance:unmapped:node:${n.id}:${core}`, source: 'compliance', rule: 'compliance.unmapped', severity: 'low', target: { kind: 'node', id: n.id },
+          title: T('cmp.find.unmapped', { ctl: `${c.short} ${c.id}`, cls: loc(DATA[k].short) || k.toUpperCase(), name: n.label }), detail: c.title, fix: T('cmp.find.fix') });
+      });
+    });
+    return out;
+  });
+
   /* ---------- observaciones de revisión (se levantan a mano en el inspector) ---------- */
   // review: { status: 'open' | 'resolved', note, by, raised, due, closed } con fechas AAAA-MM-DD
   // Fecha AAAA-MM-DD que existe en el calendario (2026-02-30 no vale)
@@ -411,6 +558,7 @@
     });
 
     m.groups.forEach(g => { const l = cleanLayer(g.layer); if (l) g.layer = l; else delete g.layer; });
+    m.groups.forEach(g => { const c = cleanControls(g.controls); if (c) g.controls = c; else delete g.controls; });
     list(raw.nodes).forEach((n, i) => {
       const type = C.types[n.type] ? n.type : 'generic';
       const o = { ...n, id: take(n.id, 'n', i), type, label: String(n.label ?? typeLabel(type)) };
@@ -422,6 +570,7 @@
       if (cleanReview(o.review)) o.review = cleanReview(o.review); else delete o.review;
       if (cleanRegion(o.region)) o.region = cleanRegion(o.region); else delete o.region;
       { const l = cleanLayer(o.layer); if (l) o.layer = l; else delete o.layer; }
+      { const c = cleanControls(o.controls); if (c) o.controls = c; else delete o.controls; }
       m.nodes.push(o);
     });
     [...m.groups, ...m.nodes].forEach(cleanGov);
@@ -1014,7 +1163,7 @@
     const dt = [...(n.review ? [{ ...reviewTag(n.review), cls: 'dt-review' }] : []), ...dataTags(n).map(t => ({ ...t, cls: 'dt-data' }))];
     const rg = regionOf(n).value;
     const ly = layerOf(n), li = ly.value ? layerInfo(ly.value) : null;
-    el('title', null, g).textContent = [n.sub ? `${n.label} · ${n.sub}` : n.label, ...dt.map(t => t.label), govTip(n), li ? T('layer.tip', { l: li.label }) : '', rg ? T('res.tip', regionLabel(rg)) : ''].filter(Boolean).join('\n');
+    el('title', null, g).textContent = [n.sub ? `${n.label} · ${n.sub}` : n.label, ...dt.map(t => t.label), govTip(n), cmpTip(n), li ? T('layer.tip', { l: li.label }) : '', rg ? T('res.tip', regionLabel(rg)) : ''].filter(Boolean).join('\n');
     if (dt.length) {
       const dg = el('g', { class: 'node-data' }, b);
       let x = 14;
@@ -1950,8 +2099,8 @@
   const save = debounce(() => { store.set('model', S.model); updateMeta(); renderVersions(); }, 250);
 
   const ORDER = {
-    group: ['id', 'label', 'icon', 'color', 'parent', 'kind', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer'],
-    node: ['id', 'label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'x', 'y', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer'],
+    group: ['id', 'label', 'icon', 'color', 'parent', 'kind', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'controls'],
+    node: ['id', 'label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'x', 'y', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'controls'],
     edge: ['id', 'from', 'to', 'label', 'style', 'route', 'both', 'color', 'data', 'encrypted', 'datasets', 'transferOk'],
     note: ['id', 'x', 'y', 'w', 'h', 'text', 'color'],
     zone: ['id', 'x', 'y', 'w', 'h', 'label', 'severity', 'desc']
@@ -2120,7 +2269,7 @@
   /* ---------- filtros ("lentes"): atenúan lo que no coincide ---------- */
   // Filtro: { data: [clase | '@insecure'], review: ['open','overdue'], provider, category, group, cost: ['cost'] }
   // Dentro de una sección las fichas suman (O); entre secciones se combinan (Y)
-  const FLT_SECTIONS = ['data', 'review', 'provider', 'category', 'group', 'cost', 'team', 'owner', 'steward', 'costCenter', 'region', 'layer'];
+  const FLT_SECTIONS = ['data', 'review', 'provider', 'category', 'group', 'cost', 'team', 'owner', 'steward', 'costCenter', 'region', 'layer', 'compliance'];
   const providerOf = n => { const p = String(n.icon || '').split('/')[0]; return n.icon && ICONS[p] ? p : 'generic'; };
   const topGroups = m => m.groups.filter(g => !g.parent || !m.groups.some(x => x.id === g.parent));
   // Sección «región»: una ficha por jurisdicción usada (según la región efectiva) y «sin región» si falta en algún nodo
@@ -2148,7 +2297,8 @@
       cost: [{ k: 'cost', label: T('flt.cost') }],
       ...Object.fromEntries(GOV_FIELDS.map(f => [f, govFilterOpts(m, f)])),
       region: regionOptions(m),
-      layer: layerOptions(m)
+      layer: layerOptions(m),
+      compliance: cmpOptions(m)
     };
   }
   // Fichas de dueño / equipo…: valores efectivos (heredados) usados, y «Sin asignar» (solo dueño y equipo) si a algún nodo le falta
@@ -2182,6 +2332,7 @@
       if (GOV_FIELDS.includes(s)) { const e = govOf(n, s).value; return v.some(k => (k === '@none' ? !e : k === e)); }
       if (s === 'region') return v.includes(jurOf(regionOf(n).value)?.key || '@none');
       if (s === 'layer') { const l = layerOf(n).value; return v.some(k => (k === '@none' ? !l : k === l)); }
+      if (s === 'compliance') return cmpMatch(n, v);
       return hasCost(n);
     });
   }
@@ -2864,9 +3015,9 @@
 
   // Diferencias entre lo guardado (a) y el lienzo (b). La posición no cuenta como cambio.
   const DIFF_FIELDS = {
-    node: ['label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer'],
+    node: ['label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'controls'],
     edge: ['label', 'style', 'route', 'both', 'color', 'data', 'encrypted', 'datasets', 'transferOk'],
-    group: ['label', 'icon', 'color', 'parent', 'kind', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer']
+    group: ['label', 'icon', 'color', 'parent', 'kind', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'controls']
   };
   function diffModels(a, b) {
     const val = (f, x) => (f === 'style' ? x || 'sync' : x == null ? '' : typeof x === 'object' ? JSON.stringify(x) : String(x));
@@ -3006,7 +3157,7 @@
     if (!(d.count.a + d.count.r + d.count.c)) return `<p class="ver-sum">${esc(T('ver.same'))}</p>`;
     const FIELD = { label: 'insp.name', sub: 'insp.detail', type: 'insp.type', icon: 'insp.icon', group: 'insp.group', color: 'insp.color', badge: 'field.badge',
       cost: 'cost.label', costPeriod: 'cost.period', costYears: 'cost.yearsAria', desc: 'insp.desc', style: 'insp.style', parent: 'insp.parent',
-      data: 'data.label', encrypted: 'enc.label', route: 'insp.route', both: 'insp.dir', review: 'rev.label', kind: 'gkind.label' };
+      data: 'data.label', encrypted: 'enc.label', route: 'insp.route', both: 'insp.dir', review: 'rev.label', kind: 'gkind.label', controls: 'cmp.title' };
     const fields = (fs, kind) => fs.map(f => T(kind === 'edge' && f === 'label' ? 'insp.label' : FIELD[f] || f).toLowerCase()).join(', ');
     const names = new Map([...S.compare.base.nodes, ...S.model.nodes].map(n => [n.id, n.label]));
     const edgeName = e => `${names.get(e.from) || e.from} ${e.both ? '↔' : '→'} ${names.get(e.to) || e.to}`;
@@ -3492,6 +3643,7 @@
         ${govField(t, 'multi')}
         ${regionField(t)}
         ${layerField(t)}
+        ${cmpField(t, 'multi')}
         ${priced.length ? `<p class="cost-sum">${T('insp.selCost')} <b>≈ ${money(round2(monthlyTotal(t)))}${T('cost.mo')}</b><span>${T('insp.withCost', { a: priced.length, b: t.length })}</span></p>` : ''}
         <p class="note">${T('insp.multiNote')}</p>
         <div class="insp-actions">
@@ -3519,6 +3671,7 @@
         ${govField(t, 'node')}
         ${regionField(t)}
         ${layerField(t)}
+        ${cmpField(t, 'node')}
         ${reviewField(t)}
         <label>${T('insp.desc')}<textarea data-field="desc" rows="3" placeholder="${esc(T('insp.desc.ph'))}">${esc(t.desc || '')}</textarea></label>
         <div class="field">${T('insp.reach')}<div class="seg">${modes.map(([k, l]) => `<button data-reach="${k}" class="${S.reach === k ? 'on' : ''}">${l}</button>`).join('')}</div></div>
@@ -3586,6 +3739,7 @@
         <label>${T('insp.parent')}<select data-field="parent"><option value="">${T('insp.none')}</option>${m.groups.filter(g => !blocked.has(g.id)).map(g => `<option value="${esc(g.id)}"${g.id === t.parent ? ' selected' : ''}>${esc(g.label)}</option>`).join('')}</select></label>
         <div class="field">${T('insp.color')}${swatches(t.color)}</div>
         ${govField(t, 'group')}
+        ${cmpField(t, 'group')}
         <div class="insp-actions"><button class="btn danger" data-act="delete">${T('insp.deleteGroup')}</button></div>`;
     }
 
@@ -3748,6 +3902,14 @@
       pushHistory();
       (Array.isArray(t) ? t : [t]).forEach(x => { if (b.dataset.layer && DL[b.dataset.layer]) x.layer = b.dataset.layer; else delete x.layer; });
       changed(true); renderInspector();
+    } else if (b.dataset.cst && b.dataset.ctl && t) {
+      ctlEdit('set', b.dataset.ctl, b.dataset.cst);
+    } else if (b.dataset.ctlRm && t) {
+      ctlEdit('rm', b.dataset.ctlRm);
+    } else if (b.dataset.ctlAdd && t) {
+      ctlEdit('add', b.dataset.ctlAdd);
+    } else if (b.dataset.cmp === 'matrix') {
+      openCompMatrix();
     } else if (b.dataset.lnames && t) {
       setLayerNames(b.dataset.lnames);
     } else if (b.dataset.dir != null && t && !Array.isArray(t)) {
@@ -3791,6 +3953,99 @@
       case 'reverse': pushHistory(); [t.from, t.to] = [t.to, t.from]; changed(true); renderInspector(); break;
     }
   });
+
+
+  /* ---------- cumplimiento: sección del inspector y matriz ---------- */
+  // Sección plegable «Cumplimiento» (nodos, grupos y varios a la vez): controles efectivos con su estado, buscador para añadir y sugerencias.
+  // Estado por defecto al añadir: «Brecha» (no se da nada por cumplido hasta confirmarlo)
+  const cmpField = (items, kind) => {
+    if (!Object.keys(FWS).length) return '';
+    const list = [].concat(items), one = list.length === 1 && list[0], effs = list.map(x => controlsOf(x));
+    const keys = sortCtl([...new Set(effs.flatMap(e => [...e.keys()]))]), open = store.get(`govOpen.cmp-${kind}`, keys.length > 0);
+    const rows = keys.map(k => {
+      const c = ctlInfo(k), sts = effs.map(e => e.get(k)?.status), st = sts.every(s => s === sts[0]) ? sts[0] : null, have = sts.filter(Boolean).length;
+      const own = list.some(x => x.controls?.[k]), from = one && effs[0].get(k)?.from, gl = from ? groupById(from)?.label || from : '';
+      const note = [gl ? T('cmp.inh', gl) : '', have < list.length ? T('cmp.some', { a: have, b: list.length }) : '', st === null && have === list.length ? T('cmp.mixed') : ''].filter(Boolean).join(' · ');
+      return `<div class="cmp-row${gl && !own ? ' inh' : ''}"><div class="cmp-top"><span class="cmp-fw">${esc(c.short)}</span><span class="cmp-id">${esc(c.id)}</span><span class="cmp-t" title="${esc(c.title)}">${esc(c.title)}</span>
+        ${own ? `<button class="cmp-x" data-ctl-rm="${esc(k)}" title="${esc(T(from ? 'cmp.rmLocal' : 'cmp.rm'))}" aria-label="${esc(T(from ? 'cmp.rmLocal' : 'cmp.rm'))}">×</button>` : ''}</div>
+        <div class="seg cmp-seg">${CTL_STATUS.map(s => `<button data-ctl="${esc(k)}" data-cst="${s}" class="cst-${s}${st === s ? ' on' : ''}" style="--cc:${CTL_COLOR[s]}"${gl && !own ? ` title="${esc(T('cmp.override'))}"` : ''}>${esc(T(`cmp.${s}`))}</button>`).join('')}</div>
+        ${note ? `<span class="cost-hint">${esc(note)}</span>` : ''}</div>`;
+    }).join('');
+    const sug = ctlSuggest(list);
+    return `<details class="gov-box cmp-box" data-gov-open="cmp-${kind}"${open ? ' open' : ''}><summary>${T('cmp.title')}${keys.length ? ` · ${keys.length}` : ''}</summary>
+      ${rows || `<p class="cost-hint">${T('cmp.none')}</p>`}
+      <label>${T('cmp.add')}<input id="ctl-add" list="dl-ctl" placeholder="${esc(T('cmp.add.ph'))}" autocomplete="off"><datalist id="dl-ctl">${CTL_ALL.map(k => { const c = ctlInfo(k); return `<option value="${esc(`${k} — ${c.title}`)}" label="${esc(`${c.short} · ${c.title}`)}"></option>`; }).join('')}</datalist></label>
+      ${sug.length ? `<div class="cmp-sug"><span class="cost-hint" title="${esc(T('cmp.sugg.tip'))}">${T('cmp.sugg')}</span>${sug.map(k => { const c = ctlInfo(k); return `<button class="cmp-chip" data-ctl-add="${esc(k)}" title="${esc(`${c.title} · ${T('cmp.sugg.tip')}`)}">+ ${esc(c.short)} ${esc(c.id)}</button>`; }).join('')}</div>` : ''}
+      <button class="btn small cmp-open" data-cmp="matrix">${T('cmp.matrix')}</button></details>`;
+  };
+  // Acciones del inspector (varios a la vez): estado de un control (crea un valor propio que sustituye al heredado), quitar el propio y añadir
+  function ctlEdit(op, key, status) {
+    const t = selTarget();
+    if (!t) return;
+    const list = [].concat(t);
+    pushHistory();
+    list.forEach(x => {
+      if (op === 'set') (x.controls ||= {})[key] = status;
+      else if (op === 'add') { if (!controlsOf(x).has(key)) (x.controls ||= {})[key] = 'gap'; }
+      else if (op === 'rm' && x.controls) { delete x.controls[key]; if (!Object.keys(x.controls).length) delete x.controls; }
+    });
+    changed(true); renderInspector();
+    if (op === 'add') $('#ctl-add')?.focus();
+  }
+  function ctlAddFromInput(inp) {
+    const v = inp.value.trim();
+    if (!v) return;
+    const k = resolveCtl(v);
+    if (!k) return toast(T('cmp.unknown'), 3200);
+    ctlEdit('add', k);
+  }
+  inspector.addEventListener('keydown', ev => { if (ev.target.id === 'ctl-add' && ev.key === 'Enter') { ev.preventDefault(); ctlAddFromInput(ev.target); } });
+  inspector.addEventListener('change', ev => { if (ev.target.id === 'ctl-add') ctlAddFromInput(ev.target); });
+  // Elegir una opción de la lista lanza `input` sin texto escrito (insertReplacementText o sin inputType)
+  inspector.addEventListener('input', ev => { if (ev.target.id === 'ctl-add' && (!ev.inputType || ev.inputType === 'insertReplacementText') && ev.target.value.includes(' — ')) ctlAddFromInput(ev.target); });
+
+  // Matriz: filas = componentes (con controles o datos sensibles), columnas = controles en uso agrupados por marco
+  function openCompMatrix() {
+    const prev = document.activeElement, back = document.createElement('div'), id = `cm${Date.now()}`;
+    let fw = '';
+    back.className = 'cf-back';
+    back.innerHTML = `<div class="cf cm" role="dialog" aria-modal="true" aria-labelledby="${id}t">
+      <div class="cm-head"><h3 id="${id}t">${esc(T('cmp.matrix'))}</h3>
+        <label class="cm-fw">${esc(T('cmp.mx.fw'))}<select data-cm="fw"></select></label>
+        <span class="cm-btns"><button class="btn small" data-cm="csv">${esc(T('cmp.mx.csv'))}</button><button class="btn small" data-cm="long">${esc(T('cmp.mx.csvLong'))}</button><button class="btn small" data-cm="close">${esc(T('cmp.mx.close'))}</button></span></div>
+      <div class="cm-sum"></div><div class="cm-scroll"></div><p class="cm-note">${esc(T('cmp.mx.note'))}</p></div>`;
+    const sel = back.querySelector('[data-cm="fw"]'), sum = back.querySelector('.cm-sum'), box = back.querySelector('.cm-scroll');
+    const draw = () => {
+      const all = cmpModel(S.model), fws = cmpFrameworks(all.keys);
+      if (fw && !fws.includes(fw)) fw = '';
+      sel.innerHTML = `<option value="">${esc(T('cmp.mx.all'))}</option>${fws.map(f => `<option value="${esc(f)}"${f === fw ? ' selected' : ''}>${esc(ctlInfo(`${f}:x`).short)}</option>`).join('')}`;
+      const { rows, keys, stats } = fw ? cmpModel(S.model, fw) : all;
+      if (!keys.length) { sum.innerHTML = ''; box.innerHTML = `<p class="cm-empty">${esc(T('cmp.mx.empty'))}</p>`; return; }
+      const tot = f => keys.filter(k => ctlSplit(k)[0] === f).reduce((a, k) => { const s = stats.get(k); CTL_STATUS.concat('unmapped').forEach(x => { a[x] += s[x]; }); return a; }, { met: 0, partial: 0, gap: 0, na: 0, unmapped: 0 });
+      sum.innerHTML = cmpFrameworks(keys).map(f => { const t = tot(f); return `<div class="cm-card"><b>${esc(ctlInfo(`${f}:x`).short)}</b>${[...CTL_STATUS.slice(0, 3), 'unmapped'].map(s => `<span class="cm-n cst-${s}" style="--cc:${CTL_COLOR[s] || 'var(--border)'}" title="${esc(T(`cmp.${s}`))}"><i>${s === 'unmapped' ? '○' : CTL_SYM[s]}</i>${t[s]}</span>`).join('')}</div>`; }).join('');
+      const fwRow = cmpFrameworks(keys).map(f => `<th colspan="${keys.filter(k => ctlSplit(k)[0] === f).length}" class="cm-fwh">${esc(ctlInfo(`${f}:x`).short)}</th>`).join('');
+      const head = keys.map(k => { const c = ctlInfo(k); return `<th class="cm-ch" title="${esc(`${c.short} ${c.id}${c.title ? ` — ${c.title}` : ''}`)}"><b>${esc(c.id)}</b><span>${esc(c.title)}</span></th>`; }).join('');
+      const body = rows.map(r => `<tr><th class="cm-rh" title="${esc(`${r.n.label}${cmpGroupName(r.n) ? ` · ${cmpGroupName(r.n)}` : ''}`)}">${esc(r.n.label)}${cmpGroupName(r.n) ? `<small>${esc(cmpGroupName(r.n))}</small>` : ''}</th>${keys.map(k => {
+        const e = r.eff.get(k), c = ctlInfo(k);
+        return e ? `<td class="cm-c cst-${e.status}" style="--cc:${CTL_COLOR[e.status]}" title="${esc(`${r.n.label} · ${c.short} ${c.id}: ${T(`cmp.${e.status}`)}${e.from ? ` (${T('cmp.inh', groupById(e.from)?.label || e.from)})` : ''}`)}">${CTL_SYM[e.status]}</td>` : '<td class="cm-c"></td>';
+      }).join('')}</tr>`).join('');
+      const cov = keys.map(k => { const s = stats.get(k), d = rows.length - s.na; return `<td class="cm-cov" title="${esc(`${T('cmp.met')} ${s.met} · ${T('cmp.partial')} ${s.partial} · ${T('cmp.gap')} ${s.gap} · ${T('cmp.na')} ${s.na} · ${T('cmp.mx.unmapped')} ${s.unmapped}`)}">${d > 0 ? Math.round(s.met / d * 100) + '%' : '—'}</td>`; }).join('');
+      box.innerHTML = `<table class="cm-table"><thead><tr><th class="cm-rh cm-corner" rowspan="2">${esc(T('cmp.csv.comp'))}</th>${fwRow}</tr><tr>${head}</tr></thead><tbody>${body}</tbody><tfoot><tr><th class="cm-rh">${esc(T('cmp.mx.cov'))}</th>${cov}</tr></tfoot></table>`;
+    };
+    const close = () => { document.removeEventListener('keydown', key, true); back.remove(); prev?.focus?.(); };
+    const key = ev => { if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); close(); } };
+    sel.addEventListener('change', () => { fw = sel.value; draw(); });
+    back.addEventListener('mousedown', ev => { if (ev.target === back) close(); });
+    back.addEventListener('click', ev => {
+      const b = ev.target.closest('[data-cm]');
+      if (!b || b.dataset.cm === 'fw') return;
+      if (b.dataset.cm === 'close') close(); else exportCompliance(b.dataset.cm === 'long' ? 'long' : 'wide', fw);
+    });
+    document.addEventListener('keydown', key, true);
+    draw();
+    document.body.appendChild(back);
+    back.querySelector('[data-cm="close"]').focus();
+  }
 
   /* ---------- barra lateral ---------- */
   const chip = (attrs, color, iconHtml, label, isLogo) =>
@@ -4101,7 +4356,7 @@
     const b = ev.target.closest('[data-export]');
     if (!b) return;
     exportMenu.open = false;
-    const f = { svg: exportSVG, png: exportPNG, 'svg-all': () => exportViews('svg'), 'png-all': () => exportViews('png'), json: exportJSON, copy: copyJSON, share: shareEncrypted }[b.dataset.export];
+    const f = { svg: exportSVG, png: exportPNG, 'svg-all': () => exportViews('svg'), 'png-all': () => exportViews('png'), json: exportJSON, copy: copyJSON, share: shareEncrypted, compliance: openCompMatrix }[b.dataset.export];
     if (f) f(); else exportOther(b.dataset.export);
   });
 
@@ -4920,6 +5175,7 @@
       .map(({ e, cb }) => ({ edge: clone(e), from: cb.from, to: cb.to, fromRegion: cb.from.region, toRegion: cb.to.region, fromJur: cb.from.jur.short, toJur: cb.to.jur.short, classes: [...cb.classes], approved: cb.approved })); },
     layers: () => ({ naming: layerNaming(), layers: Object.keys(DL).map(k => ({ key: k, label: layerInfo(k).label, nodes: S.model.nodes.filter(n => layerOf(n).value === k).map(n => n.id) })) }),
     setLayerNames,
+    compliance: () => complianceReport(), exportCompliance: (kind = 'wide') => exportCompliance(kind === 'long' ? 'long' : 'wide'),
     setView, get view() { return S.viewKey; }, get views() { return [...VIEW_KEYS]; },
     owners: () => govTeamList(),
     exportSVG, exportPNG, exportViews, exportJSON, shareEncrypted, exportOther, exportCtx, toggleRouting, importFiles, config: C, icons: ICONS
