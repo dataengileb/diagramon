@@ -628,6 +628,8 @@
     cleanScopes(m);
     m.versions = normVersions(raw.versions);
     m.decisions = cleanDecisions(raw.decisions, m);
+    // Cada versión puede llevar las decisiones que había al guardarla (para compararlas); sus enlaces se limpian contra el diagrama de la versión
+    m.versions.forEach(v => { if (v.decisions) v.decisions = cleanDecisions(v.decisions, { nodes: v.diagram.nodes || [], edges: v.diagram.edges || [], groups: v.diagram.groups || [], versions: m.versions }); });
     if (raw.active != null && m.versions.some(v => v.id === String(raw.active))) m.active = String(raw.active);
     return m;
   }
@@ -672,6 +674,7 @@
       });
       if (hist.length) o.history = hist;
       o.diagram = v.diagram;
+      if (Array.isArray(v.decisions)) o.decisions = v.decisions;
       return o;
     });
   }
@@ -923,8 +926,9 @@
   }));
 
   /* ---------- decisiones de arquitectura (ADR): modelo ---------- */
-  // m.decisions = [{ id: 'ADR-001', title, status, date, context, decision, consequences, deciders?, supersededBy?, links: { nodes?, edges?, groups?, versions? } }]
-  // Son del documento: no entran en las fotos de versiones (snapshotOf) y sobreviven al abrir una versión y a los editores.
+  // m.decisions = [{ id: 'ADR-001', title, status, date, context, decision, consequences, deciders?, supersededBy?, links: { nodes?, edges?, groups?, versions? }, history?: [{ status, date, by?, note? }] }]
+  // Son del documento: no entran en las fotos de versiones (snapshotOf; cada versión guarda aparte una copia en v.decisions, solo para comparar) y sobreviven al abrir una versión y a los editores.
+  // history = historial de estados (el más antiguo primero); sin él se muestra una entrada implícita (estado actual + fecha). date = fecha del estado actual.
   const ADR_STATUS = ['proposed', 'accepted', 'rejected', 'deprecated', 'superseded'];
   const ADR_COLOR = { proposed: 'var(--p-limon)', accepted: 'var(--p-menta)', rejected: 'var(--p-coral)', deprecated: 'var(--muted)', superseded: 'var(--p-lavanda)' };
   const ADR_ALIAS = { propuesta: 'proposed', propuesto: 'proposed', aceptada: 'accepted', aceptado: 'accepted', rechazada: 'rejected', rechazado: 'rejected', obsoleta: 'deprecated', obsoleto: 'deprecated', reemplazada: 'superseded', reemplazado: 'superseded', sustituida: 'superseded', sustituido: 'superseded', superada: 'superseded', superado: 'superseded' };
@@ -950,7 +954,13 @@
       let id = String(d.id ?? '').trim().slice(0, 40);
       if (!id && !o.title && !o.context && !o.decision && !o.consequences) return;
       if (!id || seen.has(id)) id = ''; else seen.add(id);
-      items.push({ ...o, id, status: adrStatus(d.status), date: isDay(d.date) ? d.date : today(), deciders: String(d.deciders ?? '').trim().slice(0, 200), sup: String(d.supersededBy ?? '').trim(), links: cleanAdrLinks(d.links, m) });
+      const hist = (Array.isArray(d.history) ? d.history : []).filter(h => h && typeof h === 'object' && isDay(h.date)).slice(-200).map(h => {
+        const e = { status: adrStatus(h.status), date: h.date };
+        if (h.by != null && String(h.by).trim()) e.by = String(h.by).trim().slice(0, 100);
+        if (h.note != null && String(h.note).trim()) e.note = String(h.note).trim().slice(0, 500);
+        return e;
+      });
+      items.push({ ...o, hist, id, status: adrStatus(d.status), date: isDay(d.date) ? d.date : today(), deciders: String(d.deciders ?? '').trim().slice(0, 200), sup: String(d.supersededBy ?? '').trim(), links: cleanAdrLinks(d.links, m) });
     });
     items.forEach(o => { if (!o.id) o.id = adrNextId(items); });
     const ids = new Set(items.map(o => o.id));
@@ -959,9 +969,13 @@
       if (o.deciders) r.deciders = o.deciders;
       if (o.sup && o.sup !== o.id && ids.has(o.sup)) { r.supersededBy = o.sup; r.status = 'superseded'; }
       r.links = o.links;
+      if (o.hist.length) r.history = o.hist;
       return r;
     });
   }
+  // Historial a mostrar: el guardado o, en decisiones antiguas, una entrada implícita (estado actual + fecha)
+  const adrHist = d => (d.history?.length ? d.history : [{ status: d.status, date: d.date }]);
+  const adrAuthor = () => store.get('author', '') || S.model.meta?.author || '';
   const decisionsOf = (kind, id, m = S.model) => (m?.decisions || []).filter(d => d.links?.[kind]?.includes(id));
   // Tras borrar nodos, conexiones, grupos o versiones: quita de los enlaces los ids que ya no existen
   function pruneAdrLinks(m = S.model) { (m.decisions || []).forEach(d => { d.links = cleanAdrLinks(d.links, m); }); }
@@ -1197,6 +1211,36 @@
     if (moved) topo.forEach(v => { if (preds.get(v).length) rank.set(v, Math.max(...preds.get(v).map(u => rank.get(u) + 1))); });
     return rank;
   }
+
+  /* ---------- rangos de flujo (reproducir y presentar): las conexiones bidireccionales se siguen en los dos sentidos ---------- */
+  // Igual que computeRanks, pero un extremo "from" que solo se alcanza por la vuelta de una conexión "both" pasa a quedar
+  // después de su "to" (que recibe de otros). Sin conexiones "both" devuelve exactamente computeRanks.
+  function flowRanks(m) {
+    const rank = computeRanks(m), bo = m.edges.filter(e => e.both && e.from !== e.to);
+    if (!bo.length) return rank;
+    const es = m.edges.filter(e => e.from !== e.to);
+    const desc = id => { const seen = new Set([id]), q = [id]; while (q.length) { const u = q.pop(); es.forEach(e => { if (e.from === u && !seen.has(e.to)) { seen.add(e.to); q.push(e.to); } }); } return seen; };
+    bo.forEach(e => {
+      const f = e.from, t = e.to;
+      if (es.some(x => x.to === f)) return;                                   // "from" ya recibe de otro: su rango es el normal
+      const down = desc(f);
+      if (!es.some(x => x.to === t && x.from !== f && !down.has(x.from))) return; // "to" solo recibe de "from": no hay vuelta que seguir
+      if (rank.get(f) > rank.get(t)) return;
+      rank.set(f, rank.get(t) + 1);
+      // Lo que cuelga de "from" se retrasa con él (sin tocar los arcos hacia "to": no hay ciclos)
+      const cap = (m.nodes.length + 1) * (es.length + 1);
+      for (let n = 0, ch = true; ch && n < cap; n++) {
+        ch = false;
+        es.forEach(x => { if (x.to !== t && down.has(x.from) && x.from !== x.to && rank.get(x.to) < rank.get(x.from) + 1 && down.has(x.to)) { rank.set(x.to, rank.get(x.from) + 1); ch = true; } });
+      }
+    });
+    return rank;
+  }
+  // ¿La conexión se ilumina en el paso r? Una "both" que llega por su "to" antes que por su "from" se recorre al revés
+  const flowPulse = (e, ranks, r) => {
+    const a = ranks.get(e.from), b = ranks.get(e.to);
+    return e.both && b < a ? b === r : a === r;
+  };
 
   function autoLayout(m) {
     if (m.nodes.some(n => n.group && m.groups.some(g => g.id === n.group))) return groupLayout(m);
@@ -2058,7 +2102,6 @@
     return [...seen.values()];
   }
   function showLineage(ds) {
-    if (vc().groups === 'collapse-top') { toast(T('ctx.noPath')); return null; }
     const m = S.model, res = lineageOf(m, ds);
     if (!res) { toast(T('lin.unknown', { name: String(ds) })); return null; }
     clearPath();
@@ -2067,14 +2110,31 @@
     const bar = $('#path-bar');
     bar.style.top = S.compare ? '54px' : '';
     bar.hidden = false;
-    res.nodes.forEach(id => {
-      const n = m.nodes.find(x => x.id === id);
-      if (!n || VW.hideNodes.has(id)) return;
-      const g = el('g', { class: `path-badge${res.origins.includes(id) ? ' lin-src' : ''}${res.consumers.includes(id) ? ' lin-dst' : ''}`, 'data-id': id, transform: `translate(${n.x + 2} ${n.y + 2})` }, L.guides);
+    const badge = (key, v, x, y, dist) => {
+      const g = el('g', { class: `path-badge${v.src ? ' lin-src' : ''}${v.dst ? ' lin-dst' : ''}`, [key]: v.id, transform: `translate(${x + 2} ${y + 2})` }, L.guides);
       el('circle', { r: 9 }, g);
-      el('text', {}, g).textContent = res.dist.get(id) + 1;
+      el('text', {}, g).textContent = dist + 1;
+    };
+    // Vista Contexto: los nodos de dentro de una caja cerrada se marcan en la caja (una insignia por caja)
+    const boxOf = new Map(), onBox = new Map(), shown = [];
+    VW.ctxBoxes.forEach((b, gid) => b.ids.forEach(id => boxOf.set(id, gid)));
+    res.nodes.forEach(id => {
+      const n = m.nodes.find(x => x.id === id), gid = boxOf.get(id);
+      if (gid) {
+        const o = onBox.get(gid) || onBox.set(gid, { id: gid, src: false, dst: false, dist: Infinity }).get(gid);
+        o.src ||= res.origins.includes(id); o.dst ||= res.consumers.includes(id); o.dist = Math.min(o.dist, res.dist.get(id));
+        return;
+      }
+      if (!n || VW.hideNodes.has(id)) return;
+      shown.push(id);
+      badge('data-id', { id, src: res.origins.includes(id), dst: res.consumers.includes(id) }, n.x, n.y, res.dist.get(id));
     });
-    fitNodes([...res.nodes]);
+    onBox.forEach((o, gid) => { const c = VW.ctxBoxes.get(gid).card; badge('data-gid', o, c.x, c.y, o.dist); });
+    if (onBox.size) {
+      const rs = [...shown.map(id => { const n = m.nodes.find(x => x.id === id); return { x: n.x, y: n.y, w: R.width.get(id), h: nodeBoxH(n) }; }), ...[...onBox.keys()].map(g => VW.ctxBoxes.get(g).card)];
+      const x0 = Math.min(...rs.map(r => r.x)), y0 = Math.min(...rs.map(r => r.y));
+      fitBox({ x: x0, y: y0, w: Math.max(...rs.map(r => r.x + r.w)) - x0, h: Math.max(...rs.map(r => r.y + r.h)) - y0 });
+    } else fitNodes([...res.nodes]);
     applyHighlight();
     return res;
   }
@@ -2515,6 +2575,9 @@
       if (list.length > shown.length) more.push({ s, k: list.length - shown.length, y: top + shown.length * ROW });
     });
     const target = id => { const n = id && inner.has(id) && !VW.hideNodes.has(id) ? byId.get(id) : null; return n ? { x: n.x, y: n.y, w: R.width.get(n.id) || nodeWidth(n), h: H } : fr; };
+    // Tarjetas fantasma y etiquetas ya colocadas: cada etiqueta busca el hueco que menos las pisa
+    const cards = [...rects.values()].map(r => ({ x0: r.x - 4, x1: r.x + r.w + 4, y0: r.y - 4, y1: r.y + r.h + 4 })), labelBoxes = [];
+    const over = (a, b) => Math.max(0, Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0)) * Math.max(0, Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0));
     links.forEach(l => {
       const gr = rects.get(l.gid);
       if (!gr || collapse) return;
@@ -2522,7 +2585,19 @@
       const d = m.routing === 'elbow' ? elbowPath(A, B, 0, []) : curvePath(A, B, 0);
       const g = el('g', { class: 'xs-edge' }, L.scope), line = el('path', { class: 'xs-edge-line', d }, g);
       el('path', { class: 'xs-edge-arrow', d: arrowD(line, line.getTotalLength(), l.both) }, g);
-      if (l.label) { const mp = line.getPointAtLength(line.getTotalLength() / 2); el('text', { class: 'xs-edge-label', x: mp.x, y: mp.y - 4 }, g).textContent = fitText(String(l.label).split('\n')[0], FONT.edge, 150); }
+      if (l.label) {
+        const txt = fitText(String(l.label).split('\n')[0], FONT.edge, 150), len = line.getTotalLength(), w = Math.ceil(textW(txt, FONT.edge)) + 10;
+        const boxAt = (p, dy = 0) => ({ x0: p.x - w / 2, x1: p.x + w / 2, y0: p.y - 15 + dy, y1: p.y + 4 + dy });
+        // Posiciones a lo largo de la línea y desplazadas en vertical; gana la de menor solape (pisar otra etiqueta pesa más que pisar una tarjeta)
+        let pos = null, best = Infinity;
+        for (const dy of [0, -15, 15, -30, 30, -45, 45]) for (const f of [0.5, 0.35, 0.65, 0.25, 0.75, 0.18, 0.82]) {
+          const p = line.getPointAtLength(len * f), bx = boxAt(p, dy);
+          const sc = labelBoxes.reduce((a, o) => a + 4 * over(bx, o), 0) + cards.reduce((a, o) => a + over(bx, o), 0) + Math.abs(dy) * 0.5 + Math.abs(f - 0.5) * 20;
+          if (sc < best) { best = sc; pos = { x: p.x, y: p.y + dy }; }
+        }
+        labelBoxes.push(boxAt(pos));
+        el('text', { class: 'xs-edge-label', x: pos.x, y: pos.y - 4 }, g).textContent = txt;
+      }
     });
     rects.forEach((r, id) => {
       const n = byId.get(id), g = el('g', { class: 'xs-ghost', 'data-xs': id, transform: `translate(${r.x} ${r.y})` }, L.scope);
@@ -2913,7 +2988,7 @@
     edge: ['id', 'from', 'to', 'label', 'style', 'route', 'both', 'color', 'data', 'encrypted', 'datasets', 'transferOk', 'threats'],
     note: ['id', 'x', 'y', 'w', 'h', 'text', 'color', 'in'],
     zone: ['id', 'x', 'y', 'w', 'h', 'label', 'severity', 'desc', 'kind', 'trust', 'in'],
-    decision: ['id', 'title', 'status', 'date', 'deciders', 'context', 'decision', 'consequences', 'supersededBy', 'links']
+    decision: ['id', 'title', 'status', 'date', 'deciders', 'context', 'decision', 'consequences', 'supersededBy', 'links', 'history']
   };
   function serialize(m, full = false) {
     const ordered = (o, keys) => { const r = {}; keys.forEach(k => k in o && (r[k] = o[k])); Object.keys(o).forEach(k => k in r || (r[k] = o[k])); return r; };
@@ -3373,11 +3448,37 @@
       ids.set(n.id, copy.id);
       S.model.nodes.push(copy);
     });
+    const top = [...ids.values()];
+    copyInner(ids);
     S.model.edges.filter(e => ids.has(e.from) && ids.has(e.to)).forEach(e => {
       S.model.edges.push({ ...clone(e), id: uniqueId('e'), from: ids.get(e.from), to: ids.get(e.to) });
     });
     changed(true);
-    select({ kind: 'multi', ids: [...ids.values()] });
+    select({ kind: 'multi', ids: top });
+  }
+  // Copia en profundidad el diagrama interno (niveles C4) de los nodos duplicados. `ids`: mapa id original -> id de la copia; se amplía con los nodos
+  // internos. Posiciones y etiquetas se mantienen. Las decisiones (ADR) y los hallazgos descartados no se copian: referencian ids del original.
+  function copyInner(ids) {
+    const m = S.model, tops = new Set(ids.keys()), deep = innerDeep([...tops]);
+    if (!deep.size) return;
+    const own = new Set([...tops, ...deep]); // nodos de origen: los duplicados y todo lo que cuelga de ellos
+    const gmap = new Map();
+    // Orden de copia: nodos por profundidad (el padre antes que sus hijos), para que `in` ya esté remapeado
+    const depth = n => { let d = 0, c = n; while (c.in && d < 50) { c = m.nodes.find(x => x.id === c.in) || {}; d++; } return d; };
+    const src = m.nodes.filter(n => deep.has(n.id)).sort((a, b) => depth(a) - depth(b));
+    const copies = src.map(n => { const c = { ...clone(n), id: uniqueId(`${n.type}-`) }; ids.set(n.id, c.id); m.nodes.push(c); return c; }); // el id se reserva al insertar
+    const inOwn = x => x.in && own.has(x.in);
+    const gcopies = m.groups.filter(inOwn).map(g => { const c = { ...clone(g), id: uniqueId('grupo-') }; gmap.set(g.id, c.id); m.groups.push(c); return c; });
+    copies.forEach(n => {
+      n.in = ids.get(n.in);
+      if (n.group) { if (gmap.has(n.group)) n.group = gmap.get(n.group); else delete n.group; }
+    });
+    gcopies.forEach(g => {
+      g.in = ids.get(g.in);
+      if (g.parent) { if (gmap.has(g.parent)) g.parent = gmap.get(g.parent); else delete g.parent; }
+    });
+    ['notes', 'zones'].forEach(k => m[k].filter(inOwn).forEach(o => m[k].push({ ...clone(o), id: uniqueId(k === 'notes' ? 'note' : 'zone'), in: ids.get(o.in) })));
+    // Las conexiones (también las que cruzan niveles) las copia duplicateSelection: `ids` ya incluye los nodos internos
   }
 
   /* ---------- crear y editar notas y zonas ---------- */
@@ -3554,7 +3655,7 @@
     if (vc().groups === 'collapse-top') return toast(T('ctx.noPlay'));
     cancelConnect();
     select(null);
-    const ranks = computeRanks(scopeModel()), max = Math.max(0, ...ranks.values());
+    const ranks = flowRanks(scopeModel()), max = Math.max(0, ...ranks.values());
     svg.classList.remove('focusing', 'hovering');
     svg.classList.add('playing');
     $('#btn-play').classList.add('on');
@@ -3566,7 +3667,7 @@
         if (ranks.get(id) === r) g.classList.add('lit');
       });
       R.edges.forEach(o => {
-        const on = ranks.get(o.e.from) === r;
+        const on = flowPulse(o.e, ranks, r);
         o.g.classList.toggle('pulse', on);
         if (on) o.g.classList.add('lit');
       });
@@ -3599,7 +3700,7 @@
     groups.sort((a, b) => depth(a) - depth(b) || pos(a)[0] - pos(b)[0] || pos(a)[1] - pos(b)[1]);
     const over = { kind: 'overview' };
     if (groups.length) return [over, ...groups.map(g => ({ kind: 'group', g })), { kind: 'overview', end: true }];
-    const ranks = computeRanks(m), max = Math.max(0, ...ranks.values());
+    const ranks = flowRanks(m), max = Math.max(0, ...ranks.values());
     if (max < 1) return [over];
     return [over, ...Array.from({ length: max + 1 }, (_, r) => ({ kind: 'step', r, ranks }))];
   }
@@ -3659,7 +3760,8 @@
       gin = new Set(m.groups.filter(g => { let c = g, k = 0; while (c && k++ < 50) { if (c.id === sl.g.id) return true; c = groupById(c.parent); } return false; }).map(g => g.id));
     } else if (sl.kind === 'step') {
       lit = new Set(m.nodes.filter(n => sl.ranks.get(n.id) === sl.r).map(n => n.id));
-      m.edges.forEach(e => { if (lit.has(e.from)) lit.add(e.to); });
+      const base = new Set(lit);
+      m.edges.forEach(e => { if (flowPulse(e, sl.ranks, sl.r)) lit.add(base.has(e.from) ? e.to : e.from); });
     }
     P.sl = { lit, gin };
     presentDim(lit, gin);
@@ -3815,10 +3917,11 @@
     v.updated = today();
     v.savedAt = new Date().toISOString();
     v.diagram = snapshotOf(S.model);
+    v.decisions = clone(S.model.decisions || []);   // aparte del diagrama: isDirty y openVersion las ignoran
     S.model.active = v.id;
     S.verNote = '';
     versionsChanged();
-    if (S.compare) applyCompare();
+    if (S.compare) { applyCompare(); renderAdr(true); }
     toast(T(reset ? 'ver.updatedReset' : existed ? 'ver.updated' : 'ver.saved', { name: verLabel(v) }), reset ? 3200 : 1800);
   }
   function openVersion(id) {
@@ -3855,6 +3958,7 @@
     S.compare = id && S.compare?.id !== id && findVersion(id) ? { id } : null;
     applyCompare();
     renderVersions();
+    renderAdr(true);
   }
 
   // Diferencias entre lo guardado (a) y el lienzo (b). La posición no cuenta como cambio.
@@ -3884,6 +3988,25 @@
     return d;
   }
 
+  /* ---------- decisiones (ADR): comparar entre versiones ---------- */
+  const ADR_DIFF = ['title', 'status', 'context', 'decision', 'consequences', 'deciders', 'supersededBy', 'links'];
+  // a = decisiones de la versión, b = las actuales. El historial no cuenta como cambio por sí solo.
+  function diffDecisions(a, b) {
+    const am = new Map((a || []).map(d => [d.id, d])), bm = new Map((b || []).map(d => [d.id, d]));
+    const val = x => (x == null ? '' : typeof x === 'object' ? canon(x) : String(x));
+    return {
+      added: [...bm.keys()].filter(id => !am.has(id)),
+      removed: [...am.keys()].filter(id => !bm.has(id)),
+      changed: [...bm.keys()].filter(id => am.has(id)).map(id => ({ id, fields: ADR_DIFF.filter(f => val(am.get(id)[f]) !== val(bm.get(id)[f])) })).filter(c => c.fields.length)
+    };
+  }
+  const adrDiffN = d => d.added.length + d.removed.length + d.changed.length;
+  // Comparación activa: { v, diff } o { v, diff: null } si la versión se guardó sin decisiones; null si no se compara
+  function adrCmp() {
+    const v = S.compare && findVersion(S.compare.id);
+    return v ? { v, diff: Array.isArray(v.decisions) ? diffDecisions(v.decisions, S.model.decisions || []) : null } : null;
+  }
+
   // Marca en el lienzo lo nuevo (verde) y lo cambiado (amarillo); lo eliminado se dibuja como fantasma
   function applyCompare() {
     $$('.diff-tag', L.nodes).forEach(x => x.remove());
@@ -3909,8 +4032,9 @@
     drawGhosts();
     const bar = $('#compare-bar');
     bar.style.setProperty('--c', verColor(v));
-    $('#compare-text').innerHTML = `${T('ver.comparing', { name: esc(verLabel(v)) })} · ${d.count.a + d.count.r + d.count.c ? esc(T('ver.summary', d.count)) : esc(T('ver.same'))}${cstVerLine(base, S.model) ? ` · ${esc(cstVerLine(base, S.model))}` : ''}`;
+    $('#compare-text').innerHTML = `${T('ver.comparing', { name: esc(verLabel(v)) })} · ${d.count.a + d.count.r + d.count.c ? esc(T('ver.summary', d.count)) : esc(T('ver.same'))}${cstVerLine(base, S.model) ? ` · ${esc(cstVerLine(base, S.model))}` : ''}${adrBarText()}`;
   }
+  function adrBarText() { const c = adrCmp(), n = c?.diff && adrDiffN(c.diff); return n ? ` · ${esc(T('adr.cmp.bar', { a: c.diff.added.length, r: c.diff.removed.length, c: c.diff.changed.length }))}` : ''; }
   function drawGhosts() {
     L.ghosts.textContent = '';
     const { base, diff: d } = S.compare;
@@ -6123,6 +6247,7 @@
       ds.forEach(d => {
         blocks.push({ k: 'h3', t: `${d.id} · ${d.title}` });
         blocks.push({ k: 'kv', items: [[repT('h.status'), repT(`adr.${d.status}`)], [repT('h.date'), fmtDay(d.date)], [repT('h.deciders'), d.deciders || ''], [repT('h.supersededBy'), d.supersededBy ? (ds.find(x => x.id === d.supersededBy)?.title ? `${d.supersededBy} · ${ds.find(x => x.id === d.supersededBy).title}` : d.supersededBy) : ''], [repT('h.links'), link(d.links).join(', ')]].filter(r => r[1]) });
+        blocks.push({ k: 'table', cls: 'compact', head: [repT('h.date'), repT('h.status'), repT('h.by'), repT('h.note')], rows: adrHist(d).map(h => [fmtDay(h.date), repT(`adr.${h.status}`), h.by || '', h.note || '']) });
         [['context', d.context], ['decision', d.decision], ['consequences', d.consequences]].forEach(([k, t]) => { if (t && String(t).trim()) blocks.push({ k: 'text', label: repT(`adr.${k}`), t: String(t) }); });
       });
       sec('decisions', blocks);
@@ -6950,9 +7075,11 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     p = p && typeof p === 'object' ? p : {};
     pushHistory();
     const list = cleanDecisions([...(S.model.decisions || []), { ...p, title: p.title || T('adr.new.title') }], S.model);
+    const nd = list[list.length - 1];
+    if (!nd.history?.length) { nd.history = [{ status: nd.status, date: nd.date }]; const by = adrAuthor(); if (by) nd.history[0].by = by; }   // alta = primera entrada del historial
     S.model.decisions = list;
     changed(true); renderInspector(); renderAdr(true);
-    return list[list.length - 1].id;
+    return nd.id;
   }
   function updateDecision(id, patch) {
     const d = adrById(id);
@@ -6961,7 +7088,13 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     const next = { ...d, ...patch, id: d.id };
     if ('status' in patch && adrStatus(patch.status) !== 'superseded' && !('supersededBy' in patch)) delete next.supersededBy;
     if (!next.supersededBy) delete next.supersededBy;
-    S.model.decisions = cleanDecisions(S.model.decisions.map(x => (x === d ? next : x)), S.model);
+    const list = cleanDecisions(S.model.decisions.map(x => (x === d ? next : x)), S.model), nd = list.find(x => x.id === d.id);
+    if (nd && nd.status !== d.status) {   // cambió el estado (también por «reemplazada por»): se anota con la fecha de hoy y el autor
+      const h = d.history?.length ? [...nd.history || d.history] : [{ status: d.status, date: d.date }], e = { status: nd.status, date: today() }, by = adrAuthor();
+      if (by) e.by = by;
+      nd.history = [...h, e].slice(-200); nd.date = e.date;
+    } else if (nd && nd.history?.length && 'date' in patch && isDay(patch.date)) nd.history[nd.history.length - 1].date = nd.date;
+    S.model.decisions = list;
     changed(true); renderInspector(); renderAdr(true);
     return true;
   }
@@ -7029,7 +7162,26 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     renderAdrList();
   }
   const adrMatches = d => (!ADR.st || d.status === ADR.st) && (!ADR.q || [d.id, d.title, d.context, d.decision, d.consequences].some(x => String(x || '').toLowerCase().includes(ADR.q.toLowerCase())));
-  function adrCard(d, ds) {
+  // Línea de tiempo compacta: fecha · estado · quién · nota (en la ficha abierta, la última entrada se puede editar)
+  function adrTimeline(d, edit) {
+    const hs = adrHist(d), last = hs.length - 1;
+    return `<ol class="adr-hist">${hs.map((h, i) => `<li style="--s:${ADR_COLOR[h.status]}"><time>${esc(fmtDay(h.date))}</time><span class="adr-pill">${esc(T(`adr.st.${h.status}`))}</span>${h.by ? `<span class="adr-by">${esc(h.by)}</span>` : ''}${h.note ? `<span class="adr-note">${esc(h.note)}</span>` : ''}</li>`).join('')}</ol>${edit ? `<div class="adr-two"><label>${esc(T('adr.hist.by'))}<input data-af="hby" value="${esc(hs[last].by || '')}" maxlength="100" autocomplete="off"></label><label>${esc(T('adr.hist.note'))}<input data-af="hnote" value="${esc(hs[last].note || '')}" placeholder="${esc(T('adr.hist.note.ph'))}" maxlength="500" autocomplete="off"></label></div>` : ''}`;
+  }
+  // Marca de comparación con la versión activa: nueva, cambiada (campos y estado anterior → actual) o igual
+  function adrMark(d, cmp) {
+    if (!cmp?.diff) return '';
+    const df = cmp.diff;
+    if (df.added.includes(d.id)) return `<div class="adr-cmp add">${esc(T('adr.cmp.new'))}</div>`;
+    const c = df.changed.find(x => x.id === d.id);
+    if (!c) return `<div class="adr-cmp same">${esc(T('adr.cmp.same'))}</div>`;
+    const old = cmp.v.decisions.find(x => x.id === d.id), FN = { title: 'adr.f.title', status: 'adr.f.status', context: 'adr.f.context', decision: 'adr.f.decision', consequences: 'adr.f.consequences', deciders: 'adr.f.deciders', supersededBy: 'adr.f.superseded', links: 'adr.f.links' };
+    const fs = c.fields.map(f => T(FN[f]).toLowerCase()).join(', '), st = c.fields.includes('status') ? ` · ${T(`adr.st.${old.status}`)} → ${T(`adr.st.${d.status}`)}` : '';
+    return `<div class="adr-cmp chg">${esc(`${T('adr.cmp.chg')}: ${fs}${st}`)}</div>`;
+  }
+  function adrGone(d) {
+    return `<div class="adr gone" style="--s:${ADR_COLOR[d.status]}"><div class="adr-head"><b class="adr-id">${esc(d.id)}</b><span class="adr-title">${esc(adrTitle(d))}</span><span class="adr-pill">${esc(T(`adr.st.${d.status}`))}</span></div><div class="adr-cmp del">${esc(T('adr.cmp.del'))}</div></div>`;
+  }
+  function adrCard(d, ds, cmp) {
     const on = ADR.open === d.id, links = adrLinkList(d), col = ADR_COLOR[d.status];
     const goChip = (l, rm) => `<span class="adr-link"><button type="button" data-adr-go="${l.kind}:${esc(l.id)}" title="${esc(T('adr.go'))}">${esc(T(`adr.kind.${l.kind}`))}: ${esc(l.label)}</button>${rm ? `<button type="button" class="adr-x" data-adr-unlink="${l.kind}:${esc(l.id)}" title="${esc(T('adr.unlink'))}" aria-label="${esc(T('adr.unlink'))}">×</button>` : ''}</span>`;
     let form = '';
@@ -7042,6 +7194,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
           <label>${esc(T('adr.f.date'))}<input type="date" data-af="date" value="${esc(d.date)}"></label></div>
         <label>${esc(T('adr.f.deciders'))}<input data-af="deciders" value="${esc(d.deciders || '')}" placeholder="${esc(T('adr.f.deciders.ph'))}" maxlength="200" autocomplete="off"></label>
         ${['context', 'decision', 'consequences'].map(k => `<label>${esc(T(`adr.f.${k}`))}<textarea data-af="${k}" rows="4" placeholder="${esc(T(`adr.f.${k}.ph`))}">${esc(d[k])}</textarea></label>`).join('')}
+        <div class="adr-histbox"><span>${esc(T('adr.hist'))}</span>${adrTimeline(d, true)}</div>
         <label>${esc(T('adr.f.superseded'))}<select data-af="supersededBy"><option value="">${esc(T('insp.none'))}</option>${others.map(x => `<option value="${esc(x.id)}"${x.id === d.supersededBy ? ' selected' : ''}>${esc(`${x.id} · ${adrTitle(x)}`)}</option>`).join('')}</select></label>
         <div class="adr-links-edit"><span>${esc(T('adr.f.links'))}</span>${links.length ? links.map(l => goChip(l, true)).join('') : `<em>${esc(T('adr.noLinks'))}</em>`}
           <div class="adr-row"><button class="btn small" data-adr="linksel">${esc(T('adr.linkSel'))}</button>
@@ -7052,6 +7205,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     return `<div class="adr${on ? ' on' : ''}" data-id="${esc(d.id)}" style="--s:${col}">
       <button type="button" class="adr-head" data-adr-toggle aria-expanded="${on}"><b class="adr-id">${esc(d.id)}</b><span class="adr-title">${esc(adrTitle(d))}</span><span class="adr-pill">${esc(T(`adr.st.${d.status}`))}</span></button>
       <div class="adr-meta">${esc([fmtDay(d.date), d.deciders].filter(Boolean).join(' · '))}${d.supersededBy ? ` · ${esc(T('adr.f.superseded'))}: ${esc(d.supersededBy)}` : ''}</div>
+      ${adrMark(d, cmp)}
       ${!on && links.length ? `<div class="adr-links">${links.map(l => goChip(l, false)).join('')}</div>` : ''}
       ${form}
     </div>`;
@@ -7061,8 +7215,10 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     if (!box || !S.model) return;
     const ds = S.model.decisions || [], shown = ds.filter(adrMatches);
     const keep = box.parentElement?.scrollTop || 0;
-    box.innerHTML = !ds.length ? `<p class="fnd-empty">${esc(T('adr.empty'))}</p>`
-      : shown.length ? shown.map(d => adrCard(d, ds)).join('') : `<p class="fnd-empty">${esc(T('adr.noMatch'))}</p>`;
+    const cmp = adrCmp(), gone = cmp?.diff ? cmp.diff.removed.map(id => cmp.v.decisions.find(x => x.id === id)).filter(adrMatches) : [];
+    const note = cmp && !cmp.diff ? `<p class="adr-cmp-note">${esc(T('adr.cmp.none', { name: verLabel(cmp.v) }))}</p>` : '';
+    box.innerHTML = note + (!ds.length && !gone.length ? `<p class="fnd-empty">${esc(T('adr.empty'))}</p>`
+      : shown.length || gone.length ? shown.map(d => adrCard(d, ds, cmp)).join('') + gone.map(adrGone).join('') : `<p class="fnd-empty">${esc(T('adr.noMatch'))}</p>`);
     if (box.parentElement) box.parentElement.scrollTop = keep;
   }
   // Actualiza la cabecera de una ficha sin repintarla (para no perder el foco al escribir)
@@ -7079,6 +7235,13 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     if (!d) return;
     if (k === 'date' && !isDay(f.value)) return;
     markEdit();
+    if (k === 'hby' || k === 'hnote') {   // última entrada del historial (como syncHist en las versiones); en decisiones antiguas se crea la entrada implícita
+      const hs = d.history?.length ? d.history : (d.history = [{ status: d.status, date: d.date }]), e = hs[hs.length - 1], key = k === 'hby' ? 'by' : 'note', val = f.value.trim();
+      if (val) e[key] = val; else delete e[key];
+      syncEditor(); save();
+      return;
+    }
+    if (k === 'date' && d.history?.length) d.history[d.history.length - 1].date = f.value;
     if (k === 'deciders' && !f.value.trim()) delete d.deciders; else d[k] = f.value;
     syncEditor(); save();
     adrRefreshHead(card, d);
@@ -7157,6 +7320,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     ds.forEach(d => {
       out.push(`## ${d.id}: ${adrTitle(d).replace(/\s*\n\s*/g, ' ')}`, '', `- **${T('adr.f.status')}:** ${T(`adr.st.${d.status}`)}`, `- **${T('adr.f.date')}:** ${d.date}`);
       if (d.deciders) out.push(`- **${T('adr.f.deciders')}:** ${d.deciders}`);
+      out.push('', `### ${T('adr.hist')}`, '', ...adrHist(d).map(h => `- ${h.date} · ${T(`adr.st.${h.status}`)}${h.by ? ` · ${h.by}` : ''}${h.note ? ` — ${h.note.replace(/\s*\n\s*/g, ' ')}` : ''}`));
       out.push('', `### ${T('adr.f.context')}`, '', body(d.context), '', `### ${T('adr.f.decision')}`, '', body(d.decision), '', `### ${T('adr.f.consequences')}`, '', body(d.consequences), '');
       const links = adrLinkList(d);
       if (links.length) out.push(`### ${T('adr.md.linked')}`, '', ...links.map(l => `- ${T(`adr.kind.${l.kind}`)}: ${l.label}`), '');
@@ -7320,7 +7484,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     threats: () => strideAll().map(t => ({ edge: t.e.id, from: t.e.from, to: t.e.to, zones: t.zones.map(z => z.id), category: t.cat, severity: t.severity, status: t.status, note: t.note })),
     exportThreats, exportReport,
     inventory: () => inventoryRows(S.model).map(r => ({ ...r })), exportInventory: (kind = 'xlsx') => exportInventory(['csv', 'csv-all'].includes(kind) ? kind : 'xlsx'),
-    decisions: () => clone(S.model.decisions || []), addDecision, updateDecision, removeDecision, exportDecisions,
+    decisions: () => clone(S.model.decisions || []), compareDecisions: id => { const v = S.model.versions.find(x => x.id === id); return v && Array.isArray(v.decisions) ? diffDecisions(v.decisions, S.model.decisions || []) : null; }, addDecision, updateDecision, removeDecision, exportDecisions,
     setScope: id => setScope(id), get scope() { return S.scope; }, scopes: () => scopeList().map(x => ({ ...x, path: [...x.path] })), exportLevels,
     exportSVG, exportPNG, exportViews, exportJSON, shareEncrypted, exportOther, exportCtx, toggleRouting, importFiles, config: C, icons: ICONS
   };

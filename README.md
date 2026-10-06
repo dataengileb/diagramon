@@ -194,7 +194,7 @@ Mark which tables or datasets travel through each connection, then follow one fr
 
 1. Select a connection. Under **Datasets**, type a table name and press `Enter` or `,` to add it (the field suggests names already used in the diagram). Click the **×** on a chip to remove it.
 2. Click a dataset chip (or press `D` and pick one from the list, or click a row in the **Datasets** legend of the document card) to see its lineage: the whole route is highlighted, and each component gets a number (its depth). Origins are green, consumers orange.
-3. The bar above the canvas summarizes it (*origins → consumers · hops*). `Esc` clears it.
+3. The bar above the canvas summarizes it (*origins → consumers · hops*). `Esc` clears it. It also works in the *Context* view, where it is shown on the closed boxes and the combined connections between them.
 
 Selecting a component lists the datasets on its connections. In the **Data** view the dataset names are drawn under each connection's label, and they are included in the exports. Connections drawn with arrows on both ends count in both directions.
 
@@ -312,6 +312,8 @@ Open the **ADR** tab to record *why* the architecture is the way it is, in the M
 - The component, connection and group panels have a **Decisions** field with the linked ADRs, **+ New decision** (already linked) and **Link…** to pick an existing one. Each version card lists its ADRs and has **+ ADR**.
 - Components with a *proposed* or *accepted* decision show an **ADR n** tag on the canvas (views that show review marks); hover it to read the titles.
 - Status chips with counts and a search box filter the list. **Export Markdown** downloads every decision as one `.md` file: an index table plus one section per ADR.
+- Every status change is recorded in a **history** (date, status, who — your author name — and a note you can edit on the last entry), shown in the card, the Markdown export and the report. Older decisions show one entry with their current status and date.
+- Each version also stores a copy of the decisions. When you **compare** a version, the ADR tab marks every decision as new, changed (with the fields and old → new status) or unchanged, lists removed ones at the end, and the compare bar adds the ADR counts. Versions saved before this feature have no decisions and get no marks. API: `Diagramon.compareDecisions(id)`.
 - A decision *proposed* for more than 30 days is a low finding in the **Review** tab.
 - Decisions belong to the document, not to a version: opening a version or editing the *Text* tab keeps them, and they are saved in **Export › JSON** under `decisions`. Everything can be undone with **`⌘Z`**.
 - From the console: `Diagramon.decisions()`, `Diagramon.addDecision({ title, status, context, decision, consequences, links: { nodes: [...] } })`, `Diagramon.updateDecision(id, patch)`, `Diagramon.removeDecision(id)` and `Diagramon.exportDecisions()`.
@@ -336,7 +338,7 @@ Some zones are **trust boundaries** instead of risk zones: open a zone and switc
 
 ### 10. Present and export
 
-- **Flow** (or **`P`**) lights up the diagram step by step, from clients to data.
+- **Flow** (or **`P`**) lights up the diagram step by step, from clients to data. Bidirectional connections are followed both ways.
 - **Present** (or **`V`**) goes full screen with no panels: an overview with the title, then one slide per group (in reading order, zooming in and dimming the rest) and a closing overview. Without groups it steps through the flow. **`→`**, **`Space`** or click go forward, **`←`** goes back, **`Home`/`End`** and number keys jump, **`P`** plays the flow, **`Esc`** exits and restores your view. Editing is off while presenting.
 - **Arrange** lays everything out automatically, following the flow. Each group is arranged inside its own box, so groups never overlap. **Fit** (or **`F`**) centers the diagram.
 - **Elbows** (or **`E`**) switches the connections between curves and right-angle lines that go around the nodes. Several elbow lines on the same side of a node leave from separate, evenly spaced points so they never overlap.
@@ -395,7 +397,7 @@ One file can hold several levels of detail, as in the **C4 model**: *system cont
 3. Go back with **`Esc`** (with nothing selected), **`Alt`+`↑`** or the **breadcrumb** above the canvas (*Top › Shop system › API*), which also names the C4 level (*L1 System context*, *L2 Containers*, *L3 Components*).
 4. Inside a level, a dashed **boundary frame** carries the parent's name and C4 type. What lives outside but connects to it (other systems, the parent's neighbours) appears as dimmed **ghost cards** left (incoming) and right (outgoing) of the frame; click one to jump to its level.
 5. Pick a **C4 element** (*Person*, *Software system*, *Container*, *Component*, *External system*) in the inspector; it shows as a `[Container]` tag on components without a detail line, and in the tooltip.
-6. **Move into…** (nodes you selected go inside another component of the same level) and **Move up a level** are in the inspector; connections follow, and groups travel with their nodes when all of them move. Deleting a component with an internal diagram asks first, and deletes everything inside it.
+6. **Move into…** (nodes you selected go inside another component of the same level) and **Move up a level** are in the inspector; connections follow, and groups travel with their nodes when all of them move. Deleting a component with an internal diagram asks first, and deletes everything inside it. **Duplicate** also copies the internal diagram, at every depth.
 7. Each level has its own positions and its own **Auto layout**, **Fit** and presentation. Views (*Context* collapse included), filters, findings and exports all work inside the open level. **Export** › *All levels* writes one image per level with content.
 
 From the console: `Diagramon.setScope('api')`, `Diagramon.scope`, `Diagramon.scopes()`, `Diagramon.exportLevels('png')`.
@@ -637,20 +639,18 @@ Things that work but have not been checked in depth yet. They probably need some
   Group icons in the draw.io export have not been opened in draw.io yet.
 - **Light and black themes**: reviewed for the new marks, dialogs and group icons. Very light custom colors are darkened in the light theme (and very dark ones lightened in the dark themes) so borders and labels stay readable; mid-tone custom colors are kept as chosen.
 - **Text tab round trip**: bidirectional connections, multi-line labels and component names with quotes, brackets or `key=value` were checked in English and Spanish (names that need it are written as `name="…"`).
-- Bidirectional connections are followed one way only by *Play flow* and presentation mode.
 - Notes and risk zones are not exported to Mermaid, PlantUML or draw.io.
-- **Data governance** fields (datasets, owners, regions, layers) are not exported to Mermaid, PlantUML or draw.io. Lineage is not available in the *Context* view, and IaC import sets the region only for AWS (not yet from Azure `location` or Google Cloud regions).
+- **Data governance** fields (datasets, owners, regions, layers) are not exported to Mermaid, PlantUML or draw.io. IaC import sets the region only for AWS (not yet from Azure `location` or Google Cloud regions).
 - Region detection from a group's name covers the usual AWS, Azure and Google Cloud codes; other names need the **Region** field.
 - **Very small components** carrying every pill at once (layer, region, team, availability) have not been reviewed; with the default fixed node width they fit.
 - **Text tab**: notes on STRIDE decisions, trust boundaries and dismissed findings are not part of the text format, so a round trip through the *Text* tab keeps the statuses but loses the notes.
 - Security review, compliance and STRIDE fields (`exposure`, `backup`, `controls`, `threats`, trust zones, dismissed findings) are not exported to Mermaid, PlantUML or draw.io.
-- **Architecture decisions** (ADR) are not part of the text format and are not exported to Mermaid, PlantUML or draw.io; they are not compared between versions.
-- **ADR status history (to do)**: a decision keeps only its current status and date. It should record each status change (proposed → accepted → superseded…) with its date and who made it, and show that timeline in the ADR editor, the Markdown export and the architecture report.
+- **Architecture decisions** (ADR) are not part of the text format and are not exported to Mermaid, PlantUML or draw.io.
 - The compliance catalog is a practical subset of each standard with paraphrased titles; check it before relying on it for an audit.
 - **Single points of failure** are detected from the diagram topology only (articulation points of the undirected graph): Diagramon does not know about the internal redundancy of a load balancer or a managed service unless you set `replicas`. Effective availability assumes independent instances (no shared failures, no failover time), and the composite availability multiplies the components of one shortest route, so it ignores alternative longer routes.
 - **Architecture report**: the PDF path was checked up to the browser print call (the full document, its 14 sections, images and tables load and `print()` is called), and tables fit an A4 page width; the print dialog itself and the final pagination depend on the browser. Page headers and numbers appear only where the browser supports CSS `@page` margin boxes. Markdown viewers that block `data:` images show nothing for the diagrams unless you save the images as separate files. Large diagrams with many views and internal levels can take several seconds. The Compliance matrix is listed per control and per component rather than as a grid.
 - **Cost scenarios** compare only the monthly-equivalent price of components (not edges or groups), and *Group* groups by the top-level group only. The breakdown is not exported to Mermaid, PlantUML or draw.io.
-- **C4 levels**: *Duplicate* does not copy the internal diagram of a duplicated component, and ghost connection labels can overlap when several connections leave the boundary close together. Mermaid, PlantUML and draw.io export the whole flat model (no levels; `in` and `c4` are ignored). Text tab: nodes without `in=` go to the top level, so edit a level from the Text tab by writing `in=` on its nodes. Ghost cards show at most 8 per side, and connections between two levels are only drawn as ghosts (reach them from the inspector links). Renaming a component with a double-click on its name uses the browser's prompt.
+- **C4 levels**: Mermaid, PlantUML and draw.io export the whole flat model (no levels; `in` and `c4` are ignored). Text tab: nodes without `in=` go to the top level, so edit a level from the Text tab by writing `in=` on its nodes. Ghost cards show at most 8 per side, and connections between two levels are only drawn as ghosts (reach them from the inspector links). Renaming a component with a double-click on its name uses the browser's prompt.
 - **Inventory (Excel)**: the `.xlsx` file is written by a minimal built-in writer (a ZIP without compression), so it is larger than one saved by Excel. It has no formulas (totals are not calculated in the file), no shared strings and no charts. It was checked as a valid ZIP with well-formed XML parts, but not opened in Excel, Numbers or LibreOffice yet. Several CSV downloads in a row may trigger a "download multiple files" prompt in some browsers.
 
 ---
