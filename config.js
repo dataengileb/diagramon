@@ -129,10 +129,10 @@ window.DIAGRAMON_CONFIG = {
   view:  { minZoom: 0.2, maxZoom: 2.5 },
 
   /* Vistas: filtros de presentación del MISMO modelo (no cambian datos ni posiciones).
-     Clave = nombre de la vista (atajos 1…7 en este orden). Cada regla es opcional; lo que falte vale como en `full`.
+     Clave = nombre de la vista (atajos 1…8 en este orden). Cada regla es opcional; lo que falte vale como en `full`.
      - groups: 'all' (todos) · 'logical' (oculta los grupos físicos) · 'collapse-top' (cajas cerradas de primer nivel)
      - nodeDetail: 'full' | 'min' (sin detalle `sub`) · edgeLabels / dataTags / locks / cost / zones / notes / review: true | false
-     - emphasis: null | 'security' | 'data' | 'cost' (resalta lo relevante y atenúa el resto)
+     - emphasis: null | 'security' | 'data' | 'cost' | 'owner' (resalta lo relevante y atenúa el resto)
      - legendGroups: true añade a la leyenda una fila que indica qué grupos se ven (ya sale sola si `groups` no es 'all')
      - icon: contenido SVG de 24×24 a trazo para el selector de vistas de la barra superior (su descripción está en i18n.js › view.desc.<clave>) */
   views: {
@@ -142,7 +142,8 @@ window.DIAGRAMON_CONFIG = {
     physical: { label: { en: 'Physical', es: 'Física' }, legendGroups: true, icon: '<rect x="3" y="4" width="18" height="6" rx="1.5"/><rect x="3" y="14" width="18" height="6" rx="1.5"/><path d="M7 7h.01M7 17h.01"/>', groups: 'all', nodeDetail: 'full', edgeLabels: false, dataTags: false, locks: true, cost: false, zones: true, notes: true, review: true, emphasis: null },
     security: { label: { en: 'Security', es: 'Seguridad' }, icon: '<path d="M12 3 4.5 6v5.5c0 4.5 3.2 8 7.5 9.5 4.3-1.5 7.5-5 7.5-9.5V6z"/><path d="m9 12 2 2 4-4"/>', groups: 'all', nodeDetail: 'full', edgeLabels: true, dataTags: true, locks: true, cost: false, zones: true, notes: true, review: true, emphasis: 'security' },
     data:     { label: { en: 'Data', es: 'Datos' }, icon: '<ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/>', groups: 'all', nodeDetail: 'full', edgeLabels: true, dataTags: true, locks: false, cost: false, zones: true, notes: true, review: true, emphasis: 'data' },
-    cost:     { label: { en: 'Cost', es: 'Costo' }, icon: '<circle cx="12" cy="12" r="9"/><path d="M14.8 9.2c-.4-1-1.4-1.6-2.8-1.6-1.6 0-2.8.8-2.8 2s1 1.7 2.8 2.1 2.8.9 2.8 2.1-1.2 2-2.8 2c-1.4 0-2.4-.6-2.8-1.6M12 6v1.6M12 16.4V18"/>', groups: 'all', nodeDetail: 'full', edgeLabels: true, dataTags: false, locks: false, cost: true, zones: false, notes: true, review: true, emphasis: 'cost' }
+    cost:     { label: { en: 'Cost', es: 'Costo' }, icon: '<circle cx="12" cy="12" r="9"/><path d="M14.8 9.2c-.4-1-1.4-1.6-2.8-1.6-1.6 0-2.8.8-2.8 2s1 1.7 2.8 2.1 2.8.9 2.8 2.1-1.2 2-2.8 2c-1.4 0-2.4-.6-2.8-1.6M12 6v1.6M12 16.4V18"/>', groups: 'all', nodeDetail: 'full', edgeLabels: true, dataTags: false, locks: false, cost: true, zones: false, notes: true, review: true, emphasis: 'cost' },
+    governance: { label: { en: 'Governance', es: 'Gobierno' }, icon: '<circle cx="9" cy="7.5" r="3.5"/><path d="M2.5 20c0-3.8 2.9-6 6.5-6s6.5 2.2 6.5 6"/><rect x="15" y="12" width="7" height="8.5" rx="1.5"/><path d="M17 15.5h3M17 18h3"/>', groups: 'all', nodeDetail: 'full', edgeLabels: true, dataTags: true, locks: false, cost: false, zones: false, notes: true, review: true, emphasis: 'owner' }
   },
   /* Vista por defecto al abrir si el navegador no recuerda otra (el diagrama puede traer `meta.view`). */
   defaultView: 'full',

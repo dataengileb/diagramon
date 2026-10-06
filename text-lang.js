@@ -20,7 +20,9 @@
              costo: número en USD + /hora, /mes, /año o /3años (sin periodo = mensual)
    Grupo:    grupo id "Nombre" icon=aws/group-vpc color=… kind=physical { … }   (se pueden anidar; icon = icono de grupo, opcional;
              kind=logical|physical / tipo=lógico|físico, opcional: sin él se deduce del icono y del nombre)
-   Vista:    view: security   (vista con la que se abre: full, context, logical, physical, security, data, cost; opcional)
+   Vista:    view: security   (vista con la que se abre: full, context, logical, physical, security, data, cost, governance/gobierno; opcional)
+   Gobierno: nodo o grupo … owner="Ana Pérez" steward=… team="Data Eng" costcenter=CC-100   (en español: dueño= responsable= equipo= centro=;
+             los nodos heredan cada campo del grupo más cercano que lo tenga; los valores con espacios van entre comillas)
    Conexión: a -> b -> c : etiqueta color=…   (la etiqueta va en la última flecha)
    Datos:    nodo … data=pii,pci · conexión a -> b : SQL data=pii encrypted=yes
    Comentario: líneas que empiezan por # o //
@@ -38,6 +40,11 @@
   const HAS_ARROW = /\.\.>|~>|=>|->/;
   const ID = /^[^\s:[\]"{}]+$/;
   const NODE_KEYS = ['color', 'badge', 'desc', 'sub', 'x', 'y', 'costo', 'cost', 'data', 'datos'];
+  /* ---------- gobierno: dueño, responsable, equipo, centro de costo ---------- */
+  const GOV_KEYS = { owner: 'owner', dueño: 'owner', dueno: 'owner', steward: 'steward', responsable: 'steward', team: 'team', equipo: 'team',
+    costcenter: 'costCenter', centro: 'costCenter', centrocosto: 'costCenter', centrodecosto: 'costCenter' };
+  const GOV_WORDS = ['owner', 'steward', 'team', 'costCenter'];
+  const applyGov = (o, kv) => { for (const [key, v] of Object.entries(kv)) { const k = GOV_KEYS[key]; if (k && String(v).trim()) o[k] = String(v).trim(); } };
   // review id: "observación" by=… raised=AAAA-MM-DD due=AAAA-MM-DD status=open|resolved closed=AAAA-MM-DD
   const REVIEW_KEYS = { by: 'by', por: 'by', raised: 'raised', levantada: 'raised', due: 'due', compromiso: 'due', status: 'status', estado: 'status', closed: 'closed', cerrada: 'closed' };
   const isDay = v => /^\d{4}-\d{2}-\d{2}$/.test(v) && !isNaN(new Date(`${v}T12:00Z`)) && new Date(`${v}T12:00Z`).toISOString().slice(0, 10) === v;
@@ -52,9 +59,11 @@
   // Palabras que escribe stringify y mensajes de error, por idioma
   const WORDS = {
     en: { title: 'title', direction: 'direction', group: 'group', cost: 'cost', hour: 'hour', month: 'month', year: 'year', years: 'years', data: 'data', encrypted: 'encrypted', both: 'both', yes: 'yes', no: 'no', lines: 'lines', line: 'line', elbow: 'elbow', curved: 'curved', elbowOne: 'elbow', curvedOne: 'curved', author: 'author', version: 'version', view: 'view', kind: 'kind', physical: 'physical', logical: 'logical',
-      review: 'review', by: 'by', raised: 'raised', due: 'due', status: 'status', closed: 'closed', resolved: 'resolved' },
+      review: 'review', by: 'by', raised: 'raised', due: 'due', status: 'status', closed: 'closed', resolved: 'resolved',
+      owner: 'owner', steward: 'steward', team: 'team', costCenter: 'costcenter' },
     es: { title: 'título', direction: 'dirección', group: 'grupo', cost: 'costo', hour: 'hora', month: 'mes', year: 'año', years: 'años', data: 'datos', encrypted: 'cifrado', both: 'ambos', yes: 'sí', no: 'no', lines: 'líneas', line: 'línea', elbow: 'codos', curved: 'curvas', elbowOne: 'codo', curvedOne: 'curva', author: 'autor', version: 'versión', view: 'vista', kind: 'tipo', physical: 'físico', logical: 'lógico',
-      review: 'revisión', by: 'por', raised: 'levantada', due: 'compromiso', status: 'estado', closed: 'cerrada', resolved: 'resuelta' }
+      review: 'revisión', by: 'por', raised: 'levantada', due: 'compromiso', status: 'estado', closed: 'cerrada', resolved: 'resuelta',
+      owner: 'dueño', steward: 'responsable', team: 'equipo', costCenter: 'centro' }
   };
   const MSG = {
     en: {
@@ -103,7 +112,7 @@
   // Divide el resto de una línea en etiqueta, [tipo], "detalle" y clave=valor
   function tokens(rest, keys) {
     const out = { words: [], brackets: [], quotes: [], kv: {} };
-    const re = /\[([^\]]*)\]|("(?:[^"\\]|\\.)*")|([A-Za-z]+)=("(?:[^"\\]|\\.)*"|\S+)|(\S+)/g;
+    const re = /\[([^\]]*)\]|("(?:[^"\\]|\\.)*")|([A-Za-zñÑ]+)=("(?:[^"\\]|\\.)*"|\S+)|(\S+)/g;
     let m;
     while ((m = re.exec(rest))) {
       if (m[1] != null) out.brackets.push(m[1].trim());
@@ -169,7 +178,7 @@
       if ((m = line.match(/^(autor|author)\s*:\s*(.*)$/i))) { if (m[2].trim()) (model.meta ||= {}).author = m[2].trim(); return; }
       if ((m = line.match(/^(versi[oó]n|version)\s*:\s*(.*)$/i))) { if (m[2].trim()) (model.meta ||= {}).version = m[2].trim(); return; }
       if ((m = line.match(/^(view|vista)\s*:\s*(\S+)\s*$/i))) {
-        const v = m[2].toLowerCase();
+        const v = m[2].toLowerCase() === 'gobierno' ? 'governance' : m[2].toLowerCase();
         if (!ctx.views || ctx.views.includes(v)) (model.meta ||= {}).view = v; else err(ln, msg.view(m[2]));
         return;
       }
@@ -193,9 +202,10 @@
         const id = m[2];
         if (!ID.test(id)) return err(ln, msg.groupId(id));
         if (groups.has(id)) return err(ln, msg.groupDup(id));
-        const tk = tokens(m[3], ['color', 'icon', 'icono', 'kind', 'tipo']);
+        const tk = tokens(m[3], ['color', 'icon', 'icono', 'kind', 'tipo', ...Object.keys(GOV_KEYS)]);
         const g = { id, label: tk.quotes[0] ?? (tk.words.join(' ') || id) };
         if (tk.kv.color) g.color = tk.kv.color;
+        applyGov(g, tk.kv);
         const gi = (tk.kv.icon ?? tk.kv.icono)?.trim().toLowerCase();
         if (gi) { if (ctx.icons[gi] && gi.includes('/')) g.icon = gi; else err(ln, msg.icon(gi)); } // icono de grupo: proveedor/clave
         const gk = tk.kv.kind ?? tk.kv.tipo;
@@ -248,7 +258,7 @@
 
       if (colon > 0 && ID.test(left.trim())) {
         const n = nodeFor(left.trim());
-        const tk = tokens(right, NODE_KEYS);
+        const tk = tokens(right, [...NODE_KEYS, ...Object.keys(GOV_KEYS)]);
         if (tk.brackets.length) {
           const kind = resolveKind(tk.brackets[0], ctx, msg);
           if (kind.error) err(ln, kind.error);
@@ -265,6 +275,7 @@
         if (cv != null) { const c = parseCost(cv); if (c) Object.assign(n, c); else err(ln, msg.cost(cv)); }
         const dv = tk.kv.data ?? tk.kv.datos;
         if (dv != null) { const d = checkData(dv, ln); if (d.length) n.data = d; }
+        applyGov(n, tk.kv);
         if (stack.length) n.group = stack[stack.length - 1];
         return;
       }
@@ -292,12 +303,13 @@
       if (n.color) p.push(`color=${bare(n.color)}`);
       if (n.cost != null && n.cost !== '' && Number.isFinite(+n.cost)) p.push(`${w.cost}=${costValue(n, w)}`);
       if (n.data?.length) p.push(`${w.data}=${n.data.join(',')}`);
+      GOV_WORDS.forEach(k => { if (n[k]) p.push(`${w[k]}=${bare(n[k])}`); });
       if (n.desc) p.push(`desc=${quote(n.desc)}`);
       return p.join(' ');
     };
     const groupIds = new Set(m.groups.map(g => g.id));
     const writeGroup = (g, ind) => {
-      out.push(`${ind}${w.group} ${g.id} ${quote(g.label)}${g.icon ? ` icon=${bare(g.icon)}` : ''}${g.color ? ` color=${bare(g.color)}` : ''}${g.kind ? ` ${w.kind}=${w[g.kind]}` : ''} {`);
+      out.push(`${ind}${w.group} ${g.id} ${quote(g.label)}${g.icon ? ` icon=${bare(g.icon)}` : ''}${g.color ? ` color=${bare(g.color)}` : ''}${g.kind ? ` ${w.kind}=${w[g.kind]}` : ''}${GOV_WORDS.filter(k => g[k]).map(k => ` ${w[k]}=${bare(g[k])}`).join('')} {`);
       m.nodes.filter(n => n.group === g.id).forEach(n => out.push(`${ind}  ${nodeLine(n)}`));
       m.groups.filter(c => c.parent === g.id).forEach(c => writeGroup(c, ind + '  '));
       out.push(`${ind}}`);
