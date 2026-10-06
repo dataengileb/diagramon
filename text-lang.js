@@ -17,6 +17,7 @@
      api ~> cola : eventos              (un nodo no declarado se crea solo)
 
    Nodo:     id: Nombre [tipo o icono] "detalle" color=… badge=… costo=120/mes desc="…"
+             nombre con comillas, corchetes o clave=valor: id: name="Tienda [legado]" (es: nombre="…")
              costo: número en USD + /hora, /mes, /año o /3años (sin periodo = mensual)
    Grupo:    grupo id "Nombre" icon=aws/group-vpc color=… kind=physical { … }   (se pueden anidar; icon = icono de grupo, opcional;
              kind=logical|physical / tipo=lógico|físico, opcional: sin él se deduce del icono y del nombre)
@@ -355,14 +356,15 @@
 
       if (colon > 0 && ID.test(left.trim())) {
         const n = nodeFor(left.trim());
-        const tk = tokens(right, [...NODE_KEYS, ...Object.keys(GOV_KEYS)]);
+        const tk = tokens(right, [...NODE_KEYS, ...Object.keys(GOV_KEYS), 'name', 'nombre']);
         if (tk.brackets.length) {
           const kind = resolveKind(tk.brackets[0], ctx, msg);
           if (kind.error) err(ln, kind.error);
           if (kind.type) n.type = kind.type;
           if (kind.icon) n.icon = kind.icon;
         }
-        const label = tk.words.join(' ');
+        // name="…" / nombre="…": nombre con comillas, corchetes o clave=valor (lo escribe stringify cuando hace falta)
+        const label = tk.kv.name ?? tk.kv.nombre ?? tk.words.join(' ');
         n.label = label || (n.icon && ctx.icons[n.icon].label) || (n.type !== 'generic' && ctx.types[n.type]?.label) || n.id;
         const sub = tk.kv.sub ?? tk.quotes[0];
         if (sub) n.sub = sub;
@@ -411,7 +413,9 @@
     out.push('');
     const ctlText = o => `${CTL_KEY[lang] || CTL_KEY.en}=${bare(Object.entries(o.controls).map(([k, v]) => `${k}=${(CTL_OUT[lang] || CTL_OUT.en)[v] || v}`).join(','))}`;
     const nodeLine = n => {
-      const p = [`${n.id}: ${n.label}`];
+      // Un nombre que el lector confundiría (comillas, corchetes, llaves, clave=valor, saltos de línea) va como name="…"
+      const plain = !/["[\]{}\n]|(^|\s)[A-Za-zÀ-ÿñÑ0-9]+=/.test(n.label) && n.label.trim() === n.label && n.label !== '';
+      const p = [plain ? `${n.id}: ${n.label}` : `${n.id}: ${lang === 'es' ? 'nombre' : 'name'}=${quote(n.label)}`];
       if (n.icon) p.push(`[${n.icon}]`); else if (n.type && n.type !== 'generic') p.push(`[${n.type}]`);
       if (n.sub) p.push(quote(n.sub));
       if (n.badge != null && n.badge !== '') p.push(`badge=${bare(n.badge)}`);
