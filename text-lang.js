@@ -40,6 +40,17 @@
              un nodo dentro de las llaves de un grupo con `in=` hereda ese nivel · nodo … c4=container (es: c4=contenedor): tipo C4
              person|persona, system|sistema, container|contenedor, component|componente, external|externo
    Disponibilidad: nodo … sla=99.95 (objetivo en %; también 99.95% o 99,95) · rpo=15m rto=4h (s, m, h, d; es: igual) · replicas=2 (es: réplicas=; instancias en paralelo, 1 = una sola)
+   Niveles (bloque): inside tienda { … } (es: dentro tienda { … }): todo lo declarado dentro de las llaves (nodos, grupos, notas, zonas) vive en el
+             diagrama interno del nodo `tienda`, sin escribir `in=` en cada uno; los bloques se anidan (`inside api { … }` dentro de `inside tienda { … }`
+             exige que `api` sea un nodo de `tienda`); un bloque no se abre dentro de un grupo, pero un grupo sí dentro de un bloque; `in=` sigue valiendo
+   Notas:    note n1: "Texto\ncon saltos" at=120,40 size=180,110 color=limon (es: nota n1: "…" en=120,40 tamaño=180,110); posición y tamaño opcionales
+   Zonas:    zone z1: "Alcance PCI" severity=high at=… size=… desc="…" (es: zona z1: "…" severidad=alta|media|baja|crítica); low|medium|high|critical
+   Fronteras de confianza: trust t1: "DMZ" trust=internet at=… size=… desc="…" (es: confianza t1: "DMZ" confianza=internet …)
+   Notas STRIDE: threat api -> db T: "TLS 1.3 siempre" (es: amenaza api -> db T: "…"); la conexión se identifica por origen -> destino (cualquier flecha);
+             si hay varias conexiones iguales, `#2` elige la segunda: threat api -> db #2 T: "…". La amenaza debe tener ya estado (threats=…); si no, es un error
+   Descartados: dismiss sec:public-db:db: "motivo" by="Ana" date=2026-10-01 (es: descartar id: "motivo" por=Ana fecha=…); el id puede llevar `:`
+             (el separador es el primer `:` seguido de espacio) o ir entre comillas: dismiss "sec:x:y": "motivo"
+   El texto es la fuente de verdad de notas, zonas, fronteras, notas STRIDE y descartados: borrarlos del texto los borra del diagrama.
    Comentario: líneas que empiezan por # o //
 
    Acepta las palabras clave en inglés y en español (title/título, group/grupo,
@@ -99,6 +110,19 @@
   /* ---------- linaje: datasets=a,b ---------- */
   const DS_KEY = { en: 'datasets', es: 'tablas' };
   const parseDatasets = v => [...new Set(String(v).replace(/^"([\s\S]*)"$/, (_, x) => { try { return JSON.parse(`"${x}"`); } catch { return x; } }).split(/[,;]/).map(s => s.trim()).filter(Boolean))];
+  /* ---------- notas, zonas, fronteras de confianza, notas STRIDE y hallazgos descartados ---------- */
+  const SEV_IN = { low: 'low', baja: 'low', bajo: 'low', medium: 'medium', media: 'medium', medio: 'medium', high: 'high', alta: 'high', alto: 'high', critical: 'critical', critica: 'critical', critico: 'critical' };
+  const NOTE_KEYS = ['at', 'en', 'pos', 'size', 'tamaño', 'tamano', 'color', 'in', 'dentro'];
+  const ZONE_KEYS = [...NOTE_KEYS, 'severity', 'severidad', 'desc', 'trust', 'confianza'];
+  const DISMISS_KEYS = { by: 'by', por: 'by', date: 'date', fecha: 'date' };
+  const foldK = v => String(v).trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  // "120,40" · "180x110" → [120, 40]
+  const parsePair = v => { const m = String(v).trim().match(/^(-?\d+(?:\.\d+)?)\s*[,x×]\s*(-?\d+(?:\.\d+)?)$/i); return m ? [+m[1], +m[2]] : null; };
+  const rnd = n => Math.round(+n || 0);
+  const NOTE_RE = /^(note|nota)\s+([^\s:]+)\s*:\s*(.*)$/i, ZONE_RE = /^(zone|zona)\s+([^\s:]+)\s*:\s*(.*)$/i, TRUST_RE = /^(trust|confianza)\s+([^\s:]+)\s*:\s*(.*)$/i;
+  const LEVEL_RE = /^(inside|dentro)\s+([^\s:{]+)\s*\{\s*$/i;
+  const THREAT_RE = /^(threat|amenaza)\s+(\S+?)\s*(\.\.>|~>|=>|->)\s*(\S+?)(?:\s+#(\d+))?\s+([STRIDEstride])\s*:\s*(.*)$/;
+  const DISMISS_RE = /^(dismiss|descartar|descartado)\s+(?:("(?:[^"\\]|\\.)*")|(\S+?))\s*:\s+(.*)$/i;
   // curved | elbow (también curva/curvas, codo/codos, orthogonal)
   const parseRoute = v => (/^(elbows?|codos?|orthogonal|ortogonal(es)?|angle|ángulos?)$/i.test(v) ? 'elbow' : /^(curved?|curvas?)$/i.test(v) ? 'curved' : null);
   // data=pii,pci → ['pii', 'pci'] · encrypted=yes|no (también sí/no, true/false)
@@ -110,11 +134,13 @@
     en: { title: 'title', direction: 'direction', group: 'group', cost: 'cost', hour: 'hour', month: 'month', year: 'year', years: 'years', data: 'data', encrypted: 'encrypted', both: 'both', yes: 'yes', no: 'no', lines: 'lines', line: 'line', region: 'region', transfer: 'transfer', ok: 'ok', elbow: 'elbow', curved: 'curved', elbowOne: 'elbow', curvedOne: 'curved', author: 'author', version: 'version', view: 'view', kind: 'kind', physical: 'physical', logical: 'logical',
       review: 'review', by: 'by', raised: 'raised', due: 'due', status: 'status', closed: 'closed', resolved: 'resolved', layer: 'layer', layers: 'layers', zones: 'zones',
       owner: 'owner', steward: 'steward', team: 'team', costCenter: 'costcenter',
-      in: 'in', layerOf: { bronze: 'bronze', silver: 'silver', gold: 'gold' }, exposure: 'exposure', backup: 'backup', expoOf: { public: 'public', internal: 'internal' } },
+      in: 'in', layerOf: { bronze: 'bronze', silver: 'silver', gold: 'gold' }, exposure: 'exposure', backup: 'backup', expoOf: { public: 'public', internal: 'internal' },
+      note: 'note', zone: 'zone', trust: 'trust', threat: 'threat', dismiss: 'dismiss', at: 'at', size: 'size', severity: 'severity', date: 'date', inside: 'inside', sevOf: { low: 'low', medium: 'medium', high: 'high', critical: 'critical' } },
     es: { title: 'título', direction: 'dirección', group: 'grupo', cost: 'costo', hour: 'hora', month: 'mes', year: 'año', years: 'años', data: 'datos', encrypted: 'cifrado', both: 'ambos', yes: 'sí', no: 'no', lines: 'líneas', line: 'línea', region: 'región', transfer: 'transferencia', ok: 'ok', elbow: 'codos', curved: 'curvas', elbowOne: 'codo', curvedOne: 'curva', author: 'autor', version: 'versión', view: 'vista', kind: 'tipo', physical: 'físico', logical: 'lógico',
       review: 'revisión', by: 'por', raised: 'levantada', due: 'compromiso', status: 'estado', closed: 'cerrada', resolved: 'resuelta', layer: 'capa', layers: 'capas', zones: 'zonas',
       owner: 'dueño', steward: 'responsable', team: 'equipo', costCenter: 'centro',
-      in: 'dentro', layerOf: { bronze: 'bronce', silver: 'plata', gold: 'oro' }, exposure: 'exposición', backup: 'respaldo', expoOf: { public: 'pública', internal: 'interna' } }
+      in: 'dentro', layerOf: { bronze: 'bronce', silver: 'plata', gold: 'oro' }, exposure: 'exposición', backup: 'respaldo', expoOf: { public: 'pública', internal: 'interna' },
+      note: 'nota', zone: 'zona', trust: 'confianza', threat: 'amenaza', dismiss: 'descartar', at: 'en', size: 'tamaño', severity: 'severidad', date: 'fecha', inside: 'dentro', sevOf: { low: 'baja', medium: 'media', high: 'alta', critical: 'crítica' } }
   };
   const MSG = {
     en: {
@@ -130,7 +156,11 @@
       expo: v => `invalid exposure “${v}” (use public or internal)`, backup: v => `invalid backup value “${v}” (use yes or no)`,
       view: v => `unknown view “${v}”`, gkind: v => `invalid group type “${v}” (use logical or physical)`,
       c4: v => `unknown C4 type “${v}” (use person, system, container, component or external)`, inRef: id => `“in” points to “${id}”, which is not a component`,
-      line: 'cannot understand this line', open: n => `missing } to close ${n === 1 ? 'a group' : `${n} groups`}`
+      line: 'cannot understand this line', open: (n, lv) => `missing } to close ${lv ? (n === 1 ? 'a block' : `${n} blocks`) : n === 1 ? 'a group' : `${n} groups`}`,
+      at: v => `invalid position “${v}” (use at=120,40)`, size: v => `invalid size “${v}” (use size=180,110)`, sev: v => `unknown severity “${v}” (use low, medium, high or critical)`,
+      lvInGroup: id => `“inside ${id}” cannot be opened inside a group`, lvConflict: (a, b) => `in=${a} conflicts with the enclosing “inside ${b}” block`,
+      lvNest: (id, o) => `“${id}” is not a component of “${o}”, so “inside ${id}” cannot be nested there`,
+      thEdge: (a, b) => `no connection ${a} -> ${b} for this threat note`, thNone: (a, b, k) => `${a} -> ${b} has no decided ${k} threat (add it with threats="${k}=mitigated")`
     },
     es: {
       icon: r => `icono desconocido «${r}»`, kind: r => `tipo o icono desconocido «${r}»`, dir: 'la dirección debe ser LR o TB',
@@ -145,7 +175,11 @@
       expo: v => `exposición no válida «${v}» (usa pública o interna)`, backup: v => `valor de respaldo no válido «${v}» (usa sí o no)`,
       view: v => `vista desconocida «${v}»`, gkind: v => `tipo de grupo no válido «${v}» (usa lógico o físico)`,
       c4: v => `tipo C4 desconocido «${v}» (usa persona, sistema, contenedor, componente o externo)`, inRef: id => `«dentro» apunta a «${id}», que no es un componente`,
-      line: 'no se entiende esta línea', open: n => `falta cerrar ${n === 1 ? 'un grupo' : `${n} grupos`} con }`
+      line: 'no se entiende esta línea', open: (n, lv) => `falta cerrar ${lv ? (n === 1 ? 'un bloque' : `${n} bloques`) : n === 1 ? 'un grupo' : `${n} grupos`} con }`,
+      at: v => `posición no válida «${v}» (usa en=120,40)`, size: v => `tamaño no válido «${v}» (usa tamaño=180,110)`, sev: v => `severidad desconocida «${v}» (usa baja, media, alta o crítica)`,
+      lvInGroup: id => `«dentro ${id}» no se puede abrir dentro de un grupo`, lvConflict: (a, b) => `dentro=${a} choca con el bloque «dentro ${b}» que lo contiene`,
+      lvNest: (id, o) => `«${id}» no es un componente de «${o}», así que «dentro ${id}» no puede anidarse ahí`,
+      thEdge: (a, b) => `no hay conexión ${a} -> ${b} para esta nota de amenaza`, thNone: (a, b, k) => `${a} -> ${b} no tiene decidida la amenaza ${k} (añádela con amenazas="${k}=mitigada")`
     }
   };
 
@@ -199,7 +233,18 @@
     const msg = MSG[ctx.lang] || MSG.en;
     const model = { title: ctx.lang === 'es' ? 'Diagrama sin título' : 'Untitled diagram', groups: [], nodes: [], edges: [] };
     const errors = [];
-    const nodes = new Map(), groups = new Set(), stack = [], gobj = new Map(), inRefs = [];
+    const nodes = new Map(), groups = new Set(), stack = [], gobj = new Map(), inRefs = [], nests = [], thLines = [];
+    model.notes = []; model.zones = []; model.dismissed = {};
+    // La pila lleva marcos { kind: 'group' | 'level', id }: los bloques `inside` quedan siempre por fuera de los grupos
+    const curGroup = () => (stack.length && stack[stack.length - 1].kind === 'group' ? stack[stack.length - 1].id : undefined);
+    const curLevel = () => { for (let i = stack.length - 1; i >= 0; i--) if (stack[i].kind === 'level') return stack[i].id; return undefined; };
+    // Nivel C4 de lo declarado aquí: el bloque `inside` manda; `in=` explícito debe coincidir; si no, el del grupo que lo contiene
+    const resolveIn = (explicit, ln) => {
+      const lv = curLevel();
+      if (lv) { if (explicit && explicit !== lv) err(ln, msg.lvConflict(explicit, lv)); return lv; }
+      if (explicit) inRefs.push({ ln, id: explicit });
+      return explicit || gobj.get(curGroup())?.in || undefined;
+    };
     const err = (line, msg) => errors.push({ line, msg });
     // Clasificaciones: solo las de config.js (ctx.dataClasses), si se conocen
     const checkData = (v, ln) => {
@@ -230,6 +275,7 @@
     const nodeFor = id => {
       if (!nodes.has(id)) {
         const n = { id, label: id, type: 'generic' };
+        if (curLevel()) n.in = curLevel();
         nodes.set(id, n);
         model.nodes.push(n);
       }
@@ -279,7 +325,44 @@
         nodeFor(m[2]).review = r;
         return;
       }
+      if ((m = line.match(LEVEL_RE))) {
+        const id = m[2];
+        if (!ID.test(id)) return err(ln, msg.id(id));
+        if (stack.some(f => f.kind === 'group')) err(ln, msg.lvInGroup(id));
+        inRefs.push({ ln, id });
+        if (curLevel()) nests.push({ ln, id, outer: curLevel() });
+        stack.push({ kind: 'level', id });
+        return;
+      }
       if (line === '}') { if (stack.length) stack.pop(); else err(ln, msg.brace); return; }
+      if ((m = line.match(NOTE_RE)) || (m = line.match(ZONE_RE)) || (m = line.match(TRUST_RE))) {
+        if (!ID.test(m[2])) return err(ln, msg.id(m[2]));
+        const kw = m[1].toLowerCase(), isNote = /^not/.test(kw), isTrust = /^(trust|confianza)$/.test(kw);
+        const tk = tokens(m[3], isNote ? NOTE_KEYS : ZONE_KEYS), o = { id: m[2] };
+        const text = tk.quotes[0] ?? tk.words.join(' ').replace(/\\n/g, '\n');
+        const at = tk.kv.at ?? tk.kv.en ?? tk.kv.pos, sz = tk.kv.size ?? tk.kv.tamaño ?? tk.kv.tamano;
+        if (at != null) { const p = parsePair(at); if (p) { o.x = p[0]; o.y = p[1]; } else err(ln, msg.at(at)); }
+        if (sz != null) { const p = parsePair(sz); if (p) { o.w = p[0]; o.h = p[1]; } else err(ln, msg.size(sz)); }
+        if (isNote) { o.text = text; if (tk.kv.color) o.color = tk.kv.color; } else {
+          o.label = text;
+          if (isTrust) { o.kind = 'trust'; const tv = (tk.kv.trust ?? tk.kv.confianza)?.trim(); if (tv) o.trust = tv; } else {
+            const sv = tk.kv.severity ?? tk.kv.severidad;
+            if (sv != null) { const s = SEV_IN[foldK(sv)]; if (s) o.severity = s; else err(ln, msg.sev(sv)); }
+          }
+          if (tk.kv.desc != null) o.desc = tk.kv.desc;
+        }
+        const inN = resolveIn((tk.kv.in ?? tk.kv.dentro)?.trim(), ln);
+        if (inN) o.in = inN;
+        (isNote ? model.notes : model.zones).push(o);
+        return;
+      }
+      if ((m = line.match(THREAT_RE))) { thLines.push({ ln, from: m[2], to: m[4], nth: m[5] ? +m[5] : 1, k: m[6].toUpperCase(), rest: m[7].trim() }); return; }
+      if ((m = line.match(DISMISS_RE))) {
+        const id = m[2] != null ? unquote(m[2]) : m[3], tk = tokens(m[4], Object.keys(DISMISS_KEYS)), d = { reason: tk.quotes[0] ?? tk.words.join(' ') };
+        for (const [key, v] of Object.entries(tk.kv)) { if (DISMISS_KEYS[key] === 'by') { if (v.trim()) d.by = v.trim(); } else if (isDay(v)) d.date = v; else err(ln, msg.day(v)); }
+        model.dismissed[id] = d;
+        return;
+      }
       if ((m = line.match(/^(grupo|group)\s+([^\s:{]+)\s*:?\s*(.*?)\s*\{\s*$/i))) {
         const id = m[2];
         if (!ID.test(id)) return err(ln, msg.groupId(id));
@@ -300,13 +383,13 @@
         const gl = tk.kv.layer ?? tk.kv.capa;
         if (gl != null) { const l = checkLayer(gl, ln); if (l) g.layer = l; }
         applyCtl(g, tk.kv, ln);
-        if (stack.length) g.parent = stack[stack.length - 1];
-        const gin = (tk.kv.in ?? tk.kv.dentro)?.trim() || (g.parent && gobj.get(g.parent)?.in);
-        if (gin) { g.in = gin; if (tk.kv.in != null || tk.kv.dentro != null) inRefs.push({ ln, id: gin }); }
+        if (curGroup()) g.parent = curGroup();
+        const gin = resolveIn((tk.kv.in ?? tk.kv.dentro)?.trim(), ln);
+        if (gin) g.in = gin;
         gobj.set(id, g);
         groups.add(id);
         model.groups.push(g);
-        stack.push(id);
+        stack.push({ kind: 'group', id });
         return;
       }
 
@@ -388,16 +471,25 @@
         { const rv = tk.kv.replicas ?? tk.kv.réplicas; if (rv != null && rv.trim()) n.replicas = rv.trim(); }
         const c4v = tk.kv.c4;
         if (c4v != null) { const k = C4_IN[c4v.trim().toLowerCase()]; if (k) n.c4 = k; else err(ln, msg.c4(c4v)); }
-        const inV = (tk.kv.in ?? tk.kv.dentro)?.trim();
-        if (inV) { n.in = inV; inRefs.push({ ln, id: inV }); }
-        if (stack.length) { n.group = stack[stack.length - 1]; if (!n.in && gobj.get(n.group)?.in) n.in = gobj.get(n.group).in; }
+        const inN = resolveIn((tk.kv.in ?? tk.kv.dentro)?.trim(), ln);
+        if (inN) n.in = inN; else delete n.in;
+        if (curGroup()) n.group = curGroup();
         return;
       }
 
       err(ln, msg.line);
     });
-    if (stack.length) err(String(src).split(/\r?\n/).length, msg.open(stack.length));
+    if (stack.length) err(String(src).split(/\r?\n/).length, msg.open(stack.length, stack.some(f => f.kind === 'level')));
     inRefs.forEach(r => { if (!nodes.has(r.id)) err(r.ln, msg.inRef(r.id)); });
+    nests.forEach(r => { if (nodes.has(r.id) && nodes.get(r.id).in !== r.outer) err(r.ln, msg.lvNest(r.id, r.outer)); });
+    // Notas de decisiones STRIDE: la conexión se busca por origen -> destino (la n-ésima si hay varias); la amenaza ya debe tener estado
+    thLines.forEach(t => {
+      const es = model.edges.filter(e => e.from === t.from && e.to === t.to), e = es[t.nth - 1];
+      if (!e) return err(t.ln, msg.thEdge(t.from, t.to));
+      if (!e.threats?.[t.k]) return err(t.ln, msg.thNone(t.from, t.to, t.k));
+      const tk = tokens(t.rest, []), note = tk.quotes[0] ?? tk.words.join(' ').replace(/\\n/g, '\n');
+      if (note) e.threats[t.k].note = note;
+    });
     return { model, errors };
   }
 
@@ -412,6 +504,8 @@
     if (m.meta?.view) out.push(`${w.view}: ${m.meta.view}`);
     out.push('');
     const ctlText = o => `${CTL_KEY[lang] || CTL_KEY.en}=${bare(Object.entries(o.controls).map(([k, v]) => `${k}=${(CTL_OUT[lang] || CTL_OUT.en)[v] || v}`).join(','))}`;
+    // Lo que vive en un nivel C4 se escribe dentro de un bloque `inside`, sin `in=`; `inBlock` evita repetirlo
+    let inBlock = false;
     const nodeLine = n => {
       // Un nombre que el lector confundiría (comillas, corchetes, llaves, clave=valor, saltos de línea) va como name="…"
       const plain = !/["[\]{}\n]|(^|\s)[A-Za-zÀ-ÿñÑ0-9]+=/.test(n.label) && n.label.trim() === n.label && n.label !== '';
@@ -433,19 +527,40 @@
       if (n.replicas != null) p.push(`${lang === 'es' ? 'réplicas' : 'replicas'}=${n.replicas}`);
       if (n.controls) p.push(ctlText(n));
       if (n.c4) p.push(`c4=${(C4_OUT[lang] || C4_OUT.en)[n.c4] || n.c4}`);
-      if (n.in) p.push(`${w.in}=${bare(n.in)}`);
+      if (n.in && !inBlock) p.push(`${w.in}=${bare(n.in)}`);
       if (n.desc) p.push(`desc=${quote(n.desc)}`);
       return p.join(' ');
     };
     const groupIds = new Set(m.groups.map(g => g.id));
+    const nodeIds = new Set(m.nodes.map(n => n.id)), notes = m.notes || [], zones = m.zones || [];
+    const scopeOf = x => (x.in && nodeIds.has(x.in) ? x.in : null); // nivel C4 donde vive (null = superior)
     const writeGroup = (g, ind) => {
-      out.push(`${ind}${w.group} ${g.id} ${quote(g.label)}${g.icon ? ` icon=${bare(g.icon)}` : ''}${g.color ? ` color=${bare(g.color)}` : ''}${g.kind ? ` ${w.kind}=${w[g.kind]}` : ''}${GOV_WORDS.filter(k => g[k]).map(k => ` ${w[k]}=${bare(g[k])}`).join('')}${g.region ? ` ${w.region}=${bare(g.region)}` : ''}${g.layer ? ` ${w.layer}=${w.layerOf[g.layer] || g.layer}` : ''}${g.controls ? ` ${ctlText(g)}` : ''}${g.in ? ` ${w.in}=${bare(g.in)}` : ''} {`);
+      out.push(`${ind}${w.group} ${g.id} ${quote(g.label)}${g.icon ? ` icon=${bare(g.icon)}` : ''}${g.color ? ` color=${bare(g.color)}` : ''}${g.kind ? ` ${w.kind}=${w[g.kind]}` : ''}${GOV_WORDS.filter(k => g[k]).map(k => ` ${w[k]}=${bare(g[k])}`).join('')}${g.region ? ` ${w.region}=${bare(g.region)}` : ''}${g.layer ? ` ${w.layer}=${w.layerOf[g.layer] || g.layer}` : ''}${g.controls ? ` ${ctlText(g)}` : ''}${g.in && !inBlock ? ` ${w.in}=${bare(g.in)}` : ''} {`);
       m.nodes.filter(n => n.group === g.id).forEach(n => out.push(`${ind}  ${nodeLine(n)}`));
       m.groups.filter(c => c.parent === g.id).forEach(c => writeGroup(c, ind + '  '));
       out.push(`${ind}}`);
     };
-    m.groups.filter(g => !g.parent || !groupIds.has(g.parent)).forEach(g => writeGroup(g, ''));
-    m.nodes.filter(n => !n.group || !groupIds.has(n.group)).forEach(n => out.push(nodeLine(n)));
+    const boxText = o => `${w.at}=${rnd(o.x)},${rnd(o.y)} ${w.size}=${rnd(o.w)},${rnd(o.h)}`;
+    const noteLine = (o, ind) => `${ind}${w.note} ${o.id}: ${quote(o.text ?? '')} ${boxText(o)}${o.color ? ` color=${bare(o.color)}` : ''}${o.in && !inBlock ? ` ${w.in}=${bare(o.in)}` : ''}`;
+    const zoneLine = (o, ind) => `${ind}${o.kind === 'trust' ? `${w.trust} ${o.id}: ${quote(o.label ?? '')}${o.trust ? ` ${w.trust}=${bare(o.trust)}` : ''}` : `${w.zone} ${o.id}: ${quote(o.label ?? '')} ${w.severity}=${w.sevOf[o.severity] || o.severity || w.sevOf.medium}`} ${boxText(o)}${o.desc ? ` desc=${quote(o.desc)}` : ''}${o.in && !inBlock ? ` ${w.in}=${bare(o.in)}` : ''}`;
+    // Contenido de un nivel (null = superior): grupos, nodos y, dentro de un bloque, notas y zonas; luego un bloque `inside` por cada nodo que tenga diagrama interno
+    const seenScope = new Set();
+    const writeScope = (sc, ind) => {
+      if (seenScope.has(sc)) return;
+      seenScope.add(sc);
+      const here = x => scopeOf(x) === sc;
+      m.groups.filter(g => here(g) && (!g.parent || !groupIds.has(g.parent))).forEach(g => writeGroup(g, ind));
+      m.nodes.filter(n => here(n) && (!n.group || !groupIds.has(n.group))).forEach(n => out.push(ind + nodeLine(n)));
+      if (sc != null) { notes.filter(here).forEach(o => out.push(noteLine(o, ind))); zones.filter(here).forEach(o => out.push(zoneLine(o, ind))); }
+      m.nodes.filter(n => here(n) && [...m.nodes, ...m.groups, ...notes, ...zones].some(x => scopeOf(x) === n.id)).forEach(n => {
+        out.push(`${ind}${w.inside} ${n.id} {`);
+        const was = inBlock; inBlock = true;
+        writeScope(n.id, ind + '  ');
+        inBlock = was;
+        out.push(`${ind}}`);
+      });
+    };
+    writeScope(null, '');
     if (m.edges.length) out.push('');
     m.edges.forEach(e => {
       const arrow = ARROW_OF[e.style] || '->';
@@ -464,6 +579,17 @@
       if (r.status === 'resolved') p.push(`${w.status}=${w.resolved}`, ...(r.closed ? [`${w.closed}=${r.closed}`] : []));
       out.push(p.join(' '));
     });
+    const tops = [...notes.filter(o => scopeOf(o) == null).map(o => noteLine(o, '')), ...zones.filter(o => scopeOf(o) == null).map(o => zoneLine(o, ''))];
+    if (tops.length) out.push('', ...tops);
+    // Notas de decisiones STRIDE: una línea por amenaza decidida con nota; `#n` solo si varias conexiones comparten origen y destino
+    const tl = [];
+    m.edges.forEach(e => {
+      const same = m.edges.filter(x => x.from === e.from && x.to === e.to);
+      Object.entries(e.threats || {}).forEach(([k, d]) => { if (d.note) tl.push(`${w.threat} ${e.from} -> ${e.to}${same.length > 1 ? ` #${same.indexOf(e) + 1}` : ''} ${k}: ${quote(d.note)}`); });
+    });
+    if (tl.length) out.push('', ...tl);
+    const dis = Object.entries(m.dismissed || {});
+    if (dis.length) out.push('', ...dis.map(([id, d]) => `${w.dismiss} ${/[\s"]/.test(id) || id.endsWith(':') || !id ? quote(id) : id}: ${quote(d.reason || '')}${d.by ? ` ${w.by}=${bare(d.by)}` : ''}${d.date ? ` ${w.date}=${d.date}` : ''}`));
     return out.join('\n') + '\n';
   }
 

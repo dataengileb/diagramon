@@ -502,9 +502,15 @@ api ~> queue : events
 | `a -> b : SQL datasets=orders,customers` | Datasets carried by a connection (Spanish: `tablas=`); quote names with spaces: `datasets="sales orders,crm.customers"` |
 | `region=eu-west-1` | Region of a node or a group (aliases `country=`, `país=`, `región=`); nodes inherit it from their group |
 | `a -> b : x data=pii transfer=ok` | Cross-border transfer approved (`transferencia=ok` in Spanish) |
-| `a -> b : SQL threats="T=mitigated,I=accepted"` | STRIDE decisions of a connection (Spanish: `amenazas=`); letters `S T R I D E`, statuses `mitigated`, `accepted`, `na` (Spanish `mitigada`, `aceptada`, `na`). Notes and trust boundaries are not part of the text |
+| `a -> b : SQL threats="T=mitigated,I=accepted"` | STRIDE decisions of a connection (Spanish: `amenazas=`); letters `S T R I D E`, statuses `mitigated`, `accepted`, `na` (Spanish `mitigada`, `aceptada`, `na`) |
+| `threat api -> db T: "TLS 1.3 everywhere"` | Note on a decided STRIDE threat (Spanish: `amenaza`); the connection is found by `from -> to` (any arrow); if several connections share them, `#2` picks the second: `threat api -> db #2 T: "…"`. The threat must already have a status (`threats=…`), otherwise it is an error |
+| `note n1: "Text\nmore" at=120,40 size=180,110 color=limon` | Sticky note (Spanish: `nota n1: "…" en=120,40 tamaño=180,110`); `\n` is a line break; position and size are optional (without `at=` it is placed to the right of its level) |
+| `zone z1: "PCI scope" severity=high at=… size=… desc="…"` | Risk zone (Spanish: `zona`, `severidad=alta`; severities `low`, `medium`, `high`, `critical` · `baja`, `media`, `alta`, `crítica`) |
+| `trust t1: "DMZ" trust=internet at=… size=… desc="…"` | Trust boundary (Spanish: `confianza t1: "DMZ" confianza=internet …`) |
+| `dismiss sec:public-db:db: "Accepted risk" by="Ana" date=2026-10-01` | Dismissed finding (Spanish: `descartar … por=… fecha=…`). The id may contain `:` (the separator is the first `:` followed by a space) or be quoted: `dismiss "sec:x:y": "reason"` |
 | `group id "Name" color=… { … }` | Group; groups can be nested |
 | `in=shop` (Spanish: `dentro=shop`) · `c4=container` | C4 levels: the node or group lives in the internal diagram of `shop`; C4 type `person`, `system`, `container`, `component` or `external` (Spanish: `persona`, `sistema`, `contenedor`, `componente`, `externo`). Nodes inside the braces of a group with `in=` inherit its level |
+| `inside shop { … }` | C4 level block (Spanish: `dentro tienda { … }`): everything declared inside (nodes, groups, notes, zones) lives in the internal diagram of `shop`, without writing `in=` on each. Blocks nest (`inside api { … }` inside `inside shop { … }` requires `api` to be a node of `shop`); groups work inside a block, but a block cannot be opened inside a group. `in=` still works |
 | `layer=gold` (`bronze`, `silver`, `gold`; also `raw`, `curated`, `serving`) | Data lake layer of a node or group (Spanish: `capa=oro`); nodes inherit it from their group |
 | `layers: zones` | Show Raw / Curated / Serving instead of Bronze / Silver / Gold (Spanish: `capas: zonas`) |
 | `exposure=public` (`internal`) · `backup=yes` (`no`) | Override the deduced exposure and backup of a node (Spanish: `exposición=pública` / `interna`, `respaldo=sí` / `no`) |
@@ -517,6 +523,7 @@ api ~> queue : events
 | `# …` or `// …` | Comment |
 
 Keywords work in English and Spanish (`title`/`título`, `group`/`grupo`, `cost`/`costo`, `/month`/`/mes`…).
+The text is the source of truth for notes, zones, trust boundaries, STRIDE notes and dismissed findings: deleting them from the text deletes them from the diagram. Versions and architecture decisions (ADR) are kept.
 A node that only appears in a connection is created for you. Errors are shown in red with their line number.
 The text does not store positions: existing nodes stay where they are, and new nodes are placed next to their neighbors.
 
@@ -643,14 +650,13 @@ Things that work but have not been checked in depth yet. They probably need some
 - **Data governance** fields (datasets, owners, regions, layers) are not exported to Mermaid, PlantUML or draw.io. IaC import sets the region only for AWS (not yet from Azure `location` or Google Cloud regions).
 - Region detection from a group's name covers the usual AWS, Azure and Google Cloud codes; other names need the **Region** field.
 - **Very small components** carrying every pill at once (layer, region, team, availability) have not been reviewed; with the default fixed node width they fit.
-- **Text tab**: notes on STRIDE decisions, trust boundaries and dismissed findings are not part of the text format, so a round trip through the *Text* tab keeps the statuses but loses the notes.
 - Security review, compliance and STRIDE fields (`exposure`, `backup`, `controls`, `threats`, trust zones, dismissed findings) are not exported to Mermaid, PlantUML or draw.io.
 - **Architecture decisions** (ADR) are not part of the text format and are not exported to Mermaid, PlantUML or draw.io.
 - The compliance catalog is a practical subset of each standard with paraphrased titles; check it before relying on it for an audit.
 - **Single points of failure** are detected from the diagram topology only (articulation points of the undirected graph): Diagramon does not know about the internal redundancy of a load balancer or a managed service unless you set `replicas`. Effective availability assumes independent instances (no shared failures, no failover time), and the composite availability multiplies the components of one shortest route, so it ignores alternative longer routes.
 - **Architecture report**: the PDF path was checked up to the browser print call (the full document, its 14 sections, images and tables load and `print()` is called), and tables fit an A4 page width; the print dialog itself and the final pagination depend on the browser. Page headers and numbers appear only where the browser supports CSS `@page` margin boxes. Markdown viewers that block `data:` images show nothing for the diagrams unless you save the images as separate files. Large diagrams with many views and internal levels can take several seconds. The Compliance matrix is listed per control and per component rather than as a grid.
 - **Cost scenarios** compare only the monthly-equivalent price of components (not edges or groups), and *Group* groups by the top-level group only. The breakdown is not exported to Mermaid, PlantUML or draw.io.
-- **C4 levels**: Mermaid, PlantUML and draw.io export the whole flat model (no levels; `in` and `c4` are ignored). Text tab: nodes without `in=` go to the top level, so edit a level from the Text tab by writing `in=` on its nodes. Ghost cards show at most 8 per side, and connections between two levels are only drawn as ghosts (reach them from the inspector links). Renaming a component with a double-click on its name uses the browser's prompt.
+- **C4 levels**: Mermaid, PlantUML and draw.io export the whole flat model (no levels; `in` and `c4` are ignored). Ghost cards show at most 8 per side, and connections between two levels are only drawn as ghosts (reach them from the inspector links). Renaming a component with a double-click on its name uses the browser's prompt.
 - **Inventory (Excel)**: the `.xlsx` file is written by a minimal built-in writer (a ZIP without compression), so it is larger than one saved by Excel. It has no formulas (totals are not calculated in the file), no shared strings and no charts. It was checked as a valid ZIP with well-formed XML parts, but not opened in Excel, Numbers or LibreOffice yet. Several CSV downloads in a row may trigger a "download multiple files" prompt in some browsers.
 
 ---
