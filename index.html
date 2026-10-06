@@ -786,6 +786,28 @@
   .gov-box .cost-hint { margin-top: 3px; font-size: 10.5px; }
   .docbar-leg .heat { width: 70px; height: 8px; border-radius: 4px; border-radius: 4px; }
   .docbar-leg li.sw i { width: 16px; height: 3px; border-radius: 2px; }
+  /* Capas del data lake (bronze / silver / gold). Colores por tema; config.js › dataLayers los usa con var(--layer-<clave>) y se pueden cambiar aquí */
+  :root, .diagramon-svg[data-theme] { --layer-bronze: #c27c3e; --layer-silver: #9aa7b4; --layer-gold: #d4a72c; }
+  :root[data-theme="light"], .diagramon-svg[data-theme="light"] { --layer-bronze: #a35f25; --layer-silver: #6b7a89; --layer-gold: #a17800; }
+  :root[data-theme="black"], .diagramon-svg[data-theme="black"] { --layer-bronze: #e0904c; --layer-silver: #bcc7d2; --layer-gold: #f2c53d; }
+  .layer-band { fill: var(--lc); pointer-events: none; }
+  .layer-pill { pointer-events: none; }
+  .layer-pill rect { fill: var(--surface); stroke: var(--lc); stroke-width: 1.2; }
+  .layer-pill text { fill: var(--lc); font-size: 9.5px; font-weight: 800; letter-spacing: .04em; }
+  .group-tag .layer-pill rect, .group-tag:hover .layer-pill rect { fill: var(--surface); fill-opacity: 1; }
+  .group-tag .layer-pill text { fill: var(--lc); font-size: 9.5px; letter-spacing: .04em; }
+  .group.has-layer .group-box { stroke: var(--lc); stroke-opacity: .9; stroke-width: 2.4; }
+  .vw-no-layers .node-layer { display: none; }
+  .docbar-leg li.layer-row { cursor: pointer; }
+  .docbar-leg li.layer-row:hover { color: var(--text); }
+  .docbar-leg li.layer-row i { width: 4px; height: 12px; border-radius: 2px; }
+  .docbar-leg li.layer-row b { margin-left: auto; color: var(--muted); font-weight: 650; font-variant-numeric: tabular-nums; }
+  .layer-seg button { padding: 5px 1px; font-size: 11px; line-height: 1.2; }
+  .layer-seg button[data-layer].on:not([data-layer=""]) { color: var(--lc); }
+  .layer-names { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+  .layer-names > span { flex: none; font-size: 11px; color: var(--muted); }
+  .layer-names .seg { flex: 1; margin-top: 0; padding: 2px; }
+  .layer-names .seg button { padding: 3px 2px; font-size: 10px; }
   .flt-pill .icon-btn { width: 18px; height: 18px; margin-right: -4px; }
   .flt-pill .icon-btn svg { width: 12px; height: 12px; }
   .diagramon-svg .node.fdim, .diagramon-svg .edge.fdim, .diagramon-svg .group.fdim { opacity: .12; }

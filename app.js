@@ -44,7 +44,7 @@
   const fontKey = k => FONTS[k] ? k : FONTS[C.fonts.default] ? C.fonts.default : 'system';
 
   /* ---------- vistas: filtros de presentación del mismo modelo (reglas en config.js › views) ---------- */
-  const VIEW_DEFAULTS = { groups: 'all', nodeDetail: 'full', edgeLabels: true, dataTags: true, locks: true, cost: true, zones: true, notes: true, review: true, emphasis: null, legendGroups: false };
+  const VIEW_DEFAULTS = { groups: 'all', nodeDetail: 'full', edgeLabels: true, dataTags: true, locks: true, cost: true, zones: true, notes: true, review: true, emphasis: null, legendGroups: false, layers: true };
   const VIEWS = {};
   for (const [k, v] of Object.entries(C.views || {})) if (v && typeof v === 'object') VIEWS[k] = { ...VIEW_DEFAULTS, ...v };
   if (!VIEWS.full) VIEWS.full = { label: { en: 'Full', es: 'Completa' }, ...VIEW_DEFAULTS };
@@ -201,6 +201,51 @@
   const classShorts = cs => cs.map(k => loc(DATA[k]?.short) || k.toUpperCase());
   // «⚠ PII leaves the EU → US»
   const xbWarn = cb => T('res.warn', { cls: classShorts(cb.classes).join(', '), n: cb.classes.length, from: cb.from.jur.of, to: cb.to.jur.label, same: cb.from.jur.key === cb.to.jur.key, fromR: cb.from.region, toR: cb.to.region });
+  /* ---------- capas del data lake (bronze / silver / gold · raw / curated / serving) ---------- */
+  const DL = C.dataLayers || {}, DL_ALIAS = C.layerAliases || {};
+  // Clave válida (acepta alias: raw, plata, oro…) o null
+  const cleanLayer = v => { const k = fold(v).trim(); return DL[k] ? k : DL[DL_ALIAS[k]] ? DL_ALIAS[k] : null; };
+  const layerNaming = () => (S.model?.layerNames === 'zones' ? 'zones' : 'medallion');
+  // Datos de una capa con el nombre elegido por el documento (layerNames): medallion = label, zones = alt
+  const layerInfo = (k, naming = layerNaming()) => {
+    const d = DL[k], z = naming === 'zones';
+    return d ? { k, label: loc(z && d.alt ? d.alt : d.label) || k, short: (z && d.altShort) || d.short || k[0].toUpperCase(), color: colorVar(d.color) || 'var(--muted)' } : null;
+  };
+  // Capa efectiva de un nodo o grupo: la propia o la del grupo más cercano que la tenga. from = id de quien la define
+  function layerOf(x) {
+    if (x && DL[x.layer]) return { value: x.layer, from: x.id };
+    let gid = x && (x.group || x.parent), i = 0;
+    while (gid && i++ < 50) {
+      const o = groupById(gid);
+      if (!o) break;
+      if (DL[o.layer]) return { value: o.layer, from: o.id };
+      gid = o.parent;
+    }
+    return { value: null, from: null };
+  }
+  // Etiqueta con el nombre de una capa (borde de color, texto en mayúsculas); devuelve su ancho
+  function layerPill(parent, x, y, li, h) {
+    const txt = li.label.toUpperCase(), w = Math.ceil(textW(txt, FONT.dtag) + txt.length * 0.4) + 12;
+    const g = el('g', { class: 'layer-pill', style: `--lc:${li.color}` }, parent);
+    el('rect', { x, y, width: w, height: h, rx: h / 2 }, g);
+    el('text', { x: x + w / 2, y: y + h / 2 + 3.4, 'text-anchor': 'middle' }, g).textContent = txt;
+    return w;
+  }
+  const layerPillW = li => Math.ceil(textW(li.label.toUpperCase(), FONT.dtag) + li.label.length * 0.4) + 12;
+  // Franja de color pegada al borde izquierdo de la tarjeta, con la misma curva de las esquinas, y la etiqueta abajo a la izquierda
+  function drawNodeLayer(parent, li) {
+    const r = C.node.radius, bw = 5, dy = r - Math.sqrt(Math.max(0, r * r - (r - bw) * (r - bw)));
+    const g = el('g', { class: 'node-layer', style: `--lc:${li.color}` }, parent);
+    el('path', { class: 'layer-band', d: `M${bw},${dy} A${r},${r} 0 0 0 0,${r} V${H - r} A${r},${r} 0 0 0 ${bw},${H - dy} Z` }, g);
+    layerPill(g, 14, H - 8, li, 16);
+  }
+  // Capas en uso entre los nodos y grupos que se ven: Map clave → ids de nodos (en el orden de config.js)
+  function layerUsage(nodes = visNodes(), groups = S.model.groups.filter(g => !VW.hideGroups.has(g.id))) {
+    const use = new Map(Object.keys(DL).map(k => [k, []]));
+    nodes.forEach(n => { const l = layerOf(n).value; if (l) use.get(l).push(n.id); });
+    const used = new Set(groups.map(g => g.layer).filter(k => DL[k]));
+    return [...use].filter(([k, ids]) => ids.length || used.has(k));
+  }
 
   /* ---------- observaciones de revisión (se levantan a mano en el inspector) ---------- */
   // review: { status: 'open' | 'resolved', note, by, raised, due, closed } con fechas AAAA-MM-DD
@@ -313,6 +358,7 @@
     const m = { title: String(raw.title || T('model.untitled')), groups: [], nodes: [], edges: [] };
     if (raw.direction === 'LR' || raw.direction === 'TB') m.direction = raw.direction;
     if (raw.routing === 'elbow') m.routing = 'elbow';
+    if (raw.layerNames === 'zones') m.layerNames = 'zones';
     if (raw.meta && typeof raw.meta === 'object') {
       const meta = {};
       ['author', 'version'].forEach(k => { if (raw.meta[k] != null && String(raw.meta[k]).trim()) meta[k] = String(raw.meta[k]).trim(); });
@@ -351,6 +397,7 @@
       }
     });
 
+    m.groups.forEach(g => { const l = cleanLayer(g.layer); if (l) g.layer = l; else delete g.layer; });
     list(raw.nodes).forEach((n, i) => {
       const type = C.types[n.type] ? n.type : 'generic';
       const o = { ...n, id: take(n.id, 'n', i), type, label: String(n.label ?? typeLabel(type)) };
@@ -361,6 +408,7 @@
       if (cleanData(o.data).length) o.data = cleanData(o.data); else delete o.data;
       if (cleanReview(o.review)) o.review = cleanReview(o.review); else delete o.review;
       if (cleanRegion(o.region)) o.region = cleanRegion(o.region); else delete o.region;
+      { const l = cleanLayer(o.layer); if (l) o.layer = l; else delete o.layer; }
       m.nodes.push(o);
     });
     [...m.groups, ...m.nodes].forEach(cleanGov);
@@ -750,11 +798,25 @@
     const label = total ? `${g.label} · ${money(round2(total))}${T('cost.mo')}` : g.label;
     // El CSS añade .04em de espaciado entre letras
     r.tw = Math.ceil(textW(label, FONT.tag) + String(label).length * 0.44 + 22 + ix);
+    // Capa propia del grupo: borde de color y etiqueta junto al nombre (solo si la vista muestra capas)
+    const li = DL[g.layer] && vc().layers ? layerInfo(g.layer) : null, tx = r.tw - 6;
+    r.g.classList.toggle('has-layer', !!li);
+    if (li) { r.g.style.setProperty('--lc', li.color); r.tw += layerPillW(li) + 2; } else r.g.style.removeProperty('--lc');
     el('rect', { width: r.tw, height: 22, rx: 7 }, r.tag);
     if (info) el('image', { href: info.src, x: 6, y: 3, width: 16, height: 16 }, r.tag);
     el('text', { x: 10 + ix, y: 15 }, r.tag).textContent = label;
+    if (li) layerPill(r.tag, tx, 3, li, 16);
   }
 
+  // Nombres de las capas para todo el documento: 'medallion' (Bronce/Plata/Oro) o 'zones' (Crudo/Curado/Consumo)
+  function setLayerNames(v) {
+    v = v === 'zones' ? 'zones' : 'medallion';
+    if (v === layerNaming()) return;
+    pushHistory();
+    if (v === 'zones') S.model.layerNames = 'zones'; else delete S.model.layerNames;
+    changed(true);
+    renderInspector();
+  }
   /* ---------- notas adhesivas y zonas de riesgo ---------- */
   const sevLabel = k => T(`sev.${k}`);
   const itemSel = () => (S.sel?.kind === 'note' || S.sel?.kind === 'zone' ? S.sel : null);
@@ -936,7 +998,8 @@
     // Arriba a la izquierda: la observación de revisión (si hay) y las clasificaciones de datos
     const dt = [...(n.review ? [{ ...reviewTag(n.review), cls: 'dt-review' }] : []), ...dataTags(n).map(t => ({ ...t, cls: 'dt-data' }))];
     const rg = regionOf(n).value;
-    el('title', null, g).textContent = [n.sub ? `${n.label} · ${n.sub}` : n.label, ...dt.map(t => t.label), govTip(n), rg ? T('res.tip', regionLabel(rg)) : ''].filter(Boolean).join('\n');
+    const ly = layerOf(n), li = ly.value ? layerInfo(ly.value) : null;
+    el('title', null, g).textContent = [n.sub ? `${n.label} · ${n.sub}` : n.label, ...dt.map(t => t.label), govTip(n), li ? T('layer.tip', { l: li.label }) : '', rg ? T('res.tip', regionLabel(rg)) : ''].filter(Boolean).join('\n');
     if (dt.length) {
       const dg = el('g', { class: 'node-data' }, b);
       let x = 14;
@@ -968,6 +1031,7 @@
       el('rect', { width: ow, height: 20, rx: 10 }, og);
       el('text', { x: ow / 2, y: 14, 'text-anchor': 'middle' }, og).textContent = ot;
     }
+    if (li) drawNodeLayer(b, li);
     R.nodes.set(n.id, g);
   }
 
@@ -1436,6 +1500,7 @@
     [...svg.classList].filter(c => c.startsWith('vw-')).forEach(c => svg.classList.remove(c));
     svg.classList.add(...[`vw-${key}`, collapse && 'vw-collapse', v.nodeDetail === 'min' && 'vw-min', !v.dataTags && 'vw-no-dtags', !v.cost && 'vw-no-cost',
       !v.zones && 'vw-no-zones', !v.notes && 'vw-no-notes', !v.review && 'vw-no-review', emph && 'vw-emph'].filter(Boolean));
+    svg.classList.toggle('vw-no-layers', !v.layers);
     svg.dataset.view = key;
     const byId = new Map(m.nodes.map(n => [n.id, n]));
     const hideN = new Set(), hideE = new Set(), hideG = new Set(), top = new Set();
@@ -1453,7 +1518,7 @@
     } else if (emph === 'data') {
       const rank = k => Object.keys(DATA).indexOf(k);
       const isData = n => VR.dataTypes.includes(n.type) || VR.dataIconCategories.includes(iconInfo(n.icon)?.category);
-      m.nodes.forEach(n => nodeCls.set(n.id, isData(n) || n.data?.length ? 'v-hl' : 'v-dim'));
+      m.nodes.forEach(n => nodeCls.set(n.id, isData(n) || n.data?.length || layerOf(n).value ? 'v-hl' : 'v-dim'));
       m.edges.forEach(e => {
         if (e.style !== 'data' && !e.data?.length) return edgeCls.set(e.id, 'v-dim');
         // Color de la clasificación más sensible que lleva (la propia, o la de sus extremos)
@@ -1868,8 +1933,8 @@
   const save = debounce(() => { store.set('model', S.model); updateMeta(); renderVersions(); }, 250);
 
   const ORDER = {
-    group: ['id', 'label', 'icon', 'color', 'parent', 'kind', 'owner', 'steward', 'team', 'costCenter', 'region'],
-    node: ['id', 'label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'x', 'y', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter', 'region'],
+    group: ['id', 'label', 'icon', 'color', 'parent', 'kind', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer'],
+    node: ['id', 'label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'x', 'y', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer'],
     edge: ['id', 'from', 'to', 'label', 'style', 'route', 'both', 'color', 'data', 'encrypted', 'datasets', 'transferOk'],
     note: ['id', 'x', 'y', 'w', 'h', 'text', 'color'],
     zone: ['id', 'x', 'y', 'w', 'h', 'label', 'severity', 'desc']
@@ -1886,6 +1951,7 @@
     const head = [`  "title": ${JSON.stringify(m.title)}`];
     if (m.direction) head.push(`  "direction": ${JSON.stringify(m.direction)}`);
     if (m.routing) head.push(`  "routing": ${JSON.stringify(m.routing)}`);
+    if (m.layerNames === 'zones') head.push(`  "layerNames": "zones"`);
     if (m.meta) head.push(`  "meta": ${JSON.stringify(m.meta)}`);
     const body = [...head, arr('groups', m.groups, ORDER.group), arr('nodes', m.nodes, ORDER.node), arr('edges', m.edges, ORDER.edge)];
     if (m.notes?.length) body.push(arr('notes', m.notes, ORDER.note));
@@ -2011,8 +2077,9 @@
     const dsRows = open ? datasetList().map(d => `<li><button class="ds-row" data-lin="${esc(d.name)}" title="${esc(T('lin.show', { name: d.name }))}"><span>${esc(d.name)}</span><small>${d.edges}</small></button></li>`) : [];
     // Equipos del diagrama (fuera de la vista Gobierno, que ya los muestra): al pulsar uno se filtra por él
     const teams = open && vc().emphasis !== 'owner' ? [...govTeams().values()] : [];
+    const lay = open && vc().layers ? layerUsage() : [];
     const det = (k, head, rows) => `<details class="docbar-leg" data-k="${k}"${store.get(k, false) ? ' open' : ''}><summary>${esc(head)} · ${rows.length}</summary><ul>${rows.join('')}</ul></details>`;
-    $('#docbar-body').innerHTML = open ? `<dl>${d.info.map(([k, x]) => `<dt>${esc(k)}</dt><dd>${esc(x)}</dd>`).join('')}</dl>${types.length ? det('docbarLeg', T('leg.components'), types.map(r => `<li style="--c:${esc(r.color)}"><i></i>${esc(r.label)}</li>`)) : ''}${vrows.length ? det('docbarLegV', `${T('leg.view')}: ${viewLabel(S.viewKey)}`, vrows) : ''}${teams.length ? det('docbarLegT', T('leg.teams'), teams.map(t => `<li data-gov="${esc(t.kind)}" data-k="${esc(t.key)}" style="--c:${esc(t.color)}" title="${esc(T('flt.pill'))}"><i></i>${esc([t.key, t.owners.join(', ')].filter(Boolean).join(' · '))} <small>(${t.ids.length})</small></li>`)) : ''}${dsRows.length ? det('docbarLegD', T('lin.leg'), dsRows) : ''}` : '';
+    $('#docbar-body').innerHTML = open ? `<dl>${d.info.map(([k, x]) => `<dt>${esc(k)}</dt><dd>${esc(x)}</dd>`).join('')}</dl>${types.length ? det('docbarLeg', T('leg.components'), types.map(r => `<li style="--c:${esc(r.color)}"><i></i>${esc(r.label)}</li>`)) : ''}${lay.length ? det('docbarLegL', T('leg.layersN'), lay.map(([k, ids]) => { const li = layerInfo(k); return `<li class="layer-row" data-layer="${esc(k)}" style="--c:${esc(li.color)}" title="${esc(T('layer.filter'))}"><i></i>${esc(li.label)}<b>${ids.length}</b></li>`; })) : ''}${vrows.length ? det('docbarLegV', `${T('leg.view')}: ${viewLabel(S.viewKey)}`, vrows) : ''}${teams.length ? det('docbarLegT', T('leg.teams'), teams.map(t => `<li data-gov="${esc(t.kind)}" data-k="${esc(t.key)}" style="--c:${esc(t.color)}" title="${esc(T('flt.pill'))}"><i></i>${esc([t.key, t.owners.join(', ')].filter(Boolean).join(' · '))} <small>(${t.ids.length})</small></li>`)) : ''}${dsRows.length ? det('docbarLegD', T('lin.leg'), dsRows) : ''}` : '';
   }
   // Clic en un equipo de la leyenda: filtra por él (otro clic lo quita)
   $('#docbar-body').addEventListener('click', ev => {
@@ -2024,18 +2091,31 @@
   function toggleDocbar() { store.set('docbar', !store.get('docbar', true)); renderDocbar(); }
   $('#docbar-toggle').addEventListener('click', toggleDocbar);
   $('#docbar-body').addEventListener('click', ev => { const b = ev.target.closest('button[data-lin]'); if (b) showLineage(b.dataset.lin); });
+  // Clic en una capa de la leyenda: filtra por ella (otro clic igual lo quita)
+  $('#docbar-body').addEventListener('click', ev => {
+    const li = ev.target.closest('li[data-layer]');
+    if (!li) return;
+    const k = li.dataset.layer, cur = S.filter.layer || [];
+    setFilter({ ...S.filter, layer: cur.length === 1 && cur[0] === k ? [] : [k] });
+  });
   $('#docbar-body').addEventListener('toggle', ev => { if (ev.target.matches('details')) store.set(ev.target.dataset.k || 'docbarLeg', ev.target.open); }, true);
 
   /* ---------- filtros ("lentes"): atenúan lo que no coincide ---------- */
   // Filtro: { data: [clase | '@insecure'], review: ['open','overdue'], provider, category, group, cost: ['cost'] }
   // Dentro de una sección las fichas suman (O); entre secciones se combinan (Y)
-  const FLT_SECTIONS = ['data', 'review', 'provider', 'category', 'group', 'cost', 'team', 'owner', 'steward', 'costCenter', 'region'];
+  const FLT_SECTIONS = ['data', 'review', 'provider', 'category', 'group', 'cost', 'team', 'owner', 'steward', 'costCenter', 'region', 'layer'];
   const providerOf = n => { const p = String(n.icon || '').split('/')[0]; return n.icon && ICONS[p] ? p : 'generic'; };
   const topGroups = m => m.groups.filter(g => !g.parent || !m.groups.some(x => x.id === g.parent));
   // Sección «región»: una ficha por jurisdicción usada (según la región efectiva) y «sin región» si falta en algún nodo
   function regionOptions(m) {
     const keys = new Set(m.nodes.map(n => jurOf(regionOf(n, m).value)?.key || '@none'));
     return [...Object.keys(JURS).filter(k => keys.has(k)).map(k => ({ k, label: JURS[k].short || k.toUpperCase() })), ...(keys.has('@none') ? [{ k: '@none', label: T('flt.regionNone') }] : [])];
+  }
+  // Fichas de capa: las que usa el diagrama (con el nombre del documento) y «Sin capa» si algún nodo no tiene
+  function layerOptions(m) {
+    const eff = m.nodes.map(n => layerOf(n).value), used = new Set([...eff, ...m.groups.map(g => g.layer)]);
+    const opts = Object.keys(DL).filter(k => used.has(k)).map(k => ({ k, label: layerInfo(k).label }));
+    return opts.length && eff.some(l => !l) ? [...opts, { k: '@none', label: T('flt.noLayer') }] : opts;
   }
   // Fichas disponibles en el diagrama actual: { sección: [{ k, label }] }
   function filterOptions(m = S.model) {
@@ -2050,7 +2130,8 @@
       group: topGroups(m).map(g => ({ k: g.id, label: g.label })),
       cost: [{ k: 'cost', label: T('flt.cost') }],
       ...Object.fromEntries(GOV_FIELDS.map(f => [f, govFilterOpts(m, f)])),
-      region: regionOptions(m)
+      region: regionOptions(m),
+      layer: layerOptions(m)
     };
   }
   // Fichas de dueño / equipo…: valores efectivos (heredados) usados, y «Sin asignar» (solo dueño y equipo) si a algún nodo le falta
@@ -2083,6 +2164,7 @@
       if (s === 'group') return v.some(g => inGroup(n, g));
       if (GOV_FIELDS.includes(s)) { const e = govOf(n, s).value; return v.some(k => (k === '@none' ? !e : k === e)); }
       if (s === 'region') return v.includes(jurOf(regionOf(n).value)?.key || '@none');
+      if (s === 'layer') { const l = layerOf(n).value; return v.some(k => (k === '@none' ? !l : k === l)); }
       return hasCost(n);
     });
   }
@@ -2656,7 +2738,7 @@
   const findVersion = id => S.model.versions.find(v => v.id === id);
   // Solo lo que se dibuja: sin versiones y con posiciones redondeadas
   const snapshotOf = m => {
-    const d = clone({ title: m.title, ...(m.direction ? { direction: m.direction } : {}), ...(m.routing ? { routing: m.routing } : {}), groups: m.groups, nodes: m.nodes, edges: m.edges, ...(m.notes?.length ? { notes: m.notes } : {}), ...(m.zones?.length ? { zones: m.zones } : {}) });
+    const d = clone({ title: m.title, ...(m.direction ? { direction: m.direction } : {}), ...(m.routing ? { routing: m.routing } : {}), ...(m.layerNames ? { layerNames: m.layerNames } : {}), groups: m.groups, nodes: m.nodes, edges: m.edges, ...(m.notes?.length ? { notes: m.notes } : {}), ...(m.zones?.length ? { zones: m.zones } : {}) });
     d.nodes.forEach(n => { n.x = Math.round(n.x); n.y = Math.round(n.y); });
     return d;
   };
@@ -2765,9 +2847,9 @@
 
   // Diferencias entre lo guardado (a) y el lienzo (b). La posición no cuenta como cambio.
   const DIFF_FIELDS = {
-    node: ['label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter', 'region'],
+    node: ['label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer'],
     edge: ['label', 'style', 'route', 'both', 'color', 'data', 'encrypted', 'datasets', 'transferOk'],
-    group: ['label', 'icon', 'color', 'parent', 'kind', 'owner', 'steward', 'team', 'costCenter', 'region']
+    group: ['label', 'icon', 'color', 'parent', 'kind', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer']
   };
   function diffModels(a, b) {
     const val = (f, x) => (f === 'style' ? x || 'sync' : x == null ? '' : typeof x === 'object' ? JSON.stringify(x) : String(x));
@@ -3273,6 +3355,22 @@
     const list = datasetsOfNode(n.id);
     return list.length ? `<div class="field">${T('lin.node')}<div class="ds-chips">${list.map(d => `<span class="ds-chip"><button class="ds-name" data-lin="${esc(d)}" title="${esc(T('lin.show', { name: d }))}">${esc(d)}</button></span>`).join('')}</div><span class="cost-hint">${T('lin.node.hint')}</span></div>` : '';
   };
+  // Capa del data lake (nodos y grupos, también varios a la vez): ninguna / una de config.js › dataLayers.
+  // «Ninguna» pasa a «Heredada (Oro)» cuando el grupo aporta una; abajo, el nombre que usa todo el documento
+  const layerField = items => {
+    const list = [].concat(items), keys = Object.keys(DL);
+    if (!keys.length) return '';
+    const own = new Set(list.map(x => (DL[x.layer] ? x.layer : ''))), cur = own.size === 1 ? [...own][0] : null;
+    const eff = list.length === 1 && !cur ? layerOf(list[0]) : null, inh = eff?.value ? layerInfo(eff.value) : null;
+    const hint = cur === null ? T('layer.mixed') : inh ? T('layer.inheritedFrom', { g: groupById(eff.from)?.label || '' }) : T('layer.hint');
+    const nm = layerNaming(), names = k => keys.map(j => layerInfo(j, k).label).join(' · ');
+    return `<div class="field">${T('layer.label')}<div class="seg layer-seg">
+      <button data-layer="" class="${cur === '' ? 'on' : ''}">${esc(inh ? T('layer.inheritedN', { n: inh.label }) : T('layer.none'))}</button>${keys.map(k => { const li = layerInfo(k);
+        return `<button data-layer="${esc(k)}" class="${cur === k ? 'on' : ''}" style="--lc:${esc(li.color)}">${esc(li.label)}</button>`; }).join('')}</div>
+      <span class="cost-hint">${esc(hint)}</span>
+      <div class="layer-names" title="${esc(T('layer.names.tip'))}"><span>${T('layer.names')}</span><div class="seg">${['medallion', 'zones'].map(k =>
+        `<button data-lnames="${k}" class="${nm === k ? 'on' : ''}" title="${esc(T('layer.names.tip'))}">${esc(names(k))}</button>`).join('')}</div></div></div>`;
+  };
   const encField = e => {
     const cur = e.encrypted === true ? 'yes' : e.encrypted === false ? 'no' : '';
     const byId = id => S.model.nodes.find(n => n.id === id);
@@ -3376,6 +3474,7 @@
         ${dataField(t)}
         ${govField(t, 'multi')}
         ${regionField(t)}
+        ${layerField(t)}
         ${priced.length ? `<p class="cost-sum">${T('insp.selCost')} <b>≈ ${money(round2(monthlyTotal(t)))}${T('cost.mo')}</b><span>${T('insp.withCost', { a: priced.length, b: t.length })}</span></p>` : ''}
         <p class="note">${T('insp.multiNote')}</p>
         <div class="insp-actions">
@@ -3402,6 +3501,7 @@
         ${dataField(t)}
         ${govField(t, 'node')}
         ${regionField(t)}
+        ${layerField(t)}
         ${reviewField(t)}
         <label>${T('insp.desc')}<textarea data-field="desc" rows="3" placeholder="${esc(T('insp.desc.ph'))}">${esc(t.desc || '')}</textarea></label>
         <div class="field">${T('insp.reach')}<div class="seg">${modes.map(([k, l]) => `<button data-reach="${k}" class="${S.reach === k ? 'on' : ''}">${l}</button>`).join('')}</div></div>
@@ -3465,6 +3565,7 @@
         ${allIcons().some(i => i.group) ? iconPicker(t, true) : ''}
         <label>${T('gkind.label')}<select data-field="kind"><option value=""${t.kind ? '' : ' selected'}>${esc(T('gkind.auto', { k: T(`gkind.${groupKindAuto(t)}`) }))}</option>${['logical', 'physical'].map(k => `<option value="${k}"${t.kind === k ? ' selected' : ''}>${T(`gkind.${k}`)}</option>`).join('')}</select></label>
         ${regionField(t)}
+        ${layerField(t)}
         <label>${T('insp.parent')}<select data-field="parent"><option value="">${T('insp.none')}</option>${m.groups.filter(g => !blocked.has(g.id)).map(g => `<option value="${esc(g.id)}"${g.id === t.parent ? ' selected' : ''}>${esc(g.label)}</option>`).join('')}</select></label>
         <div class="field">${T('insp.color')}${swatches(t.color)}</div>
         ${govField(t, 'group')}
@@ -3626,6 +3727,12 @@
       t.datasets = (t.datasets || []).filter(d => dsKey(d) !== dsKey(b.dataset.dsRm));
       if (!t.datasets.length) delete t.datasets;
       changed(true); renderInspector();
+    } else if (b.dataset.layer != null && t) {
+      pushHistory();
+      (Array.isArray(t) ? t : [t]).forEach(x => { if (b.dataset.layer && DL[b.dataset.layer]) x.layer = b.dataset.layer; else delete x.layer; });
+      changed(true); renderInspector();
+    } else if (b.dataset.lnames && t) {
+      setLayerNames(b.dataset.lnames);
     } else if (b.dataset.dir != null && t && !Array.isArray(t)) {
       pushHistory();
       if (b.dataset.dir) t.both = true; else delete t.both;
@@ -3789,6 +3896,7 @@
     types: Object.fromEntries(Object.entries(C.types).map(([k, t]) => [k.toLowerCase(), { ...t, label: loc(t.label) }])),
     providers: Object.keys(ICONS),
     dataClasses: Object.keys(DATA),
+    layers: Object.fromEntries([...Object.keys(DL), ...Object.keys(DL_ALIAS)].map(k => [fold(k), cleanLayer(k)]).filter(([, v]) => v)),
     views: VIEW_KEYS,
     lang: I.lang
   });
@@ -4125,6 +4233,14 @@
       const tw = dataTag(g, x, y - 8, t, 16);
       textRow(x + tw + 8, y, t.label);
     } })));
+    // Capas del data lake en uso, en el orden de config.js
+    if (v.layers) col(T('leg.layers'), layerUsage(vn).map(([k]) => {
+      const li = layerInfo(k);
+      return { w: 22 + textW(li.label, '400 12px'), draw: (x, y) => {
+        el('rect', { x, y: y - 7, width: 6, height: 14, rx: 2, style: `fill:${li.color}` }, g);
+        textRow(x + 16, y, li.label);
+      } };
+    }));
     // Zonas de riesgo, de la más grave a la más leve
     const zs = [...m.zones].sort((a, b) => SEVERITY.indexOf(b.severity) - SEVERITY.indexOf(a.severity)).slice(0, 8);
     if (v.zones) col(T('leg.zones'), zs.map(z => {
@@ -4785,6 +4901,8 @@
     setFilter, clearFilter, get filter() { return clone(S.filter); },
     crossBorder: () => { const byId = new Map(S.model.nodes.map(n => [n.id, n])); return S.model.edges.map(e => ({ e, cb: crossBorder(e, byId) })).filter(x => x.cb)
       .map(({ e, cb }) => ({ edge: clone(e), from: cb.from, to: cb.to, fromRegion: cb.from.region, toRegion: cb.to.region, fromJur: cb.from.jur.short, toJur: cb.to.jur.short, classes: [...cb.classes], approved: cb.approved })); },
+    layers: () => ({ naming: layerNaming(), layers: Object.keys(DL).map(k => ({ key: k, label: layerInfo(k).label, nodes: S.model.nodes.filter(n => layerOf(n).value === k).map(n => n.id) })) }),
+    setLayerNames,
     setView, get view() { return S.viewKey; }, get views() { return [...VIEW_KEYS]; },
     owners: () => govTeamList(),
     exportSVG, exportPNG, exportViews, exportJSON, shareEncrypted, exportOther, exportCtx, toggleRouting, importFiles, config: C, icons: ICONS

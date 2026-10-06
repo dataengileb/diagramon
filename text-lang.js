@@ -28,6 +28,8 @@
    Linaje:   conexión a -> b : SQL datasets=orders,customers   (es: tablas= o conjuntos=; con espacios: datasets="sales orders,crm.customers")
    Residencia: nodo o grupo … region=eu-west-1 (también región=, country=/país= como alias; hereda del grupo) ·
              conexión a -> b : SQL data=pii transfer=ok (transferencia=ok: transferencia entre jurisdicciones autorizada)
+   Capas:    nodo o grupo … layer=gold (capa=oro): bronze|silver|gold · bronce|plata|oro · raw|curated|serving · crudo|curado|consumo
+             (los nodos heredan la capa de su grupo) · línea `layers: zones` / `capas: zonas` muestra Raw/Curated/Serving en vez de Bronze/Silver/Gold
    Comentario: líneas que empiezan por # o //
 
    Acepta las palabras clave en inglés y en español (title/título, group/grupo,
@@ -42,7 +44,7 @@
   const ARROW_SPLIT = /\s*(\.\.>|~>|=>|->)\s*/;
   const HAS_ARROW = /\.\.>|~>|=>|->/;
   const ID = /^[^\s:[\]"{}]+$/;
-  const NODE_KEYS = ['color', 'badge', 'desc', 'sub', 'x', 'y', 'costo', 'cost', 'data', 'datos', 'region', 'región', 'country', 'pais', 'país'];
+  const NODE_KEYS = ['color', 'badge', 'desc', 'sub', 'x', 'y', 'costo', 'cost', 'data', 'datos', 'region', 'región', 'country', 'pais', 'país', 'layer', 'capa'];
   /* ---------- gobierno: dueño, responsable, equipo, centro de costo ---------- */
   const GOV_KEYS = { owner: 'owner', dueño: 'owner', dueno: 'owner', steward: 'steward', responsable: 'steward', team: 'team', equipo: 'team',
     costcenter: 'costCenter', centro: 'costCenter', centrocosto: 'costCenter', centrodecosto: 'costCenter' };
@@ -67,11 +69,13 @@
   // Palabras que escribe stringify y mensajes de error, por idioma
   const WORDS = {
     en: { title: 'title', direction: 'direction', group: 'group', cost: 'cost', hour: 'hour', month: 'month', year: 'year', years: 'years', data: 'data', encrypted: 'encrypted', both: 'both', yes: 'yes', no: 'no', lines: 'lines', line: 'line', region: 'region', transfer: 'transfer', ok: 'ok', elbow: 'elbow', curved: 'curved', elbowOne: 'elbow', curvedOne: 'curved', author: 'author', version: 'version', view: 'view', kind: 'kind', physical: 'physical', logical: 'logical',
-      review: 'review', by: 'by', raised: 'raised', due: 'due', status: 'status', closed: 'closed', resolved: 'resolved',
-      owner: 'owner', steward: 'steward', team: 'team', costCenter: 'costcenter' },
+      review: 'review', by: 'by', raised: 'raised', due: 'due', status: 'status', closed: 'closed', resolved: 'resolved', layer: 'layer', layers: 'layers', zones: 'zones',
+      owner: 'owner', steward: 'steward', team: 'team', costCenter: 'costcenter',
+      layerOf: { bronze: 'bronze', silver: 'silver', gold: 'gold' } },
     es: { title: 'título', direction: 'dirección', group: 'grupo', cost: 'costo', hour: 'hora', month: 'mes', year: 'año', years: 'años', data: 'datos', encrypted: 'cifrado', both: 'ambos', yes: 'sí', no: 'no', lines: 'líneas', line: 'línea', region: 'región', transfer: 'transferencia', ok: 'ok', elbow: 'codos', curved: 'curvas', elbowOne: 'codo', curvedOne: 'curva', author: 'autor', version: 'versión', view: 'vista', kind: 'tipo', physical: 'físico', logical: 'lógico',
-      review: 'revisión', by: 'por', raised: 'levantada', due: 'compromiso', status: 'estado', closed: 'cerrada', resolved: 'resuelta',
-      owner: 'dueño', steward: 'responsable', team: 'equipo', costCenter: 'centro' }
+      review: 'revisión', by: 'por', raised: 'levantada', due: 'compromiso', status: 'estado', closed: 'cerrada', resolved: 'resuelta', layer: 'capa', layers: 'capas', zones: 'zonas',
+      owner: 'dueño', steward: 'responsable', team: 'equipo', costCenter: 'centro',
+      layerOf: { bronze: 'bronce', silver: 'plata', gold: 'oro' } }
   };
   const MSG = {
     en: {
@@ -82,6 +86,7 @@
       data: v => `unknown data class “${v}” (e.g. pii, pci, confidential)`, enc: v => `invalid encrypted value “${v}” (use yes or no)`,
       route: v => `invalid line style “${v}” (use curved or elbow)`, transfer: v => `invalid transfer value “${v}” (use ok)`,
       day: v => `invalid date “${v}” (use YYYY-MM-DD)`, status: v => `invalid status “${v}” (use open or resolved)`,
+      layer: v => `unknown layer “${v}” (use bronze, silver or gold; also raw, curated or serving)`, lnames: v => `invalid layer naming “${v}” (use medallion or zones)`,
       view: v => `unknown view “${v}”`, gkind: v => `invalid group type “${v}” (use logical or physical)`,
       line: 'cannot understand this line', open: n => `missing } to close ${n === 1 ? 'a group' : `${n} groups`}`
     },
@@ -93,6 +98,7 @@
       data: v => `clasificación de datos desconocida «${v}» (ej.: pii, pci, confidential)`, enc: v => `valor de cifrado no válido «${v}» (usa sí o no)`,
       route: v => `estilo de línea no válido «${v}» (usa curvas o codos)`, transfer: v => `valor de transferencia no válido «${v}» (usa ok)`,
       day: v => `fecha no válida «${v}» (usa AAAA-MM-DD)`, status: v => `estado no válido «${v}» (usa abierta o resuelta)`,
+      layer: v => `capa desconocida «${v}» (usa bronce, plata u oro; también crudo, curado o consumo)`, lnames: v => `nombres de capa no válidos «${v}» (usa medallón o zonas)`,
       view: v => `vista desconocida «${v}»`, gkind: v => `tipo de grupo no válido «${v}» (usa lógico o físico)`,
       line: 'no se entiende esta línea', open: n => `falta cerrar ${n === 1 ? 'un grupo' : `${n} grupos`} con }`
     }
@@ -158,6 +164,15 @@
       return d.filter(k => !bad.includes(k));
     };
 
+    // Capa: clave o alias (bronze, raw, bronce, crudo…); si se conocen las de config.js (ctx.layers), avisa de las desconocidas
+    const checkLayer = (v, ln) => {
+      const k = String(v).trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      if (!ctx.layers) return k;
+      if (ctx.layers[k]) return ctx.layers[k];
+      err(ln, msg.layer(v));
+      return null;
+    };
+
     const nodeFor = id => {
       if (!nodes.has(id)) {
         const n = { id, label: id, type: 'generic' };
@@ -181,6 +196,11 @@
       if ((m = line.match(/^(l[ií]neas|lines|routing)\s*:\s*(\S+)\s*$/i))) {
         const r = parseRoute(m[2]);
         if (r === 'elbow') model.routing = 'elbow'; else if (!r) err(ln, msg.route(m[2]));
+        return;
+      }
+      if ((m = line.match(/^(layers|capas)\s*:\s*(\S+)\s*$/i))) {
+        const f = m[2].toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        if (/^(zones?|zonas?)$/.test(f)) model.layerNames = 'zones'; else if (!/^(medallion|medallon|medalla)$/.test(f)) err(ln, msg.lnames(m[2]));
         return;
       }
       if ((m = line.match(/^(autor|author)\s*:\s*(.*)$/i))) { if (m[2].trim()) (model.meta ||= {}).author = m[2].trim(); return; }
@@ -210,7 +230,7 @@
         const id = m[2];
         if (!ID.test(id)) return err(ln, msg.groupId(id));
         if (groups.has(id)) return err(ln, msg.groupDup(id));
-        const tk = tokens(m[3], ['color', 'icon', 'icono', 'kind', 'tipo', ...Object.keys(GOV_KEYS), ...REGION_KEYS]);
+        const tk = tokens(m[3], ['color', 'icon', 'icono', 'kind', 'tipo', ...Object.keys(GOV_KEYS), ...REGION_KEYS, 'layer', 'capa']);
         const g = { id, label: tk.quotes[0] ?? (tk.words.join(' ') || id) };
         if (tk.kv.color) g.color = tk.kv.color;
         applyGov(g, tk.kv);
@@ -223,6 +243,8 @@
         }
         const gr = REGION_KEYS.map(k => tk.kv[k]).find(v => v != null && v.trim());
         if (gr) g.region = gr.trim();
+        const gl = tk.kv.layer ?? tk.kv.capa;
+        if (gl != null) { const l = checkLayer(gl, ln); if (l) g.layer = l; }
         if (stack.length) g.parent = stack[stack.length - 1];
         groups.add(id);
         model.groups.push(g);
@@ -293,6 +315,8 @@
         applyGov(n, tk.kv);
         const nr = REGION_KEYS.map(k => tk.kv[k]).find(v => v != null && v.trim());
         if (nr) n.region = nr.trim();
+        const lv = tk.kv.layer ?? tk.kv.capa;
+        if (lv != null) { const l = checkLayer(lv, ln); if (l) n.layer = l; }
         if (stack.length) n.group = stack[stack.length - 1];
         return;
       }
@@ -308,6 +332,7 @@
     const out = [`${w.title}: ${m.title}`];
     if (m.direction) out.push(`${w.direction}: ${m.direction}`);
     if (m.routing === 'elbow') out.push(`${w.lines}: ${w.elbow}`);
+    if (m.layerNames === 'zones') out.push(`${w.layers}: ${w.zones}`);
     if (m.meta?.author) out.push(`${w.author}: ${m.meta.author}`);
     if (m.meta?.version) out.push(`${w.version}: ${m.meta.version}`);
     if (m.meta?.view) out.push(`${w.view}: ${m.meta.view}`);
@@ -322,12 +347,13 @@
       if (n.data?.length) p.push(`${w.data}=${n.data.join(',')}`);
       GOV_WORDS.forEach(k => { if (n[k]) p.push(`${w[k]}=${bare(n[k])}`); });
       if (n.region) p.push(`${w.region}=${bare(n.region)}`);
+      if (n.layer) p.push(`${w.layer}=${w.layerOf[n.layer] || n.layer}`);
       if (n.desc) p.push(`desc=${quote(n.desc)}`);
       return p.join(' ');
     };
     const groupIds = new Set(m.groups.map(g => g.id));
     const writeGroup = (g, ind) => {
-      out.push(`${ind}${w.group} ${g.id} ${quote(g.label)}${g.icon ? ` icon=${bare(g.icon)}` : ''}${g.color ? ` color=${bare(g.color)}` : ''}${g.kind ? ` ${w.kind}=${w[g.kind]}` : ''}${GOV_WORDS.filter(k => g[k]).map(k => ` ${w[k]}=${bare(g[k])}`).join('')}${g.region ? ` ${w.region}=${bare(g.region)}` : ''} {`);
+      out.push(`${ind}${w.group} ${g.id} ${quote(g.label)}${g.icon ? ` icon=${bare(g.icon)}` : ''}${g.color ? ` color=${bare(g.color)}` : ''}${g.kind ? ` ${w.kind}=${w[g.kind]}` : ''}${GOV_WORDS.filter(k => g[k]).map(k => ` ${w[k]}=${bare(g[k])}`).join('')}${g.region ? ` ${w.region}=${bare(g.region)}` : ''}${g.layer ? ` ${w.layer}=${w.layerOf[g.layer] || g.layer}` : ''} {`);
       m.nodes.filter(n => n.group === g.id).forEach(n => out.push(`${ind}  ${nodeLine(n)}`));
       m.groups.filter(c => c.parent === g.id).forEach(c => writeGroup(c, ind + '  '));
       out.push(`${ind}}`);
