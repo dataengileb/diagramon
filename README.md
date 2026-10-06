@@ -504,7 +504,7 @@ api ~> queue : events
 | `a -> b : x data=pii transfer=ok` | Cross-border transfer approved (`transferencia=ok` in Spanish) |
 | `a -> b : SQL threats="T=mitigated,I=accepted"` | STRIDE decisions of a connection (Spanish: `amenazas=`); letters `S T R I D E`, statuses `mitigated`, `accepted`, `na` (Spanish `mitigada`, `aceptada`, `na`) |
 | `threat api -> db T: "TLS 1.3 everywhere"` | Note on a decided STRIDE threat (Spanish: `amenaza`); the connection is found by `from -> to` (any arrow); if several connections share them, `#2` picks the second: `threat api -> db #2 T: "…"`. The threat must already have a status (`threats=…`), otherwise it is an error |
-| `note n1: "Text\nmore" at=120,40 size=180,110 color=lemon` | Sticky note (Spanish: `nota n1: "…" en=120,40 tamaño=180,110`); `\n` is a line break; position and size are optional |
+| `note n1: "Text\nmore" at=120,40 size=180,110 color=limon` | Sticky note (Spanish: `nota n1: "…" en=120,40 tamaño=180,110`); `\n` is a line break; position and size are optional (without `at=` it is placed to the right of its level) |
 | `zone z1: "PCI scope" severity=high at=… size=… desc="…"` | Risk zone (Spanish: `zona`, `severidad=alta`; severities `low`, `medium`, `high`, `critical` · `baja`, `media`, `alta`, `crítica`) |
 | `trust t1: "DMZ" trust=internet at=… size=… desc="…"` | Trust boundary (Spanish: `confianza t1: "DMZ" confianza=internet …`) |
 | `dismiss sec:public-db:db: "Accepted risk" by="Ana" date=2026-10-01` | Dismissed finding (Spanish: `descartar … por=… fecha=…`). The id may contain `:` (the separator is the first `:` followed by a space) or be quoted: `dismiss "sec:x:y": "reason"` |

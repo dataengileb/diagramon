@@ -614,12 +614,14 @@
     m.notes = []; m.zones = [];
     list(raw.notes).forEach((n, i) => {
       const o = { id: take(n.id, 'note', i), ...cleanBox(n, 180, 110), text: String(n.text ?? '') };
+      if (!hasPos(n)) UNPLACED.add(o);
       if (n.color != null && String(n.color).trim()) o.color = String(n.color).trim();
       if (n.in != null && n.in !== '') o.in = String(n.in);
       m.notes.push(o);
     });
     list(raw.zones).forEach((z, i) => {
       const o = { id: take(z.id, 'zone', i), ...cleanBox(z, 360, 220), label: String(z.label ?? ''), severity: SEVERITY.includes(z.severity) ? z.severity : 'medium' };
+      if (!hasPos(z)) UNPLACED.add(o);
       if (z.kind === 'trust') { o.kind = 'trust'; delete o.severity; if (z.trust != null && String(z.trust).trim()) o.trust = String(z.trust).trim(); }
       if (z.desc != null && String(z.desc).trim()) o.desc = String(z.desc);
       if (z.in != null && z.in !== '') o.in = String(z.in);
@@ -636,6 +638,9 @@
 
   // Notas adhesivas y zonas de riesgo: posición y tamaño numéricos, con un mínimo de 60×40
   const SEVERITY = ['low', 'medium', 'high', 'critical'];
+  // Notas y zonas que llegan sin posición (p. ej. escritas en la pestaña Texto sin at=): ensurePositions las pone junto al contenido de su nivel
+  const UNPLACED = new WeakSet();
+  const hasPos = o => [o.x, o.y].every(v => v !== '' && v != null && Number.isFinite(+v));
   const cleanBox = (o, w, h) => {
     const num = (v, d) => (Number.isFinite(+v) && v !== '' && v != null ? +v : d);
     return { x: num(o.x, 0), y: num(o.y, 0), w: Math.max(60, num(o.w, w)), h: Math.max(40, num(o.h, h)) };
@@ -681,8 +686,20 @@
 
   // Cada nivel C4 tiene su propio espacio de coordenadas: se ordena por separado (sin `in` en ningún lado = un solo nivel, como siempre)
   function ensurePositions(m) {
-    if (!m.nodes.some(n => n.in)) return ensurePositionsIn(m);
-    [...new Set(m.nodes.map(n => n.in || null))].forEach(sc => ensurePositionsIn(scopeModel(m, sc)));
+    if (!m.nodes.some(n => n.in)) ensurePositionsIn(m);
+    else [...new Set(m.nodes.map(n => n.in || null))].forEach(sc => ensurePositionsIn(scopeModel(m, sc)));
+    placeItems(m);
+  }
+  // A la derecha de los nodos de su nivel, apiladas en columna
+  function placeItems(m) {
+    const next = new Map();
+    [...(m.notes || []), ...(m.zones || [])].filter(o => UNPLACED.has(o)).forEach(o => {
+      UNPLACED.delete(o);
+      const sc = o.in || null, ns = m.nodes.filter(n => (n.in || null) === sc);
+      if (!next.has(sc)) next.set(sc, ns.length ? { x: snap(Math.max(...ns.map(n => n.x + nodeWidth(n))) + 60), y: snap(Math.min(...ns.map(n => n.y))) } : { x: 0, y: 0 });
+      const p = next.get(sc);
+      o.x = p.x; o.y = p.y; p.y = snap(p.y + o.h + 24);
+    });
   }
   function ensurePositionsIn(m) {
     const ok = n => Number.isFinite(+n.x) && Number.isFinite(+n.y) && n.x !== '' && n.y !== '' && n.x != null && n.y != null;

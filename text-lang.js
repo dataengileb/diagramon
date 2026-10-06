@@ -540,7 +540,7 @@
       m.groups.filter(c => c.parent === g.id).forEach(c => writeGroup(c, ind + '  '));
       out.push(`${ind}}`);
     };
-    const boxText = o => `at=${rnd(o.x)},${rnd(o.y)} size=${rnd(o.w)},${rnd(o.h)}`;
+    const boxText = o => `${w.at}=${rnd(o.x)},${rnd(o.y)} ${w.size}=${rnd(o.w)},${rnd(o.h)}`;
     const noteLine = (o, ind) => `${ind}${w.note} ${o.id}: ${quote(o.text ?? '')} ${boxText(o)}${o.color ? ` color=${bare(o.color)}` : ''}${o.in && !inBlock ? ` ${w.in}=${bare(o.in)}` : ''}`;
     const zoneLine = (o, ind) => `${ind}${o.kind === 'trust' ? `${w.trust} ${o.id}: ${quote(o.label ?? '')}${o.trust ? ` ${w.trust}=${bare(o.trust)}` : ''}` : `${w.zone} ${o.id}: ${quote(o.label ?? '')} ${w.severity}=${w.sevOf[o.severity] || o.severity || w.sevOf.medium}`} ${boxText(o)}${o.desc ? ` desc=${quote(o.desc)}` : ''}${o.in && !inBlock ? ` ${w.in}=${bare(o.in)}` : ''}`;
     // Contenido de un nivel (null = superior): grupos, nodos y, dentro de un bloque, notas y zonas; luego un bloque `inside` por cada nodo que tenga diagrama interno
