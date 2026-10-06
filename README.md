@@ -231,7 +231,9 @@ Use the two buttons next to the zoom controls (bottom right of the canvas).
 | `⌘D` | Duplicate |
 | `⌘A` | Select all |
 | `Delete` | Delete |
-| Arrows (`⇧` = faster) | Move the selection |
+| Arrows (`⇧` = faster) | Move the selection (nodes, notes and risk zones) |
+| `Alt`+click | Select the risk zone under the pointer, even if nodes or groups cover it |
+| `Z` / `⇧Z` | Select the next / previous risk zone |
 | `C` | Connect |
 | `F` | Fit to view |
 | `P` | Play the flow |
