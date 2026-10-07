@@ -407,7 +407,10 @@ review db: "DB in a public subnet" by=Ana raised=2026-10-01 due=2026-11-15
       'c4.del.text': n => `Its internal diagram goes with it: ${n} ${n === 1 ? 'component' : 'components'} in total, with their connections.`,
       'c4.del.n': n => `${n} inside`,
       'exp.levelsSvg': 'All levels (SVG)', 'exp.levelsPng': 'All levels (PNG)', 'exp.levels.ext': 'one file each',
-      'c4.noLevels': 'No internal diagrams yet: nothing to export by level', 'c4.progress': ({ i, n, name }) => `Exporting ${i}/${n}… ${name}`, 'c4.file': 'level', 'c4.done': n => `${n} ${n === 1 ? 'level' : 'levels'} exported`
+      'c4.noLevels': 'No internal diagrams yet: nothing to export by level', 'c4.progress': ({ i, n, name }) => `Exporting ${i}/${n}… ${name}`, 'c4.file': 'level', 'c4.done': n => `${n} ${n === 1 ? 'level' : 'levels'} exported`,
+      'rep.h.types': 'Connection types', 'rep.h.dash': 'Line pattern', 'rep.h.color': 'Color', 'rep.h.width': 'Width', 'rep.h.particles': 'Moving dots',
+      'ver.type': 'connection type', 'ver.types.bar': ({ a, r, c }) => `Types +${a} −${r} ~${c}`,
+      'inv.c.weight': 'Importance', 'inv.c.custom': 'Custom type', 'inv.c.dash': 'Line pattern', 'inv.c.color': 'Color', 'inv.c.width': 'Width', 'inv.c.particles': 'Moving dots', 'inv.c.uses': 'Connections using it', 'inv.sheet.types': 'Connection types',
     },
 
     es: {
@@ -803,7 +806,10 @@ revisión db: "BD en subred pública" por=Ana levantada=2026-10-01 compromiso=20
       'c4.del.text': n => `Su diagrama interno se va con él: ${n} ${n === 1 ? 'componente' : 'componentes'} en total, con sus conexiones.`,
       'c4.del.n': n => `${n} dentro`,
       'exp.levelsSvg': 'Todos los niveles (SVG)', 'exp.levelsPng': 'Todos los niveles (PNG)', 'exp.levels.ext': 'un archivo por nivel',
-      'c4.noLevels': 'Aún no hay diagramas internos: nada que exportar por niveles', 'c4.progress': ({ i, n, name }) => `Exportando ${i}/${n}… ${name}`, 'c4.file': 'nivel', 'c4.done': n => `${n} ${n === 1 ? 'nivel exportado' : 'niveles exportados'}`
+      'c4.noLevels': 'Aún no hay diagramas internos: nada que exportar por niveles', 'c4.progress': ({ i, n, name }) => `Exportando ${i}/${n}… ${name}`, 'c4.file': 'nivel', 'c4.done': n => `${n} ${n === 1 ? 'nivel exportado' : 'niveles exportados'}`,
+      'rep.h.types': 'Tipos de conexión', 'rep.h.dash': 'Patrón de línea', 'rep.h.color': 'Color', 'rep.h.width': 'Grosor', 'rep.h.particles': 'Puntos en movimiento',
+      'ver.type': 'tipo de conexión', 'ver.types.bar': ({ a, r, c }) => `Tipos +${a} −${r} ~${c}`,
+      'inv.c.weight': 'Importancia', 'inv.c.custom': 'Tipo propio', 'inv.c.dash': 'Patrón de línea', 'inv.c.color': 'Color', 'inv.c.width': 'Grosor', 'inv.c.particles': 'Puntos en movimiento', 'inv.c.uses': 'Conexiones que lo usan', 'inv.sheet.types': 'Tipos de conexión',
     }
   };
 
