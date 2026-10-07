@@ -1111,36 +1111,101 @@
     });
     return out.sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id));
   }
-  // Disponibilidad compuesta del camino más corto entre a y b (en serie; el peor camino si hay varios)
+  // Disponibilidad compuesta entre a y b: probabilidad de que funcione AL MENOS UNA ruta (los nodos fallan de forma independiente; las aristas no fallan)
+  // Fiabilidad exacta de dos terminales por nodos (factorización: se fija un nodo del camino como activo/caído y se memoiza). Con grafos muy enmallados (presupuesto de llamadas agotado)
+  // cae a una cota inferior: rutas disjuntas en nodos, de más a menos probable. n nodos 0..n-1, succ[i] = sucesores, s origen, t destino, p[i] = disponibilidad (1 = sin dato)
+  /* routeReliability:start */
+  function routeReliability(n, succ, s, t, p, budget = 8000) {
+    const out = succ.map((l, i) => (i === t ? [] : l.filter(j => j !== s && j !== i))), inn = out.map(() => []);
+    out.forEach((l, i) => l.forEach(j => inn[j].push(i)));
+    const reach = (from, adj) => { const seen = new Set([from]), q = [from]; for (let i = 0; i < q.length; i++) adj[q[i]].forEach(v => { if (!seen.has(v)) { seen.add(v); q.push(v); } }); return seen; };
+    const F0 = reach(s, out), B0 = reach(t, inn);
+    if (!F0.has(t)) return null;
+    // Poda: solo los nodos que están en algún camino de s a t
+    const rel = []; for (let i = 0; i < n; i++) if (F0.has(i) && B0.has(i)) rel.push(i);
+    const isRel = new Set(rel), g = out.map((l, i) => (isRel.has(i) ? l.filter(j => isRel.has(j)) : [])), gi = g.map(() => []);
+    g.forEach((l, i) => l.forEach(j => gi[j].push(i)));
+    const w = i => (p[i] >= 1 ? 0 : -Math.log(Math.max(p[i], 1e-300))) + 1e-9;
+    // Ruta más probable (Dijkstra con pesos −ln p) evitando los nodos bloqueados
+    const best = blocked => {
+      const d = new Map([[s, 0]]), prev = new Map(), done = new Set();
+      for (;;) {
+        let u = -1; d.forEach((v, k) => { if (!done.has(k) && (u < 0 || v < d.get(u))) u = k; });
+        if (u < 0) return null;
+        if (u === t) { const r = []; for (let x = t; x != null; x = prev.get(x)) r.unshift(x); return r; }
+        done.add(u);
+        g[u].forEach(v => { if (blocked && blocked.has(v)) return; const nd = d.get(u) + w(v); if (!d.has(v) || nd < d.get(v)) { d.set(v, nd); prev.set(v, u); } });
+      }
+    };
+    const main = best(null), pos = new Map(main.map((x, i) => [x, i]));
+    // ¿Una sola ruta? Solo el camino principal y ningún atajo hacia delante
+    const single = rel.length === main.length && main.every((u, i) => g[u].every(v => pos.get(v) <= i + 1));
+    // Nº de rutas simples (acotado)
+    let steps = 0, routes = 0; const onp = new Set([s]);
+    const cnt = u => { if (routes >= 100 || ++steps > 20000) return; if (u === t) { routes++; return; } g[u].forEach(v => { if (!onp.has(v)) { onp.add(v); cnt(v); onp.delete(v); } }); };
+    cnt(s);
+    const ends = p[s] * p[t], base = { routes: single ? 1 : Math.max(routes, 2), main, rel, single };
+    if (single) { let v = 1; main.forEach(i => { v *= p[i]; }); return { ...base, value: v, exact: true }; }
+    // Exacto por factorización
+    const st = new Uint8Array(n), memo = new Map(); let calls = 0;
+    rel.forEach(i => { if (i === s || i === t || p[i] >= 1) st[i] = 1; });
+    const rec = () => {
+      if (++calls > budget) throw new Error('budget');
+      const F = reach2(s, g), B = reach2(t, gi);
+      if (!F.has(t)) return 0;
+      const key = rel.map(i => (F.has(i) && B.has(i) ? st[i] : 9)).join('');
+      if (memo.has(key)) return memo.get(key);
+      // Camino con menos nodos inciertos (0-1 BFS) y pivote = primer nodo incierto
+      const dist = new Map([[s, 0]]), prev = new Map(), dq = [s];
+      while (dq.length) {
+        const u = dq.shift();
+        g[u].forEach(v => { if (st[v] === 2 || !B.has(v)) return; const c = st[v] === 1 ? 0 : 1, nd = dist.get(u) + c; if (!dist.has(v) || nd < dist.get(v)) { dist.set(v, nd); prev.set(v, u); c ? dq.push(v) : dq.unshift(v); } });
+      }
+      let piv = -1; for (let x = t; x != null; x = prev.get(x)) if (st[x] === 0) piv = x;
+      let val;
+      if (piv < 0) val = 1;
+      else { st[piv] = 1; const a1 = rec(); st[piv] = 2; const a0 = rec(); st[piv] = 0; val = p[piv] * a1 + (1 - p[piv]) * a0; }
+      memo.set(key, val);
+      return val;
+    };
+    const reach2 = (from, adj) => { const seen = new Set([from]), q = [from]; for (let i = 0; i < q.length; i++) adj[q[i]].forEach(v => { if (st[v] !== 2 && !seen.has(v)) { seen.add(v); q.push(v); } }); return seen; };
+    try { return { ...base, value: ends * rec(), exact: true }; } catch (e) { if (e.message !== 'budget') throw e; }
+    // Aproximación: rutas disjuntas en nodos inciertos → cota inferior de la fiabilidad real
+    const blocked = new Set(); let fail = 1;
+    for (let k = 0; k < 64; k++) {
+      const r = best(blocked); if (!r) break;
+      const inner = r.filter(i => i !== s && i !== t), pr = inner.reduce((a, i) => a * p[i], 1);
+      fail *= 1 - pr;
+      const unc = inner.filter(i => p[i] < 1); if (!unc.length) break;
+      unc.forEach(i => blocked.add(i));
+    }
+    return { ...base, value: ends * (1 - fail), exact: false };
+  }
+  /* routeReliability:end */
+  // Disponibilidad compuesta de a a b: combina todas las rutas (res = caminos más cortos; sirve para a, el sentido y el resultado «sin ruta»)
+  // worst = el componente con menor disponibilidad de la ruta más probable; rpo/rto = máximo a lo largo de esa ruta
   function pathAvailability(m, b, res) {
     if (!res || !res.nodes.size) return null;
-    const byId = new Map(m.nodes.map(n => [n.id, n])), dist = res.dist, preds = new Map();
+    const a = [...res.nodes].find(id => res.dist.get(id) === 0), ids = m.nodes.map(n => n.id), ix = new Map(ids.map((id, i) => [id, i])), byId = new Map(m.nodes.map(n => [n.id, n]));
+    const succ = ids.map(() => []);
     m.edges.forEach(e => {
-      if (!res.edges.has(e.id)) return;
-      [[e.from, e.to], [e.to, e.from]].forEach(([u, v]) => { if (dist.get(u) + 1 === dist.get(v)) (preds.get(v) || preds.set(v, new Set()).get(v)).add(u); });
+      if (e.from === e.to || !ix.has(e.from) || !ix.has(e.to)) return;
+      succ[ix.get(e.from)].push(ix.get(e.to));
+      if (!res.directed || e.both) succ[ix.get(e.to)].push(ix.get(e.from));
     });
-    const fac = id => availOf(byId.get(id)) ?? 1, best = new Map();
-    [...res.nodes].sort((x, y) => dist.get(x) - dist.get(y)).forEach(id => {
-      let bp = null, bv = 1;
-      (preds.get(id) || []).forEach(p => { const v = best.get(p)?.val ?? 1; if (bp == null || v < bv) { bp = p; bv = v; } });
-      best.set(id, { val: bv * fac(id), prev: bp });
-    });
-    const order = [];
-    for (let id = b, i = 0; id != null && i++ < 1000; id = best.get(id)?.prev) order.unshift(id);
-    const ns = order.map(id => byId.get(id)), known = ns.filter(n => availOf(n) != null);
+    const p = ids.map(id => availOf(byId.get(id)) ?? 1), rr = routeReliability(ids.length, succ, ix.get(a), ix.get(b), p);
+    if (!rr) return null;
+    const order = rr.main.map(i => ids[i]), ns = order.map(id => byId.get(id)), known = ns.filter(n => availOf(n) != null);
     const worst = known.reduce((w, n) => (!w || availOf(n) < availOf(w) ? n : w), null);
     const mx = k => { const v = ns.map(n => (n[k] != null ? parseDur(n[k]) : null)).filter(x => x != null); return v.length ? Math.max(...v) : null; };
-    const av = known.length ? best.get(b).val : null;
-    return { availability: av, downtimeYear: av == null ? null : downtime(av).year, nodes: order, unknown: ns.length - known.length, routes: res.count,
-      worst: worst ? { id: worst.id, label: worst.label, availability: availOf(worst) } : null, rpo: mx('rpo'), rto: mx('rto') };
+    const rn = rr.rel.map(i => byId.get(ids[i])), anyKnown = rn.some(n => availOf(n) != null), av = anyKnown ? Math.min(1, Math.max(0, rr.value)) : null;
+    return { availability: av, downtimeYear: av == null ? null : downtime(av).year, nodes: order, unknown: rn.filter(n => availOf(n) == null).length, routes: rr.routes,
+      method: rr.single ? 'single' : rr.exact ? 'exact' : 'approx', approx: !rr.exact, worst: worst ? { id: worst.id, label: worst.label, availability: availOf(worst) } : null, rpo: mx('rpo'), rto: mx('rto') };
   }
   function availability(a, b) {
     const m = S.model;
     const res = shortestPaths(m, a, b, true) || shortestPaths(m, a, b, false);
-    const r = pathAvailability(m, b, res);
-    if (!r) return null;
-    const { routes, ...rest } = r;
-    return rest;
+    return pathAvailability(m, b, res);
   }
   // Fragmento HTML para la barra del camino
   function pathResText(b, res) {
@@ -1148,8 +1213,9 @@
     if (!r) return '';
     const parts = [];
     if (r.availability != null) {
-      parts.push(T('res.path.comp', { a: fmtPct(r.availability), d: fmtApprox(r.downtimeYear) }) + (r.worst ? ` · ${T('res.path.worst', { n: esc(r.worst.label), a: fmtPct(r.worst.availability) })}` : ''));
-      if (r.routes > 1) parts.push(T('res.path.routes', r.routes));
+      // Con rutas alternativas, el número de rutas combinadas va pegado a la disponibilidad compuesta (no confundir con las rutas más cortas del camino)
+      const alt = r.method !== 'single' && r.routes > 1 ? ` ${T('res.path.routes', { n: r.routes >= 100 ? '100+' : r.routes, approx: r.approx })}` : '';
+      parts.push(T('res.path.comp', { a: fmtPct(r.availability), d: fmtApprox(r.downtimeYear) }) + alt + (r.worst ? ` · ${T('res.path.worst', { n: esc(r.worst.label), a: fmtPct(r.worst.availability) })}` : ''));
       if (r.unknown) parts.push(T('res.path.unknown', r.unknown));
     }
     if (r.rpo != null) parts.push(`RPO ${esc(fmtDur(r.rpo))}`);
@@ -2029,7 +2095,7 @@
       const ok = (u, v) => nodes.has(u) && nodes.has(v) && dist.get(u) + 1 === dist.get(v);
       if (ok(e.from, e.to) || ((!directed || e.both) && ok(e.to, e.from))) edges.add(e.id);
     });
-    return { nodes, edges, hops, count: f.cnt.get(b), dist };
+    return { nodes, edges, hops, count: f.cnt.get(b), dist, directed };
   }
 
   function showPath(a, b) {
@@ -4249,8 +4315,12 @@
   /* ---------- costos: desglose por equipo/centro/etc. y escenarios (actual vs propuesto) ---------- */
   const CST_BY = ['team', 'costCenter', 'owner', 'group', 'type', 'provider', 'region', 'layer'];
   // { key, label, monthly, nodes: [ids], unassigned?, filter? } por cada valor de `by`; solo cuentan los nodos con costo. `filter` = ficha equivalente del filtro del lienzo
+  // `by = 'group'`: árbol por ruta de grupos (ver costByGroup); `by = 'groupTop'`: el modo plano anterior (solo el grupo de nivel superior)
   function costBreakdown(m = S.model, by = 'team') {
+    const flat = by === 'groupTop';
+    if (flat) by = 'group';
     if (!CST_BY.includes(by)) by = 'team';
+    if (by === 'group' && !flat) return costByGroup(m);
     const gm = new Map(m.groups.map(g => [g.id, g]));
     const top = n => { let g = gm.get(n.group), i = 0; while (g && gm.has(g.parent) && i++ < 50) g = gm.get(g.parent); return g || null; };
     const lay = n => { if (DL[n.layer]) return n.layer; let g = gm.get(n.group), i = 0; while (g && i++ < 50) { if (DL[g.layer]) return g.layer; g = gm.get(g.parent); } return null; };
@@ -4273,6 +4343,44 @@
     });
     return [...map.values()].sort((a, b) => b.monthly - a.monthly || a.label.localeCompare(b.label));
   }
+  // Desglose jerárquico por ruta de grupos. Una fila por grupo (y por nivel C4 que contenga grupos con costo), en orden de árbol
+  // (profundidad primero; hermanos por subtotal desc). Campos: key (id de grupo), path (ids desde la raíz), pathKey, pathLabel («A › B › C»), depth,
+  // own (costo mensual de los componentes DIRECTOS), total (con descendientes), monthly (= own: sumar `monthly` de todas las filas da el total sin duplicar;
+  // para sumar por ramas, sumar `total` solo de las filas depth 0), nodes (ids directos), nodesAll (ids con descendientes), kind ('group' | 'level' | 'none').
+  // Grupos dentro de un diagrama interno (group.in): cuelgan de una fila «nivel» (key `@in:<id del nodo>`, own 0) con la ruta de niveles (scopePath);
+  // el nodo-nivel aparece como rama de nivel superior, no bajo su propio grupo. Sin grupo → cubeta «Sin asignar» (key '@none', depth 0, al final de su orden).
+  function costByGroup(m = S.model) {
+    const gm = new Map(m.groups.map(g => [g.id, g])), nm = new Map(m.nodes.map(n => [n.id, n])), rows = new Map();
+    const mk = (key, label, kind, parent, extra = {}) => { const r = { key, label, kind, parent, own: 0, total: 0, nodes: [], nodesAll: [], children: [], ...extra }; rows.set(key, r); parent?.children.push(r); return r; };
+    const level = (id, i = 0) => {
+      const n = nm.get(id); if (!id || !n || i > 50) return null;
+      const k = `@in:${id}`;
+      return rows.get(k) || mk(k, n.label, 'level', level(n.in, i + 1));
+    };
+    const grp = (id, seen = new Set()) => {
+      if (rows.has(id)) return rows.get(id);
+      const g = gm.get(id); if (!g || seen.has(id)) return null;
+      seen.add(id);
+      const par = g.parent && gm.has(g.parent) ? grp(g.parent, seen) : level(g.in);
+      return rows.get(id) || mk(id, g.label, 'group', par, { filter: { group: [id] } });
+    };
+    let none = null;
+    m.nodes.filter(hasCost).forEach(n => {
+      const v = perMonth(n), r = n.group && gm.has(n.group) ? grp(n.group) : null;
+      const own = r || (none ||= mk('@none', T('cst.unassigned'), 'none', null, { unassigned: true, filter: { group: ['@none'] } }));
+      own.own += v; own.nodes.push(n.id);
+      for (let x = own, i = 0; x && i++ < 60; x = x.parent) { x.total += v; x.nodesAll.push(n.id); }
+    });
+    const out = [], cmp = (a, b) => b.total - a.total || a.label.localeCompare(b.label);
+    const walk = (r, path, labels) => {
+      const p = [...path, r.key], l = [...labels, r.label];
+      out.push({ key: r.key, label: r.label, path: p, pathKey: p.join('/'), pathLabel: l.join(' › '), depth: p.length - 1, own: r.own, total: r.total, monthly: r.own, nodes: r.nodes, nodesAll: r.nodesAll, kind: r.kind, hasChildren: r.children.length > 0,
+        ...(r.unassigned ? { unassigned: true } : {}), ...(r.filter ? { filter: r.filter } : {}) });
+      r.children.sort(cmp).forEach(c => walk(c, p, l));
+    };
+    [...rows.values()].filter(r => !r.parent).sort(cmp).forEach(r => walk(r, [], []));
+    return out;
+  }
   // Origen de una comparación: null = lienzo; id = foto de una versión (copia normalizada, el lienzo no se toca)
   function cstSource(id) {
     if (id) { const v = findVersion(id); return v?.diagram ? { id, label: `${verLabel(v)} · ${T(`ver.st.${v.status}`)}`, m: prepared(v) } : null; }
@@ -4291,12 +4399,30 @@
   }
   // Cambio por clave de agrupación entre dos orígenes: [{ key, label, a, b, delta }] por |delta|
   function cstDeltaBy(A, B, by) {
+    if (by === 'group') return cstDeltaGroups(A, B);
     const out = new Map();
     [[A, 'a'], [B, 'b']].forEach(([s, f]) => costBreakdown(s.m, by).forEach(r => {
       if (!out.has(r.key)) out.set(r.key, { key: r.key, label: r.label, a: 0, b: 0, ...(r.unassigned ? { unassigned: true } : {}) });
       out.get(r.key)[f] += r.monthly;
     }));
     return [...out.values()].map(r => ({ ...r, delta: r.b - r.a })).sort((x, y) => Math.abs(y.delta) - Math.abs(x.delta) || x.label.localeCompare(y.label));
+  }
+  // Cambio por grupo alineando por la ruta de ids (pathKey): a / b = subtotal (con descendientes), oa / ob = costo directo; status added/removed/changed/same
+  // (un grupo sin costo en un lado cuenta como ausente en ese lado). Orden de árbol; hermanos por |cambio| desc. Sumar `delta` solo de las filas depth 0.
+  function cstDeltaGroups(A, B) {
+    const out = new Map();
+    [[A, 'a'], [B, 'b']].forEach(([s, f]) => costByGroup(s.m).forEach(r => {
+      if (!out.has(r.pathKey)) out.set(r.pathKey, { key: r.key, label: r.label, path: r.path, pathKey: r.pathKey, pathLabel: r.pathLabel, depth: r.depth, kind: r.kind, a: 0, b: 0, oa: 0, ob: 0, inA: false, inB: false, ...(r.unassigned ? { unassigned: true } : {}) });
+      const x = out.get(r.pathKey);
+      x[f] = r.total; x[f === 'a' ? 'oa' : 'ob'] = r.own; x[f === 'a' ? 'inA' : 'inB'] = true;
+      if (f === 'b') { x.label = r.label; x.pathLabel = r.pathLabel; }
+    }));
+    const all = [...out.values()].map(r => ({ ...r, delta: r.b - r.a, status: !r.inA ? 'added' : !r.inB ? 'removed' : cstSame(r.a, r.b) && cstSame(r.oa, r.ob) ? 'same' : 'changed' }));
+    const kids = new Map();
+    all.forEach(r => { const pk = r.path.slice(0, -1).join('/'), k = out.has(pk) ? pk : ''; if (!kids.has(k)) kids.set(k, []); kids.get(k).push(r); });
+    const res = [], walk = r => { res.push(r); (kids.get(r.pathKey) || []).sort((x, y) => Math.abs(y.delta) - Math.abs(x.delta) || x.label.localeCompare(y.label)).forEach(walk); };
+    (kids.get('') || []).sort((x, y) => Math.abs(y.delta) - Math.abs(x.delta) || x.label.localeCompare(y.label)).forEach(walk);
+    return res;
   }
   const cstMoney = v => money(round2(v));
   const cstDelta = v => (cstSame(v, 0) ? cstMoney(0) : `${v > 0 ? '+' : '−'}${cstMoney(Math.abs(v))}`);
@@ -4314,8 +4440,10 @@
     const prev = document.activeElement, back = document.createElement('div'), id = `cs${Date.now()}`;
     const vers = () => S.model.versions.slice().sort((a, b) => String(b.savedAt || b.updated || b.created || '').localeCompare(String(a.savedAt || a.updated || a.created || '')) || (b.n || 0) - (a.n || 0));
     const vs0 = vers(), defA = (vs0.find(v => v.status === 'approved') || vs0[0])?.id || null;
-    const st = { tab: tab === 'compare' ? 'compare' : 'breakdown', by: CST_BY.includes(opts.by) ? opts.by : 'team', a: opts.a !== undefined ? opts.a : defA, b: opts.b !== undefined ? opts.b : null, only: false, sort: 'delta', dir: -1 };
+    const st = { tab: tab === 'compare' ? 'compare' : 'breakdown', by: CST_BY.includes(opts.by) ? opts.by : 'team', a: opts.a !== undefined ? opts.a : defA, b: opts.b !== undefined ? opts.b : null, only: false, sort: 'delta', dir: -1, exp: {} };
     let cur = [], cmp = null;
+    const lvTag = r => (r.kind === 'level' ? ` [${T('cst.level')}]` : '');
+    const indent = d => `style="padding-left:${10 + d * 18}px"`;
     const byOpts = () => CST_BY.map(k => `<option value="${k}"${k === st.by ? ' selected' : ''}>${esc(T(`cst.by.${k}`))}</option>`).join('');
     back.className = 'cf-back';
     back.innerHTML = `<div class="cf cm cst" role="dialog" aria-modal="true" aria-labelledby="${id}t">
@@ -4340,10 +4468,19 @@
     const drawBreakdown = () => {
       cur = costBreakdown(S.model, st.by);
       if (!cur.length) { outs.breakdown.innerHTML = `<p class="cm-empty">${esc(T('cst.empty'))}</p>`; return; }
-      const tot = cur.reduce((s, r) => s + r.monthly, 0), n = cur.reduce((s, r) => s + r.nodes.length, 0);
-      outs.breakdown.innerHTML = `<table class="cst-table"><thead><tr><th>${esc(T(`cst.by.${st.by}`))}</th><th class="num">${esc(T('cst.col.components'))}</th><th class="num">${esc(T('cst.col.monthly'))}</th><th class="num">${esc(T('cst.col.yearly'))}</th><th>${esc(T('cst.col.pct'))}</th></tr></thead><tbody>${cur.map((r, i) =>
-        `<tr${r.filter ? ` class="cst-click" data-i="${i}" title="${esc(T('cst.rowTip'))}"` : ''}><td${r.unassigned ? ' class="cst-un"' : ''}>${r.filter ? `<button class="cst-key" data-i="${i}">${esc(r.label)}</button>` : esc(r.label)}</td><td class="num">${r.nodes.length}</td><td class="num">${esc(cstMoney(r.monthly))}</td><td class="num">${esc(cstMoney(r.monthly * 12))}</td><td>${bars(r.monthly, tot)}</td></tr>`).join('')}</tbody>
-        <tfoot><tr><th>${esc(T('cst.total'))}</th><td class="num">${n}</td><td class="num">${esc(cstMoney(tot))}</td><td class="num">${esc(cstMoney(tot * 12))}</td><td></td></tr></tfoot></table>`;
+      const tot = cur.reduce((s, r) => s + r.monthly, 0), n = cur.reduce((s, r) => s + r.nodes.length, 0), tree = st.by === 'group';
+      const open = r => (Object.hasOwn(st.exp, r.pathKey) ? st.exp[r.pathKey] === true : r.depth < 2);
+      let hide = null; // en árbol: oculta las filas bajo un grupo contraído (orden de árbol: depth creciente dentro de la rama)
+      const vis = tree ? cur.map(r => { if (hide != null && r.depth > hide) return false; hide = r.hasChildren && !open(r) ? r.depth : null; return true; }) : cur.map(() => true);
+      const head = `<th>${esc(T(`cst.by.${st.by}`))}</th><th class="num">${esc(T('cst.col.components'))}</th>${tree ? `<th class="num">${esc(T('cst.col.own'))}</th><th class="num">${esc(T('cst.col.subtotal'))}</th>` : `<th class="num">${esc(T('cst.col.monthly'))}</th>`}<th class="num">${esc(T('cst.col.yearly'))}</th><th>${esc(T('cst.col.pct'))}</th>`;
+      const row = (r, i) => {
+        const name = r.filter ? `<button class="cst-key" data-i="${i}">${esc(r.label)}</button>` : esc(r.label);
+        const tg = tree ? (r.hasChildren ? `<button class="cst-tg" data-cst-tg="${esc(r.pathKey)}" aria-expanded="${open(r) ? 'true' : 'false'}" aria-label="${esc(T(open(r) ? 'cst.collapse' : 'cst.expand', { g: r.label }))}">${open(r) ? '▾' : '▸'}</button>` : '<span class="cst-tg"></span>') : '';
+        const v = tree ? r.total : r.monthly;
+        return `<tr${r.filter ? ` class="cst-click" data-i="${i}" title="${esc(T('cst.rowTip'))}"` : ''}><td${r.unassigned ? ' class="cst-un"' : ''}${tree ? ` ${indent(r.depth)}` : ''}>${tg}${name}${esc(lvTag(r))}</td><td class="num">${tree ? r.nodesAll.length : r.nodes.length}</td>${tree ? `<td class="num">${r.own ? esc(cstMoney(r.own)) : '—'}</td><td class="num">${esc(cstMoney(r.total))}</td>` : `<td class="num">${esc(cstMoney(r.monthly))}</td>`}<td class="num">${esc(cstMoney(v * 12))}</td><td>${bars(v, tot)}</td></tr>`;
+      };
+      outs.breakdown.innerHTML = `<table class="cst-table"><thead><tr>${head}</tr></thead><tbody>${cur.map((r, i) => (vis[i] ? row(r, i) : '')).join('')}</tbody>
+        <tfoot><tr><th>${esc(T('cst.total'))}</th><td class="num">${n}</td>${tree ? `<td class="num">${esc(cstMoney(tot))}</td>` : ''}<td class="num">${esc(cstMoney(tot))}</td><td class="num">${esc(cstMoney(tot * 12))}</td><td></td></tr></tfoot></table>`;
     };
     const drawCompare = () => {
       if (st.a && !findVersion(st.a)) st.a = null;
@@ -4360,8 +4497,8 @@
         ${!c.rows.length ? `<p class="cm-empty">${esc(T('cst.empty'))}</p>` : `<table class="cst-table"><thead><tr>${th('label', T('cst.col.component'))}${th('a', 'A', 'num')}${th('b', 'B', 'num')}${th('delta', T('cst.col.delta'), 'num')}<th>${esc(T('cst.col.status'))}</th></tr></thead><tbody>${rows.map(r =>
           `<tr class="st-${r.status}"><td>${esc(r.label)}</td><td class="num">${esc(cstMoney(r.a))}</td><td class="num">${esc(cstMoney(r.b))}</td><td class="num cst-d">${esc(cstDelta(r.delta))}</td><td><span class="cst-st">${esc(T(`cst.st.${r.status}`))}</span></td></tr>`).join('') || `<tr><td colspan="5" class="cm-empty">${esc(T('cst.noChanges'))}</td></tr>`}</tbody></table>
         <h4 class="cst-h">${esc(T('cst.deltaBy', { by: T(`cst.by.${st.by}`) }))}</h4>
-        <table class="cst-table"><thead><tr><th>${esc(T(`cst.by.${st.by}`))}</th><th class="num">A</th><th class="num">B</th><th class="num">${esc(T('cst.col.delta'))}</th></tr></thead><tbody>${by.map(r =>
-          `<tr><td${r.unassigned ? ' class="cst-un"' : ''}>${esc(r.label)}</td><td class="num">${esc(cstMoney(r.a))}</td><td class="num">${esc(cstMoney(r.b))}</td><td class="num cst-d">${esc(cstDelta(r.delta))}</td></tr>`).join('')}</tbody></table>`}`;
+        <table class="cst-table"><thead><tr><th>${esc(T(`cst.by.${st.by}`))}</th><th class="num">A</th><th class="num">B</th><th class="num">${esc(T('cst.col.delta'))}</th>${st.by === 'group' ? `<th>${esc(T('cst.col.status'))}</th>` : ''}</tr></thead><tbody>${by.map(r =>
+          `<tr${st.by === 'group' ? ` class="st-${r.status}"` : ''}><td${r.unassigned ? ' class="cst-un"' : ''}${st.by === 'group' ? ` ${indent(r.depth)} title="${esc(r.pathLabel)}"` : ''}>${esc(r.label)}${esc(lvTag(r))}</td><td class="num">${esc(cstMoney(r.a))}</td><td class="num">${esc(cstMoney(r.b))}</td><td class="num cst-d">${esc(cstDelta(r.delta))}</td>${st.by === 'group' ? `<td><span class="cst-st">${esc(T(`cst.st.${r.status}`))}</span></td>` : ''}</tr>`).join('')}</tbody></table>`}`;
     };
     const show = () => {
       back.querySelectorAll('[data-pane]').forEach(p => { p.hidden = p.dataset.pane !== st.tab; });
@@ -4374,10 +4511,14 @@
       if (st.tab === 'breakdown') {
         if (!cur.length) return;
         const tot = cur.reduce((s, r) => s + r.monthly, 0);
+        if (st.by === 'group') { // árbol completo: ruta, profundidad, componentes (con descendientes), costo directo y subtotal; el total suma solo el costo directo
+          download(cstCSV([[T('cst.by.group'), T('cst.col.depth'), T('cst.col.components'), T('cst.col.own'), T('cst.col.subtotal'), T('cst.col.yearly'), T('cst.col.pct')], ...cur.map(r => [r.pathLabel, r.depth, r.nodesAll.length, round2(r.own), round2(r.total), round2(r.total * 12), tot ? round2(r.total / tot * 100) : 0]), [T('cst.total'), '', cur.reduce((s, r) => s + r.nodes.length, 0), round2(tot), round2(tot), round2(tot * 12), 100]]), fileName('csv', 'costs'), 'text/csv;charset=utf-8');
+          return;
+        }
         download(cstCSV([[T(`cst.by.${st.by}`), T('cst.col.components'), T('cst.col.monthly'), T('cst.col.yearly'), T('cst.col.pct')], ...cur.map(r => [r.label, r.nodes.length, round2(r.monthly), round2(r.monthly * 12), tot ? round2(r.monthly / tot * 100) : 0]), [T('cst.total'), cur.reduce((s, r) => s + r.nodes.length, 0), round2(tot), round2(tot * 12), 100]]), fileName('csv', 'costs'), 'text/csv;charset=utf-8');
       } else if (cmp) {
         download(cstCSV([[T('cst.col.component'), `A: ${cmp.a.label}`, `B: ${cmp.b.label}`, T('cst.col.delta'), T('cst.col.status')], ...cmp.shown.map(r => [r.label, round2(r.a), round2(r.b), round2(r.delta), T(`cst.st.${r.status}`)]),
-          [T('cst.total'), round2(cmp.a.monthly), round2(cmp.b.monthly), round2(cmp.delta), ''], [], [T(`cst.by.${st.by}`), 'A', 'B', T('cst.col.delta')], ...cmp.by.map(r => [r.label, round2(r.a), round2(r.b), round2(r.delta)])]), fileName('csv', 'cost-compare'), 'text/csv;charset=utf-8');
+          [T('cst.total'), round2(cmp.a.monthly), round2(cmp.b.monthly), round2(cmp.delta), ''], [], [T(`cst.by.${st.by}`), 'A', 'B', T('cst.col.delta')], ...cmp.by.map(r => [r.pathLabel || r.label, round2(r.a), round2(r.b), round2(r.delta)])]), fileName('csv', 'cost-compare'), 'text/csv;charset=utf-8');
       }
     };
     back.addEventListener('mousedown', ev => { if (ev.target === back) close(); });
@@ -4386,6 +4527,8 @@
       if (t) { st.tab = t.dataset.cstTab; return show(); }
       const s = ev.target.closest('[data-cst-sort]');
       if (s) { const k = s.dataset.cstSort; if (st.sort === k) st.dir = -st.dir; else { st.sort = k; st.dir = -1; } drawCompare(); return back.querySelector(`[data-cst-sort="${k}"]`)?.focus(); }
+      const tg = ev.target.closest('[data-cst-tg]');
+      if (tg) { const k = tg.dataset.cstTg, row = cur.find(x => x.pathKey === k); st.exp[k] = !(st.exp[k] ?? (row ? row.depth < 2 : true)); drawBreakdown(); return outs.breakdown.querySelector(`[data-cst-tg="${CSS.escape(k)}"]`)?.focus(); }
       const r = ev.target.closest('tr[data-i]');
       if (r) { const f = cur[+r.dataset.i]?.filter; if (f) { close(); setFilter(f); } return; }
       const b = ev.target.closest('[data-cst]');
@@ -4406,7 +4549,7 @@
       if (!k) return;
       if (k === 'a' || k === 'b') st[k] = ev.target.value || null;
       else if (k === 'only') st.only = ev.target.checked;
-      else if (k === 'by' || k === 'by2') { st.by = ev.target.value; $q('[data-cst="by"]').value = $q('[data-cst="by2"]').value = st.by; }
+      else if (k === 'by' || k === 'by2') { st.by = CST_BY.find(x => x === ev.target.value) || st.by; $q('[data-cst="by"]').value = $q('[data-cst="by2"]').value = st.by; }
       show();
     });
     cstClose = close;
@@ -6204,8 +6347,8 @@
 
     if (want('costs')) {
       const cn = m.nodes.filter(hasCost), blocks = [{ k: 'table', head: [repT('h.component'), repT('h.group'), repT('h.price'), repT('h.cost')], rows: [...cn.map(n => [n.label, gpath(n), costText(n), money(round2(perMonth(n)))]), [{ t: repT('total'), tone: 'total' }, '', '', { t: money(round2(monthlyTotal(m.nodes))), tone: 'total' }]] }];
-      const gr = m.groups.map(g => ({ g, sum: monthlyTotal(nodesUnder(g, m)), n: nodesUnder(g, m).filter(hasCost).length })).filter(x => x.n);
-      if (gr.length) { blocks.push({ k: 'h3', t: repT('h.perGroup') }); blocks.push({ k: 'table', head: [repT('h.group'), repT('h.nodes'), repT('h.cost')], rows: gr.map(x => [[gpath(x.g), x.g.label].filter(Boolean).join(' › '), String(x.n), money(round2(x.sum))]) }); }
+      const gr = costBreakdown(m, 'group'); // árbol por ruta de grupos: costo directo y subtotal (con descendientes); sin asignar al final
+      if (gr.length) { blocks.push({ k: 'h3', t: repT('h.perGroup') }); blocks.push({ k: 'table', head: [repT('h.group'), repT('h.nodes'), T('cst.col.own'), T('cst.col.subtotal')], rows: gr.map(x => ['\u00a0\u00a0\u00a0'.repeat(x.depth) + x.label + (x.kind === 'level' ? ` [${T('cst.level')}]` : ''), String(x.nodesAll.length), x.own ? money(round2(x.own)) : '—', money(round2(x.total))]) }); }
       [['team', 'byTeam', 'gov.team'], ['costCenter', 'byCostCenter', 'gov.costCenter']].forEach(([by, hk, fk]) => {
         const rs = costBreakdown(m, by);
         if (!rs.some(x => !x.unassigned)) return;
@@ -6237,7 +6380,7 @@
     }
 
     if (want('compliance')) {
-      const { rows, keys, stats } = cmpModel(m), blocks = [];
+      const { rows, keys, stats } = cmpModel(m), blocks = [], big = keys.length > 10; // más de 10 controles: una rejilla por marco (cabe en A4)
       cmpFrameworks(keys).forEach(fw => {
         const ks = keys.filter(k => ctlSplit(k)[0] === fw), ci = ctlInfo(`${fw}:x`);
         blocks.push({ k: 'h3', t: ci.fwLabel });
@@ -6245,10 +6388,10 @@
           const s = stats.get(k), d = rows.length - s.na;
           return [ctlSplit(k)[1], ctlInfo(k).title, ...CTL_STATUS.map(x => String(s[x])), String(s.unmapped), d > 0 ? Math.round(s.met / d * 100) + '%' : '—'];
         }) });
-        const st = rows.flatMap(r => ks.filter(k => r.eff.has(k)).map(k => [r.n.label, ctlSplit(k)[1], { t: `${CTL_SYM[r.eff.get(k).status]} ${T(`cmp.${r.eff.get(k).status}`)}`, tone: `st-${r.eff.get(k).status}` }, r.eff.get(k).from ? T('cmp.inh', groupById(r.eff.get(k).from)?.label || r.eff.get(k).from) : '']));
-        if (st.length) blocks.push({ k: 'table', cls: 'compact', head: [repT('h.component'), repT('h.control'), repT('h.status'), ''], rows: st });
+        if (big) { const g = cmpGridBlock(rows.filter(r => ks.some(k => r.eff.has(k))), ks); if (g) blocks.push(g); }
       });
-      blocks.push({ k: 'p', muted: true, t: T('cmp.mx.note') });
+      if (!big) { const g = cmpGridBlock(rows, keys); if (g) blocks.push(g); }
+      blocks.push({ k: 'p', muted: true, t: `${T('cmp.mx.note')} ${repT('cmpGridNote')}` });
       sec('compliance', blocks);
     }
 
@@ -6305,12 +6448,25 @@
         else if (b.k === 'cards') o.push(`| ${b.items.map(c => mdCell(c.label)).join(' | ')} |`, `|${b.items.map(() => ' --- |').join('')}`, `| ${b.items.map(c => mdCell(String(c.value))).join(' | ')} |`, '');
         else if (b.k === 'table') {
           if (!b.rows.length) return;
-          o.push(`| ${b.head.map(mdCell).join(' | ')} |`, `|${b.head.map(() => ' --- |').join('')}`, ...b.rows.map(r => `| ${r.map(mdCell).join(' | ')} |`), '');
+          const hd = b.mdHead || b.head;
+          o.push(`| ${hd.map(mdCell).join(' | ')} |`, `|${hd.map(() => ' --- |').join('')}`, ...b.rows.map(r => `| ${r.map(mdCell).join(' | ')} |`), '');
         } else if (b.k === 'img') o.push(`![${mdEsc(b.alt)}](${b.file ? encodeURI(b.file) : b.uri})`, '');
       });
     });
     o.push('---', '', `*${mdEsc(repT('footer', { app: C.app.name, date: D.date }))}*`, '');
     return o.join('\n');
+  }
+
+  // Rejilla de cumplimiento para el informe: filas = componentes, columnas = controles (cabecera de marcos con colspan + ids); celda = símbolo + tono, «↑» si es heredado
+  function cmpGridBlock(rows, ks) {
+    if (!rows.length || !ks.length) return null;
+    const fws = cmpFrameworks(ks), cut = t => (t.length > 28 ? `${t.slice(0, 27)}…` : t);
+    return { k: 'table', cls: 'grid', group: fws.map(f => [ctlInfo(`${f}:x`).short, ks.filter(k => ctlSplit(k)[0] === f).length]),
+      head: [repT('h.component'), ...ks.map(k => ctlSplit(k)[1])], mdHead: [repT('h.component'), ...ks.map(k => (fws.length > 1 ? `${ctlInfo(k).short} ` : '') + ctlSplit(k)[1])],
+      rows: rows.map(r => [{ t: cut(r.n.label), title: r.n.label }, ...ks.map(k => {
+        const e = r.eff.get(k);
+        return e ? { t: CTL_SYM[e.status] + (e.from ? '↑' : ''), tone: `st-${e.status}${e.from ? ' inh' : ''}`, title: `${ctlInfo(k).short} ${ctlSplit(k)[1]}: ${T(`cmp.${e.status}`)}${e.from ? ` (${T('cmp.inh', groupById(e.from)?.label || e.from)})` : ''}` } : '';
+      })]) };
   }
 
   /* HTML autocontenido (también el que se imprime a PDF): sin red, sin scripts, imágenes como data URI */
@@ -6324,6 +6480,7 @@ dl{display:grid;grid-template-columns:max-content 1fr;gap:3px 14px;margin:0 0 12
 .cards{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 12px}.card{min-width:110px;padding:8px 12px;border:1px solid #d6d3e0;border-radius:8px;background:#f6f5fb}.card b{display:block;font-size:16pt;line-height:1.2}.card span{font-size:8.5pt;color:#6b6778;text-transform:uppercase;letter-spacing:.04em}
 table{width:100%;border-collapse:collapse;margin:6px 0 14px;font-size:8.5pt}table.compact{width:auto;min-width:50%}th,td{padding:4px 6px;border:1px solid #d6d3e0;text-align:left;vertical-align:top;overflow-wrap:anywhere}th{background:#efedf8;font-weight:700}
 thead{display:table-header-group}tr{break-inside:avoid}table.wide{font-size:8pt}
+table.grid{width:auto;max-width:100%;font-size:8pt}table.grid th{text-align:center}table.grid th:first-child,table.grid td:first-child{text-align:left;max-width:48mm}table.grid td{text-align:center;white-space:nowrap}table.grid td.inh{font-style:italic;background:#f6f5fb}
 .txt p{white-space:pre-wrap;margin:0 0 6px}ul{margin:0 0 10px;padding-left:20px}
 figure{margin:6px 0 14px;break-inside:avoid}figure img{display:block;max-width:100%;height:auto;border:1px solid #d6d3e0;border-radius:6px}
 .sev-low{color:#2f7d4f;font-weight:700}.sev-medium{color:#9a6b00;font-weight:700}.sev-high{color:#b4361f;font-weight:700}.sev-critical{color:#fff;background:#b4361f;font-weight:700}
@@ -6333,7 +6490,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
 @page{size:A4;margin:18mm 14mm 18mm;@top-left{content:__TITLE__;font:8pt sans-serif;color:#6b6778}@bottom-right{content:counter(page) " / " counter(pages);font:8pt sans-serif;color:#6b6778}}
 @media print{body{padding:0}h2,h3{break-after:avoid}.pb{break-before:page}}`;
   function reportHTML(D) {
-    const cell = c => { const t = typeof c === 'object' && c ? c.t : c, tone = typeof c === 'object' && c?.tone ? ` class="${esc(c.tone)}"` : ''; return `<td${tone}>${esc(t).replace(/\r?\n/g, '<br>')}</td>`; };
+    const cell = c => { const t = typeof c === 'object' && c ? c.t : c, tone = typeof c === 'object' && c?.tone ? ` class="${esc(c.tone)}"` : '', tt = typeof c === 'object' && c?.title ? ` title="${esc(c.title)}"` : ''; return `<td${tone}${tt}>${esc(t).replace(/\r?\n/g, '<br>')}</td>`; };
     const css = REP_CSS.replace('__FONT__', fontCss().replace(/"/g, "'")).replace('__TITLE__', `"${String(D.title).replace(/[\\"]/g, '\\$&').replace(/[\r\n]+/g, ' ')}"`);
     const blk = b => {
       if (b.k === 'h3') return `<h3>${esc(b.t)}</h3>`;
@@ -6342,7 +6499,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
       if (b.k === 'ul') return `<ul>${b.items.map(t => `<li>${esc(t).replace(/\r?\n/g, '<br>')}</li>`).join('')}</ul>`;
       if (b.k === 'text') return `<div class="txt"><h4>${esc(b.label)}</h4><p>${esc(b.t)}</p></div>`;
       if (b.k === 'cards') return `<div class="cards">${b.items.map(c => `<div class="card"><b${c.tone ? ` class="${esc(c.tone)}"` : ''}>${esc(c.value)}</b><span>${esc(c.label)}</span></div>`).join('')}</div>`;
-      if (b.k === 'table') return b.rows.length ? `<table${b.cls ? ` class="${esc(b.cls)}"` : ''}><thead><tr>${b.head.map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${b.rows.map(r => `<tr>${r.map(cell).join('')}</tr>`).join('')}</tbody></table>` : '';
+      if (b.k === 'table') return b.rows.length ? `<table${b.cls ? ` class="${esc(b.cls)}"` : ''}><thead>${b.group ? `<tr><th rowspan="2">${esc(b.head[0])}</th>${b.group.map(([g, n]) => `<th colspan="${n}">${esc(g)}</th>`).join('')}</tr><tr>${b.head.slice(1).map(h => `<th>${esc(h)}</th>`).join('')}</tr>` : `<tr>${b.head.map(h => `<th>${esc(h)}</th>`).join('')}</tr>`}</thead><tbody>${b.rows.map(r => `<tr>${r.map(cell).join('')}</tr>`).join('')}</tbody></table>` : '';
       if (b.k === 'img') return `<figure><img src="${esc(b.uri || '')}" alt="${esc(b.alt)}"></figure>`;
       return '';
     };
