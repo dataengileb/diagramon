@@ -59,7 +59,25 @@ api ~> cola : eventos
 | `# …` o `// …` | Comentario |
 
 Las palabras clave funcionan en los dos idiomas: `title`/`título`, `group`/`grupo`, `cost`/`costo`, `/month`/`/mes`, `/hour`/`/hora`, `/year`/`/año`, `/3years`/`/3años`.
-El texto es la fuente de verdad de notas, zonas, fronteras de confianza, notas STRIDE y hallazgos descartados: borrarlos del texto los borra del diagrama. Las versiones y las decisiones de arquitectura (ADR) se conservan.
+El texto es la fuente de verdad de notas, zonas, fronteras de confianza, notas STRIDE, hallazgos descartados y decisiones de arquitectura (ADR): borrarlos del texto los borra del diagrama. Las versiones se conservan.
+### Decisiones de arquitectura (ADR)
+
+Una línea `adr` abre una decisión; los campos van en las líneas siguientes, cada uno con su texto entre comillas (`\n` = salto de línea). Las decisiones se escriben al final del texto.
+
+```
+adr ADR-001: "Separar la tienda en front end web y API" estado=aceptada fecha=2026-06-02 decisores="Comité de arquitectura" enlaces=tienda,api,tienda->api,version:v1
+  contexto: "El monolito ata las versiones de la interfaz a las del backend.\nNo permite escalarlas por separado."
+  decisión: "Servir el front end React desde CloudFront y exponer una API sin estado."
+  consecuencias: "Despliegues independientes; ahora hace falta versionar la API."
+  historial: propuesta 2026-05-20 por="Ana" nota="Primer borrador"; aceptada 2026-06-02
+adr ADR-002: "Procesar el despacho con una cola" estado=reemplazada reemplazada-por=ADR-003
+```
+
+- Claves de la cabecera (en inglés entre paréntesis): `estado=` (`status=`) con `propuesta`, `aceptada`, `rechazada`, `obsoleta` o `reemplazada` (`proposed`, `accepted`, `rejected`, `deprecated`, `superseded`); `fecha=` (`date=`); `decisores=` (`deciders=`); `enlaces=` (`links=`); `reemplazada-por=` (`superseded-by=`, el id de la decisión más nueva).
+- `enlaces=` es una lista separada por comas de ids de componentes, ids de grupos, conexiones escritas `origen->destino` (añade `#2` para elegir la segunda de varias conexiones iguales) y versiones escritas `version:<id>`.
+- Campos: `contexto:`, `decisión:`, `consecuencias:` (en inglés: `context:`, `decision:`, `consequences:`) e `historial:` (`history:`): los cambios de estado, el más antiguo primero, `estado AAAA-MM-DD por="…" nota="…"` separados por `;`.
+- Un campo solo vale justo después de su línea `adr` (o de otro campo); cualquier otra línea cierra la decisión. Borrar un bloque `adr` del texto borra la decisión. Las versiones no están en el texto: los enlaces `version:<id>` solo se conservan para versiones que ya existen.
+
 Los colores también aceptan su nombre en inglés (`peach`, `sky`, `mint`…).
 
 Un nodo que solo aparece en una conexión se crea solo. Los errores salen en rojo con su número de línea.

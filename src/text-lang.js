@@ -54,7 +54,14 @@
              si hay varias conexiones iguales, `#2` elige la segunda: threat api -> db #2 T: "…". La amenaza debe tener ya estado (threats=…); si no, es un error
    Descartados: dismiss sec:public-db:db: "motivo" by="Ana" date=2026-10-01 (es: descartar id: "motivo" por=Ana fecha=…); el id puede llevar `:`
              (el separador es el primer `:` seguido de espacio) o ir entre comillas: dismiss "sec:x:y": "motivo"
-   El texto es la fuente de verdad de notas, zonas, fronteras, notas STRIDE y descartados: borrarlos del texto los borra del diagrama.
+   Decisiones (ADR): adr ADR-001: "Título" status=accepted date=2026-06-02 deciders="Comité" links=tienda,api,tienda->api,version:v1 superseded-by=ADR-002
+             (es: adr … estado=aceptada fecha= decisores= enlaces= reemplazada-por=; estados proposed|propuesta, accepted|aceptada, rejected|rechazada,
+             deprecated|obsoleta, superseded|reemplazada). Los campos van en las líneas siguientes, cada uno con su texto entre comillas (\n = salto de línea):
+               context: "…"  decision: "…"  consequences: "…"  history: proposed 2026-05-20 by="Ana" note="…"; accepted 2026-06-02
+             (es: contexto: decisión: consecuencias: historial: … por= nota=). links= lista ids de nodos, grupos, conexiones (`origen->destino`, `#2` si hay
+             varias iguales) y versiones (`version:<id>`; las versiones no viven en el texto, así que solo se conservan los enlaces a las que ya existen).
+             Los campos solo valen justo después de la línea `adr` (o de otro campo); cualquier otra línea cierra la decisión.
+   El texto es la fuente de verdad de notas, zonas, fronteras, notas STRIDE, descartados y decisiones (ADR): borrarlos del texto los borra del diagrama.
    Comentario: líneas que empiezan por # o //
 
    Acepta las palabras clave en inglés y en español (title/título, group/grupo,
@@ -136,6 +143,21 @@
   const LEVEL_RE = /^(inside|dentro)\s+([^\s:{]+)\s*\{\s*$/i;
   const THREAT_RE = /^(threat|amenaza)\s+(\S+?)\s*(\.\.>|~>|=>|->)\s*(\S+?)(?:\s+#(\d+))?\s+([STRIDEstride])\s*:\s*(.*)$/;
   const DISMISS_RE = /^(dismiss|descartar|descartado)\s+(?:("(?:[^"\\]|\\.)*")|(\S+?))\s*:\s+(.*)$/i;
+  /* ---------- decisiones de arquitectura (ADR): adr ID: "título" status= date= … + líneas context/decision/consequences/history ---------- */
+  const ADR_RE = /^adr\s+([^\s:]+)\s*:\s*(.*)$/i;
+  const ADR_FIELD_RE = /^(context|contexto|decision|decisi[oó]n|consequences|consecuencias|history|historial)\s*:\s*(.*)$/i;
+  const ADR_KEYS = ['status', 'estado', 'date', 'fecha', 'deciders', 'decisores', 'links', 'enlaces', 'superseded-by', 'reemplazada-por', 'sustituida-por'];
+  const ADR_HKEYS = ['by', 'por', 'note', 'nota'];
+  const ADR_ST_IN = { proposed: 'proposed', propuesta: 'proposed', propuesto: 'proposed', accepted: 'accepted', aceptada: 'accepted', aceptado: 'accepted', rejected: 'rejected', rechazada: 'rejected', rechazado: 'rejected',
+    deprecated: 'deprecated', obsoleta: 'deprecated', obsoleto: 'deprecated', superseded: 'superseded', reemplazada: 'superseded', reemplazado: 'superseded', sustituida: 'superseded', sustituido: 'superseded', superada: 'superseded', superado: 'superseded' };
+  const ADR_ST_OUT = { en: {}, es: { proposed: 'propuesta', accepted: 'aceptada', rejected: 'rechazada', deprecated: 'obsoleta', superseded: 'reemplazada' } };
+  const ADR_W = { en: { status: 'status', date: 'date', deciders: 'deciders', links: 'links', sup: 'superseded-by', context: 'context', decision: 'decision', consequences: 'consequences', history: 'history', by: 'by', note: 'note' },
+    es: { status: 'estado', date: 'fecha', deciders: 'decisores', links: 'enlaces', sup: 'reemplazada-por', context: 'contexto', decision: 'decisión', consequences: 'consecuencias', history: 'historial', by: 'por', note: 'nota' } };
+  const ADR_FIELD = { context: 'context', contexto: 'context', decision: 'decision', decisión: 'decision', consequences: 'consequences', consecuencias: 'consequences', history: 'history', historial: 'history' };
+  const adrText = v => { const t = v.trim(); return /^"(?:[^"\\]|\\.)*"$/.test(t) ? unquote(t) : t.replace(/\\n/g, '\n'); };
+  // Divide por `;` ignorando los de dentro de comillas
+  const splitSemi = v => { const out = []; let cur = '', q = false; for (let i = 0; i < v.length; i++) { const c = v[i]; if (c === '\\' && q) { cur += c + (v[++i] ?? ''); continue; } if (c === '"') q = !q; if (c === ';' && !q) { out.push(cur); cur = ''; } else cur += c; } out.push(cur); return out; };
+  const hv = v => (/[\s";[\]{}]/.test(String(v)) || String(v) === '' ? quote(v) : String(v));
   // curved | elbow (también curva/curvas, codo/codos, orthogonal)
   const parseRoute = v => (/^(elbows?|codos?|orthogonal|ortogonal(es)?|angle|ángulos?)$/i.test(v) ? 'elbow' : /^(curved?|curvas?)$/i.test(v) ? 'curved' : null);
   // data=pii,pci → ['pii', 'pci'] · encrypted=yes|no (también sí/no, true/false)
@@ -175,6 +197,8 @@
       at: v => `invalid position “${v}” (use at=120,40)`, size: v => `invalid size “${v}” (use size=180,110)`, sev: v => `unknown severity “${v}” (use low, medium, high or critical)`,
       lvInGroup: id => `“inside ${id}” cannot be opened inside a group`, lvConflict: (a, b) => `in=${a} conflicts with the enclosing “inside ${b}” block`,
       lvNest: (id, o) => `“${id}” is not a component of “${o}”, so “inside ${id}” cannot be nested there`,
+      adrDup: id => `decision “${id}” is declared twice`, adrSt: v => `unknown decision status “${v}” (use proposed, accepted, rejected, deprecated or superseded)`, adrLink: v => `“${v}” is not a node, group or connection (use ids, source->target or version:<id>)`,
+      adrHist: v => `invalid history entry “${v}” (use status YYYY-MM-DD by="…" note="…"; separate entries with ;)`,
       thEdge: (a, b) => `no connection ${a} -> ${b} for this threat note`, thNone: (a, b, k) => `${a} -> ${b} has no decided ${k} threat (add it with threats="${k}=mitigated")`
     },
     es: {
@@ -196,6 +220,8 @@
       at: v => `posición no válida «${v}» (usa en=120,40)`, size: v => `tamaño no válido «${v}» (usa tamaño=180,110)`, sev: v => `severidad desconocida «${v}» (usa baja, media, alta o crítica)`,
       lvInGroup: id => `«dentro ${id}» no se puede abrir dentro de un grupo`, lvConflict: (a, b) => `dentro=${a} choca con el bloque «dentro ${b}» que lo contiene`,
       lvNest: (id, o) => `«${id}» no es un componente de «${o}», así que «dentro ${id}» no puede anidarse ahí`,
+      adrDup: id => `la decisión «${id}» está declarada dos veces`, adrSt: v => `estado de decisión desconocido «${v}» (usa propuesta, aceptada, rechazada, obsoleta o reemplazada)`, adrLink: v => `«${v}» no es un nodo, grupo ni conexión (usa ids, origen->destino o version:<id>)`,
+      adrHist: v => `entrada de historial no válida «${v}» (usa estado AAAA-MM-DD por="…" nota="…"; separa las entradas con ;)`,
       thEdge: (a, b) => `no hay conexión ${a} -> ${b} para esta nota de amenaza`, thNone: (a, b, k) => `${a} -> ${b} no tiene decidida la amenaza ${k} (añádela con amenazas="${k}=mitigada")`
     }
   };
@@ -223,7 +249,7 @@
   // Divide el resto de una línea en etiqueta, [tipo], "detalle" y clave=valor
   function tokens(rest, keys) {
     const out = { words: [], brackets: [], quotes: [], kv: {} };
-    const re = /\[([^\]]*)\]|("(?:[^"\\]|\\.)*")|([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ0-9]*)=("(?:[^"\\]|\\.)*"|\S+)|(\S+)/g;
+    const re = /\[([^\]]*)\]|("(?:[^"\\]|\\.)*")|([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ0-9-]*)=("(?:[^"\\]|\\.)*"|\S+)|(\S+)/g;
     let m;
     while ((m = re.exec(rest))) {
       if (m[1] != null) out.brackets.push(m[1].trim());
@@ -252,7 +278,8 @@
     const model = { title: ctx.lang === 'es' ? 'Diagrama sin título' : 'Untitled diagram', groups: [], nodes: [], edges: [] };
     const errors = [];
     const nodes = new Map(), groups = new Set(), stack = [], gobj = new Map(), inRefs = [], nests = [], thLines = [];
-    model.notes = []; model.zones = []; model.dismissed = {}; model.edgeTypes = [];
+    model.notes = []; model.zones = []; model.dismissed = {}; model.edgeTypes = []; model.decisions = [];
+    const adrSeen = new Set(), adrRefs = []; let adrCur = null, adrOpen = false;
     // Tipos propios declarados en cualquier línea (una conexión puede usarlos antes de que se declaren)
     const customIds = new Set();
     String(src).split(/\r?\n/).forEach(l => { const q = l.trim().match(TYPE_RE); if (q) customIds.add(q[2].toLowerCase()); });
@@ -308,7 +335,39 @@
       const ln = i + 1, line = rawLine.trim();
       if (!line || line.startsWith('#') || line.startsWith('//')) return;
 
+      const inAdr = adrOpen; adrOpen = false;
       let m;
+      if (inAdr && adrCur && (m = line.match(ADR_FIELD_RE))) {
+        adrOpen = true;
+        const f = ADR_FIELD[m[1].toLowerCase()];
+        if (f !== 'history') { adrCur[f] = adrText(m[2]); return; }
+        splitSemi(m[2]).map(x => x.trim()).filter(Boolean).forEach(ent => {
+          const tk = tokens(ent, ADR_HKEYS), st = ADR_ST_IN[foldK(tk.words[0] || '')], h = { status: st, date: tk.words[1] };
+          if (!st || tk.words.length !== 2 || !isDay(h.date) || tk.quotes.length) return err(ln, msg.adrHist(ent));
+          const by = (tk.kv.by ?? tk.kv.por)?.trim(), nt = (tk.kv.note ?? tk.kv.nota)?.trim();
+          if (by) h.by = by;
+          if (nt) h.note = nt;
+          (adrCur.history ||= []).push(h);
+        });
+        return;
+      }
+      if ((m = line.match(ADR_RE))) {
+        adrOpen = true;
+        const id = m[1], tk = tokens(m[2], ADR_KEYS), d = { id, title: (tk.quotes[0] ?? tk.words.join(' ')).trim() };
+        if (adrSeen.has(id)) err(ln, msg.adrDup(id)); else adrSeen.add(id);
+        const sv = tk.kv.status ?? tk.kv.estado;
+        if (sv != null) { const s = ADR_ST_IN[foldK(sv)]; if (s) d.status = s; else err(ln, msg.adrSt(sv)); }
+        const dv = tk.kv.date ?? tk.kv.fecha;
+        if (dv != null) { if (isDay(dv)) d.date = dv; else err(ln, msg.day(dv)); }
+        const dc = (tk.kv.deciders ?? tk.kv.decisores)?.trim();
+        if (dc) d.deciders = dc;
+        const sp = (tk.kv['superseded-by'] ?? tk.kv['reemplazada-por'] ?? tk.kv['sustituida-por'])?.trim();
+        if (sp) d.supersededBy = sp;
+        const lk = tk.kv.links ?? tk.kv.enlaces;
+        if (lk != null) adrRefs.push({ d, ln, refs: String(lk).split(',').map(x => x.trim()).filter(Boolean) });
+        model.decisions.push(d); adrCur = d;
+        return;
+      }
       if ((m = line.match(/^(t[ií]tulo|title)\s*:\s*(.*)$/i))) { model.title = m[2].trim() || model.title; return; }
       if ((m = line.match(/^(direcci[oó]n|direction)\s*:\s*(\S+)\s*$/i))) {
         const d = m[2].toUpperCase();
@@ -533,6 +592,21 @@
       const tk = tokens(t.rest, []), note = tk.quotes[0] ?? tk.words.join(' ').replace(/\\n/g, '\n');
       if (note) e.threats[t.k].note = note;
     });
+    // Enlaces de las decisiones: nodo, grupo, conexión (origen->destino[#n]) o version:<id> (las versiones no están en el texto: las valida setModel)
+    adrRefs.forEach(({ d, ln, refs }) => {
+      const l = {}, add = (k, id) => { if (!(l[k] ||= []).includes(id)) l[k].push(id); };
+      refs.forEach(r => {
+        let x;
+        if (nodes.has(r)) add('nodes', r);
+        else if (groups.has(r)) add('groups', r);
+        else if ((x = r.match(/^(.+?)->(.+?)(?:#(\d+))?$/))) {
+          const e = model.edges.filter(q => q.from === x[1] && q.to === x[2])[(x[3] ? +x[3] : 1) - 1];
+          if (e) { e.id ||= `e${model.edges.indexOf(e) + 1}`; add('edges', e.id); } else err(ln, msg.adrLink(r));
+        } else if (/^version:./.test(r)) add('versions', r.slice(8));
+        else err(ln, msg.adrLink(r));
+      });
+      if (Object.keys(l).length) d.links = l;
+    });
     return { model, errors };
   }
 
@@ -635,6 +709,17 @@
     if (tl.length) out.push('', ...tl);
     const dis = Object.entries(m.dismissed || {});
     if (dis.length) out.push('', ...dis.map(([id, d]) => `${w.dismiss} ${/[\s"]/.test(id) || id.endsWith(':') || !id ? quote(id) : id}: ${quote(d.reason || '')}${d.by ? ` ${w.by}=${bare(d.by)}` : ''}${d.date ? ` ${w.date}=${d.date}` : ''}`));
+    // Decisiones (ADR): al final; los campos de texto entre comillas (JSON), el historial en una sola línea
+    const aw = ADR_W[lang] || ADR_W.en, ast = ADR_ST_OUT[lang] || {};
+    (m.decisions || []).forEach(d => {
+      const l = d.links || {}, same = e => m.edges.filter(x => x.from === e.from && x.to === e.to);
+      const refs = [...(l.nodes || []), ...(l.groups || []),
+        ...(l.edges || []).map(id => m.edges.find(e => e.id === id)).filter(Boolean).map(e => `${e.from}->${e.to}${same(e).length > 1 ? `#${same(e).indexOf(e) + 1}` : ''}`),
+        ...(l.versions || []).map(id => `version:${id}`)];
+      out.push('', `adr ${d.id}: ${quote(d.title ?? '')} ${aw.status}=${ast[d.status] || d.status || 'proposed'}${d.date ? ` ${aw.date}=${d.date}` : ''}${d.deciders ? ` ${aw.deciders}=${bare(d.deciders)}` : ''}${refs.length ? ` ${aw.links}=${bare(refs.join(','))}` : ''}${d.supersededBy ? ` ${aw.sup}=${bare(d.supersededBy)}` : ''}`);
+      ['context', 'decision', 'consequences'].forEach(k => { if (d[k]) out.push(`  ${aw[k]}: ${quote(d[k])}`); });
+      if (d.history?.length) out.push(`  ${aw.history}: ${d.history.map(h => `${ast[h.status] || h.status} ${h.date}${h.by ? ` ${aw.by}=${hv(h.by)}` : ''}${h.note ? ` ${aw.note}=${hv(h.note)}` : ''}`).join('; ')}`);
+    });
     return out.join('\n') + '\n';
   }
 

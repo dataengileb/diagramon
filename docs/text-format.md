@@ -59,7 +59,25 @@ api ~> queue : events
 | `# …` or `// …` | Comment |
 
 Keywords work in English and Spanish (`title`/`título`, `group`/`grupo`, `cost`/`costo`, `/month`/`/mes`…).
-The text is the source of truth for notes, zones, trust boundaries, STRIDE notes and dismissed findings: deleting them from the text deletes them from the diagram. Versions and architecture decisions (ADR) are kept.
+The text is the source of truth for notes, zones, trust boundaries, STRIDE notes, dismissed findings and architecture decisions (ADR): deleting them from the text deletes them from the diagram. Versions are kept.
+### Architecture decisions (ADR)
+
+An `adr` line starts a decision; the fields follow on the next lines, each with its text in quotes (`\n` = line break). Decisions are written at the end of the text.
+
+```
+adr ADR-001: "Split the shop into a web front end and an API" status=accepted date=2026-06-02 deciders="Architecture board" links=shop,api,shop->api,version:v1
+  context: "The monolith couples UI releases to backend releases.\nIt cannot scale them separately."
+  decision: "Serve the React front end from CloudFront and expose a stateless API."
+  consequences: "Independent deploys; we now need API versioning."
+  history: proposed 2026-05-20 by="Ana" note="First draft"; accepted 2026-06-02
+adr ADR-002: "Process fulfilment with a queue" status=superseded superseded-by=ADR-003
+```
+
+- Header keys (Spanish in brackets): `status=` (`estado=`) with `proposed`, `accepted`, `rejected`, `deprecated` or `superseded` (`propuesta`, `aceptada`, `rechazada`, `obsoleta`, `reemplazada`); `date=` (`fecha=`); `deciders=` (`decisores=`); `links=` (`enlaces=`); `superseded-by=` (`reemplazada-por=`, the id of the newer decision).
+- `links=` is a comma-separated list of component ids, group ids, connections written `source->target` (add `#2` to pick the second of several identical connections) and versions written `version:<id>`.
+- Fields: `context:`, `decision:`, `consequences:` (Spanish: `contexto:`, `decisión:`, `consecuencias:`) and `history:` (`historial:`): status changes oldest first, `status YYYY-MM-DD by="…" note="…"` separated by `;`.
+- A field only counts right after its `adr` line (or another field); any other line closes the decision. Deleting an `adr` block from the text deletes the decision. Versions are not in the text: `version:<id>` links are kept only for versions that already exist.
+
 A node that only appears in a connection is created for you. Errors are shown in red with their line number.
 The text does not store positions: existing nodes stay where they are, and new nodes are placed next to their neighbors.
 

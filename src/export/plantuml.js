@@ -38,6 +38,8 @@
      cloud/database/etc. Sin zonas ni límites no cambia nada.
    - Metadatos: líneas de comentario `' meta <alias>: etiqueta=valor; …`
      (ctx.meta) para nodos, grupos y aristas; nunca en las etiquetas visibles.
+   - Decisiones (ADR) y hallazgos descartados: comentarios `' adr ADR-001 [accepted] Título - links: N_x, …`
+     (+ `'   decision: …`) y `' dismissed <id>: motivo (quién, fecha)` tras los metadatos, solo si los hay.
    - Diagramas sin niveles, notas, zonas ni metadatos: salida idéntica a la anterior.
    API: window.DiagramonExport.plantuml(model, ctx) -> { text, ext, mime }.
    ========================================================================== */
@@ -301,6 +303,22 @@ window.DiagramonExport.plantuml = (() => {
       nodes.forEach(n => mline(nAlias[n.id], n));
       edges.forEach(e => { if (nAlias[e.from] && nAlias[e.to]) mline(`edge ${oneLine(e.id)} (${nAlias[e.from]} -> ${nAlias[e.to]})`, e); });
       if (rows.length) { out.push(''); out.push("' Metadata"); rows.forEach(r => out.push(r)); }
+    }
+
+    // Decisiones (ADR) y hallazgos descartados: solo comentarios
+    {
+      const rows = [];
+      (model.decisions || []).forEach(d => {
+        const l = d.links || {};
+        const refs = [...(l.nodes || []).map(id => nAlias[id]), ...(l.groups || []).map(id => gAlias[id]), ...(l.edges || []).map(id => `edge ${oneLine(id)}`), ...(l.versions || []).map(id => `version:${oneLine(id)}`)].filter(Boolean);
+        rows.push(`' adr ${oneLine(d.id)} [${oneLine(d.status)}] ${oneLine(d.title)}${refs.length ? ' - links: ' + refs.join(', ') : ''}`);
+        if (d.decision) rows.push(`'   decision: ${oneLine(d.decision)}`);
+      });
+      (typeof ctx.dismissed === 'function' ? ctx.dismissed() : []).forEach(x => {
+        const who = [x.by, x.date].filter(Boolean).map(oneLine).join(', ');
+        rows.push(`' dismissed ${oneLine(x.id)}: ${oneLine(x.reason)}${who ? ` (${who})` : ''}`);
+      });
+      if (rows.length) { out.push(''); rows.forEach(r => out.push(r)); }
     }
 
     // Leyenda: estilos de conexión usados y clases de datos presentes
