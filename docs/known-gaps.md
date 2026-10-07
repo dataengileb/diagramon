@@ -1,0 +1,21 @@
+[← Diagramon](../README.md) · **English** · [Español](known-gaps.es.md)
+
+# 🧭 Known gaps
+
+Things that work but have not been checked in depth yet. They probably need some debugging; reports and pull requests are welcome.
+
+- **IaC import for Azure and Google Cloud** is tested with the two hand-written `terraform show -json` samples in `samples/` (they follow the real azurerm and google schemas), not with the output of a live Azure or Google Cloud account; unusual resource types may show as generic components.
+- **Mermaid, PlantUML and draw.io exports**: they cover the main cases, but complex diagrams may lose details or need fixes.
+  The Mermaid and draw.io output of the templates was rendered with their own renderers (Mermaid 11 and the draw.io viewer, group icons included); the PlantUML output was only checked for structure, not rendered.
+  Mermaid and PlantUML cannot overlap boxes, so risk zones and trust boundaries become a colored border on the components inside them plus a list (comments in Mermaid, a note in PlantUML), and governance and security fields go into comments; draw.io keeps them as shapes and as *Edit Data* fields. Dismissed findings are not exported.
+- **Light and black themes**: reviewed for the new marks, dialogs and group icons. Very light custom colors are darkened in the light theme (and very dark ones lightened in the dark themes) so borders and labels stay readable; mid-tone custom colors are kept as chosen.
+- **Text tab round trip**: bidirectional connections, multi-line labels and component names with quotes, brackets or `key=value` were checked in English and Spanish (names that need it are written as `name="…"`).
+- Region detection from a group's name covers the usual AWS, Azure and Google Cloud codes; other names need the **Region** field.
+- **Very small components** carrying every pill at once (layer, region, team, availability) have not been reviewed; with the default fixed node width they fit.
+- **Architecture decisions** (ADR) are not part of the text format and are not exported to Mermaid, PlantUML or draw.io.
+- The compliance catalog is a practical subset of each standard with paraphrased titles; check it before relying on it for an audit.
+- **Single points of failure** are detected from the diagram topology only (articulation points of the undirected graph): Diagramon does not know about the internal redundancy of a load balancer or a managed service unless you set `replicas`. Effective availability assumes independent instances (no shared failures, no failover time), and the composite availability multiplies the components of one shortest route, so it ignores alternative longer routes.
+- **Architecture report**: the PDF path was checked up to the browser print call (the full document, its 14 sections, images and tables load and `print()` is called), and tables fit an A4 page width; the print dialog itself and the final pagination depend on the browser. Page headers and numbers appear only where the browser supports CSS `@page` margin boxes. Markdown viewers that block `data:` images show nothing for the diagrams unless you save the images as separate files. Large diagrams with many views and internal levels can take several seconds. The Compliance matrix is listed per control and per component rather than as a grid.
+- **Cost scenarios** compare only the monthly-equivalent price of components (not edges or groups), and *Group* groups by the top-level group only. The breakdown is not exported to Mermaid, PlantUML or draw.io.
+- **C4 levels**: Ghost cards show at most 8 per side, and connections between two levels are only drawn as ghosts (reach them from the inspector links). Renaming a component with a double-click on its name uses the browser's prompt.
+- **Inventory (Excel)**: the `.xlsx` file is written by a minimal built-in writer (a ZIP without compression), so it is larger than one saved by Excel. It has no formulas (totals are not calculated in the file), no shared strings and no charts. It was checked as a valid ZIP with well-formed XML parts, but not opened in Excel, Numbers or LibreOffice yet. Several CSV downloads in a row may trigger a "download multiple files" prompt in some browsers.

@@ -17,6 +17,10 @@ These keep Diagramon what it is, so changes that break them will usually be decl
 3. **Customizable things live in `src/config.js`.** UI text goes in `src/i18n.js`, in both English and Spanish.
 4. **Escape everything.** Any text that comes from a model, import or user input and is placed into HTML must go through `esc()` (see `src/app.js`). Never interpolate raw values into `innerHTML` or `style="…"`. Don't add inline scripts or `on…=` handlers: the CSP blocks them.
 
+## Where things are
+
+The app code is in `src/` (engine, config, texts, text language, import, sharing) and `src/export/` (Mermaid, PlantUML, draw.io, Excel); icons and fonts are in `assets/`. See [docs/project-structure.md](docs/project-structure.md) for every file, and keep the user guides in `docs/` (English `*.md` and Spanish `*.es.md`) in sync with the feature you change.
+
 ## How to send a change
 
 1. Fork the repository and create a branch from `main` (`fix/short-description` or `feature/short-description`).
