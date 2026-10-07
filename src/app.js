@@ -3194,7 +3194,7 @@
     if (opts.fromEditor && S.model && raw && typeof raw === 'object') {
       if (!Array.isArray(raw.notes)) raw = { ...raw, notes: S.model.notes };
       if (!Array.isArray(raw.zones)) raw = { ...raw, zones: S.model.zones };
-      if (!Array.isArray(raw.decisions)) raw = { ...raw, decisions: S.model.decisions }; // ni el texto ni el JSON (si se borra la clave) tocan las decisiones
+      if (!Array.isArray(raw.decisions)) raw = { ...raw, decisions: S.model.decisions }; // el texto siempre trae las decisiones (ADR; borrarlas del texto las borra); el JSON, si omite la clave, las conserva
     }
     S.model = normalize(raw);
     ensurePositions(S.model);
@@ -6868,16 +6868,19 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
         add('datasets', (x.datasets || []).join(', '));
         if (x.transferOk) add('transferOk', yn(true));
         add('threats', Object.entries(x.threats || {}).map(([k, d]) => `${k}=${T(`stride.st.${d.status}`)}${d.note ? ` (${d.note})` : ''}`).join('; '));
+        add('adrs', decisionsOf('edges', x.id, m).map(d => d.id).join(','));
       } else if ('type' in x) {
         const r = rows.get(x.id) || {};
         // Exposición y respaldo deducidos solo cuando aportan: exposición pública o valores puestos a mano
         const skip = k => (k === 'backup' && typeof x.backup !== 'boolean') || (k === 'exposure' && !x.exposure && r.exposure !== T('sec.expo.public'));
         NODE_KEYS.forEach(k => { if (!skip(k)) add(k, r[k]); });
+        add('adrs', decisionsOf('nodes', x.id, m).map(d => d.id).join(','));
       } else {
         ['owner', 'steward', 'team', 'costCenter'].forEach(k => add(k, String(x[k] ?? '').trim()));
         add('region', String(x.region ?? '').trim());
         add('layer', x.layer ? layerInfo(x.layer)?.label || x.layer : '');
         add('compliance', Object.entries(x.controls || {}).map(([k, v]) => `${k}=${T(`cmp.${v}`)}`).join(', '));
+        add('adrs', decisionsOf('groups', x.id, m).map(d => d.id).join(','));
       }
       return out;
     };
@@ -6890,7 +6893,14 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
       sevLabel, sevHex: k => ({ low: '#4E9AD8', medium: '#C4A63A', high: '#E0965A', critical: '#E2806F' })[k] || '#C4A63A',
       layerLabel: k => layerInfo(k)?.label || k, layerHex: k => hexIn(DL[k]?.color),
       noteHex: k => hexOf(k) || hexOf('limon') || '#C4A63A',
-      words: { weightHigh: T('leg.w.high'), weightCritical: T('leg.w.critical'), note: T('insp.note'), zone: T('insp.zone'), trust: T('insp.trust'), threats: T('stride.label'), level: T('inv.c.level') }
+      // Decisiones (ADR) y hallazgos descartados: los exportadores los escriben como comentarios, atributos o una página aparte
+      adrStatus: k => T(`adr.st.${k}`),
+      // → [{ id, title, target: { kind, id } | null, reason, by, date }]; un hallazgo que ya no existe sale con título vacío y sin destino
+      dismissed: () => {
+        const byId = new Map(allFindings(m).map(f => [f.id, f]));
+        return Object.entries(m.dismissed || {}).filter(([id]) => byId.get(id)?.source !== 'review').map(([id, d]) => { const f = byId.get(id); return { id, title: f?.title || '', target: f?.target ? { kind: f.target.kind, id: f.target.id } : null, reason: d.reason || '', by: d.by || '', date: d.date || '' }; });
+      },
+      words: { adrs: T('tab.adr.tip'), adrContext: T('adr.f.context'), adrDecision: T('adr.f.decision'), adrConsequences: T('adr.f.consequences'), adrDeciders: T('adr.f.deciders'), adrStatusL: T('adr.f.status'), adrLinks: T('adr.f.links'), dismissed: T('rep.dismissed'), weightHigh: T('leg.w.high'), weightCritical: T('leg.w.critical'), note: T('insp.note'), zone: T('insp.zone'), trust: T('insp.trust'), threats: T('stride.label'), level: T('inv.c.level') }
     };
   }
   function exportOther(fmt) {

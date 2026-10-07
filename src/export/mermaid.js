@@ -25,6 +25,10 @@
      con sus miembros. Si un nodo cae en varias zonas manda la más grave.
    - Metadatos: líneas `%% meta <id>: etiqueta=valor; …` al final (solo comentarios;
      `click` exige securityLevel y falla en GitHub).
+   - Decisiones (ADR) y hallazgos descartados: comentarios al final, solo si los hay:
+     `%% adr ADR-001 [accepted] Título — links: n_web, g_x, e_e1, version:v1` (+ `%%   decision: …`) y
+     `%% dismissed <id del hallazgo>: motivo (quién, fecha)`. Los componentes enlazados llevan además
+     `adrs=ADR-001,…` en su línea `%% meta`.
    - El front matter (---) va primero: Mermaid lo exige al inicio del texto.
    API: window.DiagramonExport.mermaid(model, ctx) -> { text, ext, mime }.
    ========================================================================== */
@@ -249,6 +253,20 @@
     nodes.forEach(n => metaLine(nid[n.id], n));
     edges.forEach((e, i) => { if (nid[e.from] && nid[e.to]) metaLine('e_' + (e.id == null ? i + 1 : String(e.id).replace(/[^A-Za-z0-9_]/g, '_')), e); });
     if (metaOut.length) out.push('', ...metaOut);
+
+    // Decisiones (ADR) y hallazgos descartados: solo comentarios
+    const adrOut = [];
+    (model.decisions || []).forEach(d => {
+      const l = d.links || {};
+      const refs = [...(l.nodes || []).map(id => nid[id]), ...(l.groups || []).map(id => gid[id]), ...(l.edges || []).map(id => 'e_' + String(id).replace(/[^A-Za-z0-9_]/g, '_')), ...(l.versions || []).map(id => 'version:' + cm(id))].filter(Boolean);
+      adrOut.push(`%% adr ${cm(d.id)} [${cm(d.status)}] ${cm(d.title)}${refs.length ? ' — links: ' + refs.join(', ') : ''}`);
+      if (d.decision) adrOut.push(`%%   decision: ${cm(d.decision)}`);
+    });
+    (typeof ctx.dismissed === 'function' ? ctx.dismissed() : []).forEach(x => {
+      const who = [x.by, x.date].filter(Boolean).map(cm).join(', ');
+      adrOut.push(`%% dismissed ${cm(x.id)}: ${cm(x.reason)}${who ? ` (${who})` : ''}`);
+    });
+    if (adrOut.length) out.push('', ...adrOut);
 
     return { text: out.join('\n') + '\n', ext: 'mmd', mime: 'text/plain' };
   }
