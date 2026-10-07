@@ -55,7 +55,7 @@
 
 - **Click** a node: the right panel shows its name, detail, icon, color and description.
 - To change the icon, type part of its name in the **Icon** search (`lamb`, `sql`, `kafka`…) and pick a suggestion with the mouse or with ↑ ↓ and Enter. The × goes back to the generic icon.
-- **Double-click** a node, group or connection to rename it.
+- **Double-click** a node, group or connection to rename it right there: type, then `Enter` to accept (`Shift+Enter` adds a line break in a connection label) or `Esc` to cancel. Clicking elsewhere also accepts. An empty connection label removes it.
 - Use **Group › + New group…** to create a group. Drag its label to move the whole group.
 
 ## 4. Many at once and alignment
