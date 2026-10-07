@@ -563,6 +563,26 @@
   .cf-actions .btn { flex: none; padding: 0 14px; }
   .cf-actions .btn.primary { border-color: var(--accent); color: var(--accent); }
   .cf-actions .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* Gestor de tipos de conexión propios */
+  .cf.et { width: min(480px, 100%); max-height: calc(100vh - 32px); overflow: auto; display: grid; gap: 8px; }
+  .cf.et p { margin: 0; }
+  .et-list { display: grid; gap: 4px; }
+  .et-item { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface2); }
+  .et-item .et-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; }
+  .et-item small { color: var(--muted); font-size: 11px; }
+  .et-sample { flex: none; overflow: visible; }
+  .et-sub { margin: 4px 0 0; font-size: 12.5px; }
+  .et-form { display: grid; gap: 8px; }
+  .et-form label, .et-f > span { display: grid; gap: 4px; font-size: 12px; font-weight: 650; color: var(--muted); }
+  .et-f { display: grid; gap: 4px; }
+  .et-dashes { display: flex; flex-wrap: wrap; gap: 6px; }
+  .et-dash { padding: 4px 6px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface2); color: var(--text); cursor: pointer; }
+  .et-dash.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+  .et-dash svg { display: block; }
+  .et-colors .et-hex { width: 24px; height: 24px; padding: 0; border: 0; background: none; cursor: pointer; }
+  .et-row { display: grid; grid-template-columns: 1fr 110px; gap: 10px; align-items: end; }
+  .et-prev { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface2); font-size: 12px; }
+  .et-prev span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .cf.share { width: min(440px, 100%); display: grid; gap: 8px; }
   .cf.share label { display: grid; gap: 5px; font-size: 12px; font-weight: 650; color: var(--muted); }
   .cf.share input { width: 100%; min-width: 0; height: 34px; padding: 0 10px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface2); color: var(--text); font: 13px var(--font); }
@@ -737,6 +757,11 @@
   .edge-line { fill: none; stroke: var(--c); stroke-width: var(--w, 1.8px); stroke-opacity: .6; stroke-linecap: round; pointer-events: none; transition: stroke .4s, stroke-opacity .25s, stroke-width .25s; }
   .edge-dashed .edge-line { animation: flow var(--dash-dur, 1s) linear infinite; }
   .edge-arrow { fill: var(--c); fill-opacity: .85; pointer-events: none; transition: fill .4s; }
+  /* Peso de la conexión (high / critical): la línea y la punta engordan en JS (--w); aquí, opacidad y un halo suave */
+  .edge.w-high .edge-line { stroke-opacity: .82; }
+  .edge.w-high .edge-arrow, .edge.w-critical .edge-arrow { fill-opacity: 1; }
+  .edge.w-critical .edge-line { stroke-opacity: .95; filter: drop-shadow(0 0 3px color-mix(in srgb, var(--c) 65%, transparent)); }
+  [data-theme="light"] .edge.w-critical .edge-line { filter: drop-shadow(0 0 2px color-mix(in srgb, var(--c) 45%, transparent)); }
   .edge:hover .edge-line, .edge.lit .edge-line { stroke-opacity: 1; stroke-width: calc(var(--w, 1.8px) + .8px); }
   .edge.sel .edge-line { stroke-opacity: 1; stroke-width: calc(var(--w, 1.8px) + 1.4px); }
   .edge.pulse .edge-line { stroke-opacity: 1; stroke-width: calc(var(--w, 1.8px) + 1.6px); filter: drop-shadow(0 0 6px var(--c)); }

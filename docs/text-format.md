@@ -49,6 +49,9 @@ api ~> queue : events
 | `exposure=public` (`internal`) · `backup=yes` (`no`) | Override the deduced exposure and backup of a node (Spanish: `exposición=pública` / `interna`, `respaldo=sí` / `no`) |
 | `controls="iso27001:A.8.24=met,pcidss:4.2=gap"` | Compliance controls of a node or group (Spanish: `controles=`, states `cumple` `parcial` `brecha` `na`); each is `framework:id=met\|partial\|gap\|na`; nodes inherit from their group |
 | `a -> b` · `a => b` · `a ~> b` · `a ..> b` | Request · data · event · optional |
+| `a -> b : nightly copy style=replication` | Connection type without an arrow of its own (Spanish: `estilo=replicación`): `replication`, `batch` (`lotes`), `stream` (`streaming`), `control`; also `sync`, `async`, `data`, `optional` and your own types. `style=` wins over the arrow; the Text tab writes `->` plus `style=…` for these |
+| `a -> b : orders weight=high` · `weight=critical` | Importance of a connection (Spanish: `peso=alto` / `peso=crítico`; alias `important` / `importante`; `normal` is the default and is not written). Thicker line, bigger arrowhead, more dots |
+| `type backup: "Backup traffic" dash="6 3" color=sky width=2 particles=1` | Your own connection type for this diagram (Spanish: `tipo backup: "…" trazo=… ancho=… partículas=…`). `id`: `a-z`, `0-9`, `-` (up to 32, not a built-in name); `dash`: 1-6 numbers (`"12 4 2 4"`, empty = solid); `color`: palette key or hex; `width` 1-4; `particles` 0-4. Use it with `a -> b : x style=backup` |
 | `a -> b -> c : label` | Chain; the label goes on the last arrow |
 | `lines: elbow` · `a -> b : x line=curved` | Elbow or curved lines, for the diagram or one connection |
 | `author: …` · `version: …` | Shown in the export's title block |
@@ -70,12 +73,14 @@ The text does not store positions: existing nodes stay where they are, and new n
   "groups": [ { "id": "vpc", "label": "VPC", "color": "cielo", "parent": "aws" } ],
   "nodes":  [ { "id": "api", "label": "API", "type": "gateway", "icon": "aws/apigateway", "sub": "REST", "badge": "x2",
                 "group": "vpc", "x": 0, "y": 0, "cost": 0.05, "costPeriod": "hour", "desc": "…" } ],
-  "edges":  [ { "from": "api", "to": "db", "label": "SQL", "style": "sync | async | data | optional", "color": "rosa" } ]
+  "edges":  [ { "from": "api", "to": "db", "label": "SQL", "style": "sync | async | data | optional | replication | batch | stream | control | <custom id>", "weight": "high | critical", "color": "rosa" } ],
+  "edgeTypes": [ { "id": "backup", "label": "Backup traffic", "dash": "6 3", "color": "sky", "width": 2, "particles": 1 } ]
 }
 ```
 
 - Nodes only need `id` and `type`. Without `x`/`y` they are placed automatically.
 - `costPeriod`: `hour`, `year` or `multi` (with `costYears`). Without `costPeriod` the cost is monthly.
+- `weight` (`high` or `critical`; omitted = normal) is the importance of an edge. `edgeTypes` (optional) are the diagram's own connection types: `id` (`a-z0-9-`, up to 32), `label` (up to 60), and optional `dash` (numbers separated by spaces), `color` (palette key or hex), `width` (1-4) and `particles` (0-4); an edge uses one with `"style": "<id>"`.
 - `routing: "elbow"` sets elbow lines for the diagram; `route` (`curved` or `elbow`) overrides it on one edge. `meta` holds `author` and `version`.
 - `review` on a node: `{ "status": "open" | "resolved", "note", "by", "raised", "due", "closed" }`, dates as `YYYY-MM-DD`.
 - `owner`, `steward`, `team` and `costCenter` (strings) on nodes and groups; a node without one inherits it from the nearest group that has it.

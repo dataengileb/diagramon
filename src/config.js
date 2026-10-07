@@ -430,7 +430,12 @@ window.DIAGRAMON_CONFIG = {
     sync:     { label: { en: 'Synchronous (request)', es: 'Síncrona (petición)' }, dash: '',    particles: 1, width: 1.8 },
     async:    { label: { en: 'Asynchronous (event)', es: 'Asíncrona (evento)' }, dash: '6 6', particles: 1, width: 1.8 },
     data:     { label: { en: 'Data flow', es: 'Flujo de datos' }, dash: '',    particles: 3, width: 2.4 },
-    optional: { label: { en: 'Optional / fallback', es: 'Opcional / respaldo' }, dash: '2 6', particles: 0, width: 1.5 }
+    optional: { label: { en: 'Optional / fallback', es: 'Opcional / respaldo' }, dash: '2 6', particles: 0, width: 1.5 },
+    // Más tipos: en texto se escriben con style=<clave> (estilo=…); cada diagrama puede añadir los suyos (model.edgeTypes)
+    replication: { label: { en: 'Replication', es: 'Replicación' }, dash: '12 4 2 4', particles: 1, width: 1.8 },
+    batch:    { label: { en: 'Batch / scheduled', es: 'Por lotes / programado' }, dash: '16 8', particles: 0, width: 2 },
+    stream:   { label: { en: 'Streaming', es: 'Streaming (flujo continuo)' }, dash: '',    particles: 4, width: 2 },
+    control:  { label: { en: 'Control / management', es: 'Control / gestión' }, dash: '4 3', particles: 0, width: 1.2 }
   },
 
   /* Categorías del panel. Los nombres en inglés están en i18n.js. */
