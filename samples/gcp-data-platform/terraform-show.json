@@ -1,0 +1,2558 @@
+{
+  "format_version": "1.0",
+  "terraform_version": "1.9.8",
+  "variables": {
+    "region": {
+      "value": "europe-west1"
+    }
+  },
+  "values": {
+    "root_module": {
+      "resources": [
+        {
+          "address": "google_project.main",
+          "mode": "managed",
+          "type": "google_project",
+          "name": "main",
+          "provider_name": "registry.terraform.io/hashicorp/google",
+          "schema_version": 0,
+          "values": {
+            "auto_create_network": false,
+            "billing_account": "01A2B3-C4D5E6-F7A8B9",
+            "deletion_policy": "PREVENT",
+            "effective_labels": {
+              "env": "prod",
+              "team": "data-platform",
+              "data-classification": "confidential"
+            },
+            "folder_id": "",
+            "id": "projects/acme-dataplat-prod",
+            "labels": {
+              "env": "prod",
+              "team": "data-platform",
+              "data-classification": "confidential"
+            },
+            "name": "ACME Data Platform",
+            "number": "428193570216",
+            "org_id": "719340285561",
+            "project_id": "acme-dataplat-prod",
+            "skip_delete": null,
+            "terraform_labels": {
+              "env": "prod",
+              "team": "data-platform",
+              "data-classification": "confidential"
+            },
+            "timeouts": null
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "google_project_service.run",
+          "mode": "managed",
+          "type": "google_project_service",
+          "name": "run",
+          "provider_name": "registry.terraform.io/hashicorp/google",
+          "schema_version": 0,
+          "values": {
+            "disable_dependent_services": null,
+            "disable_on_destroy": false,
+            "id": "acme-dataplat-prod/run.googleapis.com",
+            "project": "acme-dataplat-prod",
+            "service": "run.googleapis.com",
+            "timeouts": null
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "google_project_service.bigquery",
+          "mode": "managed",
+          "type": "google_project_service",
+          "name": "bigquery",
+          "provider_name": "registry.terraform.io/hashicorp/google",
+          "schema_version": 0,
+          "values": {
+            "disable_dependent_services": null,
+            "disable_on_destroy": false,
+            "id": "acme-dataplat-prod/bigquery.googleapis.com",
+            "project": "acme-dataplat-prod",
+            "service": "bigquery.googleapis.com",
+            "timeouts": null
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "google_project_service.dataflow",
+          "mode": "managed",
+          "type": "google_project_service",
+          "name": "dataflow",
+          "provider_name": "registry.terraform.io/hashicorp/google",
+          "schema_version": 0,
+          "values": {
+            "disable_dependent_services": null,
+            "disable_on_destroy": false,
+            "id": "acme-dataplat-prod/dataflow.googleapis.com",
+            "project": "acme-dataplat-prod",
+            "service": "dataflow.googleapis.com",
+            "timeouts": null
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "google_compute_network.platform",
+          "mode": "managed",
+          "type": "google_compute_network",
+          "name": "platform",
+          "provider_name": "registry.terraform.io/hashicorp/google",
+          "schema_version": 0,
+          "values": {
+            "auto_create_subnetworks": false,
+            "delete_default_routes_on_create": false,
+            "description": "",
+            "enable_ula_internal_ipv6": false,
+            "gateway_ipv4": "",
+            "id": "projects/acme-dataplat-prod/global/networks/vpc-platform",
+            "internal_ipv6_range": "",
+            "mtu": 0,
+            "name": "vpc-platform",
+            "network_firewall_policy_enforcement_order": "AFTER_CLASSIC_FIREWALL",
+            "numeric_id": "5827301946652810473",
+            "project": "acme-dataplat-prod",
+            "routing_mode": "REGIONAL",
+            "self_link": "https://www.googleapis.com/compute/v1/projects/acme-dataplat-prod/global/networks/vpc-platform",
+            "timeouts": null
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "google_compute_subnetwork.ew1",
+          "mode": "managed",
+          "type": "google_compute_subnetwork",
+          "name": "ew1",
+          "provider_name": "registry.terraform.io/hashicorp/google",
+          "schema_version": 0,
+          "values": {
+            "creation_timestamp": "2025-03-11T02:14:55.381-07:00",
+            "description": "",
+            "external_ipv6_prefix": "",
+            "fingerprint": null,
+            "gateway_address": "10.10.0.1",
+            "id": "projects/acme-dataplat-prod/regions/europe-west1/subnetworks/snet-ew1",
+            "internal_ipv6_prefix": "",
+            "ip_cidr_range": "10.10.0.0/20",
+            "ipv6_access_type": "",
+            "ipv6_cidr_range": "",
+            "log_config": [],
+            "name": "snet-ew1",
+            "network": "https://www.googleapis.com/compute/v1/projects/acme-dataplat-prod/global/networks/vpc-platform",
+            "private_ip_google_access": true,
+            "private_ipv6_google_access": "DISABLE_GOOGLE_ACCESS",
+            "project": "acme-dataplat-prod",
+            "purpose": "PRIVATE",
+            "region": "europe-west1",
+            "role": "",
+            "secondary_ip_range": [
+              {
+                "ip_cidr_range": "10.64.0.0/14",
+                "range_name": "pods"
+              },
+              {
+                "ip_cidr_range": "10.68.0.0/20",
+                "range_name": "services"
+              }
+            ],
+            "self_link": "https://www.googleapis.com/compute/v1/projects/acme-dataplat-prod/regions/europe-west1/subnetworks/snet-ew1",
+            "send_secondary_ip_range_if_empty": null,
+            "stack_type": "IPV4_ONLY",
+            "timeouts": null
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "google_compute_subnetwork.uc1",
+          "mode": "managed",
+          "type": "google_compute_subnetwork",
+          "name": "uc1",
+          "provider_name": "registry.terraform.io/hashicorp/google",
+          "schema_version": 0,
+          "values": {
+            "creation_timestamp": "2025-03-11T02:14:55.381-07:00",
+            "description": "",
+            "external_ipv6_prefix": "",
+            "fingerprint": null,
+            "gateway_address": "10.20.0.1",
+            "id": "projects/acme-dataplat-prod/regions/us-central1/subnetworks/snet-uc1",
+            "internal_ipv6_prefix": "",
+            "ip_cidr_range": "10.20.0.0/20",
+            "ipv6_access_type": "",
+            "ipv6_cidr_range": "",
+            "log_config": [],
+            "name": "snet-uc1",
+            "network": "https://www.googleapis.com/compute/v1/projects/acme-dataplat-prod/global/networks/vpc-platform",
+            "private_ip_google_access": true,
+            "private_ipv6_google_access": "DISABLE_GOOGLE_ACCESS",
+            "project": "acme-dataplat-prod",
+            "purpose": "PRIVATE",
+            "region": "us-central1",
+            "role": "",
+            "secondary_ip_range": [],
+            "self_link": "https://www.googleapis.com/compute/v1/projects/acme-dataplat-prod/regions/us-central1/subnetworks/snet-uc1",
+            "send_secondary_ip_range_if_empty": null,
+            "stack_type": "IPV4_ONLY",
+            "timeouts": null
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "google_compute_firewall.allow_internal",
+          "mode": "managed",
+          "type": "google_compute_firewall",
+          "name": "allow_internal",
+          "provider_name": "registry.terraform.io/hashicorp/google",
+          "schema_version": 0,
+          "values": {
+            "allow": [
+              {
+                "ports": [],
+                "protocol": "tcp"
+              },
+              {
+                "ports": [],
+                "protocol": "udp"
+              }
+            ],
+            "deny": [],
+            "description": "",
+            "destination_ranges": [],
+            "direction": "INGRESS",
+            "disabled": false,
+            "enable_logging": null,
+            "id": "projects/acme-dataplat-prod/global/firewalls/allow-internal",
+            "name": "allow-internal",
+            "network": "https://www.googleapis.com/compute/v1/projects/acme-dataplat-prod/global/networks/vpc-platform",
+            "priority": 1000,
+            "project": "acme-dataplat-prod",
+            "self_link": "https://www.googleapis.com/compute/v1/projects/acme-dataplat-prod/global/firewalls/allow-internal",
+            "source_ranges": [
+              "10.10.0.0/20",
+              "10.20.0.0/20"
+            ],
+            "timeouts": null
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "google_compute_router.ew1",
+          "mode": "managed",
+          "type": "google_compute_router",
+          "name": "ew1",
+          "provider_name": "registry.terraform.io/hashicorp/google",
+          "schema_version": 0,
+          "values": {
+            "bgp": [],
+            "description": "",
+            "encrypted_interconnect_router": false,
+            "id": "projects/acme-dataplat-prod/regions/europe-west1/routers/router-ew1",
+            "name": "router-ew1",
+            "network": "https://www.googleapis.com/compute/v1/projects/acme-dataplat-prod/global/networks/vpc-platform",
+            "project": "acme-dataplat-prod",
+            "region": "europe-west1",
+            "self_link": "https://www.googleapis.com/compute/v1/projects/acme-dataplat-prod/regions/europe-west1/routers/router-ew1",
+            "timeouts": null
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "google_compute_router_nat.ew1",
+          "mode": "managed",
+          "type": "google_compute_router_nat",
+          "name": "ew1",
+          "provider_name": "registry.terraform.io/hashicorp/google",
+          "schema_version": 0,
+          "values": {
+            "auto_network_tier": "PREMIUM",
+            "drain_nat_ips": [],
+            "enable_dynamic_port_allocation": false,
+            "enable_endpoint_independent_mapping": true,
+            "id": "acme-dataplat-prod/europe-west1/router-ew1/nat-ew1",
+            "name": "nat-ew1",
+            "nat_ip_allocate_option": "AUTO_ONLY",
+            "project": "acme-dataplat-prod",
+            "region": "europe-west1",
+            "router": "router-ew1",
+            "source_subnetwork_ip_ranges_to_nat": "ALL_SUBNETWORKS_ALL_IP_RANGES",
+            "timeouts": null
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "google_compute_global_address.private_ip_alloc",
+          "mode": "managed",
+          "type": "google_compute_global_address",
+          "name": "private_ip_alloc",
+          "provider_name": "registry.terraform.io/hashicorp/google",
+          "schema_version": 0,
+          "values": {
+            "address": "10.100.0.0",
+            "address_type": "INTERNAL",
+            "id": "projects/acme-dataplat-prod/global/addresses/sql-private-range",
+            "ip_version": "",
+            "name": "sql-private-range",
+            "network": "https://www.googleapis.com/compute/v1/projects/acme-dataplat-prod/global/networks/vpc-platform",
+            "prefix_length": 16,
+            "project": "acme-dataplat-prod",
+            "purpose": "VPC_PEERING",
+            "self_link": "https://www.googleapis.com/compute/v1/projects/acme-dataplat-prod/global/addresses/sql-private-range",
+            "timeouts": null
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "google_service_networking_connection.sql",
+          "mode": "managed",
+          "type": "google_service_networking_connection",
+          "name": "sql",
+          "provider_name": "registry.terraform.io/hashicorp/google",
+          "schema_version": 0,
+          "values": {
+            "id": "projects/acme-dataplat-prod/global/networks/vpc-platform:servicenetworking.googleapis.com",
+            "network": "projects/acme-dataplat-prod/global/networks/vpc-platform",
+            "peering": "servicenetworking-googleapis-com",
+            "reserved_peering_ranges": [
+              "sql-private-range"
+            ],
+            "service": "servicenetworking.googleapis.com",
+            "timeouts": null,
+            "update_on_creation_fail": null
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "google_service_account.run",
+          "mode": "managed",
+          "type": "google_service_account",
+          "name": "run",
+          "provider_name": "registry.terraform.io/hashicorp/google",
+          "schema_version": 0,
+          "values": {
+            "account_id": "run-ingest",
+            "create_ignore_already_exists": null,
+            "description": "",
+            "disabled": false,
+            "display_name": "Cloud Run ingest",
+            "email": "run-ingest@acme-dataplat-prod.iam.gserviceaccount.com",
+            "id": "projects/acme-dataplat-prod/serviceAccounts/run-ingest@acme-dataplat-prod.iam.gserviceaccount.com",
+            "member": "serviceAccount:run-ingest@acme-dataplat-prod.iam.gserviceaccount.com",
+            "name": "projects/acme-dataplat-prod/serviceAccounts/run-ingest@acme-dataplat-prod.iam.gserviceaccount.com",
+            "project": "acme-dataplat-prod",
+            "timeouts": null,
+            "unique_id": "108274619385027164839"
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "google_container_cluster.platform",
+          "mode": "managed",
+          "type": "google_container_cluster",
+          "name": "platform",
+          "provider_name": "registry.terraform.io/hashicorp/google",
+          "schema_version": 0,
+          "values": {
+            "addons_config": [
+              {
+                "horizontal_pod_autoscaling": [
+                  {
+                    "disabled": false
+                  }
+                ],
+                "http_load_balancing": [
+                  {
+                    "disabled": false
+                  }
+                ]
+              }
+            ],
+            "cluster_ipv4_cidr": "10.64.0.0/14",
+            "datapath_provider": "ADVANCED_DATAPATH",
+            "deletion_protection": true,
+            "description": "",
+            "enable_autopilot": false,
+            "endpoint": "10.10.0.2",
+            "id": "projects/acme-dataplat-prod/locations/europe-west1/clusters/gke-platform",
+            "initial_node_count": 1,
+            "location": "europe-west1",
+            "master_version": "1.30.5-gke.1014001",
+            "min_master_version": null,
+            "name": "gke-platform",
+            "network": "projects/acme-dataplat-prod/global/networks/vpc-platform",
+            "node_pool": [
+              {
+                "initial_node_count": 1,
+                "instance_group_urls": [
+                  "https://www.googleapis.com/compute/v1/projects/acme-dataplat-prod/zones/europe-west1-b/instanceGroups/gke-gke-platform-np-main-4f3a2b1c-grp"
+                ],
+                "managed_instance_group_urls": [
+                  "https://www.googleapis.com/compute/v1/projects/acme-dataplat-prod/zones/europe-west1-b/instanceGroups/gke-gke-platform-np-main-4f3a2b1c-grp"
+                ],
+                "name": "np-main",
+                "node_count": 1,
+                "node_config": [
+                  {
+                    "machine_type": "e2-standard-4",
+                    "disk_size_gb": 100
+                  }
+                ],
+                "version": "1.30.5-gke.1014001"
+              }
+            ],
+            "node_locations": [
+              "europe-west1-b",
+              "europe-west1-c",
+              "europe-west1-d"
+            ],
+            "private_cluster_config": [
+              {
+                "enable_private_endpoint": false,
+                "enable_private_nodes": true,
+                "master_ipv4_cidr_block": "172.16.0.0/28"
+              }
+            ],
+            "project": "acme-dataplat-prod",
+            "release_channel": [
+              {
+                "channel": "REGULAR"
+              }
+            ],
+            "remove_default_node_pool": true,
+            "resource_labels": {
+              "env": "prod",
+              "team": "data-platform",
+              "data-classification": "confidential"
+            },
+            "self_link": "https://container.googleapis.com/v1/projects/acme-dataplat-prod/locations/europe-west1/clusters/gke-platform",
+            "subnetwork": "projects/acme-dataplat-prod/regions/europe-west1/subnetworks/snet-ew1",
+            "timeouts": null,
+            "workload_identity_config": [
+              {
+                "workload_pool": "acme-dataplat-prod.svc.id.goog"
+              }
+            ]
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "google_container_node_pool.main",
+          "mode": "managed",
+          "type": "google_container_node_pool",
+          "name": "main",
+          "provider_name": "registry.terraform.io/hashicorp/google",
+          "schema_version": 0,
+          "values": {
+            "autoscaling": [
+              {
+                "location_policy": "BALANCED",
+                "max_node_count": 6,
+                "min_node_count": 1,
+                "total_max_node_count": 0,
+                "total_min_node_count": 0
+              }
+            ],
+            "cluster": "projects/acme-dataplat-prod/locations/europe-west1/clusters/gke-platform",
+            "id": "projects/acme-dataplat-prod/locations/europe-west1/clusters/gke-platform/nodePools/np-main",
+            "initial_node_count": 1,
+            "instance_group_urls": [
+              "https://www.googleapis.com/compute/v1/projects/acme-dataplat-prod/zones/europe-west1-b/instanceGroups/gke-gke-platform-np-main-4f3a2b1c-grp"
+            ],
+            "location": "europe-west1",
+            "name": "np-main",
+            "node_count": 3,
+            "node_config": [
+              {
+                "machine_type": "e2-standard-4",
+                "service_account": "default"
+              }
+            ],
+            "project": "acme-dataplat-prod",
+            "timeouts": null,
+            "version": "1.30.5-gke.1014001"
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "google_sql_database_instance.orders",
+          "mode": "managed",
+          "type": "google_sql_database_instance",
+          "name": "orders",
+          "provider_name": "registry.terraform.io/hashicorp/google",
+          "schema_version": 0,
+          "values": {
+            "available_maintenance_versions": [],
+            "clone": [],
+            "connection_name": "acme-dataplat-prod:europe-west1:pg-orders",
+            "database_version": "POSTGRES_15",
+            "deletion_protection": true,
+            "dns_name": "",
+            "encryption_key_name": null,
+            "first_ip_address": "10.100.0.3",
+            "id": "pg-orders",
+            "instance_type": "CLOUD_SQL_INSTANCE",
+            "ip_address": [
+              {
+                "ip_address": "10.100.0.3",
+                "time_to_retire": "",
+                "type": "PRIVATE"
+              }
+            ],
+            "maintenance_version": "POSTGRES_15_8.R20241006.01_00",
+            "master_instance_name": "",
+            "name": "pg-orders",
+            "private_ip_address": "10.100.0.3",
+            "project": "acme-dataplat-prod",
+            "public_ip_address": "",
+            "region": "europe-west1",
+            "root_password": null,
+            "self_link": "https://sqladmin.googleapis.com/sql/v1beta4/projects/acme-dataplat-prod/instances/pg-orders",
+            "service_account_email_address": "p428193570216-x7k2lq@gcp-sa-cloud-sql.iam.gserviceaccount.com",
+            "settings": [
+              {
+                "activation_policy": "ALWAYS",
+                "availability_type": "REGIONAL",
+                "backup_configuration": [
+                  {
+                    "enabled": true,
+                    "point_in_time_recovery_enabled": true,
+                    "start_time": "02:00"
+                  }
+                ],
+                "disk_size": 50,
+                "disk_type": "PD_SSD",
+                "ip_configuration": [
+                  {
+                    "authorized_networks": [],
+                    "enable_private_path_for_google_cloud_services": false,
+                    "ipv4_enabled": false,
+                    "private_network": "https://www.googleapis.com/compute/v1/projects/acme-dataplat-prod/global/networks/vpc-platform",
+                    "require_ssl": true,
+                    "ssl_mode": "ENCRYPTED_ONLY"
+                  }
+                ],
+                "tier": "db-custom-2-7680",
+                "user_labels": {
+                  "env": "prod",
+                  "team": "data-platform",
+                  "data-classification": "confidential"
+                }
+              }
+            ],
+            "timeouts": null
+          },
+          "sensitive_values": {},
+          "depends_on": [
+            "google_service_networking_connection.sql"
+          ]
+        },
+        {
+          "address": "google_sql_database.orders",
+          "mode": "managed",
+          "type": "google_sql_database",
+          "name": "orders",
+          "provider_name": "registry.terraform.io/hashicorp/google",
+          "schema_version": 0,
+          "values": {
+            "charset": "UTF8",
+            "collation": "en_US.UTF8",
+            "deletion_policy": "DELETE",
+            "id": "projects/acme-dataplat-prod/instances/pg-orders/databases/orders",
+            "instance": "pg-orders",
+            "name": "orders",
+            "project": "acme-dataplat-prod",
+            "self_link": "https://sqladmin.googleapis.com/sql/v1beta4/projects/acme-dataplat-prod/instances/pg-orders/databases/orders",
+            "timeouts": null
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "google_sql_user.app",
+          "mode": "managed",
+          "type": "google_sql_user",
+          "name": "app",
+          "provider_name": "registry.terraform.io/hashicorp/google",
+          "schema_version": 0,
+          "values": {
+            "deletion_policy": null,
+            "host": "",
+            "id": "app//pg-orders",
+            "instance": "pg-orders",
+            "name": "app",
+            "password": "REDACTED",
+            "password_policy": [],
+            "project": "acme-dataplat-prod",
+            "timeouts": null,
+            "type": ""
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "google_redis_instance.sessions",
+          "mode": "managed",
+          "type": "google_redis_instance",
+          "name": "sessions",
+          "provider_name": "registry.terraform.io/hashicorp/google",
+          "schema_version": 0,
+          "values": {
+            "alternative_location_id": "europe-west1-c",
+            "auth_enabled": true,
+            "authorized_network": "projects/acme-dataplat-prod/global/networks/vpc-platform",
+            "connect_mode": "PRIVATE_SERVICE_ACCESS",
+            "create_time": "2025-03-12T09:41:22.118Z",
+            "current_location_id": "europe-west1-b",
+            "display_name": "",
+            "host": "10.100.1.4",
+            "id": "projects/acme-dataplat-prod/locations/europe-west1/instances/redis-sessions",
+            "location_id": "europe-west1-b",
+            "memory_size_gb": 5,
+            "name": "redis-sessions",
+            "port": 6379,
+            "project": "acme-dataplat-prod",
+            "redis_version": "REDIS_7_0",
+            "region": "europe-west1",
+            "reserved_ip_range": "10.100.1.0/29",
+            "tier": "STANDARD_HA",
+            "transit_encryption_mode": "SERVER_AUTHENTICATION",
+            "timeouts": null
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "google_secret_manager_secret.db_password",
+          "mode": "managed",
+          "type": "google_secret_manager_secret",
+          "name": "db_password",
+          "provider_name": "registry.terraform.io/hashicorp/google",
+          "schema_version": 0,
+          "values": {
+            "annotations": null,
+            "create_time": "2025-03-12T09:30:11.552Z",
+            "effective_annotations": {},
+            "effective_labels": {
+              "env": "prod",
+              "team": "data-platform",
+              "data-classification": "confidential"
+            },
+            "expire_time": "",
+            "id": "projects/acme-dataplat-prod/secrets/db-password",
+            "labels": {
+              "env": "prod",
+              "team": "data-platform",
+              "data-classification": "confidential"
+            },
+            "name": "projects/428193570216/secrets/db-password",
+            "project": "acme-dataplat-prod",
+            "replication": [
+              {
+                "auto": [
+                  {
+                    "customer_managed_encryption": []
+                  }
+                ],
+                "user_managed": []
+              }
+            ],
+            "rotation": [],
+            "secret_id": "db-password",
+            "terraform_labels": {
+              "env": "prod",
+              "team": "data-platform",
+              "data-classification": "confidential"
+            },
+            "timeouts": null,
+            "topics": [],
+            "ttl": null,
+            "version_aliases": null,
+            "version_destroy_ttl": ""
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "google_secret_manager_secret_iam_member.run",
+          "mode": "managed",
+          "type": "google_secret_manager_secret_iam_member",
+          "name": "run",
+          "provider_name": "registry.terraform.io/hashicorp/google",
+          "schema_version": 0,
+          "values": {
+            "condition": [],
+            "etag": "BwZk3Q7v1xY=",
+            "id": "projects/acme-dataplat-prod/secrets/db-password/roles/secretmanager.secretAccessor/serviceAccount:run-ingest@acme-dataplat-prod.iam.gserviceaccount.com",
+            "member": "serviceAccount:run-ingest@acme-dataplat-prod.iam.gserviceaccount.com",
+            "project": "acme-dataplat-prod",
+            "role": "roles/secretmanager.secretAccessor",
+            "secret_id": "projects/acme-dataplat-prod/secrets/db-password"
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "google_project_iam_member.run_pubsub",
+          "mode": "managed",
+          "type": "google_project_iam_member",
+          "name": "run_pubsub",
+          "provider_name": "registry.terraform.io/hashicorp/google",
+          "schema_version": 0,
+          "values": {
+            "condition": [],
+            "etag": "BwZk3Q7v2aB=",
+            "id": "acme-dataplat-prod/roles/pubsub.publisher/serviceAccount:run-ingest@acme-dataplat-prod.iam.gserviceaccount.com",
+            "member": "serviceAccount:run-ingest@acme-dataplat-prod.iam.gserviceaccount.com",
+            "project": "acme-dataplat-prod",
+            "role": "roles/pubsub.publisher"
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "google_storage_bucket.raw",
+          "mode": "managed",
+          "type": "google_storage_bucket",
+          "name": "raw",
+          "provider_name": "registry.terraform.io/hashicorp/google",
+          "schema_version": 0,
+          "values": {
+            "autoclass": [],
+            "cors": [],
+            "custom_placement_config": [],
+            "default_event_based_hold": false,
+            "effective_labels": {
+              "env": "prod",
+              "team": "data-platform",
+              "data-classification": "confidential"
+            },
+            "enable_object_retention": false,
+            "encryption": [],
+            "force_destroy": false,
+            "id": "acme-dataplat-raw-eu",
+            "labels": {
+              "env": "prod",
+              "team": "data-platform",
+              "data-classification": "confidential"
+            },
+            "lifecycle_rule": [],
+            "location": "EU",
+            "logging": [],
+            "name": "acme-dataplat-raw-eu",
+            "project": "acme-dataplat-prod",
+            "project_number": 428193570216,
+            "public_access_prevention": "enforced",
+            "requester_pays": false,
+            "retention_policy": [],
+            "rpo": "DEFAULT",
+            "self_link": "https://www.googleapis.com/storage/v1/b/acme-dataplat-raw-eu",
+            "soft_delete_policy": [
+              {
+                "read_duration_seconds": 604800,
+                "retention_duration_seconds": 604800
+              }
+            ],
+            "storage_class": "STANDARD",
+            "terraform_labels": {
+              "env": "prod",
+              "team": "data-platform",
+              "data-classification": "confidential"
+            },
+            "timeouts": null,
+            "uniform_bucket_level_access": true,
+            "url": "gs://acme-dataplat-raw-eu",
+            "versioning": [
+              {
+                "enabled": true
+              }
+            ],
+            "website": []
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "google_storage_bucket.curated",
+          "mode": "managed",
+          "type": "google_storage_bucket",
+          "name": "curated",
+          "provider_name": "registry.terraform.io/hashicorp/google",
+          "schema_version": 0,
+          "values": {
+            "autoclass": [],
+            "cors": [],
+            "custom_placement_config": [],
+            "default_event_based_hold": false,
+            "effective_labels": {
+              "env": "prod",
+              "team": "data-platform",
+              "data-classification": "confidential"
+            },
+            "enable_object_retention": false,
+            "encryption": [],
+            "force_destroy": false,
+            "id": "acme-dataplat-curated",
+            "labels": {
+              "env": "prod",
+              "team": "data-platform",
+              "data-classification": "confidential"
+            },
+            "lifecycle_rule": [],
+            "location": "EUROPE-WEST1",
+            "logging": [],
+            "name": "acme-dataplat-curated",
+            "project": "acme-dataplat-prod",
+            "project_number": 428193570216,
+            "public_access_prevention": "enforced",
+            "requester_pays": false,
+            "retention_policy": [],
+            "rpo": "DEFAULT",
+            "self_link": "https://www.googleapis.com/storage/v1/b/acme-dataplat-curated",
+            "soft_delete_policy": [
+              {
+                "read_duration_seconds": 604800,
+                "retention_duration_seconds": 604800
+              }
+            ],
+            "storage_class": "STANDARD",
+            "terraform_labels": {
+              "env": "prod",
+              "team": "data-platform",
+              "data-classification": "confidential"
+            },
+            "timeouts": null,
+            "uniform_bucket_level_access": true,
+            "url": "gs://acme-dataplat-curated",
+            "versioning": [
+              {
+                "enabled": true
+              }
+            ],
+            "website": []
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "google_storage_bucket.archive",
+          "mode": "managed",
+          "type": "google_storage_bucket",
+          "name": "archive",
+          "provider_name": "registry.terraform.io/hashicorp/google",
+          "schema_version": 0,
+          "values": {
+            "autoclass": [],
+            "cors": [],
+            "custom_placement_config": [],
+            "default_event_based_hold": false,
+            "effective_labels": {
+              "env": "prod",
+              "team": "data-platform",
+              "data-classification": "confidential"
+            },
+            "enable_object_retention": false,
+            "encryption": [],
+            "force_destroy": false,
+            "id": "acme-dataplat-archive-us",
+            "labels": {
+              "env": "prod",
+              "team": "data-platform",
+              "data-classification": "confidential"
+            },
+            "lifecycle_rule": [],
+            "location": "US-CENTRAL1",
+            "logging": [],
+            "name": "acme-dataplat-archive-us",
+            "project": "acme-dataplat-prod",
+            "project_number": 428193570216,
+            "public_access_prevention": "enforced",
+            "requester_pays": false,
+            "retention_policy": [],
+            "rpo": "DEFAULT",
+            "self_link": "https://www.googleapis.com/storage/v1/b/acme-dataplat-archive-us",
+            "soft_delete_policy": [
+              {
+                "read_duration_seconds": 604800,
+                "retention_duration_seconds": 604800
+              }
+            ],
+            "storage_class": "COLDLINE",
+            "terraform_labels": {
+              "env": "prod",
+              "team": "data-platform",
+              "data-classification": "confidential"
+            },
+            "timeouts": null,
+            "uniform_bucket_level_access": true,
+            "url": "gs://acme-dataplat-archive-us",
+            "versioning": [
+              {
+                "enabled": true
+              }
+            ],
+            "website": []
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "google_pubsub_topic.events",
+          "mode": "managed",
+          "type": "google_pubsub_topic",
+          "name": "events",
+          "provider_name": "registry.terraform.io/hashicorp/google",
+          "schema_version": 0,
+          "values": {
+            "effective_labels": {
+              "env": "prod",
+              "team": "data-platform",
+              "data-classification": "confidential"
+            },
+            "id": "projects/acme-dataplat-prod/topics/events-raw",
+            "ingestion_data_source_settings": [],
+            "kms_key_name": "",
+            "labels": {
+              "env": "prod",
+              "team": "data-platform",
+              "data-classification": "confidential"
+            },
+            "message_retention_duration": "",
+            "message_storage_policy": [
+              {
+                "allowed_persistence_regions": [
+                  "europe-west1"
+                ],
+                "enforce_in_transit": false
+              }
+            ],
+            "name": "events-raw",
+            "project": "acme-dataplat-prod",
+            "schema_settings": [],
+            "terraform_labels": {
+              "env": "prod",
+              "team": "data-platform",
+              "data-classification": "confidential"
+            },
+            "timeouts": null
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "google_pubsub_subscription.bq",
+          "mode": "managed",
+          "type": "google_pubsub_subscription",
+          "name": "bq",
+          "provider_name": "registry.terraform.io/hashicorp/google",
+          "schema_version": 0,
+          "values": {
+            "ack_deadline_seconds": 20,
+            "bigquery_config": [
+              {
+                "drop_unknown_fields": false,
+                "service_account_email": "",
+                "table": "acme-dataplat-prod.analytics.events_raw",
+                "use_table_schema": true,
+                "use_topic_schema": false,
+                "write_metadata": false
+              }
+            ],
+            "dead_letter_policy": [],
+            "effective_labels": {
+              "env": "prod",
+              "team": "data-platform",
+              "data-classification": "confidential"
+            },
+            "enable_exactly_once_delivery": false,
+            "enable_message_ordering": false,
+            "id": "projects/acme-dataplat-prod/subscriptions/events-raw-bq",
+            "labels": {
+              "env": "prod",
+              "team": "data-platform",
+              "data-classification": "confidential"
+            },
+            "message_retention_duration": "604800s",
+            "name": "events-raw-bq",
+            "path": "projects/acme-dataplat-prod/subscriptions/events-raw-bq",
+            "project": "acme-dataplat-prod",
+            "push_config": [],
+            "retain_acked_messages": false,
+            "terraform_labels": {
+              "env": "prod",
+              "team": "data-platform",
+              "data-classification": "confidential"
+            },
+            "timeouts": null,
+            "topic": "projects/acme-dataplat-prod/topics/events-raw"
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "google_pubsub_subscription.dataflow",
+          "mode": "managed",
+          "type": "google_pubsub_subscription",
+          "name": "dataflow",
+          "provider_name": "registry.terraform.io/hashicorp/google",
+          "schema_version": 0,
+          "values": {
+            "ack_deadline_seconds": 60,
+            "bigquery_config": [],
+            "dead_letter_policy": [],
+            "effective_labels": {
+              "env": "prod",
+              "team": "data-platform",
+              "data-classification": "confidential"
+            },
+            "enable_exactly_once_delivery": false,
+            "enable_message_ordering": false,
+            "id": "projects/acme-dataplat-prod/subscriptions/events-raw-dataflow",
+            "labels": {
+              "env": "prod",
+              "team": "data-platform",
+              "data-classification": "confidential"
+            },
+            "message_retention_duration": "604800s",
+            "name": "events-raw-dataflow",
+            "path": "projects/acme-dataplat-prod/subscriptions/events-raw-dataflow",
+            "project": "acme-dataplat-prod",
+            "push_config": [],
+            "retain_acked_messages": false,
+            "terraform_labels": {
+              "env": "prod",
+              "team": "data-platform",
+              "data-classification": "confidential"
+            },
+            "timeouts": null,
+            "topic": "projects/acme-dataplat-prod/topics/events-raw"
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "google_bigquery_dataset.analytics",
+          "mode": "managed",
+          "type": "google_bigquery_dataset",
+          "name": "analytics",
+          "provider_name": "registry.terraform.io/hashicorp/google",
+          "schema_version": 0,
+          "values": {
+            "access": [
+              {
+                "role": "OWNER",
+                "user_by_email": "data-platform@acme.example"
+              }
+            ],
+            "creation_time": 1741772400123,
+            "dataset_id": "analytics",
+            "default_partition_expiration_ms": 0,
+            "delete_contents_on_destroy": false,
+            "description": "Curated analytics",
+            "effective_labels": {
+              "env": "prod",
+              "team": "data-platform",
+              "data-classification": "confidential"
+            },
+            "etag": "q9Xk2wL1m7Ys0N4Zr5Tg8A==",
+            "friendly_name": "Analytics",
+            "id": "projects/acme-dataplat-prod/datasets/analytics",
+            "labels": {
+              "env": "prod",
+              "team": "data-platform",
+              "data-classification": "confidential"
+            },
+            "last_modified_time": 1741772400123,
+            "location": "EU",
+            "project": "acme-dataplat-prod",
+            "self_link": "https://bigquery.googleapis.com/bigquery/v2/projects/acme-dataplat-prod/datasets/analytics",
+            "terraform_labels": {
+              "env": "prod",
+              "team": "data-platform",
+              "data-classification": "confidential"
+            },
+            "timeouts": null
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "google_bigquery_table.events_raw",
+          "mode": "managed",
+          "type": "google_bigquery_table",
+          "name": "events_raw",
+          "provider_name": "registry.terraform.io/hashicorp/google",
+          "schema_version": 0,
+          "values": {
+            "clustering": null,
+            "dataset_id": "analytics",
+            "deletion_protection": true,
+            "description": "",
+            "effective_labels": {
+              "env": "prod",
+              "team": "data-platform",
+              "data-classification": "confidential"
+            },
+            "id": "projects/acme-dataplat-prod/datasets/analytics/tables/events_raw",
+            "labels": {
+              "env": "prod",
+              "team": "data-platform",
+              "data-classification": "confidential"
+            },
+            "location": "EU",
+            "num_rows": 0,
+            "project": "acme-dataplat-prod",
+            "self_link": "https://bigquery.googleapis.com/bigquery/v2/projects/acme-dataplat-prod/datasets/analytics/tables/events_raw",
+            "table_id": "events_raw",
+            "terraform_labels": {
+              "env": "prod",
+              "team": "data-platform",
+              "data-classification": "confidential"
+            },
+            "time_partitioning": [
+              {
+                "field": "event_time",
+                "type": "DAY"
+              }
+            ],
+            "type": "TABLE",
+            "timeouts": null
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "google_bigquery_table.events_curated",
+          "mode": "managed",
+          "type": "google_bigquery_table",
+          "name": "events_curated",
+          "provider_name": "registry.terraform.io/hashicorp/google",
+          "schema_version": 0,
+          "values": {
+            "clustering": null,
+            "dataset_id": "analytics",
+            "deletion_protection": true,
+            "description": "",
+            "effective_labels": {
+              "env": "prod",
+              "team": "data-platform",
+              "data-classification": "confidential"
+            },
+            "id": "projects/acme-dataplat-prod/datasets/analytics/tables/events_curated",
+            "labels": {
+              "env": "prod",
+              "team": "data-platform",
+              "data-classification": "confidential"
+            },
+            "location": "EU",
+            "num_rows": 0,
+            "project": "acme-dataplat-prod",
+            "self_link": "https://bigquery.googleapis.com/bigquery/v2/projects/acme-dataplat-prod/datasets/analytics/tables/events_curated",
+            "table_id": "events_curated",
+            "terraform_labels": {
+              "env": "prod",
+              "team": "data-platform",
+              "data-classification": "confidential"
+            },
+            "time_partitioning": [
+              {
+                "field": "event_time",
+                "type": "DAY"
+              }
+            ],
+            "type": "TABLE",
+            "timeouts": null
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "google_dataflow_job.events_curated",
+          "mode": "managed",
+          "type": "google_dataflow_job",
+          "name": "events_curated",
+          "provider_name": "registry.terraform.io/hashicorp/google",
+          "schema_version": 0,
+          "values": {
+            "additional_experiments": null,
+            "enable_streaming_engine": true,
+            "id": "2025-03-14_02_11_09-14530298177339401266",
+            "ip_configuration": "WORKER_IP_PRIVATE",
+            "job_id": "2025-03-14_02_11_09-14530298177339401266",
+            "kms_key_name": null,
+            "labels": {
+              "env": "prod",
+              "team": "data-platform",
+              "data-classification": "confidential"
+            },
+            "machine_type": "n2-standard-2",
+            "max_workers": 5,
+            "name": "events-curated",
+            "network": "vpc-platform",
+            "on_delete": "drain",
+            "parameters": {
+              "inputSubscription": "projects/acme-dataplat-prod/subscriptions/events-raw-dataflow",
+              "outputTableSpec": "acme-dataplat-prod:analytics.events_curated"
+            },
+            "project": "acme-dataplat-prod",
+            "region": "europe-west1",
+            "service_account_email": "dataflow@acme-dataplat-prod.iam.gserviceaccount.com",
+            "skip_wait_on_job_termination": false,
+            "state": "JOB_STATE_RUNNING",
+            "subnetwork": "https://www.googleapis.com/compute/v1/projects/acme-dataplat-prod/regions/europe-west1/subnetworks/snet-ew1",
+            "temp_gcs_location": "gs://acme-dataplat-curated/dataflow/tmp",
+            "template_gcs_path": "gs://dataflow-templates-europe-west1/latest/PubSub_Subscription_to_BigQuery",
+            "timeouts": null,
+            "transform_name_mapping": null,
+            "type": "JOB_TYPE_STREAMING",
+            "zone": "europe-west1-b"
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "google_cloud_run_v2_service.ingest",
+          "mode": "managed",
+          "type": "google_cloud_run_v2_service",
+          "name": "ingest",
+          "provider_name": "registry.terraform.io/hashicorp/google",
+          "schema_version": 0,
+          "values": {
+            "annotations": null,
+            "binary_authorization": [],
+            "client": "",
+            "client_version": "",
+            "conditions": [],
+            "create_time": "2025-03-14T08:20:41.771Z",
+            "custom_audiences": null,
+            "default_uri_disabled": false,
+            "description": "",
+            "effective_annotations": {},
+            "effective_labels": {
+              "env": "prod",
+              "team": "data-platform",
+              "data-classification": "confidential"
+            },
+            "id": "projects/acme-dataplat-prod/locations/europe-west1/services/ingest-api",
+            "ingress": "INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER",
+            "labels": {
+              "env": "prod",
+              "team": "data-platform",
+              "data-classification": "confidential"
+            },
+            "launch_stage": "GA",
+            "location": "europe-west1",
+            "name": "ingest-api",
+            "project": "acme-dataplat-prod",
+            "terraform_labels": {
+              "env": "prod",
+              "team": "data-platform",
+              "data-classification": "confidential"
+            },
+            "timeouts": null,
+            "traffic": [
+              {
+                "percent": 100,
+                "revision": "",
+                "tag": "",
+                "type": "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST"
+              }
+            ],
+            "template": [
+              {
+                "annotations": null,
+                "containers": [
+                  {
+                    "args": [],
+                    "command": [],
+                    "image": "europe-west1-docker.pkg.dev/acme-dataplat-prod/containers/ingest-api:1.4.2",
+                    "name": "",
+                    "env": [
+                      {
+                        "name": "PUBSUB_TOPIC",
+                        "value": "projects/acme-dataplat-prod/topics/events-raw",
+                        "value_source": []
+                      },
+                      {
+                        "name": "REDIS_HOST",
+                        "value": "10.100.1.4",
+                        "value_source": []
+                      },
+                      {
+                        "name": "DB_INSTANCE",
+                        "value": "acme-dataplat-prod:europe-west1:pg-orders",
+                        "value_source": []
+                      },
+                      {
+                        "name": "DB_PASSWORD",
+                        "value": "",
+                        "value_source": [
+                          {
+                            "secret_key_ref": [
+                              {
+                                "secret": "db-password",
+                                "version": "latest"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ],
+                    "ports": [
+                      {
+                        "container_port": 8080,
+                        "name": "http1"
+                      }
+                    ],
+                    "resources": [
+                      {
+                        "cpu_idle": true,
+                        "limits": {
+                          "cpu": "1",
+                          "memory": "512Mi"
+                        }
+                      }
+                    ]
+                  }
+                ],
+                "encryption_key": "",
+                "execution_environment": "EXECUTION_ENVIRONMENT_GEN2",
+                "labels": null,
+                "max_instance_request_concurrency": 80,
+                "service_account": "run-ingest@acme-dataplat-prod.iam.gserviceaccount.com",
+                "session_affinity": false,
+                "timeout": "300s",
+                "volumes": [
+                  {
+                    "cloud_sql_instance": [
+                      {
+                        "instances": [
+                          "acme-dataplat-prod:europe-west1:pg-orders"
+                        ]
+                      }
+                    ],
+                    "empty_dir": [],
+                    "gcs": [],
+                    "name": "cloudsql",
+                    "nfs": [],
+                    "secret": []
+                  }
+                ],
+                "vpc_access": [
+                  {
+                    "connector": "",
+                    "egress": "PRIVATE_RANGES_ONLY",
+                    "network_interfaces": [
+                      {
+                        "network": "vpc-platform",
+                        "subnetwork": "snet-ew1",
+                        "tags": null
+                      }
+                    ]
+                  }
+                ]
+              }
+            ],
+            "uri": "https://ingest-api-x7k2lqpe4a-ew.a.run.app"
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "google_cloudfunctions2_function.enrich",
+          "mode": "managed",
+          "type": "google_cloudfunctions2_function",
+          "name": "enrich",
+          "provider_name": "registry.terraform.io/hashicorp/google",
+          "schema_version": 0,
+          "values": {
+            "build_config": [
+              {
+                "build": "projects/428193570216/locations/europe-west1/builds/0b1c2d3e-4f50-6172-8394-a5b6c7d8e9f0",
+                "docker_repository": "",
+                "entry_point": "enrich",
+                "environment_variables": {},
+                "runtime": "python312",
+                "source": [
+                  {
+                    "repo_source": [],
+                    "storage_source": [
+                      {
+                        "bucket": "gcf-v2-sources-428193570216-europe-west1",
+                        "generation": 1741781214330511,
+                        "object": "enrich-events/function-source.zip"
+                      }
+                    ]
+                  }
+                ],
+                "worker_pool": ""
+              }
+            ],
+            "description": "Enriches raw events",
+            "effective_labels": {
+              "env": "prod",
+              "team": "data-platform",
+              "data-classification": "confidential"
+            },
+            "environment": "GEN_2",
+            "event_trigger": [
+              {
+                "event_filters": [],
+                "event_type": "google.cloud.pubsub.topic.v1.messagePublished",
+                "pubsub_topic": "projects/acme-dataplat-prod/topics/events-raw",
+                "retry_policy": "RETRY_POLICY_RETRY",
+                "service_account_email": "run-ingest@acme-dataplat-prod.iam.gserviceaccount.com",
+                "trigger": "projects/acme-dataplat-prod/locations/europe-west1/triggers/enrich-events-123456",
+                "trigger_region": "europe-west1"
+              }
+            ],
+            "id": "projects/acme-dataplat-prod/locations/europe-west1/functions/enrich-events",
+            "kms_key_name": "",
+            "labels": {
+              "env": "prod",
+              "team": "data-platform",
+              "data-classification": "confidential"
+            },
+            "location": "europe-west1",
+            "name": "enrich-events",
+            "project": "acme-dataplat-prod",
+            "service_config": [
+              {
+                "all_traffic_on_latest_revision": true,
+                "available_cpu": "0.1666",
+                "available_memory": "256M",
+                "environment_variables": {
+                  "BQ_DATASET": "analytics",
+                  "LOG_EXECUTION_ID": "true"
+                },
+                "gcf_uri": "",
+                "ingress_settings": "ALLOW_INTERNAL_ONLY",
+                "max_instance_count": 20,
+                "min_instance_count": 0,
+                "secret_environment_variables": [
+                  {
+                    "key": "DB_PASSWORD",
+                    "project_id": "acme-dataplat-prod",
+                    "secret": "db-password",
+                    "version": "latest"
+                  }
+                ],
+                "service": "projects/acme-dataplat-prod/locations/europe-west1/services/enrich-events",
+                "service_account_email": "run-ingest@acme-dataplat-prod.iam.gserviceaccount.com",
+                "timeout_seconds": 60,
+                "uri": "https://enrich-events-x7k2lqpe4a-ew.a.run.app",
+                "vpc_connector": "",
+                "vpc_connector_egress_settings": ""
+              }
+            ],
+            "state": "ACTIVE",
+            "terraform_labels": {
+              "env": "prod",
+              "team": "data-platform",
+              "data-classification": "confidential"
+            },
+            "timeouts": null,
+            "update_time": "2025-03-14T08:29:03.455Z",
+            "url": "https://europe-west1-acme-dataplat-prod.cloudfunctions.net/enrich-events"
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "google_compute_region_network_endpoint_group.ingest",
+          "mode": "managed",
+          "type": "google_compute_region_network_endpoint_group",
+          "name": "ingest",
+          "provider_name": "registry.terraform.io/hashicorp/google",
+          "schema_version": 0,
+          "values": {
+            "app_engine": [],
+            "cloud_function": [],
+            "cloud_run": [
+              {
+                "service": "ingest-api",
+                "tag": "",
+                "url_mask": ""
+              }
+            ],
+            "description": "",
+            "id": "projects/acme-dataplat-prod/regions/europe-west1/networkEndpointGroups/neg-ingest-api",
+            "name": "neg-ingest-api",
+            "network": "",
+            "network_endpoint_type": "SERVERLESS",
+            "project": "acme-dataplat-prod",
+            "psc_data": [],
+            "region": "europe-west1",
+            "self_link": "https://www.googleapis.com/compute/v1/projects/acme-dataplat-prod/regions/europe-west1/networkEndpointGroups/neg-ingest-api",
+            "subnetwork": "",
+            "timeouts": null
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "google_compute_security_policy.waf",
+          "mode": "managed",
+          "type": "google_compute_security_policy",
+          "name": "waf",
+          "provider_name": "registry.terraform.io/hashicorp/google",
+          "schema_version": 0,
+          "values": {
+            "adaptive_protection_config": [],
+            "advanced_options_config": [],
+            "description": "",
+            "fingerprint": "Rk3m9Wq1Zs0=",
+            "id": "projects/acme-dataplat-prod/global/securityPolicies/waf-edge",
+            "name": "waf-edge",
+            "project": "acme-dataplat-prod",
+            "recaptcha_options_config": [],
+            "rule": [
+              {
+                "action": "allow",
+                "description": "default rule",
+                "match": [
+                  {
+                    "config": [
+                      {
+                        "src_ip_ranges": [
+                          "*"
+                        ]
+                      }
+                    ],
+                    "expr": [],
+                    "versioned_expr": "SRC_IPS_V1"
+                  }
+                ],
+                "preview": false,
+                "priority": 2147483647
+              }
+            ],
+            "self_link": "https://www.googleapis.com/compute/v1/projects/acme-dataplat-prod/global/securityPolicies/waf-edge",
+            "timeouts": null,
+            "type": "CLOUD_ARMOR"
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "google_compute_backend_service.ingest",
+          "mode": "managed",
+          "type": "google_compute_backend_service",
+          "name": "ingest",
+          "provider_name": "registry.terraform.io/hashicorp/google",
+          "schema_version": 0,
+          "values": {
+            "affinity_cookie_ttl_sec": 0,
+            "backend": [
+              {
+                "balancing_mode": "UTILIZATION",
+                "capacity_scaler": 1,
+                "description": "",
+                "group": "https://www.googleapis.com/compute/v1/projects/acme-dataplat-prod/regions/europe-west1/networkEndpointGroups/neg-ingest-api",
+                "max_connections": 0
+              }
+            ],
+            "connection_draining_timeout_sec": 300,
+            "description": "",
+            "enable_cdn": false,
+            "health_checks": [],
+            "id": "projects/acme-dataplat-prod/global/backendServices/bs-ingest-api",
+            "load_balancing_scheme": "EXTERNAL_MANAGED",
+            "name": "bs-ingest-api",
+            "port_name": "http",
+            "project": "acme-dataplat-prod",
+            "protocol": "HTTPS",
+            "security_policy": "https://www.googleapis.com/compute/v1/projects/acme-dataplat-prod/global/securityPolicies/waf-edge",
+            "self_link": "https://www.googleapis.com/compute/v1/projects/acme-dataplat-prod/global/backendServices/bs-ingest-api",
+            "session_affinity": "NONE",
+            "timeout_sec": 30,
+            "timeouts": null
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "google_compute_backend_service.web",
+          "mode": "managed",
+          "type": "google_compute_backend_service",
+          "name": "web",
+          "provider_name": "registry.terraform.io/hashicorp/google",
+          "schema_version": 0,
+          "values": {
+            "affinity_cookie_ttl_sec": 0,
+            "backend": [
+              {
+                "balancing_mode": "UTILIZATION",
+                "capacity_scaler": 1,
+                "description": "",
+                "group": "https://www.googleapis.com/compute/v1/projects/acme-dataplat-prod/zones/europe-west1-b/instanceGroups/gke-gke-platform-np-main-4f3a2b1c-grp",
+                "max_connections": 0
+              }
+            ],
+            "connection_draining_timeout_sec": 300,
+            "description": "",
+            "enable_cdn": false,
+            "health_checks": [
+              "https://www.googleapis.com/compute/v1/projects/acme-dataplat-prod/global/healthChecks/hc-web"
+            ],
+            "id": "projects/acme-dataplat-prod/global/backendServices/bs-web-gke",
+            "load_balancing_scheme": "EXTERNAL_MANAGED",
+            "name": "bs-web-gke",
+            "port_name": "http",
+            "project": "acme-dataplat-prod",
+            "protocol": "HTTP",
+            "security_policy": "https://www.googleapis.com/compute/v1/projects/acme-dataplat-prod/global/securityPolicies/waf-edge",
+            "self_link": "https://www.googleapis.com/compute/v1/projects/acme-dataplat-prod/global/backendServices/bs-web-gke",
+            "session_affinity": "NONE",
+            "timeout_sec": 30,
+            "timeouts": null
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "google_compute_url_map.main",
+          "mode": "managed",
+          "type": "google_compute_url_map",
+          "name": "main",
+          "provider_name": "registry.terraform.io/hashicorp/google",
+          "schema_version": 0,
+          "values": {
+            "creation_timestamp": "2025-03-14T03:01:12.664-07:00",
+            "default_service": "https://www.googleapis.com/compute/v1/projects/acme-dataplat-prod/global/backendServices/bs-web-gke",
+            "description": "",
+            "fingerprint": "Hq1xV7mP2oA=",
+            "header_action": [],
+            "host_rule": [
+              {
+                "description": "",
+                "hosts": [
+                  "*"
+                ],
+                "path_matcher": "main"
+              }
+            ],
+            "id": "projects/acme-dataplat-prod/global/urlMaps/lb-platform",
+            "map_id": 3814295761420938172,
+            "name": "lb-platform",
+            "path_matcher": [
+              {
+                "default_service": "https://www.googleapis.com/compute/v1/projects/acme-dataplat-prod/global/backendServices/bs-web-gke",
+                "name": "main",
+                "path_rule": [
+                  {
+                    "paths": [
+                      "/api/*"
+                    ],
+                    "service": "https://www.googleapis.com/compute/v1/projects/acme-dataplat-prod/global/backendServices/bs-ingest-api"
+                  }
+                ]
+              }
+            ],
+            "project": "acme-dataplat-prod",
+            "self_link": "https://www.googleapis.com/compute/v1/projects/acme-dataplat-prod/global/urlMaps/lb-platform",
+            "test": [],
+            "timeouts": null
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "google_compute_managed_ssl_certificate.lb",
+          "mode": "managed",
+          "type": "google_compute_managed_ssl_certificate",
+          "name": "lb",
+          "provider_name": "registry.terraform.io/hashicorp/google",
+          "schema_version": 0,
+          "values": {
+            "certificate_id": 7314029583011842650,
+            "description": "",
+            "id": "projects/acme-dataplat-prod/global/sslCertificates/cert-platform",
+            "managed": [
+              {
+                "domains": [
+                  "platform.acme.example."
+                ]
+              }
+            ],
+            "name": "cert-platform",
+            "project": "acme-dataplat-prod",
+            "self_link": "https://www.googleapis.com/compute/v1/projects/acme-dataplat-prod/global/sslCertificates/cert-platform",
+            "subject_alternative_names": [
+              "platform.acme.example"
+            ],
+            "timeouts": null,
+            "type": "MANAGED"
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "google_compute_target_https_proxy.main",
+          "mode": "managed",
+          "type": "google_compute_target_https_proxy",
+          "name": "main",
+          "provider_name": "registry.terraform.io/hashicorp/google",
+          "schema_version": 0,
+          "values": {
+            "certificate_manager_certificates": null,
+            "description": "",
+            "id": "projects/acme-dataplat-prod/global/targetHttpsProxies/proxy-platform",
+            "name": "proxy-platform",
+            "project": "acme-dataplat-prod",
+            "proxy_bind": false,
+            "proxy_id": 5920183746502817364,
+            "self_link": "https://www.googleapis.com/compute/v1/projects/acme-dataplat-prod/global/targetHttpsProxies/proxy-platform",
+            "ssl_certificates": [
+              "https://www.googleapis.com/compute/v1/projects/acme-dataplat-prod/global/sslCertificates/cert-platform"
+            ],
+            "url_map": "https://www.googleapis.com/compute/v1/projects/acme-dataplat-prod/global/urlMaps/lb-platform",
+            "timeouts": null
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "google_compute_global_address.lb_ip",
+          "mode": "managed",
+          "type": "google_compute_global_address",
+          "name": "lb_ip",
+          "provider_name": "registry.terraform.io/hashicorp/google",
+          "schema_version": 0,
+          "values": {
+            "address": "34.120.77.201",
+            "address_type": "EXTERNAL",
+            "id": "projects/acme-dataplat-prod/global/addresses/lb-platform-ip",
+            "ip_version": "IPV4",
+            "name": "lb-platform-ip",
+            "project": "acme-dataplat-prod",
+            "self_link": "https://www.googleapis.com/compute/v1/projects/acme-dataplat-prod/global/addresses/lb-platform-ip",
+            "timeouts": null
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "google_compute_global_forwarding_rule.https",
+          "mode": "managed",
+          "type": "google_compute_global_forwarding_rule",
+          "name": "https",
+          "provider_name": "registry.terraform.io/hashicorp/google",
+          "schema_version": 0,
+          "values": {
+            "description": "",
+            "id": "projects/acme-dataplat-prod/global/forwardingRules/fr-platform-https",
+            "ip_address": "34.120.77.201",
+            "ip_protocol": "TCP",
+            "load_balancing_scheme": "EXTERNAL_MANAGED",
+            "name": "fr-platform-https",
+            "port_range": "443-443",
+            "project": "acme-dataplat-prod",
+            "self_link": "https://www.googleapis.com/compute/v1/projects/acme-dataplat-prod/global/forwardingRules/fr-platform-https",
+            "target": "https://www.googleapis.com/compute/v1/projects/acme-dataplat-prod/global/targetHttpsProxies/proxy-platform",
+            "timeouts": null
+          },
+          "sensitive_values": {}
+        }
+      ]
+    }
+  },
+  "configuration": {
+    "provider_config": {
+      "google": {
+        "name": "google",
+        "full_name": "registry.terraform.io/hashicorp/google",
+        "version_constraint": "~> 6.8",
+        "expressions": {
+          "project": {
+            "constant_value": "acme-dataplat-prod"
+          },
+          "region": {
+            "references": [
+              "var.region"
+            ]
+          }
+        }
+      }
+    },
+    "root_module": {
+      "resources": [
+        {
+          "address": "google_project.main",
+          "mode": "managed",
+          "type": "google_project",
+          "name": "main",
+          "provider_config_key": "google",
+          "expressions": {},
+          "schema_version": 0
+        },
+        {
+          "address": "google_project_service.run",
+          "mode": "managed",
+          "type": "google_project_service",
+          "name": "run",
+          "provider_config_key": "google",
+          "expressions": {
+            "project": {
+              "references": [
+                "google_project.main.project_id",
+                "google_project.main"
+              ]
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "google_project_service.bigquery",
+          "mode": "managed",
+          "type": "google_project_service",
+          "name": "bigquery",
+          "provider_config_key": "google",
+          "expressions": {
+            "project": {
+              "references": [
+                "google_project.main.project_id",
+                "google_project.main"
+              ]
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "google_project_service.dataflow",
+          "mode": "managed",
+          "type": "google_project_service",
+          "name": "dataflow",
+          "provider_config_key": "google",
+          "expressions": {
+            "project": {
+              "references": [
+                "google_project.main.project_id",
+                "google_project.main"
+              ]
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "google_compute_network.platform",
+          "mode": "managed",
+          "type": "google_compute_network",
+          "name": "platform",
+          "provider_config_key": "google",
+          "expressions": {
+            "project": {
+              "references": [
+                "google_project.main.project_id",
+                "google_project.main"
+              ]
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "google_compute_subnetwork.ew1",
+          "mode": "managed",
+          "type": "google_compute_subnetwork",
+          "name": "ew1",
+          "provider_config_key": "google",
+          "expressions": {
+            "network": {
+              "references": [
+                "google_compute_network.platform.id",
+                "google_compute_network.platform"
+              ]
+            },
+            "region": {
+              "references": [
+                "var.region"
+              ]
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "google_compute_subnetwork.uc1",
+          "mode": "managed",
+          "type": "google_compute_subnetwork",
+          "name": "uc1",
+          "provider_config_key": "google",
+          "expressions": {
+            "network": {
+              "references": [
+                "google_compute_network.platform.id",
+                "google_compute_network.platform"
+              ]
+            },
+            "region": {
+              "references": [
+                "var.region"
+              ]
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "google_compute_firewall.allow_internal",
+          "mode": "managed",
+          "type": "google_compute_firewall",
+          "name": "allow_internal",
+          "provider_config_key": "google",
+          "expressions": {
+            "network": {
+              "references": [
+                "google_compute_network.platform.name",
+                "google_compute_network.platform"
+              ]
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "google_compute_router.ew1",
+          "mode": "managed",
+          "type": "google_compute_router",
+          "name": "ew1",
+          "provider_config_key": "google",
+          "expressions": {
+            "network": {
+              "references": [
+                "google_compute_network.platform.id",
+                "google_compute_network.platform"
+              ]
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "google_compute_router_nat.ew1",
+          "mode": "managed",
+          "type": "google_compute_router_nat",
+          "name": "ew1",
+          "provider_config_key": "google",
+          "expressions": {
+            "router": {
+              "references": [
+                "google_compute_router.ew1.name",
+                "google_compute_router.ew1"
+              ]
+            },
+            "region": {
+              "references": [
+                "google_compute_router.ew1.region",
+                "google_compute_router.ew1"
+              ]
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "google_compute_global_address.private_ip_alloc",
+          "mode": "managed",
+          "type": "google_compute_global_address",
+          "name": "private_ip_alloc",
+          "provider_config_key": "google",
+          "expressions": {
+            "network": {
+              "references": [
+                "google_compute_network.platform.id",
+                "google_compute_network.platform"
+              ]
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "google_service_networking_connection.sql",
+          "mode": "managed",
+          "type": "google_service_networking_connection",
+          "name": "sql",
+          "provider_config_key": "google",
+          "expressions": {
+            "network": {
+              "references": [
+                "google_compute_network.platform.id",
+                "google_compute_network.platform"
+              ]
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "google_service_account.run",
+          "mode": "managed",
+          "type": "google_service_account",
+          "name": "run",
+          "provider_config_key": "google",
+          "expressions": {
+            "project": {
+              "references": [
+                "google_project.main.project_id",
+                "google_project.main"
+              ]
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "google_container_cluster.platform",
+          "mode": "managed",
+          "type": "google_container_cluster",
+          "name": "platform",
+          "provider_config_key": "google",
+          "expressions": {
+            "network": {
+              "references": [
+                "google_compute_network.platform.id",
+                "google_compute_network.platform"
+              ]
+            },
+            "subnetwork": {
+              "references": [
+                "google_compute_subnetwork.ew1.id",
+                "google_compute_subnetwork.ew1"
+              ]
+            },
+            "project": {
+              "references": [
+                "google_project.main.project_id",
+                "google_project.main"
+              ]
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "google_container_node_pool.main",
+          "mode": "managed",
+          "type": "google_container_node_pool",
+          "name": "main",
+          "provider_config_key": "google",
+          "expressions": {
+            "cluster": {
+              "references": [
+                "google_container_cluster.platform.id",
+                "google_container_cluster.platform"
+              ]
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "google_sql_database_instance.orders",
+          "mode": "managed",
+          "type": "google_sql_database_instance",
+          "name": "orders",
+          "provider_config_key": "google",
+          "expressions": {
+            "settings": {
+              "references": [
+                "google_compute_network.platform.id",
+                "google_compute_network.platform",
+                "google_service_networking_connection.sql"
+              ]
+            },
+            "region": {
+              "references": [
+                "var.region"
+              ]
+            },
+            "project": {
+              "references": [
+                "google_project.main.project_id",
+                "google_project.main"
+              ]
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "google_sql_database.orders",
+          "mode": "managed",
+          "type": "google_sql_database",
+          "name": "orders",
+          "provider_config_key": "google",
+          "expressions": {
+            "instance": {
+              "references": [
+                "google_sql_database_instance.orders.name",
+                "google_sql_database_instance.orders"
+              ]
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "google_sql_user.app",
+          "mode": "managed",
+          "type": "google_sql_user",
+          "name": "app",
+          "provider_config_key": "google",
+          "expressions": {
+            "instance": {
+              "references": [
+                "google_sql_database_instance.orders.name",
+                "google_sql_database_instance.orders"
+              ]
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "google_redis_instance.sessions",
+          "mode": "managed",
+          "type": "google_redis_instance",
+          "name": "sessions",
+          "provider_config_key": "google",
+          "expressions": {
+            "authorized_network": {
+              "references": [
+                "google_compute_network.platform.id",
+                "google_compute_network.platform"
+              ]
+            },
+            "region": {
+              "references": [
+                "var.region"
+              ]
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "google_secret_manager_secret.db_password",
+          "mode": "managed",
+          "type": "google_secret_manager_secret",
+          "name": "db_password",
+          "provider_config_key": "google",
+          "expressions": {
+            "project": {
+              "references": [
+                "google_project.main.project_id",
+                "google_project.main"
+              ]
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "google_secret_manager_secret_iam_member.run",
+          "mode": "managed",
+          "type": "google_secret_manager_secret_iam_member",
+          "name": "run",
+          "provider_config_key": "google",
+          "expressions": {
+            "secret_id": {
+              "references": [
+                "google_secret_manager_secret.db_password.id",
+                "google_secret_manager_secret.db_password"
+              ]
+            },
+            "member": {
+              "references": [
+                "google_service_account.run.member",
+                "google_service_account.run"
+              ]
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "google_project_iam_member.run_pubsub",
+          "mode": "managed",
+          "type": "google_project_iam_member",
+          "name": "run_pubsub",
+          "provider_config_key": "google",
+          "expressions": {
+            "member": {
+              "references": [
+                "google_service_account.run.member",
+                "google_service_account.run"
+              ]
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "google_storage_bucket.raw",
+          "mode": "managed",
+          "type": "google_storage_bucket",
+          "name": "raw",
+          "provider_config_key": "google",
+          "expressions": {
+            "project": {
+              "references": [
+                "google_project.main.project_id",
+                "google_project.main"
+              ]
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "google_storage_bucket.curated",
+          "mode": "managed",
+          "type": "google_storage_bucket",
+          "name": "curated",
+          "provider_config_key": "google",
+          "expressions": {
+            "project": {
+              "references": [
+                "google_project.main.project_id",
+                "google_project.main"
+              ]
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "google_storage_bucket.archive",
+          "mode": "managed",
+          "type": "google_storage_bucket",
+          "name": "archive",
+          "provider_config_key": "google",
+          "expressions": {
+            "project": {
+              "references": [
+                "google_project.main.project_id",
+                "google_project.main"
+              ]
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "google_pubsub_topic.events",
+          "mode": "managed",
+          "type": "google_pubsub_topic",
+          "name": "events",
+          "provider_config_key": "google",
+          "expressions": {
+            "project": {
+              "references": [
+                "google_project.main.project_id",
+                "google_project.main"
+              ]
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "google_pubsub_subscription.bq",
+          "mode": "managed",
+          "type": "google_pubsub_subscription",
+          "name": "bq",
+          "provider_config_key": "google",
+          "expressions": {
+            "topic": {
+              "references": [
+                "google_pubsub_topic.events.id",
+                "google_pubsub_topic.events"
+              ]
+            },
+            "bigquery_config": {
+              "references": [
+                "google_bigquery_table.events_raw.id",
+                "google_bigquery_table.events_raw"
+              ]
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "google_pubsub_subscription.dataflow",
+          "mode": "managed",
+          "type": "google_pubsub_subscription",
+          "name": "dataflow",
+          "provider_config_key": "google",
+          "expressions": {
+            "topic": {
+              "references": [
+                "google_pubsub_topic.events.id",
+                "google_pubsub_topic.events"
+              ]
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "google_bigquery_dataset.analytics",
+          "mode": "managed",
+          "type": "google_bigquery_dataset",
+          "name": "analytics",
+          "provider_config_key": "google",
+          "expressions": {
+            "project": {
+              "references": [
+                "google_project.main.project_id",
+                "google_project.main"
+              ]
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "google_bigquery_table.events_raw",
+          "mode": "managed",
+          "type": "google_bigquery_table",
+          "name": "events_raw",
+          "provider_config_key": "google",
+          "expressions": {
+            "dataset_id": {
+              "references": [
+                "google_bigquery_dataset.analytics.dataset_id",
+                "google_bigquery_dataset.analytics"
+              ]
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "google_bigquery_table.events_curated",
+          "mode": "managed",
+          "type": "google_bigquery_table",
+          "name": "events_curated",
+          "provider_config_key": "google",
+          "expressions": {
+            "dataset_id": {
+              "references": [
+                "google_bigquery_dataset.analytics.dataset_id",
+                "google_bigquery_dataset.analytics"
+              ]
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "google_dataflow_job.events_curated",
+          "mode": "managed",
+          "type": "google_dataflow_job",
+          "name": "events_curated",
+          "provider_config_key": "google",
+          "expressions": {
+            "parameters": {
+              "references": [
+                "google_pubsub_subscription.dataflow.id",
+                "google_pubsub_subscription.dataflow",
+                "google_bigquery_table.events_curated.dataset_id"
+              ]
+            },
+            "subnetwork": {
+              "references": [
+                "google_compute_subnetwork.ew1.self_link",
+                "google_compute_subnetwork.ew1"
+              ]
+            },
+            "temp_gcs_location": {
+              "references": [
+                "google_storage_bucket.curated.url",
+                "google_storage_bucket.curated"
+              ]
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "google_cloud_run_v2_service.ingest",
+          "mode": "managed",
+          "type": "google_cloud_run_v2_service",
+          "name": "ingest",
+          "provider_config_key": "google",
+          "expressions": {
+            "template": {
+              "references": [
+                "google_service_account.run.email",
+                "google_service_account.run",
+                "google_pubsub_topic.events.id",
+                "google_pubsub_topic.events",
+                "google_sql_database_instance.orders.connection_name",
+                "google_sql_database_instance.orders",
+                "google_redis_instance.sessions.host",
+                "google_redis_instance.sessions",
+                "google_secret_manager_secret.db_password.secret_id",
+                "google_secret_manager_secret.db_password",
+                "google_compute_subnetwork.ew1.name",
+                "google_compute_subnetwork.ew1",
+                "google_compute_network.platform.name",
+                "google_compute_network.platform"
+              ]
+            },
+            "location": {
+              "references": [
+                "var.region"
+              ]
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "google_cloudfunctions2_function.enrich",
+          "mode": "managed",
+          "type": "google_cloudfunctions2_function",
+          "name": "enrich",
+          "provider_config_key": "google",
+          "expressions": {
+            "event_trigger": {
+              "references": [
+                "google_pubsub_topic.events.id",
+                "google_pubsub_topic.events",
+                "google_service_account.run.email",
+                "google_service_account.run"
+              ]
+            },
+            "service_config": {
+              "references": [
+                "google_secret_manager_secret.db_password.secret_id",
+                "google_secret_manager_secret.db_password",
+                "google_bigquery_dataset.analytics.dataset_id",
+                "google_bigquery_dataset.analytics"
+              ]
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "google_compute_region_network_endpoint_group.ingest",
+          "mode": "managed",
+          "type": "google_compute_region_network_endpoint_group",
+          "name": "ingest",
+          "provider_config_key": "google",
+          "expressions": {
+            "cloud_run": {
+              "references": [
+                "google_cloud_run_v2_service.ingest.name",
+                "google_cloud_run_v2_service.ingest"
+              ]
+            },
+            "region": {
+              "references": [
+                "google_cloud_run_v2_service.ingest.location",
+                "google_cloud_run_v2_service.ingest"
+              ]
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "google_compute_security_policy.waf",
+          "mode": "managed",
+          "type": "google_compute_security_policy",
+          "name": "waf",
+          "provider_config_key": "google",
+          "expressions": {},
+          "schema_version": 0
+        },
+        {
+          "address": "google_compute_backend_service.ingest",
+          "mode": "managed",
+          "type": "google_compute_backend_service",
+          "name": "ingest",
+          "provider_config_key": "google",
+          "expressions": {
+            "backend": {
+              "references": [
+                "google_compute_region_network_endpoint_group.ingest.id",
+                "google_compute_region_network_endpoint_group.ingest"
+              ]
+            },
+            "security_policy": {
+              "references": [
+                "google_compute_security_policy.waf.id",
+                "google_compute_security_policy.waf"
+              ]
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "google_compute_backend_service.web",
+          "mode": "managed",
+          "type": "google_compute_backend_service",
+          "name": "web",
+          "provider_config_key": "google",
+          "expressions": {
+            "backend": {
+              "references": [
+                "google_container_cluster.platform.node_pool[0].instance_group_urls[0]",
+                "google_container_cluster.platform"
+              ]
+            },
+            "security_policy": {
+              "references": [
+                "google_compute_security_policy.waf.id",
+                "google_compute_security_policy.waf"
+              ]
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "google_compute_url_map.main",
+          "mode": "managed",
+          "type": "google_compute_url_map",
+          "name": "main",
+          "provider_config_key": "google",
+          "expressions": {
+            "default_service": {
+              "references": [
+                "google_compute_backend_service.web.id",
+                "google_compute_backend_service.web"
+              ]
+            },
+            "path_matcher": {
+              "references": [
+                "google_compute_backend_service.ingest.id",
+                "google_compute_backend_service.ingest"
+              ]
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "google_compute_managed_ssl_certificate.lb",
+          "mode": "managed",
+          "type": "google_compute_managed_ssl_certificate",
+          "name": "lb",
+          "provider_config_key": "google",
+          "expressions": {},
+          "schema_version": 0
+        },
+        {
+          "address": "google_compute_target_https_proxy.main",
+          "mode": "managed",
+          "type": "google_compute_target_https_proxy",
+          "name": "main",
+          "provider_config_key": "google",
+          "expressions": {
+            "url_map": {
+              "references": [
+                "google_compute_url_map.main.id",
+                "google_compute_url_map.main"
+              ]
+            },
+            "ssl_certificates": {
+              "references": [
+                "google_compute_managed_ssl_certificate.lb.id",
+                "google_compute_managed_ssl_certificate.lb"
+              ]
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "google_compute_global_address.lb_ip",
+          "mode": "managed",
+          "type": "google_compute_global_address",
+          "name": "lb_ip",
+          "provider_config_key": "google",
+          "expressions": {},
+          "schema_version": 0
+        },
+        {
+          "address": "google_compute_global_forwarding_rule.https",
+          "mode": "managed",
+          "type": "google_compute_global_forwarding_rule",
+          "name": "https",
+          "provider_config_key": "google",
+          "expressions": {
+            "target": {
+              "references": [
+                "google_compute_target_https_proxy.main.id",
+                "google_compute_target_https_proxy.main"
+              ]
+            },
+            "ip_address": {
+              "references": [
+                "google_compute_global_address.lb_ip.address",
+                "google_compute_global_address.lb_ip"
+              ]
+            }
+          },
+          "schema_version": 0
+        }
+      ],
+      "variables": {
+        "region": {
+          "default": "europe-west1"
+        }
+      }
+    }
+  }
+}
