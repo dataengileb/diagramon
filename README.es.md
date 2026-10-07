@@ -107,6 +107,7 @@ de verdad. Ese tipo de información no debería viajar a un servicio de terceros
 | [🎨 Personalizar](docs/customize.es.md) | Temas, paletas, tipos, reglas y plantillas en `src/config.js` |
 | [🗂️ Estructura del proyecto](docs/project-structure.es.md) | Qué hace cada archivo y carpeta |
 | [🧭 Pendientes conocidos](docs/known-gaps.es.md) | Lo que funciona pero aún no se ha revisado a fondo |
+| [🛣️ Ideas y posibles mejoras](docs/roadmap.es.md) | Cambios grandes abiertos a colaboradores, como las conexiones entre grupos |
 
 ---
 
