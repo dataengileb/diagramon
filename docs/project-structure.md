@@ -20,3 +20,4 @@
 | `assets/icons/logos.js`, `tools/build-logos.py` | Azure, Google Cloud and SAP logos for groups, built from `tools/logos/` |
 | `assets/fonts/` | Bundled fonts (`.woff2`, OFL licenses) and the generated `fonts.js` |
 | `tools/build-fonts.py` | Builds `assets/fonts/fonts.js` from `assets/fonts/*.woff2` |
+| `tests/run.js` | Automated tests without dependencies (text format, exports, IaC import, translations, pure functions); run with `node tests/run.js` |

@@ -20,3 +20,4 @@
 | `assets/icons/logos.js`, `tools/build-logos.py` | Logotipos de Azure, Google Cloud y SAP para grupos, generados desde `tools/logos/` |
 | `assets/fonts/` | Tipografías incluidas (`.woff2`, licencias OFL) y el `fonts.js` generado |
 | `tools/build-fonts.py` | Genera `assets/fonts/fonts.js` desde `assets/fonts/*.woff2` |
+| `tests/run.js` | Pruebas automáticas sin dependencias (formato de texto, exportaciones, importación de IaC, traducciones, funciones puras); se ejecutan con `node tests/run.js` |
