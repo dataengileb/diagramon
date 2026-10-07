@@ -49,7 +49,7 @@
     const m = /^data:([^;,]+)(?:;[^,]*)?;base64,(.*)$/is.exec(src);
     // draw.io admite "data:image/png,BASE64" y "data:image/svg+xml,BASE64"; el '=' del relleno base64 es válido en un estilo
     const uri = m ? `data:${m[1]},${m[2]}` : src;
-    return styleSafe(uri).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    return styleSafe(uri); // el escape XML se hace al escribir el atributo style (esc)
   };
   const META_RESERVED = new Set(['id', 'label', 'link', 'placeholders', 'tooltip', 'type', 'typeLabel', 'desc', 'data', 'cost', 'review', 'edgeStyle', 'edgeStyleLabel', 'encrypted']);
   const OUT = { en: 'outside', es: 'fuera' };
@@ -157,8 +157,8 @@
         if (tail) label += ` <font style="font-size:10px">· ${h(tail)}</font>`;
         const style = `rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=${trust ? '3 4' : '8 4'};strokeColor=${hex};strokeWidth=2;fillColor=${hex};fillOpacity=${trust ? 4 : 8};verticalAlign=top;align=left;spacingLeft=8;spacingTop=4;fontSize=12;fontColor=${hex};`;
         const geo = `<mxGeometry x="${num(z.x)}" y="${num(z.y)}" width="${num(z.w)}" height="${num(z.h)}" as="geometry"/>`;
-        if (z.desc) cells.push(`<object id="${P}z-${esc(z.id)}" label="${esc(label)}" tooltip="${esc(h(z.desc))}"><mxCell style="${style}" vertex="1" parent="1">${geo}</mxCell></object>`);
-        else cells.push(`<mxCell id="${P}z-${esc(z.id)}" value="${esc(label)}" style="${style}" vertex="1" parent="1">${geo}</mxCell>`);
+        if (z.desc) cells.push(`<object id="${P}z-${esc(z.id)}" label="${esc(label)}" tooltip="${esc(h(z.desc))}"><mxCell style="${esc(style)}" vertex="1" parent="1">${geo}</mxCell></object>`);
+        else cells.push(`<mxCell id="${P}z-${esc(z.id)}" value="${esc(label)}" style="${esc(style)}" vertex="1" parent="1">${geo}</mxCell>`);
       });
 
       // Grupos como contenedores
@@ -175,8 +175,8 @@
         const geo = `<mxGeometry x="${num(b.x - (pb ? pb.x : 0))}" y="${num(b.y - (pb ? pb.y : 0))}" width="${num(b.w)}" height="${num(b.h)}" as="geometry"/>`;
         const par = pid ? P + 'g-' + esc(pid) : '1';
         const mt = metaOf(ctx, g);
-        if (mt.attrs.length) cells.push(`<object id="${P}g-${esc(g.id)}" label="${esc(h(g.label || g.id))}" ${mt.attrs.join(' ')} tooltip="${esc(mt.tip)}"><mxCell style="${style}" vertex="1" parent="${par}">${geo}</mxCell></object>`);
-        else cells.push(`<mxCell id="${P}g-${esc(g.id)}" value="${esc(h(g.label || g.id))}" style="${style}" vertex="1" parent="${par}">${geo}</mxCell>`);
+        if (mt.attrs.length) cells.push(`<object id="${P}g-${esc(g.id)}" label="${esc(h(g.label || g.id))}" ${mt.attrs.join(' ')} tooltip="${esc(mt.tip)}"><mxCell style="${esc(style)}" vertex="1" parent="${par}">${geo}</mxCell></object>`);
+        else cells.push(`<mxCell id="${P}g-${esc(g.id)}" value="${esc(h(g.label || g.id))}" style="${esc(style)}" vertex="1" parent="${par}">${geo}</mxCell>`);
       });
 
       // Nodos
@@ -212,7 +212,7 @@
         if (n.review && n.review.note) attrs.push(`review="${esc(n.review.status + ': ' + n.review.note)}"`);
         attrs.push(...mt.attrs);
         if (levelIdx[n.id]) attrs.push(`link="data:page/id,${pageIdOf(levelIdx[n.id])}"`);
-        cells.push(`<object id="${P}n-${esc(n.id)}" ${attrs.join(' ')}><mxCell style="${style}" vertex="1" parent="${pid ? P + 'g-' + esc(pid) : '1'}"><mxGeometry x="${num(n.x - (pb ? pb.x : 0))}" y="${num(n.y - (pb ? pb.y : 0))}" width="${num(s.w)}" height="${num(s.h)}" as="geometry"/></mxCell></object>`);
+        cells.push(`<object id="${P}n-${esc(n.id)}" ${attrs.join(' ')}><mxCell style="${esc(style)}" vertex="1" parent="${pid ? P + 'g-' + esc(pid) : '1'}"><mxGeometry x="${num(n.x - (pb ? pb.x : 0))}" y="${num(n.y - (pb ? pb.y : 0))}" width="${num(s.w)}" height="${num(s.h)}" as="geometry"/></mxCell></object>`);
       });
 
       // Notas (encima de los nodos)
@@ -262,7 +262,7 @@
         const mt = metaOf(ctx, e);
         attrs.push(...mt.attrs);
         if (mt.attrs.length) attrs.push(`tooltip="${esc(mt.tip)}"`);
-        edgeCells.push(`<object id="${P}e-${esc(e.id)}" ${attrs.join(' ')}><mxCell style="${style}" edge="1" parent="1" source="${esc(src)}" target="${esc(dst)}"><mxGeometry relative="1" as="geometry"/></mxCell></object>`);
+        edgeCells.push(`<object id="${P}e-${esc(e.id)}" ${attrs.join(' ')}><mxCell style="${esc(style)}" edge="1" parent="1" source="${esc(src)}" target="${esc(dst)}"><mxGeometry relative="1" as="geometry"/></mxCell></object>`);
       });
 
       // Fantasmas: nodos de otro nivel conectados con este (entrantes a la izquierda, salientes a la derecha)
@@ -278,7 +278,7 @@
         const label = `<b>${h(n.label || n.id)}</b><br><font style="font-size:10px" color="#777777">(${OUT[lang]})${where ? ' · ' + h(where) : ''}</font>`;
         const style = `rounded=1;arcSize=14;whiteSpace=wrap;html=1;dashed=1;dashPattern=5 4;fillColor=#FFFFFF;fillOpacity=55;strokeColor=${color};strokeWidth=1.5;opacity=60;fontColor=#222222;fontSize=12;align=center;verticalAlign=middle;`;
         const link = `data:page/id,${pageIdOf(home ? levelIdx[home] : 0)}`;
-        cells.push(`<object id="${P}x-${esc(n.id)}" label="${esc(label)}" type="ghost" link="${link}"><mxCell style="${style}" vertex="1" parent="1"><mxGeometry x="${num(x)}" y="${num(y)}" width="${num(s.w)}" height="${num(s.h)}" as="geometry"/></mxCell></object>`);
+        cells.push(`<object id="${P}x-${esc(n.id)}" label="${esc(label)}" type="ghost" link="${link}"><mxCell style="${esc(style)}" vertex="1" parent="1"><mxGeometry x="${num(x)}" y="${num(y)}" width="${num(s.w)}" height="${num(s.h)}" as="geometry"/></mxCell></object>`);
         grow(x, y, s.w, s.h);
       });
       cells.push(...edgeCells);
