@@ -147,7 +147,7 @@ review db: "DB in a public subnet" by=Ana raised=2026-10-01 due=2026-11-15
       'toast.iacEmpty': ({ format }) => `${format}: no components to draw`,
       'copy.suffix': 'copy',
       'prompt.node': 'Component name', 'prompt.group': 'Group name', 'prompt.edge': 'Connection label (empty to remove it)',
-      'prompt.newGroup': 'Name of the new group', 'prompt.newGroup.def': 'New group',
+      'prompt.newGroup.def': 'New group',
       'ed.json.ok': 'Valid JSON · applies as you type', 'ed.text.ok': 'Valid text · applies as you type',
       'ed.line': ({ line, msg, more }) => `Line ${line}: ${msg}${more ? ` (and ${more} more)` : ''}`,
 
@@ -543,7 +543,7 @@ revisión db: "BD en subred pública" por=Ana levantada=2026-10-01 compromiso=20
       'toast.iacEmpty': ({ format }) => `${format}: no hay componentes que dibujar`,
       'copy.suffix': 'copia',
       'prompt.node': 'Nombre del componente', 'prompt.group': 'Nombre del grupo', 'prompt.edge': 'Etiqueta de la conexión (vacío para quitarla)',
-      'prompt.newGroup': 'Nombre del nuevo grupo', 'prompt.newGroup.def': 'Nuevo grupo',
+      'prompt.newGroup.def': 'Nuevo grupo',
       'ed.json.ok': 'JSON válido · se aplica al escribir', 'ed.text.ok': 'Texto válido · se aplica al escribir',
       'ed.line': ({ line, msg, more }) => `Línea ${line}: ${msg}${more ? ` (y ${more} más)` : ''}`,
 

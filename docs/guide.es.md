@@ -55,7 +55,7 @@
 
 - Haz **clic** en un nodo: el panel derecho muestra nombre, detalle, icono, color y descripción.
 - Para cambiar el icono, escribe parte de su nombre en el buscador **Icono** (`lamb`, `sql`, `kafka`…) y elige una sugerencia con el ratón o con ↑ ↓ y Enter. La × vuelve al icono genérico.
-- **Doble clic** sobre un nodo, grupo o conexión lo renombra.
+- **Doble clic** sobre un nodo, grupo o conexión lo renombra ahí mismo: escribe y pulsa `Intro` para aceptar (`Mayús+Intro` añade un salto de línea en la etiqueta de una conexión) o `Esc` para cancelar. Hacer clic fuera también acepta. Una etiqueta de conexión vacía la quita.
 - En **Grupo › + Nuevo grupo…** creas un grupo. Arrastra su etiqueta para mover el grupo entero.
 
 ## 4. Varios a la vez y alineación

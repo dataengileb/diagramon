@@ -3664,25 +3664,75 @@
     box.addEventListener('blur', () => { box.remove(); endEdit(); if (S.sel?.id === id) renderInspector(); });
   }
 
-  function renameNode(id) {
-    const n = S.model.nodes.find(x => x.id === id);
-    const v = prompt(T('prompt.node'), n.label);
-    if (v == null || !v.trim() || v.trim() === n.label) return;
-    pushHistory(); n.label = v.trim(); changed(true); renderInspector();
+  // Edición en el lugar de nombres y etiquetas (sustituye a prompt()): cuadro sobre `rect` (pantalla), tamaño de letra según el zoom.
+  // Enter confirma (en multilínea, Mayús+Enter salta de línea), Esc cancela, perder el foco confirma; onCommit(v) solo si cambió.
+  function inlineEdit({ rect, value, multiline, aria, font, minW = 150, onCommit }) {
+    $('.item-edit')?.blur();
+    const sr = stage.getBoundingClientRect(), fs = Math.max(11, Math.round(font * S.view.k * 10) / 10);
+    const box = document.createElement(multiline ? 'textarea' : 'input');
+    box.className = 'item-edit';
+    box.value = value;
+    box.setAttribute('aria-label', aria);
+    const w = Math.min(Math.max(rect.width + 24, minW), sr.width - 8), lines = multiline ? value.split('\n').length : 1, h = Math.round(lines * fs * 1.35 + 14);
+    box.style.fontSize = `${fs}px`;
+    box.style.width = `${w}px`;
+    if (multiline) { box.style.height = `${h}px`; box.rows = lines; }
+    // Centrado sobre el texto y dentro del escenario
+    const left = clamp(rect.left + rect.width / 2 - w / 2 - sr.left, 4, Math.max(4, sr.width - w - 4)), top = clamp(rect.top + rect.height / 2 - h / 2 - sr.top, 4, Math.max(4, sr.height - h - 4));
+    box.style.left = `${left}px`; box.style.top = `${top}px`;
+    stage.appendChild(box);
+    box.focus(); box.select();
+    let cancel = false;
+    box.addEventListener('keydown', ev => {
+      ev.stopPropagation();
+      if (ev.key === 'Escape') { ev.preventDefault(); cancel = true; box.blur(); }
+      else if (ev.key === 'Enter' && !(multiline && ev.shiftKey)) { ev.preventDefault(); box.blur(); }
+    });
+    if (multiline) box.addEventListener('input', () => { const n = box.value.split('\n').length; box.rows = n; box.style.height = `${Math.round(n * fs * 1.35 + 14)}px`; });
+    box.addEventListener('blur', () => { const v = box.value; box.remove(); if (!cancel) onCommit(v); });
   }
-  function renameGroup(id) {
-    const g = groupById(id);
-    const v = prompt(T('prompt.group'), g.label);
-    if (v == null || !v.trim() || v.trim() === g.label) return;
-    pushHistory(); g.label = v.trim(); changed(true); renderInspector();
+  const unionRect = els => {
+    const rs = els.map(e => e.getBoundingClientRect()).filter(r => r.width && r.height);
+    if (!rs.length) return null;
+    const l = Math.min(...rs.map(r => r.left)), t = Math.min(...rs.map(r => r.top));
+    return { left: l, top: t, width: Math.max(...rs.map(r => r.right)) - l, height: Math.max(...rs.map(r => r.bottom)) - t };
+  };
+  function renameNode(id) {
+    const n = S.model.nodes.find(x => x.id === id), g = R.nodes.get(id);
+    if (!n || !g) return;
+    const rect = unionRect([...g.querySelectorAll('.node-label')]) || g.getBoundingClientRect();
+    inlineEdit({ rect, value: n.label, aria: T('prompt.node'), font: 13.5, minW: 170, onCommit: v => {
+      v = v.trim();
+      if (!v || v === n.label) return;
+      pushHistory(); n.label = v; changed(true); renderInspector();
+    } });
+  }
+  // fresh: grupo recién creado desde el inspector; el nombre se suma a ese paso de deshacer
+  function renameGroup(id, fresh) {
+    const g = groupById(id), r = R.groups.get(id);
+    if (!g || !r) return;
+    inlineEdit({ rect: r.tag.getBoundingClientRect(), value: g.label, aria: T('prompt.group'), font: 11, minW: 170, onCommit: v => {
+      v = v.trim();
+      if (!v || v === g.label) return;
+      if (!fresh) pushHistory();
+      g.label = v; changed(true); renderInspector();
+    } });
   }
   function renameEdge(id) {
-    const e = S.model.edges.find(x => x.id === id);
-    const v = prompt(T('prompt.edge'), e.label || '');
-    if (v == null || v.trim() === (e.label || '')) return;
-    pushHistory();
-    if (v.trim()) e.label = v.trim(); else delete e.label;
-    changed(true); renderInspector();
+    const e = S.model.edges.find(x => x.id === id), r = R.edges.get(id);
+    if (!e || !r) return;
+    let rect = r.label && unionRect([r.label]);
+    if (!rect) { // sin etiqueta visible: en el punto medio de la conexión
+      const m = r.line.getScreenCTM(), p = r.line.getPointAtLength(r.line.getTotalLength() / 2), q = new DOMPoint(p.x, p.y).matrixTransform(m);
+      rect = { left: q.x - 40, top: q.y - 10, width: 80, height: 20 };
+    }
+    inlineEdit({ rect, value: e.label || '', multiline: true, aria: T('prompt.edge'), font: 11, minW: 150, onCommit: v => {
+      v = v.replace(/\r\n?/g, '\n').trim();
+      if (v === (e.label || '')) return;
+      pushHistory();
+      if (v) e.label = v; else delete e.label;
+      changed(true); renderInspector();
+    } });
   }
 
   function relayout() {
@@ -5171,6 +5221,7 @@
     let v = f.value;
     if (v === '__mixed') return;
     if (k === 'style' && v === '__newtype') { renderInspector(); return openEdgeTypes({ apply: !Array.isArray(t) && S.sel?.kind === 'edge' ? t : null }); }
+    let newGroup = '';
     if (k === 'region') v = v.trim();
     if (k === 'cost' || k === 'costYears') {
       // Números: vacío o no válido = quitar el valor
@@ -5179,12 +5230,11 @@
     }
     if (isSelect) pushHistory(); else markEdit();
     if (k === 'group' && v === '__new') {
-      const name = prompt(T('prompt.newGroup'), T('prompt.newGroup.def'));
       const parents = new Set(list.map(n => n.group || ''));
-      if (!name || !name.trim()) { S.history.pop(); updateUndoButtons(); renderInspector(); return; }
       const id = uniqueId('grupo-'), parent = parents.size === 1 ? [...parents][0] : '';
       const keys = paletteKeys();
-      S.model.groups.push({ id, label: name.trim(), color: keys[S.model.groups.length % keys.length], ...(parent ? { parent } : {}), ...(S.scope ? { in: S.scope } : {}) });
+      S.model.groups.push({ id, label: T('prompt.newGroup.def'), color: keys[S.model.groups.length % keys.length], ...(parent ? { parent } : {}), ...(S.scope ? { in: S.scope } : {}) });
+      newGroup = id;
       v = id;
     }
     list.forEach(x => {
@@ -5201,6 +5251,7 @@
       if ($('#region-hint')) $('#region-hint').textContent = v ? '' : regionHint(list, false);
     }
     if (isSelect) renderInspector();
+    if (newGroup) renameGroup(newGroup, true); // nombre en el lugar, sobre la etiqueta del nuevo grupo
     else if (k === 'label') $('#inspector .insp-title').textContent = S.sel.kind === 'edge' ? $('#inspector .insp-title').textContent : v;
   }
 
