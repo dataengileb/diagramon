@@ -4469,13 +4469,13 @@
       cur = costBreakdown(S.model, st.by);
       if (!cur.length) { outs.breakdown.innerHTML = `<p class="cm-empty">${esc(T('cst.empty'))}</p>`; return; }
       const tot = cur.reduce((s, r) => s + r.monthly, 0), n = cur.reduce((s, r) => s + r.nodes.length, 0), tree = st.by === 'group';
-      const open = r => st.exp[r.pathKey] ?? r.depth < 2;
+      const open = r => (Object.hasOwn(st.exp, r.pathKey) ? st.exp[r.pathKey] === true : r.depth < 2);
       let hide = null; // en árbol: oculta las filas bajo un grupo contraído (orden de árbol: depth creciente dentro de la rama)
       const vis = tree ? cur.map(r => { if (hide != null && r.depth > hide) return false; hide = r.hasChildren && !open(r) ? r.depth : null; return true; }) : cur.map(() => true);
       const head = `<th>${esc(T(`cst.by.${st.by}`))}</th><th class="num">${esc(T('cst.col.components'))}</th>${tree ? `<th class="num">${esc(T('cst.col.own'))}</th><th class="num">${esc(T('cst.col.subtotal'))}</th>` : `<th class="num">${esc(T('cst.col.monthly'))}</th>`}<th class="num">${esc(T('cst.col.yearly'))}</th><th>${esc(T('cst.col.pct'))}</th>`;
       const row = (r, i) => {
         const name = r.filter ? `<button class="cst-key" data-i="${i}">${esc(r.label)}</button>` : esc(r.label);
-        const tg = tree ? (r.hasChildren ? `<button class="cst-tg" data-cst-tg="${esc(r.pathKey)}" aria-expanded="${open(r)}" aria-label="${esc(T(open(r) ? 'cst.collapse' : 'cst.expand', { g: r.label }))}">${open(r) ? '▾' : '▸'}</button>` : '<span class="cst-tg"></span>') : '';
+        const tg = tree ? (r.hasChildren ? `<button class="cst-tg" data-cst-tg="${esc(r.pathKey)}" aria-expanded="${open(r) ? 'true' : 'false'}" aria-label="${esc(T(open(r) ? 'cst.collapse' : 'cst.expand', { g: r.label }))}">${open(r) ? '▾' : '▸'}</button>` : '<span class="cst-tg"></span>') : '';
         const v = tree ? r.total : r.monthly;
         return `<tr${r.filter ? ` class="cst-click" data-i="${i}" title="${esc(T('cst.rowTip'))}"` : ''}><td${r.unassigned ? ' class="cst-un"' : ''}${tree ? ` ${indent(r.depth)}` : ''}>${tg}${name}${esc(lvTag(r))}</td><td class="num">${tree ? r.nodesAll.length : r.nodes.length}</td>${tree ? `<td class="num">${r.own ? esc(cstMoney(r.own)) : '—'}</td><td class="num">${esc(cstMoney(r.total))}</td>` : `<td class="num">${esc(cstMoney(r.monthly))}</td>`}<td class="num">${esc(cstMoney(v * 12))}</td><td>${bars(v, tot)}</td></tr>`;
       };
@@ -4549,7 +4549,7 @@
       if (!k) return;
       if (k === 'a' || k === 'b') st[k] = ev.target.value || null;
       else if (k === 'only') st.only = ev.target.checked;
-      else if (k === 'by' || k === 'by2') { st.by = ev.target.value; $q('[data-cst="by"]').value = $q('[data-cst="by2"]').value = st.by; }
+      else if (k === 'by' || k === 'by2') { st.by = CST_BY.find(x => x === ev.target.value) || st.by; $q('[data-cst="by"]').value = $q('[data-cst="by2"]').value = st.by; }
       show();
     });
     cstClose = close;
