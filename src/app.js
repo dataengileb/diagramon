@@ -1086,7 +1086,7 @@
     return `${numFmt(s / k, 1)} ${T(`res.u.${u}`)}`;
   };
   const cleanSla = v => {
-    const x = typeof v === 'number' ? v : typeof v === 'string' ? parseFloat(v.replace('%', '').replace(',', '.').trim()) : NaN;
+    const x = typeof v === 'number' ? v : typeof v === 'string' ? parseFloat(v.replace(/%/g, '').replace(',', '.').trim()) : NaN;
     return Number.isFinite(x) && x > 0 && x <= 100 ? +x.toFixed(6) : null;
   };
   const cleanReplicas = v => { const x = Math.round(+v); return v != null && v !== '' && Number.isFinite(+v) && x >= 2 ? x : null; };
@@ -5668,7 +5668,7 @@
     sel.innerHTML = list.map(([k, l]) => `<option value="${k}"${S.provider === k ? ' selected' : ''}>${esc(l)}</option>`).join('');
   }
   $('#provider').addEventListener('change', ev => {
-    S.provider = ev.target.value;
+    S.provider = ICONS[ev.target.value] ? ev.target.value : 'generic'; // solo proveedores conocidos
     store.set('provider', S.provider);
     renderPalette();
     $('.pane[data-pane="components"]').scrollTop = 0;
@@ -5695,7 +5695,7 @@
       }
       $('#palette-list').innerHTML = [...groups].map(([cat, items]) => `<div class="cat">${esc(I.category(cat))}</div><div class="chips">${items.map(([k, it]) => k == null
         ? chip(`data-type="${esc(it.type)}" data-label="${esc(it.label)}" data-sub="${esc(it.sub || '')}"${iconInfo(it.icon) ? ` data-icon="${esc(it.icon)}"` : ''}`, colorVar(it.color || (C.types[it.type] || C.types.generic).color), nodeIconHtml(it), it.label, !!iconInfo(it.icon))
-        : chip(`data-type="${it.type}" data-icon="${S.provider}/${k}" data-label="${esc(it.label)}"`, colorVar((C.types[it.type] || C.types.generic).color), `<img src="${set.files[it.file]}" alt="">`, it.label, true)).join('')}</div>`).join('')
+        : chip(`data-type="${it.type}" data-icon="${esc(`${S.provider}/${k}`)}" data-label="${esc(it.label)}"`, colorVar((C.types[it.type] || C.types.generic).color), `<img src="${set.files[it.file]}" alt="">`, it.label, true)).join('')}</div>`).join('')
         || `<p class="empty-list">${T('side.none')}</p>`;
       return;
     }
@@ -7737,7 +7737,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
 
   /* exportación Markdown (MADR): índice y una sección por decisión */
   function decisionsMarkdown() {
-    const m = S.model, ds = m.decisions || [], cell = x => String(x ?? '').replace(/\|/g, '\\|').replace(/\s*\n\s*/g, ' ');
+    const m = S.model, ds = m.decisions || [], cell = x => String(x ?? '').replace(/\\/g, '\\\\').replace(/\|/g, '\\|').replace(/\s*\n\s*/g, ' ');
     const body = x => (String(x || '').trim() || '_—_');
     const out = [`# ${T('adr.md.title', m.title)}`, ''];
     if (ds.length) {
