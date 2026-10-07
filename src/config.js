@@ -15,7 +15,7 @@ window.DIAGRAMON_CONFIG = {
     storageKey: 'diagramon'          // prefijo para guardar en el navegador
   },
 
-  /* Tipografías. Las incluidas viven en fonts/ (fonts/fonts.js, ver tools/build-fonts.py);
+  /* Tipografías. Las incluidas viven en assets/fonts/ (assets/fonts/fonts.js, ver tools/build-fonts.py);
      aquí solo las alternativas. `system` funciona aunque falte fonts.js. */
   fonts: {
     default: 'inter',            // clave de `families`
@@ -75,7 +75,7 @@ window.DIAGRAMON_CONFIG = {
 
   /* Atajos sin icono oficial. Salen arriba de la pestaña de su nube.
      SAP solo publica iconos para sus servicios BTP. Sus aplicaciones de negocio
-     (S/4HANA, ECC, TM, EWM…) llevan el logotipo de SAP (`icon`, de icons/logos.js). */
+     (S/4HANA, ECC, TM, EWM…) llevan el logotipo de SAP (`icon`, de assets/icons/logos.js). */
   presets: {
     sap: {
       title: { en: 'SAP business systems', es: 'Sistemas de negocio SAP' },

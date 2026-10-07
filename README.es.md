@@ -38,7 +38,7 @@ de verdad. Ese tipo de información no debería viajar a un servicio de terceros
 **Cómo lo garantiza**
 
 - **Es un solo HTML con JavaScript propio.** Sin librerías externas, sin CDN, sin fuentes web cargadas de internet, sin trackers.
-  Los iconos oficiales van incrustados en los archivos `icons/*.js` y las tres tipografías en `fonts/fonts.js` (base64).
+  Los iconos oficiales van incrustados en los archivos `assets/icons/*.js` y las tres tipografías en `assets/fonts/fonts.js` (base64).
 - **El navegador bloquea la red.** `index.html` declara una política de seguridad
   (`Content-Security-Policy: connect-src 'none'`). Aunque alguien añadiera código que intente enviar datos,
   el navegador lo rechaza.
@@ -247,7 +247,7 @@ Marca qué controles cumple cada componente (ISO 27001, SOC 2, GDPR, HIPAA, PCI 
 **Matriz de cumplimiento** (botón de la sección, o **Exportar › Matriz de cumplimiento**): una fila por componente con controles o datos sensibles, una columna por control en uso agrupada por marco, con ✓ cumple, ◐ parcial, ✗ brecha, — N/A y vacío si no está mapeado. La cabecera se queda a la vista al desplazarte; una fila inferior muestra la cobertura de cada control (cumple ÷ componentes que no son N/A) y las tarjetas de arriba resumen cada marco. Elige un marco para acotarla. **CSV** exporta una fila por componente y una columna por control (`met|partial|gap|na|`); **CSV (largo)** una fila por componente × control con marco, control, título, grupo, estado, heredado de y clases de datos (`<diagrama>-compliance.csv`, `<diagrama>-compliance-long.csv`).
 
 Los hallazgos de revisión incluyen un grupo **Cumplimiento**: una brecha es *media* (*alta* para un control de PCI DSS en un componente con datos PCI, o de HIPAA con PHI), un control parcial es *baja*, y un componente con PII, PCI o PHI al que le falta su control principal sugerido (por ejemplo GDPR Art. 32) es *baja*, solo para los marcos que el diagrama ya usa, así que un diagrama sin controles no genera avisos. El **Filtro** tiene una sección **Cumplimiento** (una ficha por marco en uso, más *Con brechas*). Desde la consola: `Diagramon.compliance()` y `Diagramon.exportCompliance('wide' | 'long')`.
-El catálogo está en `config.js` › `compliance` y es un subconjunto práctico, no las normas completas; los títulos de los controles son paráfrasis cortas. Es una ayuda de documentación, no una auditoría ni una certificación.
+El catálogo está en `src/config.js` › `compliance` y es un subconjunto práctico, no las normas completas; los títulos de los controles son paráfrasis cortas. Es una ayuda de documentación, no una auditoría ni una certificación.
 
 #### Dueños y responsables
 
@@ -370,7 +370,7 @@ Una **vista** es una forma de mirar el mismo diagrama: solo decide qué se ve, c
 | `8` | **Gobierno** | Quién es dueño de qué: componentes coloreados por equipo (o dueño), con una etiqueta de equipo bajo cada uno; los que no tienen ninguno se atenúan |
 | `9` | **Resiliencia** | Niveles de disponibilidad (SLA efectivo), pastilla con RPO/RTO bajo cada componente y puntos únicos de fallo con borde rojo discontinuo |
 
-Las reglas de cada vista están en `config.js` › `views`; en el inspector puedes marcar un grupo como `lógico` o `físico`.
+Las reglas de cada vista están en `src/config.js` › `views`; en el inspector puedes marcar un grupo como `lógico` o `físico`.
 
 ### Niveles C4 (drill-down)
 
@@ -542,29 +542,29 @@ El texto no guarda posiciones: los nodos que ya existían no se mueven y los nue
 
 ## 🎨 Personalizar
 
-Todo lo personalizable está en **`config.js`**. Guarda y recarga `index.html`.
+Todo lo personalizable está en **`src/config.js`**. Guarda y recarga `index.html`.
 
 - **Tema por defecto**: `app.defaultTheme: 'dark' | 'light' | 'black'`. La tecla `T` y el botón de tema alternan claro → oscuro → negro.
-- **Idioma por defecto**: `app.defaultLang: 'en' | 'es'`. Los textos de la interfaz están en `i18n.js`; los de `config.js` y `examples.js` pueden ser `{ en: '…', es: '…' }`.
+- **Idioma por defecto**: `app.defaultLang: 'en' | 'es'`. Los textos de la interfaz están en `src/i18n.js`; los de `src/config.js` y `src/examples.js` pueden ser `{ en: '…', es: '…' }`.
 - **Clasificaciones de datos**: `dataClasses` define las etiquetas (nombre, texto corto y color). `sensitive: true` activa el aviso rojo en flujos sin cifrar.
-- **Jurisdicciones (residencia de datos)**: `residency.jurisdictions` en `config.js` es un mapa ordenado `clave → { label: { en, es }, short, match }`. `match` es una expresión regular (sin distinguir mayúsculas) que se prueba contra el texto de la región (`eu-west-1`, `westeurope`, `ES`…); gana la primera que coincide, así que pon las específicas (`uk`, `ch`) antes que las amplias (`eu`). Para añadir una, copia una línea y cambia clave, etiquetas y `match`. `of` es el texto opcional del aviso (*salen de **la UE***). Con `residency.warnSameJurisdiction: true` también avisa cuando cambian de región dentro de una misma jurisdicción.
-- **Reglas de amenazas STRIDE**: `stride` en `config.js` fija los umbrales y los textos. `inboundSeverity` es la severidad de *Suplantación* en cruces entrantes, `criticalClasses` las clases de datos que vuelven crítica la *Divulgación de información*, `storeTypes` y `storeIconCategories` lo que cuenta como almacén de datos, secretos o identidad para la *Elevación de privilegios*, y `categories` la etiqueta, descripción y pista de mitigación (`{ en, es }`) de cada letra. Las reglas están explicadas en un comentario encima.
-- **Capas del data lake**: `dataLayers` define las capas en orden (`label` para los nombres medallón, `alt` para Crudo/Curado/Consumo, letras cortas y `color`). Los colores usan `--layer-bronze`, `--layer-silver` y `--layer-gold`, definidos por tema en `index.html`; cámbialos ahí o pon un color fijo en `config.js`. `layerAliases` lista otras palabras aceptadas al leer JSON y texto. La opción `layers` de cada vista las muestra u oculta.
-- **Revisión de seguridad automática**: `securityRules` en `config.js` tiene una entrada por regla (`sec.unencrypted-sensitive`, `sec.unstated-encryption`, `sec.public-sensitive`, `sec.datastore-backup`, `sec.cross-border`, `sec.sensitive-no-owner`, `sec.public-datastore`) con `enabled` (pon `false` para apagarla) y `severity` (`low`, `medium`, `high`, `critical`). Lo demás son parámetros de la regla: `clientTypes`, `publicGroupIcons` y `publicGroupName` (qué cuenta como público), `dataStoreTypes` y `dataStoreIconCategories`, `backupIcons`, `backupName` y `backupEdgeLabel` (qué cuenta como respaldo). Los patrones de texto son RegExp sin distinguir mayúsculas.
+- **Jurisdicciones (residencia de datos)**: `residency.jurisdictions` en `src/config.js` es un mapa ordenado `clave → { label: { en, es }, short, match }`. `match` es una expresión regular (sin distinguir mayúsculas) que se prueba contra el texto de la región (`eu-west-1`, `westeurope`, `ES`…); gana la primera que coincide, así que pon las específicas (`uk`, `ch`) antes que las amplias (`eu`). Para añadir una, copia una línea y cambia clave, etiquetas y `match`. `of` es el texto opcional del aviso (*salen de **la UE***). Con `residency.warnSameJurisdiction: true` también avisa cuando cambian de región dentro de una misma jurisdicción.
+- **Reglas de amenazas STRIDE**: `stride` en `src/config.js` fija los umbrales y los textos. `inboundSeverity` es la severidad de *Suplantación* en cruces entrantes, `criticalClasses` las clases de datos que vuelven crítica la *Divulgación de información*, `storeTypes` y `storeIconCategories` lo que cuenta como almacén de datos, secretos o identidad para la *Elevación de privilegios*, y `categories` la etiqueta, descripción y pista de mitigación (`{ en, es }`) de cada letra. Las reglas están explicadas en un comentario encima.
+- **Capas del data lake**: `dataLayers` define las capas en orden (`label` para los nombres medallón, `alt` para Crudo/Curado/Consumo, letras cortas y `color`). Los colores usan `--layer-bronze`, `--layer-silver` y `--layer-gold`, definidos por tema en `index.html`; cámbialos ahí o pon un color fijo en `src/config.js`. `layerAliases` lista otras palabras aceptadas al leer JSON y texto. La opción `layers` de cada vista las muestra u oculta.
+- **Revisión de seguridad automática**: `securityRules` en `src/config.js` tiene una entrada por regla (`sec.unencrypted-sensitive`, `sec.unstated-encryption`, `sec.public-sensitive`, `sec.datastore-backup`, `sec.cross-border`, `sec.sensitive-no-owner`, `sec.public-datastore`) con `enabled` (pon `false` para apagarla) y `severity` (`low`, `medium`, `high`, `critical`). Lo demás son parámetros de la regla: `clientTypes`, `publicGroupIcons` y `publicGroupName` (qué cuenta como público), `dataStoreTypes` y `dataStoreIconCategories`, `backupIcons`, `backupName` y `backupEdgeLabel` (qué cuenta como respaldo). Los patrones de texto son RegExp sin distinguir mayúsculas.
 - **Cumplimiento**: `compliance.frameworks` es un mapa ordenado `clave → { label, short, url?, controls: { '<id>': { label: { en, es } } } }`. Añade un control con una línea en su marco, o un marco (NIST CSF, ENS, DORA…) copiando un bloque; el JSON y el Texto aceptan cualquier `marco:id`, aunque no esté en el catálogo. `compliance.suggest` asocia cada clase de datos (y `crossBorder`) con los controles que se ofrecen como fichas; el primero de cada lista es el que espera la revisión.
 - **Decisiones de arquitectura**: `adr.staleDays` (por defecto `30`) son los días que una decisión *propuesta* puede esperar antes de aparecer como hallazgo bajo en la pestaña *Revisión*; `0` lo desactiva.
-- **Resiliencia**: `resilience` en `config.js` define `entryTypes` (tipos de componente que cuentan como puntos de entrada, además de cualquier nodo sin flujos entrantes), `dataStoreTypes` y `dataStoreIconCategories` (qué es un almacén de datos), `spofSeverity` y `singleStoreSeverity` (gravedad de los hallazgos) y `defaultTarget` (SLA en % que se espera de un almacén de datos, por defecto `99.9`).
+- **Resiliencia**: `resilience` en `src/config.js` define `entryTypes` (tipos de componente que cuentan como puntos de entrada, además de cualquier nodo sin flujos entrantes), `dataStoreTypes` y `dataStoreIconCategories` (qué es un almacén de datos), `spofSeverity` y `singleStoreSeverity` (gravedad de los hallazgos) y `defaultTarget` (SLA en % que se espera de un almacén de datos, por defecto `99.9`).
 - **Ambientes**: `environments` define los botones de la pestaña *Versiones* (nombre, texto corto y color). Añade o quita los que necesites.
 - **Tamaño de los nodos**: con `node.sameSize: true` (por defecto) todos miden `node.width` y los nombres largos usan 2 líneas.
   Con `false`, cada nodo crece con su texto.
 - **Atajos sin icono oficial**: `presets` añade elementos arriba de la lista de un proveedor (por ejemplo, los sistemas SAP).
-- **Tipografías**: elige Inter (por defecto), IBM Plex Sans o Fira Code en la barra superior; la elección se guarda en tu navegador y se incrusta en las exportaciones SVG/PNG. Vienen incluidas en la app (no se cargan de la web). Para añadir una, deja sus archivos `.woff2` en `fonts/`, añade una entrada a `FONTS` en `tools/build-fonts.py` (mira su cabecera) y ejecuta `python3 tools/build-fonts.py`.
+- **Tipografías**: elige Inter (por defecto), IBM Plex Sans o Fira Code en la barra superior; la elección se guarda en tu navegador y se incrusta en las exportaciones SVG/PNG. Vienen incluidas en la app (no se cargan de la web). Para añadir una, deja sus archivos `.woff2` en `assets/fonts/`, añade una entrada a `FONTS` en `tools/build-fonts.py` (mira su cabecera) y ejecuta `python3 tools/build-fonts.py`.
 - **Paletas**: añade una entrada en `palettes` con las mismas claves de color (`rosa`, `coral`, …) para `dark`, `light` y `black` (por defecto vienen Pastel y Neón). Una paleta guardada que ya no existe vuelve a Pastel.
 - **Nuevo tipo de componente**: copia una entrada de `types` y cambia `label`, `category`, `color`, `keywords` e `icon` (SVG de 24×24).
 - **Conexiones**: `edgeStyles` define trazo, grosor y número de partículas.
 - **Animación**: velocidad, aparición y duración de los pasos en `animation`.
 - **Costos**: `cost.currency`, `cost.hoursPerMonth` (730 = horas de un mes) y `cost.defaultYears`.
-- **Plantillas**: añade las tuyas en `examples.js`.
+- **Plantillas**: añade las tuyas en `src/examples.js`.
 
 <details>
 <summary><b>Actualizar o añadir iconos oficiales</b></summary>
@@ -583,7 +583,7 @@ Todo lo personalizable está en **`config.js`**. Guarda y recarga `index.html`.
    python3 tools/build-icons.py <carpeta>
    ```
 
-`"icons": { "enabled": false }` en `config.js` los desactiva.
+`"icons": { "enabled": false }` en `src/config.js` los desactiva.
 
 </details>
 
@@ -604,21 +604,21 @@ El lenguaje de texto está en `window.DiagramonText` (`parse` y `stringify`).
 | Archivo | Para qué |
 |---|---|
 | `index.html` | Interfaz y estilos. `#diagram-css` son los estilos que también van en la exportación |
-| `config.js` | **Todo lo personalizable**: temas, paletas, tipos, conexiones, animación y costos |
-| `i18n.js` | Textos de la interfaz en inglés y en español |
-| `app.js` | Motor del editor |
-| `text-lang.js` | Lenguaje de texto (diagrama como código) |
-| `examples.js` | Plantillas |
-| `export-mermaid.js`, `export-plantuml.js`, `export-drawio.js` | Exportadores a Mermaid, PlantUML y draw.io |
-| `export-xlsx.js` | Generador mínimo de ZIP y Excel (`.xlsx`) sin librerías (lo usa la exportación del inventario) |
-| `share.js` | Visor HTML cifrado y autosuficiente para compartir |
-| `iac.js` | Importación de infraestructura como código (Terraform, CloudFormation, Kubernetes, Compose) |
+| `src/config.js` | **Todo lo personalizable**: temas, paletas, tipos, conexiones, animación y costos |
+| `src/i18n.js` | Textos de la interfaz en inglés y en español |
+| `src/app.js` | Motor del editor |
+| `src/text-lang.js` | Lenguaje de texto (diagrama como código) |
+| `src/examples.js` | Plantillas |
+| `src/export/mermaid.js`, `src/export/plantuml.js`, `src/export/drawio.js` | Exportadores a Mermaid, PlantUML y draw.io |
+| `src/export/xlsx.js` | Generador mínimo de ZIP y Excel (`.xlsx`) sin librerías (lo usa la exportación del inventario) |
+| `src/share.js` | Visor HTML cifrado y autosuficiente para compartir |
+| `src/iac.js` | Importación de infraestructura como código (Terraform, CloudFormation, Kubernetes, Compose) |
 | `samples/` | Archivos de IaC de ejemplo para probar la importación |
-| `icons/*.js` | Iconos oficiales de AWS, Azure, Google Cloud, SAP BTP y Microsoft Fabric, incrustados |
-| `tools/build-icons.py` | Genera `icons/*.js` desde los paquetes oficiales |
-| `icons/logos.js`, `tools/build-logos.py` | Logotipos de Azure, Google Cloud y SAP para grupos, generados desde `tools/logos/` |
-| `fonts/` | Tipografías incluidas (`.woff2`, licencias OFL) y el `fonts.js` generado |
-| `tools/build-fonts.py` | Genera `fonts/fonts.js` desde `fonts/*.woff2` |
+| `assets/icons/*.js` | Iconos oficiales de AWS, Azure, Google Cloud, SAP BTP y Microsoft Fabric, incrustados |
+| `tools/build-icons.py` | Genera `assets/icons/*.js` desde los paquetes oficiales |
+| `assets/icons/logos.js`, `tools/build-logos.py` | Logotipos de Azure, Google Cloud y SAP para grupos, generados desde `tools/logos/` |
+| `assets/fonts/` | Tipografías incluidas (`.woff2`, licencias OFL) y el `fonts.js` generado |
+| `tools/build-fonts.py` | Genera `assets/fonts/fonts.js` desde `assets/fonts/*.woff2` |
 
 ---
 
@@ -652,7 +652,7 @@ Para mantener el espíritu del proyecto:
 
 - **Sin dependencias externas** ni pasos de compilación: tiene que seguir funcionando con doble clic.
 - **Sin conexiones de red**: nada de analítica, CDN, fuentes web cargadas de internet ni APIs (las tipografías van incluidas).
-- Lo personalizable va en `config.js`.
+- Lo personalizable va en `src/config.js`.
 
 Más detalles en [CONTRIBUTING.md](CONTRIBUTING.md) (en inglés). Para reportar una vulnerabilidad de forma privada, consulta [SECURITY.md](SECURITY.md).
 
@@ -672,18 +672,18 @@ El código de Diagramon es **open source** bajo la [licencia MIT](LICENSE): úsa
 también en proyectos comerciales.
 
 Las tipografías incluidas son [Inter](https://github.com/rsms/inter), [IBM Plex Sans](https://github.com/IBM/plex) y [Fira Code](https://github.com/tonsky/FiraCode), con la licencia SIL Open Font License 1.1
-(copias en [`fonts/OFL-Inter.txt`](fonts/OFL-Inter.txt), [`fonts/OFL-IBMPlexSans.txt`](fonts/OFL-IBMPlexSans.txt) y [`fonts/OFL-FiraCode.txt`](fonts/OFL-FiraCode.txt)).
+(copias en [`assets/fonts/OFL-Inter.txt`](assets/fonts/OFL-Inter.txt), [`assets/fonts/OFL-IBMPlexSans.txt`](assets/fonts/OFL-IBMPlexSans.txt) y [`assets/fonts/OFL-FiraCode.txt`](assets/fonts/OFL-FiraCode.txt)).
 
-Los **iconos oficiales** de `icons/` pertenecen a Amazon Web Services, Microsoft, Google y SAP, y **no** están cubiertos por la licencia MIT.
+Los **iconos oficiales** de `assets/icons/` pertenecen a Amazon Web Services, Microsoft, Google y SAP, y **no** están cubiertos por la licencia MIT.
 AWS, Microsoft y Google permiten usarlos en diagramas de arquitectura según sus propias condiciones.
 Los iconos de SAP BTP vienen de [SAP/btp-solution-diagrams](https://github.com/SAP/btp-solution-diagrams)
-bajo la licencia Apache 2.0 (copia en [`icons/LICENSE-SAP.txt`](icons/LICENSE-SAP.txt)).
+bajo la licencia Apache 2.0 (copia en [`assets/icons/LICENSE-SAP.txt`](assets/icons/LICENSE-SAP.txt)).
 Los iconos de Microsoft Fabric vienen del paquete oficial `@fabric-msft/svg-icons` de Microsoft, con licencia MIT
-(copia en [`icons/LICENSE-FABRIC.txt`](icons/LICENSE-FABRIC.txt)), y siguen las mismas reglas de uso que los de Azure.
+(copia en [`assets/icons/LICENSE-FABRIC.txt`](assets/icons/LICENSE-FABRIC.txt)), y siguen las mismas reglas de uso que los de Azure.
 SAP solo publica iconos para sus servicios BTP. Sus aplicaciones de negocio (S/4HANA, ECC, TM, EWM…) no tienen icono oficial,
 así que Diagramon las muestra con el logotipo de SAP.
 Los **logotipos** de Azure, Google Cloud y SAP que se ofrecen como icono de grupo (una suscripción de Azure, un proyecto de Google Cloud, una cuenta de SAP BTP)
-son marcas de sus dueños y solo identifican el servicio. Origen y condiciones en [`icons/LICENSE-LOGOS.txt`](icons/LICENSE-LOGOS.txt).
+son marcas de sus dueños y solo identifican el servicio. Origen y condiciones en [`assets/icons/LICENSE-LOGOS.txt`](assets/icons/LICENSE-LOGOS.txt).
 Diagramon los muestra sin cambios: no los recortes, gires ni deformes, y no los uses para representar un producto propio.
 AWS, Azure, Microsoft Fabric, Google Cloud y SAP son marcas de sus respectivos dueños. Diagramon no está afiliado a ninguno de ellos.
 

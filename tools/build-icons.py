@@ -2,8 +2,8 @@
 """
 Diagramon · empaqueta los iconos oficiales de AWS, Azure, Google Cloud, SAP y Microsoft Fabric.
 
-Lee los paquetes oficiales ya descomprimidos y escribe icons/aws.js,
-icons/azure.js, icons/gcp.js, icons/sap.js e icons/fabric.js. Esos archivos funcionan al abrir index.html
+Lee los paquetes oficiales ya descomprimidos y escribe assets/icons/aws.js,
+assets/icons/azure.js, assets/icons/gcp.js, assets/icons/sap.js e assets/icons/fabric.js. Esos archivos funcionan al abrir index.html
 con doble clic (sin servidor) y viajan dentro de las exportaciones SVG/PNG.
 
 Uso:
@@ -719,7 +719,7 @@ def main():
     if len(sys.argv) != 2:
         sys.exit(__doc__)
     src = sys.argv[1]
-    out_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'icons')
+    out_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'assets', 'icons')
     os.makedirs(out_dir, exist_ok=True)
 
     aws_files = index_files(os.path.join(src, 'aws'), re.compile(r'^Arch_(.+)_48\.svg$'))
@@ -749,9 +749,9 @@ def main():
          'Google Cloud icons: iconos oficiales para diagramas y documentación técnica.'),
         ('sap', 'SAP BTP', SAP, sap_files,
          'SAP BTP service icons: (c) SAP SE or an SAP affiliate company and btp-solution-diagrams contributors. '
-         'Apache License 2.0 (icons/LICENSE-SAP.txt). Origen: github.com/SAP/btp-solution-diagrams.'),
+         'Apache License 2.0 (assets/icons/LICENSE-SAP.txt). Origen: github.com/SAP/btp-solution-diagrams.'),
         ('fabric', 'Microsoft Fabric', FABRIC, fabric_files,
-         'Microsoft Fabric icons (@fabric-msft/svg-icons): (c) Microsoft Corporation, MIT (icons/LICENSE-FABRIC.txt). '
+         'Microsoft Fabric icons (@fabric-msft/svg-icons): (c) Microsoft Corporation, MIT (assets/icons/LICENSE-FABRIC.txt). '
          'Microsoft permite usarlos en diagramas de arquitectura; no recortar, girar ni deformar.'),
     ]
     for provider, label, entries, files, licence in jobs:

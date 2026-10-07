@@ -2,7 +2,7 @@
 """
 Diagramon · empaqueta los logotipos de marca que se usan como icono de grupo.
 
-Lee tools/logos/ y escribe icons/logos.js, que se carga después de los iconos
+Lee tools/logos/ y escribe assets/icons/logos.js, que se carga después de los iconos
 de cada nube y les añade su logotipo (categoría "Grupos"): una cuenta de Azure,
 un proyecto de Google Cloud, una cuenta de SAP BTP o una capacidad de Fabric.
 
@@ -12,7 +12,7 @@ Fuentes:
     google-cloud.png  marca de Google Cloud publicada en www.gstatic.com/cgc/
     sap.svg           logotipo de SAP de github.com/SAP/btp-solution-diagrams
                       (guideline/static/img/logo.svg)
-El logotipo de Microsoft Fabric ya está en icons/fabric.js: solo se marca como icono de grupo.
+El logotipo de Microsoft Fabric ya está en assets/icons/fabric.js: solo se marca como icono de grupo.
 
 Uso:
     python3 tools/build-logos.py
@@ -25,7 +25,7 @@ import os
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(ROOT, 'tools', 'logos')
-OUT = os.path.join(ROOT, 'icons', 'logos.js')
+OUT = os.path.join(ROOT, 'assets', 'icons', 'logos.js')
 
 # proveedor, clave, archivo, nombre, palabras clave (es + en)
 LOGOS = [
@@ -53,7 +53,7 @@ def main():
         adds.append([prov, key, data_uri(os.path.join(SRC, fname)), item])
     js = f'''/* Diagramon · logotipos de marca para grupos. Generado por tools/build-logos.py.
    Azure, Google Cloud, SAP y Microsoft Fabric son marcas de sus dueños; aquí solo identifican
-   el servicio en el diagrama, como permiten sus guías de marca. Ver icons/LICENSE-LOGOS.txt. */
+   el servicio en el diagrama, como permiten sus guías de marca. Ver assets/icons/LICENSE-LOGOS.txt. */
 (function (I) {{
   {json.dumps(adds, ensure_ascii=False)}.forEach(([p, k, src, it]) => {{
     const set = I[p];

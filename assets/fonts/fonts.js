@@ -1,4 +1,4 @@
-/* Generado por tools/build-fonts.py. No editar a mano. Licencias: fonts/OFL-*.txt */
+/* Generado por tools/build-fonts.py. No editar a mano. Licencias: assets/fonts/OFL-*.txt */
 window.DIAGRAMON_FONTS = {
  "inter": {
   "label": "Inter",
