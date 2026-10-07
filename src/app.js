@@ -1213,8 +1213,9 @@
     if (!r) return '';
     const parts = [];
     if (r.availability != null) {
-      parts.push(T('res.path.comp', { a: fmtPct(r.availability), d: fmtApprox(r.downtimeYear) }) + (r.worst ? ` · ${T('res.path.worst', { n: esc(r.worst.label), a: fmtPct(r.worst.availability) })}` : ''));
-      if (r.method !== 'single' && r.routes > 1) parts.push(T('res.path.routes', { n: r.routes >= 100 ? '100+' : r.routes, approx: r.approx }));
+      // Con rutas alternativas, el número de rutas combinadas va pegado a la disponibilidad compuesta (no confundir con las rutas más cortas del camino)
+      const alt = r.method !== 'single' && r.routes > 1 ? ` ${T('res.path.routes', { n: r.routes >= 100 ? '100+' : r.routes, approx: r.approx })}` : '';
+      parts.push(T('res.path.comp', { a: fmtPct(r.availability), d: fmtApprox(r.downtimeYear) }) + alt + (r.worst ? ` · ${T('res.path.worst', { n: esc(r.worst.label), a: fmtPct(r.worst.availability) })}` : ''));
       if (r.unknown) parts.push(T('res.path.unknown', r.unknown));
     }
     if (r.rpo != null) parts.push(`RPO ${esc(fmtDur(r.rpo))}`);
