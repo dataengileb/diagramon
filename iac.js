@@ -475,6 +475,26 @@ window.DiagramonIaC = (() => {
     ['azurerm_cognitive_account', null, 'ai', 'azure/openai', 'Azure AI'],
     ['azurerm_machine_learning_workspace', null, 'ai', 'azure/ml', 'Machine Learning'],
     ['azurerm_search_service', null, 'ai', 'azure/aisearch', 'AI Search'],
+    ['azurerm_postgresql_server', null, 'db', 'azure/postgresql', 'PostgreSQL'],
+    ['azurerm_mysql_server', null, 'db', 'azure/mysql', 'MySQL'],
+    ['azurerm_cosmosdb_postgresql_cluster', null, 'db', 'azure/cosmosdb', 'Cosmos DB for PostgreSQL'],
+    ['azurerm_mssql_elasticpool', null, 'db', 'azure/sqldb', 'SQL elastic pool'],
+    ['azurerm_cdn_profile', null, 'cdn', 'azure/cdn', 'CDN'],
+    ['azurerm_traffic_manager_profile', null, 'dns', 'azure/trafficmanager', 'Traffic Manager'],
+    ['azurerm_web_application_firewall_policy', null, 'firewall', 'azure/waf', 'WAF policy'],
+    ['azurerm_cdn_frontdoor_firewall_policy', null, 'firewall', 'azure/waf', 'Front Door WAF'],
+    ['azurerm_virtual_network_gateway', null, 'firewall', 'azure/vpngateway', 'VPN / ExpressRoute gateway'],
+    ['azurerm_express_route_circuit', null, 'firewall', 'azure/expressroute', 'ExpressRoute'],
+    ['azurerm_eventgrid_domain', null, 'events', 'azure/eventgrid', 'Event Grid domain'],
+    ['azurerm_eventgrid_system_topic', null, 'events', 'azure/eventgrid', 'Event Grid system topic'],
+    ['azurerm_signalr_service', null, 'events', 'azure/signalr', 'SignalR'],
+    ['azurerm_communication_service', null, 'email', 'azure/communication', 'Communication Services'],
+    ['azurerm_container_app_environment', null, 'container', 'azure/containerapps', 'Container Apps environment'],
+    ['azurerm_batch_account', null, 'compute', 'azure/batch', 'Batch'],
+    ['azurerm_data_lake_store', null, 'storage', 'azure/datalake', 'Data Lake Storage'],
+    ['azurerm_netapp_account', null, 'storage', 'azure/netapp', 'NetApp Files'],
+    ['azurerm_recovery_services_vault', null, 'storage', 'azure/recovery', 'Recovery Services vault'],
+    ['azurerm_sentinel_log_analytics_workspace_onboarding', null, 'monitor', 'azure/sentinel', 'Sentinel'],
     // Google Cloud
     ['google_compute_instance', null, 'compute', 'gcp/computeengine', 'Compute Engine'],
     ['google_compute_instance_group_manager', null, 'compute', 'gcp/computeengine', 'Managed instance group'],
@@ -508,7 +528,18 @@ window.DiagramonIaC = (() => {
     ['google_api_gateway_api', null, 'gateway', 'gcp/apigateway', 'API Gateway'],
     ['google_kms_crypto_key', null, 'secrets', 'gcp/kms', 'Cloud KMS'],
     ['google_secret_manager_secret', null, 'secrets', 'gcp/secretmanager', 'Secret Manager'],
-    ['google_vertex_ai_endpoint', null, 'ai', 'gcp/vertexai', 'Vertex AI']
+    ['google_vertex_ai_endpoint', null, 'ai', 'gcp/vertexai', 'Vertex AI'],
+    ['google_cloud_scheduler_job', null, 'events', null, 'Cloud Scheduler'],
+    ['google_eventarc_trigger', null, 'events', 'gcp/eventarc', 'Eventarc'],
+    ['google_cloudbuild_trigger', null, 'cicd', 'gcp/cloudbuild', 'Cloud Build'],
+    ['google_clouddeploy_delivery_pipeline', null, 'cicd', 'gcp/clouddeploy', 'Cloud Deploy'],
+    ['google_identity_platform_config', null, 'auth', 'gcp/identityplatform', 'Identity Platform'],
+    ['google_compute_ha_vpn_gateway', null, 'firewall', null, 'HA VPN'],
+    ['google_compute_interconnect_attachment', null, 'firewall', 'gcp/interconnect', 'Interconnect'],
+    ['google_compute_region_instance_group_manager', null, 'compute', 'gcp/computeengine', 'Managed instance group'],
+    ['google_compute_backend_bucket', null, 'cdn', 'gcp/cloudcdn', 'Cloud CDN'],
+    ['google_notebooks_instance', null, 'ai', 'gcp/vertexai', 'Vertex AI Workbench'],
+    ['google_vertex_ai_index', null, 'ai', 'gcp/vertexai', 'Vertex AI index']
   ];
   const BY_TF = new Map(), BY_CFN = new Map();
   CATALOG.forEach(([tf, cfn, type, icon, svc]) => {
@@ -521,7 +552,7 @@ window.DiagramonIaC = (() => {
   const GROUPS = {
     aws_vpc: 'vpc', 'AWS::EC2::VPC': 'vpc', aws_subnet: 'subnet', 'AWS::EC2::Subnet': 'subnet',
     azurerm_resource_group: 'rg', azurerm_virtual_network: 'vpc', azurerm_subnet: 'subnet',
-    google_compute_network: 'vpc', google_compute_subnetwork: 'subnet'
+    google_compute_network: 'vpc', google_compute_subnetwork: 'subnet', google_project: 'rg'
   };
 
   /* Puentes: recursos ocultos que solo unen otros dos (notificaciones, suscripciones,
@@ -544,8 +575,14 @@ window.DiagramonIaC = (() => {
     aws_api_gateway_integration: { flip: /rest_api/ }, aws_apigatewayv2_integration: { flip: /api_id/ },
     'AWS::ApiGatewayV2::Integration': { flip: /ApiId/ }, 'AWS::ApiGateway::Method': { flip: /RestApi|ResourceId/ },
     google_pubsub_subscription: { flip: /topic/, style: 'async' },
-    google_compute_backend_service: { flip: /^$/ }, google_compute_target_https_proxy: { flip: /^$/ },
-    google_compute_global_forwarding_rule: { flip: /^$/ }
+    google_compute_backend_service: { flip: /^$/, plain: true }, google_compute_target_https_proxy: { flip: /^$/, plain: true },
+    google_compute_global_forwarding_rule: { flip: /^$/, plain: true },
+    google_compute_region_backend_service: { flip: /^$/, plain: true }, google_compute_target_http_proxy: { flip: /^$/, plain: true },
+    google_compute_target_ssl_proxy: { flip: /^$/, plain: true }, google_compute_target_tcp_proxy: { flip: /^$/, plain: true },
+    google_compute_forwarding_rule: { flip: /^$/, plain: true },
+    google_compute_region_network_endpoint_group: { flip: /^$/, plain: true }, google_compute_network_endpoint_group: { flip: /^$/, plain: true },
+    // Azure: el rol asignado une la identidad (la aplicación) con el recurso del alcance
+    azurerm_role_assignment: { flip: /principal/, style: 'optional' }
   };
   const s3Events = v => {
     const ev = [v.lambda_function, v.queue, v.topic].flat().filter(Boolean).flatMap(x => x.events || []);
@@ -559,15 +596,24 @@ window.DiagramonIaC = (() => {
     { re: /^aws_athena_named_query$/, parent: 'aws_athena_workgroup' },
     { re: /^aws_kinesis_firehose_/, parent: 'aws_kinesis_firehose_delivery_stream' },
     { re: /^AWS::Athena::NamedQuery$/, parent: 'AWS::Athena::WorkGroup' },
-    { re: /^AWS::S3::BucketPolicy$/, parent: null }
+    { re: /^AWS::S3::BucketPolicy$/, parent: null },
+    // Azure y Google Cloud: las referencias hacia el subrecurso pasan al principal (redirect)
+    { re: /^google_container_node_pool$/, parent: 'google_container_cluster', redirect: true },
+    { re: /^google_bigquery_table$/, parent: 'google_bigquery_dataset', redirect: true },
+    { re: /^google_spanner_database$/, parent: 'google_spanner_instance', redirect: true },
+    { re: /^azurerm_servicebus_(queue|topic|subscription|namespace_authorization_rule|queue_authorization_rule|topic_authorization_rule)$/, parent: 'azurerm_servicebus_namespace', redirect: true },
+    { re: /^azurerm_eventhub(_consumer_group|_authorization_rule)?$/, parent: 'azurerm_eventhub_namespace', redirect: true },
+    { re: /^azurerm_kubernetes_cluster_node_pool$/, parent: 'azurerm_kubernetes_cluster', redirect: true },
+    { re: /^azurerm_cdn_frontdoor_(endpoint|origin_group|origin|route|rule_set|rule|custom_domain|custom_domain_association|secret|security_policy)$/, parent: 'azurerm_cdn_frontdoor_profile', redirect: true },
+    { re: /^azurerm_cdn_endpoint$/, parent: 'azurerm_cdn_profile', redirect: true }
   ];
 
   // Recursos de apoyo que se ocultan (IAM, rutas, reglas, asociaciones, configuraciones…)
-  const HIDE_TF = /^(aws_iam_|aws_security_group|aws_vpc_security_group|aws_network_acl|aws_internet_gateway|aws_egress_only_internet_gateway|aws_eip|aws_route|aws_main_route|aws_default_|aws_lakeformation_(permissions|data_lake_settings|lf_)|aws_glue_(catalog_table|connection|security_configuration|trigger|classifier)|aws_cloudwatch_(log_|metric_alarm|dashboard)|aws_lambda_(permission|alias|layer_version|function_url|function_event_invoke_config)|aws_launch_template|aws_launch_configuration|aws_ecs_task_definition|aws_kms_alias|aws_ssm_|aws_db_subnet_group|aws_elasticache_subnet_group|aws_dms_(endpoint|replication_subnet_group)|aws_api_gateway_(resource|method|deployment|stage|method_response|integration_response|account|usage_plan)|aws_apigatewayv2_(route|stage|deployment)|aws_s3_object|aws_vpc_dhcp|aws_flow_log|azurerm_(network_security|network_interface|public_ip|role_|user_assigned_identity|subnet_network|storage_container|storage_blob|key_vault_secret|key_vault_access)|google_(project_|service_account|compute_firewall|compute_address|compute_global_address|compute_router$|bigquery_table|storage_bucket_iam|storage_bucket_object|pubsub_topic_iam)|random_|null_|time_|local_|tls_|archive_|terraform_)|(_policy|_policy_attachment|_attachment|_association|_permission|_versioning|_acl|_iam_binding|_iam_member|_iam_policy)$/;
+  const HIDE_TF = /^(aws_iam_|aws_security_group|aws_vpc_security_group|aws_network_acl|aws_internet_gateway|aws_egress_only_internet_gateway|aws_eip|aws_route|aws_main_route|aws_default_|aws_lakeformation_(permissions|data_lake_settings|lf_)|aws_glue_(catalog_table|connection|security_configuration|trigger|classifier)|aws_cloudwatch_(log_|metric_alarm|dashboard)|aws_lambda_(permission|alias|layer_version|function_url|function_event_invoke_config)|aws_launch_template|aws_launch_configuration|aws_ecs_task_definition|aws_kms_alias|aws_ssm_|aws_db_subnet_group|aws_elasticache_subnet_group|aws_dms_(endpoint|replication_subnet_group)|aws_api_gateway_(resource|method|deployment|stage|method_response|integration_response|account|usage_plan)|aws_apigatewayv2_(route|stage|deployment)|aws_s3_object|aws_vpc_dhcp|aws_flow_log|azurerm_(network_(security|interface|watcher|ddos)|public_ip|role_|user_assigned_identity|subnet_|storage_(container|blob|share|queue|table|account_(network_rules|customer_managed_key))|key_vault_|service_plan|app_service_(plan|virtual_network|slot|certificate|custom_hostname|active_slot|source_control)|(linux|windows)_(web|function)_app_slot|private_dns_|monitor_|virtual_network_(peering|dns_servers)|route|nat_gateway|dns_[a-z_]*record|mssql_(firewall|virtual_network_rule|server_(security|extended|vulnerability|transparent|dns)|outbound|job|managed_database|database_(extended|vulnerability))|postgresql_(flexible_server_(database|configuration|firewall)|database|configuration|firewall)|mysql_(flexible_(database|server_configuration|server_firewall)|database|configuration|firewall)|cosmosdb_(sql|mongo|cassandra|table|gremlin)|application_gateway_|eventgrid_(event_subscription|topic_)|api_management_(api|product|named|logger|backend|subscription|user|group|certificate|custom|policy|diagnostic|gateway)|container_app_(custom|environment_)|redis_(firewall|linked)|log_analytics_(solution|saved|data|linked|workspace_table)|application_insights_(api_key|web_test|smart)|management_lock|policy_|resource_group_(policy|template)|template_deployment|dashboard|portal_)|google_(project_|service_account|service_networking|vpc_access|compute_(firewall|address|global_address|router$|managed_ssl_certificate|ssl_certificate|ssl_policy|region_ssl|health_check|region_health_check|http_health_check|network_peering|route|disk|resource_policy|region_instance_template|instance_template|network_firewall|firewall_policy|image|snapshot|project_metadata|shared_vpc)|bigquery_(table|routine|dataset_iam|dataset_access|job|connection)|storage_(bucket_iam|bucket_object|bucket_acl|bucket_access|default_object|notification|hmac)|pubsub_(topic_iam|subscription_iam|schema)|monitoring_|logging_|kms_(key_ring|crypto_key_iam)|secret_manager_secret_version|dns_record_set|cloud_run(_v2)?_(service|job)_iam|cloudfunctions2?_function_iam|artifact_registry_repository_iam|organization_|folder_|iam_|sql_(database|user|ssl_cert)$|bigtable_(table|gc_policy)|spanner_database_iam)|random_|null_|time_|local_|tls_|archive_|terraform_)|(_policy|_policy_attachment|_attachment|_association|_permission|_versioning|_acl|_iam_binding|_iam_member|_iam_policy)$/;
   const HIDE_CFN = /^(AWS::IAM::|AWS::EC2::(SecurityGroup|Route|SubnetRouteTableAssociation|InternetGateway|VPCGatewayAttachment|EIP|NetworkAcl|SubnetNetworkAcl|NetworkInterface|LaunchTemplate|VPCEndpointService)|AWS::Logs::|AWS::LakeFormation::(Permissions|DataLakeSettings|PrincipalPermissions)|AWS::Glue::(Table|Connection|SecurityConfiguration|Trigger|Classifier)|AWS::Lambda::(Permission|Version|Alias|LayerVersion|Url)|AWS::KMS::Alias|AWS::SSM::|AWS::RDS::DB(SubnetGroup|ParameterGroup|ClusterParameterGroup)|AWS::ElastiCache::SubnetGroup|AWS::ApiGateway::(Resource|Deployment|Stage|Account)|AWS::ApiGatewayV2::(Route|Stage|Deployment)|AWS::CloudWatch::|AWS::ECS::TaskDefinition|AWS::CloudFormation::|AWS::CDK::|Custom::)|Policy$/;
 
   // Dirección del flujo según el nombre del campo: "source", "input", "s3_target"… apuntan hacia el recurso
-  const FLIP = /(^|[^a-zA-Z])(source|input|src|SOURCE|INPUT|SRC)|[a-z](Source|Input)|s3_?targets?|jdbc_?targets?|catalog_?targets?|dynamo_?db_?targets?|delta_?targets?|S3Targets|JdbcTargets|CatalogTargets|DynamoDBTargets|DeltaTargets|target_?groups?|TargetGroup/;
+  const FLIP = /(^|[^a-zA-Z])(source|input|src|SOURCE|INPUT|SRC|event_trigger)|[a-z](Source|Input)|s3_?targets?|jdbc_?targets?|catalog_?targets?|dynamo_?db_?targets?|delta_?targets?|S3Targets|JdbcTargets|CatalogTargets|DynamoDBTargets|DeltaTargets|target_?groups?|TargetGroup/;
   const DATA = /bucket|s3|stream|path|destination|output|target|source|input|Bucket|S3|Stream|Path|Destination|Output|Target|Source|Input|SOURCE|TARGET|BUCKET|OUTPUT|INPUT/;
   const SIDE_TYPES = new Set(['secrets', 'monitor']);
 
@@ -622,17 +668,57 @@ window.DiagramonIaC = (() => {
     const byKey = new Map(list.map(r => [r.key, r]));
     list.forEach(r => { r.role = classify(r, cfn); });
 
-    // Plegar subrecursos en su principal
+    // Plegar subrecursos en su principal (el principal puede estar a varios saltos: origen › grupo de orígenes › perfil)
+    const findParent = (r, type, depth) => {
+      for (const x of r.refs) {
+        const p = byKey.get(x.to);
+        if (!p || p === r) continue;
+        if (p.type === type) return p;
+        if (depth < 4 && FOLDS.some(f => f.re.test(p.type))) { const q = findParent(p, type, depth + 1); if (q) return q; }
+      }
+      return null;
+    };
     list.filter(r => r.role === 'fold').forEach(r => {
       const f = FOLDS.find(x => x.re.test(r.type));
-      const parent = f.parent && r.refs.map(x => byKey.get(x.to)).find(p => p && p.type === f.parent);
-      if (parent) r.refs.forEach(x => { if (x.to !== parent.key) parent.refs.push({ to: x.to, path: x.path }); });
+      const parent = f.parent && findParent(r, f.parent, 0);
+      if (parent) {
+        r.refs.forEach(x => { if (x.to !== parent.key) parent.refs.push({ to: x.to, path: x.path }); });
+        if (f.redirect) list.forEach(o => { if (o !== parent && o !== r) o.refs.forEach(x => { if (x.to === r.key) x.to = parent.key; }); });
+      }
       r.role = 'hidden';
     });
 
     const isGroup = r => r && ['vpc', 'subnet', 'rg'].includes(r.role);
     const provOf = t => (/^(aws_|AWS::)/.test(t) ? 'aws' : /^azurerm_/.test(t) ? 'azure' : /^google_/.test(t) ? 'gcp' : 'other');
-    const region = list.map(r => r.region).find(Boolean) || '';
+    const region = list.filter(r => provOf(r.type) === 'aws').map(r => r.region).find(Boolean) || '';
+    const rgOf = r => r.refs.map(x => byKey.get(x.to)).find(t => t && t.role === 'rg');
+
+    // Azure: los componentes sin grupo de recursos propio (la base de datos de un servidor SQL…) heredan el del recurso al que apuntan con `*_id`
+    // Un servidor SQL con bases de datos se oculta: sus conexiones pasan a las bases
+    list.filter(r => r.role === 'node' && r.type === 'azurerm_mssql_server').forEach(srv => {
+      const dbs = list.filter(d => d.role === 'node' && d.type === 'azurerm_mssql_database' && d.refs.some(x => x.to === srv.key));
+      if (!dbs.length) return;
+      list.forEach(o => {
+        if (o === srv || dbs.includes(o)) return;
+        const hits = o.refs.filter(x => x.to === srv.key);
+        hits.forEach(x => dbs.forEach(d => o.refs.push({ to: d.key, path: x.path, dep: x.dep })));
+        o.refs = o.refs.filter(x => x.to !== srv.key);
+      });
+      dbs.forEach(d => { d.detail = [srv.name, d.detail].filter(Boolean).join(' · '); });
+      srv.role = 'hidden';
+    });
+    for (let pass = 0; pass < 2; pass++) list.filter(r => provOf(r.type) === 'azure' && !isGroup(r)).forEach(r => {
+      if (!rgOf(r)) {
+        const via = r.refs.find(x => /_id$/.test(x.path) && byKey.get(x.to) && provOf(byKey.get(x.to).type) === 'azure' && !isGroup(byKey.get(x.to)) && rgOf(byKey.get(x.to)));
+        if (via) { const up = byKey.get(via.to); r.refs.push({ to: rgOf(up).key, path: 'resource_group_name' }); if (!r.region) r.region = up.region; }
+      }
+      if (!r.region && rgOf(r)) r.region = rgOf(r).region;
+    });
+    // Región de cada nube (solo si todo está en una): se muestra en la nube y la heredan los demás
+    const provRegion = p => {
+      const rs = [...new Set(list.filter(r => provOf(r.type) === p && r.region).map(r => r.region))];
+      return rs.length === 1 ? rs[0] : '';
+    };
     // Icono de grupo (esquina del recuadro) según el papel del recurso y su nube; sin icono oficial no se pone ninguno
     const groupIcon = (role, prov, pub) => ({
       cloud: { aws: 'aws/group-cloud', azure: 'azure/logo', gcp: 'gcp/logo' },
@@ -650,19 +736,25 @@ window.DiagramonIaC = (() => {
         const id = 'cloud-' + p;
         const name = { aws: 'AWS', azure: 'Azure', gcp: 'Google Cloud' }[p];
         const icon = groupIcon('cloud', p);
-        groups.push({ id, label: p === 'aws' && region ? `${name} · ${region}` : name, ...(icon ? { icon } : {}), color: 'melocoton', kind: 'physical', ...(p === 'aws' && region ? { region } : {}) });
+        const pr = p === 'aws' ? region : provRegion(p);
+        groups.push({ id, label: pr ? `${name} · ${pr}` : name, ...(icon ? { icon } : {}), color: 'melocoton', kind: 'physical', ...(pr ? { region: pr } : {}) });
         provGroup.set(p, id);
       }
       return provGroup.get(p);
     };
     const refsTo = (r, pred, pathRe) => r.refs.filter(x => (!pathRe || pathRe.test(x.path)) && pred(byKey.get(x.to))).map(x => byKey.get(x.to));
     const firstRef = (r, role) => refsTo(r, t => t && t.role === role)[0];
+    // Azure: la conexión de integración con la red (VNet integration) coloca la aplicación en la subred
+    list.filter(r => r.type === 'azurerm_app_service_virtual_network_swift_connection').forEach(h => {
+      const sn = firstRef(h, 'subnet');
+      if (sn) h.refs.map(x => byKey.get(x.to)).filter(t => t && t.role === 'node').forEach(t => t.refs.push({ to: sn.key, path: 'subnet_id' }));
+    });
 
     const COLORS = { rg: 'lila', vpc: 'cielo', subnet: 'menta' };
     list.filter(isGroup).forEach(r => {
       const id = safeId('g-' + r.key);
       gid.set(r.key, id);
-      const label = r.name + (r.cidr ? ` · ${r.cidr}` : '');
+      const label = r.name + (r.cidr ? ` · ${r.cidr}` : '') + (r.type === 'google_project' && r.projectId && r.projectId !== r.name ? ` · ${r.projectId}` : '');
       const icon = groupIcon(r.role, provOf(r.type), r.public === true);
       groups.push({ id, label, ...(icon ? { icon } : {}), color: r.public === true ? 'menta' : r.role === 'subnet' ? 'lavanda' : COLORS[r.role], kind: 'physical', _r: r });
     });
@@ -672,6 +764,19 @@ window.DiagramonIaC = (() => {
       const parent = r.role === 'subnet' ? firstRef(r, 'vpc') : r.role === 'vpc' ? firstRef(r, 'rg') : null;
       g.parent = parent ? gid.get(parent.key) : providerGroup(provOf(r.type));
     });
+    // Región de los grupos de Azure y Google Cloud: solo donde cambia respecto a la que ya heredan (grupo de recursos, subred regional…)
+    const gBy = new Map(groups.map(g => [g.id, g])), regDone = new Set();
+    const regionAt = id => { let g = gBy.get(id), i = 0; while (g && i++ < 50) { if (g.region) return g.region; g = gBy.get(g.parent); } return ''; };
+    const fixRegion = g => {
+      if (regDone.has(g.id)) return;
+      regDone.add(g.id);
+      if (gBy.get(g.parent)) fixRegion(gBy.get(g.parent));
+      const r = g._r;
+      if (!r || provOf(r.type) === 'aws' || !r.region || r.region === regionAt(g.parent)) return;
+      g.region = r.region;
+      g.label += ` · ${r.region}`;
+    };
+    groups.slice().forEach(fixRegion);
 
     // Ubicación de cada componente: subred(es) › VPC › grupo de recursos › nube
     const hop = (r, test) => {
@@ -690,7 +795,8 @@ window.DiagramonIaC = (() => {
           const id = safeId('g-subnets-' + multi.size);
           const label = subnets.map(s => s.name).join(' + ');
           const icon = groupIcon('subnet', provOf(r.type), subnets.every(s => s.public === true));
-          groups.push({ id, label, ...(icon ? { icon } : {}), color: subnets.every(s => s.public === true) ? 'menta' : 'lavanda', kind: 'physical', parent: vpcs.length === 1 ? gid.get(vpcs[0].key) : providerGroup(provOf(r.type)), _subnets: subnets });
+          const g = { id, label, ...(icon ? { icon } : {}), color: subnets.every(s => s.public === true) ? 'menta' : 'lavanda', kind: 'physical', parent: vpcs.length === 1 ? gid.get(vpcs[0].key) : providerGroup(provOf(r.type)), _subnets: subnets, _r: { type: subnets[0].type, region: subnets.every(s => s.region === subnets[0].region) ? subnets[0].region : '' } };
+          groups.push(g); gBy.set(id, g);
           multi.set(k, id);
         }
         return multi.get(k);
@@ -719,6 +825,12 @@ window.DiagramonIaC = (() => {
       nodes.push(n);
     });
     stripPrefix(nodes);
+    // Región de cada componente de Azure y Google Cloud: solo si no es la del grupo en que queda
+    groups.slice().forEach(fixRegion);
+    visible.forEach((r, i) => {
+      const n = nodes[i];
+      if (provOf(r.type) !== 'aws' && r.region && r.region !== regionAt(n.group)) n.region = r.region;
+    });
 
     /* ---------- conexiones ---------- */
     const out = new Map(list.map(r => [r.key, []]));
@@ -727,7 +839,7 @@ window.DiagramonIaC = (() => {
       r.refs.forEach(x => {
         if (x.to === r.key || !byKey.has(x.to)) return;
         if (isGroup(r) || isGroup(byKey.get(x.to))) return;
-        const flip = b ? b.flip.test(x.path) : FLIP.test(x.path);
+        const flip = b ? b.flip.test(x.path) : FLIP.test(String(x.path).replace(/value_source/g, ''));
         const [a, z] = flip ? [x.to, r.key] : [r.key, x.to];
         out.get(a).push({ to: z, path: x.path, dep: x.dep });
       });
@@ -743,6 +855,7 @@ window.DiagramonIaC = (() => {
       const tz = (rz.row || {}).type, ta = (ra.row || {}).type;
       const e = { from: nid.get(a), to: nid.get(z) };
       if (info.style) e.style = info.style;
+      else if (info.plain) { /* balanceadores: sin estilo especial */ }
       else if (SIDE_TYPES.has(tz) || SIDE_TYPES.has(ta)) e.style = 'optional';
       else if (/Notification|notification|EventSource|event_source/.test(info.path || '') || ta === 'events' || ta === 'queue') e.style = 'async';
       else if (DATA.test(info.path || '')) e.style = 'data';
@@ -760,7 +873,7 @@ window.DiagramonIaC = (() => {
           else if (t.role === 'bridge' && depth < 4) {
             const b = BRIDGES[t.type];
             const lbl = b.label ? b.label(t.values || {}) : '';
-            walk(t.key, { style: info.style || b.style, label: info.label || lbl, path: x.path }, depth + 1, new Set([...trail, t.key]));
+            walk(t.key, { style: info.style || b.style, plain: info.plain || b.plain, label: info.label || lbl, path: x.path }, depth + 1, new Set([...trail, t.key]));
           }
         });
       };
@@ -768,6 +881,9 @@ window.DiagramonIaC = (() => {
     }));
 
     const hidden = list.filter(r => r.role !== 'node' && !isGroup(r)).length;
+    // Sin prefijo común, el título puede salir del proyecto de Google Cloud o del primer grupo de recursos de Azure
+    const first = list.find(r => r.type === 'google_project') || list.find(r => r.type === 'azurerm_resource_group');
+    if (first) nodes.hint = first.projectId || first.name;
     return { groups: pruneGroups(groups, nodes), nodes, edges, hidden, total: list.length };
   }
 
@@ -813,8 +929,36 @@ window.DiagramonIaC = (() => {
   /* ======================================================================
      Terraform
      ====================================================================== */
-  const NAME_KEYS = ['bucket', 'function_name', 'name', 'url', 'invoke_arn', 'qualified_arn', 'bucket_regional_domain_name', 'bucket_domain_name', 'repository_url', 'self_link'];
-  const HOST_KEYS = ['address', 'endpoint', 'dns_name', 'reader_endpoint', 'fqdn', 'primary_endpoint_address', 'configuration_endpoint_address', 'domain_name'];
+  const NAME_KEYS = ['bucket', 'function_name', 'name', 'url', 'invoke_arn', 'qualified_arn', 'bucket_regional_domain_name', 'bucket_domain_name', 'repository_url', 'self_link',
+    'project_id', 'dataset_id', 'secret_id', 'connection_name', 'instrumentation_key', 'connection_string', 'vault_uri', 'fully_qualified_domain_name'];
+  const HOST_KEYS = ['address', 'endpoint', 'dns_name', 'reader_endpoint', 'fqdn', 'primary_endpoint_address', 'configuration_endpoint_address', 'domain_name',
+    'default_hostname', 'fully_qualified_domain_name', 'vault_uri', 'primary_blob_endpoint', 'hostname', 'host', 'private_ip_address'];
+  const hostOf = u => str(u).replace(/^[a-z][a-z0-9+.-]*:\/\//i, '').replace(/[:/?#].*$/, '');
+  const hostRe = h => new RegExp('(^|[^A-Za-z0-9.-])' + h.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '($|[^A-Za-z0-9-])', 'i');
+  // Todos los textos de un valor (para buscar qué recurso usa, por ejemplo, una IP pública)
+  const eachString = (v, fn) => { if (typeof v === 'string') fn(v); else if (Array.isArray(v)) v.forEach(x => eachString(x, fn)); else if (isObj(v)) Object.values(v).forEach(x => eachString(x, fn)); };
+
+  /* ---------- regiones de Azure y Google Cloud ---------- */
+  // Azure: «West Europe» y «westeurope» son la misma región (el código va en minúsculas y sin espacios); «global» no es región
+  const azRegion = s => { const t = str(s).toLowerCase().replace(/[\s_-]+/g, ''); return t === 'global' ? '' : t; };
+  // Google Cloud: región (europe-west1), zona (europe-west1-b → europe-west1) o multirregión (EU, US, ASIA…; se deja en mayúsculas)
+  const gcpRegion = s => {
+    const t = str(s).trim().split('/').pop();
+    if (!t || /^(global|unspecified)$/i.test(t)) return '';
+    if (/^[A-Za-z]+\d*$/.test(t)) return t.toUpperCase();
+    return t.toLowerCase().replace(/^([a-z]+-[a-z]+\d+)-[a-z]$/, '$1');
+  };
+  // Recursos de Google Cloud que son globales: no heredan la región del proveedor
+  const GCP_GLOBAL = /^google_(project|service_account|compute_(network$|global_|backend_service|url_map|target_|ssl_|managed_ssl|health_check|security_policy|firewall)|pubsub_|secret_manager|iam_|dns_|kms_key_ring$|api_gateway_api$)/;
+  function gcpRegionOf(type, v) {
+    const direct = [v.region, v.location, v.zone, v.location_id].map(gcpRegion).find(Boolean);
+    if (direct) return direct;
+    const m = [v.self_link, v.id].map(str).join(' ').match(/(?:regions|zones|locations)\/([A-Za-z]+(?:-[A-Za-z]+\d+(?:-[a-z])?)?)(?=\/|\s|$)/);
+    if (m && gcpRegion(m[1])) return gcpRegion(m[1]);
+    const pol = Array.isArray(v.message_storage_policy) ? v.message_storage_policy[0]?.allowed_persistence_regions : null;
+    if (Array.isArray(pol) && pol.length === 1) return gcpRegion(pol[0]);
+    return '';
+  }
   const SKIP_KEYS = new Set(['tags', 'tags_all', 'labels', 'description', 'policy', 'assume_role_policy', 'inline_policy', 'access_policies', 'timeouts', 'id', 'arn']);
 
   function terraformResources(doc) {
@@ -901,21 +1045,31 @@ window.DiagramonIaC = (() => {
       const v = r.values, main = BY_TF.has(r.type) || GROUPS[r.type] ? 10 : 0;
       put(v.id, r.key, main + 1); put(v.arn, r.key, main + 3);
       NAME_KEYS.forEach(k => put(v[k], r.key, main + 2));
-      if (main) HOST_KEYS.forEach(k => { const h = str(v[k]).replace(/:\d+$/, ''); if (h.includes('.') && h.length > 6) hosts.push([h, r.key]); });
+      if (main) HOST_KEYS.forEach(k => { const h = hostOf(v[k]); if (h.includes('.') && h.length > 6) hosts.push([h, r.key, hostRe(h)]); });
+      // Azure: la identidad administrada de una aplicación (los roles asignados apuntan a su principal_id)
+      [].concat(v.identity || []).forEach(i => isObj(i) && put(i.principal_id, r.key, main + 2));
+      // Google Cloud: los grupos de instancias de un clúster GKE y las tablas de BigQuery (proyecto.dataset.tabla)
+      if (r.type === 'google_container_cluster') [].concat(v.node_pool || []).forEach(np => [].concat(np.instance_group_urls || [], np.managed_instance_group_urls || []).forEach(u => put(u, r.key, main + 2)));
+      if (r.type === 'google_bigquery_table' && v.dataset_id && v.table_id) { const pr = str(v.project) || str(v.id).split('/')[1]; put(`${pr}.${v.dataset_id}.${v.table_id}`, r.key, 2); put(`${pr}:${v.dataset_id}.${v.table_id}`, r.key, 2); }
+    });
+    // Una IP pública se dice a través del recurso que la usa (la puerta de enlace, el balanceador…): su nombre DNS lleva a ese recurso
+    list.filter(r => r.type === 'azurerm_public_ip' && r.values.id).forEach(pip => {
+      const hs = [pip.values.fqdn, pip.values.ip_address].map(str).filter(h => h.length > 6);
+      list.forEach(o => { if (o !== pip && BY_TF.has(o.type)) { let uses = false; eachString(o.values, t => { if (t === pip.values.id) uses = true; }); if (uses) hs.forEach(h => hosts.push([h, o.key, hostRe(h)])); } });
     });
     dup.forEach(v => index.delete(v));
     const lookup = s => {
       const out = [];
       const add = k => k && out.push(k);
       add(index.get(s));
-      const m = s.match(/^s3a?:\/\/([^/]+)/);
+      const m = s.match(/^(?:s3a?|gs):\/\/([^/]+)/);
       if (m) add(index.get(m[1]));
       if (s.startsWith('arn:')) {
         add(index.get(s.replace(/(\/\*|:\*|\/.*)$/, '')));
         add(index.get(s.replace(/:[^:]*$/, '')));
       }
       if (s.length > 30 && s.includes('arn:')) (s.match(/arn:[\w-]+:[\w-]+:[^\s"',]*/g) || []).forEach(a => add(index.get(a.replace(/(\/\*|:\*)$/, ''))));
-      if (s.includes('.')) hosts.forEach(([h, k]) => { if (s.includes(h)) add(k); });
+      if (s.includes('.')) hosts.forEach(([h, k, re]) => { if (s.includes(h) && re.test(s)) add(k); });
       return [...new Set(out)];
     };
 
@@ -934,24 +1088,52 @@ window.DiagramonIaC = (() => {
 
       const v = r.values, tags = isObj(v.tags) ? v.tags : isObj(v.labels) ? v.labels : {};
       r.tags = tags;
-      const own = tags.Name || v.name || v.bucket || v.function_name || v.identifier || v.cluster_identifier || v.replication_group_id || v.cluster_id || (r.type.endsWith('_domain') && v.domain_name);
+      const own0 = tags.Name || v.name || v.bucket || v.function_name || v.identifier || v.cluster_identifier || v.replication_group_id || v.cluster_id || (r.type.endsWith('_domain') && v.domain_name) || v.dataset_id || v.secret_id || v.account_id;
+      const own = typeof own0 === 'string' && /^projects\//.test(own0) ? own0.split('/').pop() : own0; // Google Cloud: «projects/123/secrets/clave» → «clave»
       r.named = !!own;
       r.name = String(own || r.tfName + (r.key.match(/\[[^\]]*\]$/)?.[0] || '').replace(/"/g, ''));
+      if (r.type === 'google_project') r.projectId = str(v.project_id);
       r.cidr = str(v.cidr_block) || (Array.isArray(v.address_space) ? v.address_space.join(', ') : '') || (Array.isArray(v.address_prefixes) ? v.address_prefixes.join(', ') : '') || str(v.ip_cidr_range);
       if (r.type === 'aws_subnet') r.public = v.map_public_ip_on_launch === true;
       r.detail = tfDetail(r.type, v);
       const n = +v.desired_capacity || +v.desired_count || +v.number_cache_clusters || +v.num_cache_nodes || +v.instance_count || 0;
       if (n > 1) r.badge = `x${n}`;
       const arnReg = [v.arn, v.invoke_arn].map(str).map(a => a.split(':')[3]).find(Boolean);
-      r.region = v.region || arnReg || '';
+      r.region = /^azurerm_/.test(r.type) ? azRegion(v.location) : /^google_/.test(r.type) ? gcpRegionOf(r.type, v) : v.region || arnReg || '';
     });
     const region = doc.configuration?.provider_config?.aws?.expressions?.region?.constant_value;
     if (region) list.forEach(r => { if (/^aws_/.test(r.type)) r.region = region; });
+    // Google Cloud: la región del proveedor sirve de respaldo para lo que no la trae (menos lo global)
+    const pg = doc.configuration?.provider_config?.google?.expressions;
+    const pgVar = e => { const ref = (e?.references || []).find(x => /^var\./.test(x)); const k = ref && ref.slice(4).split('.')[0]; return k ? doc.variables?.[k]?.value ?? doc.configuration?.root_module?.variables?.[k]?.default : null; };
+    const gReg = gcpRegion(pg?.region?.constant_value ?? pgVar(pg?.region) ?? pg?.zone?.constant_value);
+    if (gReg && !/^[A-Z]+\d*$/.test(gReg)) list.forEach(r => { if (/^google_/.test(r.type) && !r.region && !GCP_GLOBAL.test(r.type)) r.region = gReg; });
+    // Azure y Google Cloud: el plan de una aplicación (P1v3, EP1…) acompaña a su pila
+    const byId = new Map(list.map(r => [str(r.values.id), r]));
+    list.forEach(r => {
+      const plan = /^azurerm_(linux|windows)_(web|function)_app$/.test(r.type) && byId.get(str(r.values.service_plan_id));
+      if (plan && plan.values.sku_name) r.detail = [r.detail, String(plan.values.sku_name)].filter(Boolean).join(' · ');
+    });
     return assemble(list, 'terraform');
   }
 
+  const sqlVersion = d => String(d).replace(/^POSTGRES_(\d+)$/, 'PostgreSQL $1').replace(/^MYSQL_(\d+)_(\d+)$/, 'MySQL $1.$2').replace(/^SQLSERVER_(\d+).*$/, 'SQL Server $1');
+  // Pila de una aplicación de Azure: site_config[0].application_stack[0] → «Node 20-lts»
+  function azStack(v) {
+    const st = Array.isArray(v.site_config) ? v.site_config[0]?.application_stack?.[0] : null;
+    const hit = st && Object.entries(st).find(([k, x]) => /_version$/.test(k) && x);
+    return hit ? `${{ node: 'Node', python: 'Python', dotnet: '.NET', java: 'Java', php: 'PHP', ruby: 'Ruby', go: 'Go', powershell: 'PowerShell' }[hit[0].replace(/_version$/, '')] || hit[0].replace(/_version$/, '')} ${hit[1]}` : '';
+  }
   function tfDetail(type, v) {
     if (v.runtime) return String(v.runtime);
+    const bc = Array.isArray(v.build_config) ? v.build_config[0] : null;
+    if (bc && bc.runtime) return String(bc.runtime);
+    if (type === 'google_sql_database_instance' && v.database_version) return sqlVersion(v.database_version);
+    if (type === 'google_redis_instance') return [v.tier, v.memory_size_gb ? `${v.memory_size_gb} GB` : ''].filter(Boolean).join(' · ');
+    if (type === 'google_storage_bucket') return v.storage_class && v.storage_class !== 'STANDARD' ? String(v.storage_class) : '';
+    if (/^azurerm_(linux|windows)_(web|function)_app$/.test(type)) return azStack(v);
+    if (type === 'azurerm_storage_account' && v.account_tier && v.account_replication_type) return `${v.account_tier}_${v.account_replication_type}`;
+    if (/^azurerm_/.test(type) && !v.sku_name) { const sk = Array.isArray(v.sku) ? v.sku[0]?.name : v.sku; if (sk && typeof sk === 'string') return sk; }
     if (v.engine) return `${v.engine}${v.engine_version ? ' ' + String(v.engine_version).split('.')[0] : ''}`;
     if (v.schedule_expression) return String(v.schedule_expression);
     if (v.instance_type) return String(v.instance_type);
@@ -1272,7 +1454,8 @@ window.DiagramonIaC = (() => {
     diagram.groups.forEach(g => { if (!g.parent) delete g.parent; });
     const base = String(built[0][2] || '').replace(/\.[^.]+$/, '').replace(/[-_.]?(show|plan|state|tfstate|template|manifests?)$/i, '');
     const prefix = built.map(b => b[1].nodes.prefix).find(Boolean);
-    diagram.title = `${prefix || base || T('model.untitled')} · ${formats.map(f => FORMAT_NAMES[f]).join(' + ')}`;
+    const hint = built.map(b => b[1].nodes.hint).find(Boolean);
+    diagram.title = `${prefix || (/^(terraform|tf|main|state|tfstate|plan|show|)$/i.test(base) && hint) || base || T('model.untitled')} · ${formats.map(f => FORMAT_NAMES[f]).join(' + ')}`;
     return { diagram, formats, format: formats.map(f => FORMAT_NAMES[f]).join(' + '), nodes: diagram.nodes.length, edges: diagram.edges.length, groups: diagram.groups.length, hidden, total, skipped: errors };
   }
 
