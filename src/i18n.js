@@ -824,10 +824,11 @@ revisión db: "BD en subred pública" por=Ana levantada=2026-10-01 compromiso=20
   const langs = Object.keys(DICT);
   let lang;
   try { lang = JSON.parse(localStorage.getItem(KEY)); } catch { /* sin almacenamiento disponible */ }
-  if (!DICT[lang]) lang = DICT[C.app.defaultLang] ? C.app.defaultLang : 'en';
+  const own = (o, k) => o != null && Object.prototype.hasOwnProperty.call(o, k);
+  if (!own(DICT, lang)) lang = own(DICT, C.app.defaultLang) ? C.app.defaultLang : 'en';
 
   function T(key, vars) {
-    const v = DICT[lang][key] ?? DICT.en[key] ?? key;
+    const v = own(DICT[lang], key) ? DICT[lang][key] : own(DICT.en, key) ? DICT.en[key] : key;
     return typeof v === 'function' ? v(vars) : v;
   }
   // { en: '…', es: '…' } → texto del idioma activo; cualquier otro valor se devuelve igual
@@ -851,7 +852,7 @@ revisión db: "BD en subred pública" por=Ana levantada=2026-10-01 compromiso=20
   }
 
   function set(l) {
-    if (!DICT[l]) return;
+    if (!own(DICT, l)) return;
     lang = l;
     try { localStorage.setItem(KEY, JSON.stringify(l)); } catch { /* sin almacenamiento disponible */ }
     apply();
