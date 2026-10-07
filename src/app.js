@@ -4249,8 +4249,12 @@
   /* ---------- costos: desglose por equipo/centro/etc. y escenarios (actual vs propuesto) ---------- */
   const CST_BY = ['team', 'costCenter', 'owner', 'group', 'type', 'provider', 'region', 'layer'];
   // { key, label, monthly, nodes: [ids], unassigned?, filter? } por cada valor de `by`; solo cuentan los nodos con costo. `filter` = ficha equivalente del filtro del lienzo
+  // `by = 'group'`: árbol por ruta de grupos (ver costByGroup); `by = 'groupTop'`: el modo plano anterior (solo el grupo de nivel superior)
   function costBreakdown(m = S.model, by = 'team') {
+    const flat = by === 'groupTop';
+    if (flat) by = 'group';
     if (!CST_BY.includes(by)) by = 'team';
+    if (by === 'group' && !flat) return costByGroup(m);
     const gm = new Map(m.groups.map(g => [g.id, g]));
     const top = n => { let g = gm.get(n.group), i = 0; while (g && gm.has(g.parent) && i++ < 50) g = gm.get(g.parent); return g || null; };
     const lay = n => { if (DL[n.layer]) return n.layer; let g = gm.get(n.group), i = 0; while (g && i++ < 50) { if (DL[g.layer]) return g.layer; g = gm.get(g.parent); } return null; };
@@ -4273,6 +4277,44 @@
     });
     return [...map.values()].sort((a, b) => b.monthly - a.monthly || a.label.localeCompare(b.label));
   }
+  // Desglose jerárquico por ruta de grupos. Una fila por grupo (y por nivel C4 que contenga grupos con costo), en orden de árbol
+  // (profundidad primero; hermanos por subtotal desc). Campos: key (id de grupo), path (ids desde la raíz), pathKey, pathLabel («A › B › C»), depth,
+  // own (costo mensual de los componentes DIRECTOS), total (con descendientes), monthly (= own: sumar `monthly` de todas las filas da el total sin duplicar;
+  // para sumar por ramas, sumar `total` solo de las filas depth 0), nodes (ids directos), nodesAll (ids con descendientes), kind ('group' | 'level' | 'none').
+  // Grupos dentro de un diagrama interno (group.in): cuelgan de una fila «nivel» (key `@in:<id del nodo>`, own 0) con la ruta de niveles (scopePath);
+  // el nodo-nivel aparece como rama de nivel superior, no bajo su propio grupo. Sin grupo → cubeta «Sin asignar» (key '@none', depth 0, al final de su orden).
+  function costByGroup(m = S.model) {
+    const gm = new Map(m.groups.map(g => [g.id, g])), nm = new Map(m.nodes.map(n => [n.id, n])), rows = new Map();
+    const mk = (key, label, kind, parent, extra = {}) => { const r = { key, label, kind, parent, own: 0, total: 0, nodes: [], nodesAll: [], children: [], ...extra }; rows.set(key, r); parent?.children.push(r); return r; };
+    const level = (id, i = 0) => {
+      const n = nm.get(id); if (!id || !n || i > 50) return null;
+      const k = `@in:${id}`;
+      return rows.get(k) || mk(k, n.label, 'level', level(n.in, i + 1));
+    };
+    const grp = (id, seen = new Set()) => {
+      if (rows.has(id)) return rows.get(id);
+      const g = gm.get(id); if (!g || seen.has(id)) return null;
+      seen.add(id);
+      const par = g.parent && gm.has(g.parent) ? grp(g.parent, seen) : level(g.in);
+      return rows.get(id) || mk(id, g.label, 'group', par, { filter: { group: [id] } });
+    };
+    let none = null;
+    m.nodes.filter(hasCost).forEach(n => {
+      const v = perMonth(n), r = n.group && gm.has(n.group) ? grp(n.group) : null;
+      const own = r || (none ||= mk('@none', T('cst.unassigned'), 'none', null, { unassigned: true, filter: { group: ['@none'] } }));
+      own.own += v; own.nodes.push(n.id);
+      for (let x = own, i = 0; x && i++ < 60; x = x.parent) { x.total += v; x.nodesAll.push(n.id); }
+    });
+    const out = [], cmp = (a, b) => b.total - a.total || a.label.localeCompare(b.label);
+    const walk = (r, path, labels) => {
+      const p = [...path, r.key], l = [...labels, r.label];
+      out.push({ key: r.key, label: r.label, path: p, pathKey: p.join('/'), pathLabel: l.join(' › '), depth: p.length - 1, own: r.own, total: r.total, monthly: r.own, nodes: r.nodes, nodesAll: r.nodesAll, kind: r.kind, hasChildren: r.children.length > 0,
+        ...(r.unassigned ? { unassigned: true } : {}), ...(r.filter ? { filter: r.filter } : {}) });
+      r.children.sort(cmp).forEach(c => walk(c, p, l));
+    };
+    [...rows.values()].filter(r => !r.parent).sort(cmp).forEach(r => walk(r, [], []));
+    return out;
+  }
   // Origen de una comparación: null = lienzo; id = foto de una versión (copia normalizada, el lienzo no se toca)
   function cstSource(id) {
     if (id) { const v = findVersion(id); return v?.diagram ? { id, label: `${verLabel(v)} · ${T(`ver.st.${v.status}`)}`, m: prepared(v) } : null; }
@@ -4291,12 +4333,30 @@
   }
   // Cambio por clave de agrupación entre dos orígenes: [{ key, label, a, b, delta }] por |delta|
   function cstDeltaBy(A, B, by) {
+    if (by === 'group') return cstDeltaGroups(A, B);
     const out = new Map();
     [[A, 'a'], [B, 'b']].forEach(([s, f]) => costBreakdown(s.m, by).forEach(r => {
       if (!out.has(r.key)) out.set(r.key, { key: r.key, label: r.label, a: 0, b: 0, ...(r.unassigned ? { unassigned: true } : {}) });
       out.get(r.key)[f] += r.monthly;
     }));
     return [...out.values()].map(r => ({ ...r, delta: r.b - r.a })).sort((x, y) => Math.abs(y.delta) - Math.abs(x.delta) || x.label.localeCompare(y.label));
+  }
+  // Cambio por grupo alineando por la ruta de ids (pathKey): a / b = subtotal (con descendientes), oa / ob = costo directo; status added/removed/changed/same
+  // (un grupo sin costo en un lado cuenta como ausente en ese lado). Orden de árbol; hermanos por |cambio| desc. Sumar `delta` solo de las filas depth 0.
+  function cstDeltaGroups(A, B) {
+    const out = new Map();
+    [[A, 'a'], [B, 'b']].forEach(([s, f]) => costByGroup(s.m).forEach(r => {
+      if (!out.has(r.pathKey)) out.set(r.pathKey, { key: r.key, label: r.label, path: r.path, pathKey: r.pathKey, pathLabel: r.pathLabel, depth: r.depth, kind: r.kind, a: 0, b: 0, oa: 0, ob: 0, inA: false, inB: false, ...(r.unassigned ? { unassigned: true } : {}) });
+      const x = out.get(r.pathKey);
+      x[f] = r.total; x[f === 'a' ? 'oa' : 'ob'] = r.own; x[f === 'a' ? 'inA' : 'inB'] = true;
+      if (f === 'b') { x.label = r.label; x.pathLabel = r.pathLabel; }
+    }));
+    const all = [...out.values()].map(r => ({ ...r, delta: r.b - r.a, status: !r.inA ? 'added' : !r.inB ? 'removed' : cstSame(r.a, r.b) && cstSame(r.oa, r.ob) ? 'same' : 'changed' }));
+    const kids = new Map();
+    all.forEach(r => { const pk = r.path.slice(0, -1).join('/'), k = out.has(pk) ? pk : ''; if (!kids.has(k)) kids.set(k, []); kids.get(k).push(r); });
+    const res = [], walk = r => { res.push(r); (kids.get(r.pathKey) || []).sort((x, y) => Math.abs(y.delta) - Math.abs(x.delta) || x.label.localeCompare(y.label)).forEach(walk); };
+    (kids.get('') || []).sort((x, y) => Math.abs(y.delta) - Math.abs(x.delta) || x.label.localeCompare(y.label)).forEach(walk);
+    return res;
   }
   const cstMoney = v => money(round2(v));
   const cstDelta = v => (cstSame(v, 0) ? cstMoney(0) : `${v > 0 ? '+' : '−'}${cstMoney(Math.abs(v))}`);
@@ -4314,8 +4374,10 @@
     const prev = document.activeElement, back = document.createElement('div'), id = `cs${Date.now()}`;
     const vers = () => S.model.versions.slice().sort((a, b) => String(b.savedAt || b.updated || b.created || '').localeCompare(String(a.savedAt || a.updated || a.created || '')) || (b.n || 0) - (a.n || 0));
     const vs0 = vers(), defA = (vs0.find(v => v.status === 'approved') || vs0[0])?.id || null;
-    const st = { tab: tab === 'compare' ? 'compare' : 'breakdown', by: CST_BY.includes(opts.by) ? opts.by : 'team', a: opts.a !== undefined ? opts.a : defA, b: opts.b !== undefined ? opts.b : null, only: false, sort: 'delta', dir: -1 };
+    const st = { tab: tab === 'compare' ? 'compare' : 'breakdown', by: CST_BY.includes(opts.by) ? opts.by : 'team', a: opts.a !== undefined ? opts.a : defA, b: opts.b !== undefined ? opts.b : null, only: false, sort: 'delta', dir: -1, exp: {} };
     let cur = [], cmp = null;
+    const lvTag = r => (r.kind === 'level' ? ` [${T('cst.level')}]` : '');
+    const indent = d => `style="padding-left:${10 + d * 18}px"`;
     const byOpts = () => CST_BY.map(k => `<option value="${k}"${k === st.by ? ' selected' : ''}>${esc(T(`cst.by.${k}`))}</option>`).join('');
     back.className = 'cf-back';
     back.innerHTML = `<div class="cf cm cst" role="dialog" aria-modal="true" aria-labelledby="${id}t">
@@ -4340,10 +4402,19 @@
     const drawBreakdown = () => {
       cur = costBreakdown(S.model, st.by);
       if (!cur.length) { outs.breakdown.innerHTML = `<p class="cm-empty">${esc(T('cst.empty'))}</p>`; return; }
-      const tot = cur.reduce((s, r) => s + r.monthly, 0), n = cur.reduce((s, r) => s + r.nodes.length, 0);
-      outs.breakdown.innerHTML = `<table class="cst-table"><thead><tr><th>${esc(T(`cst.by.${st.by}`))}</th><th class="num">${esc(T('cst.col.components'))}</th><th class="num">${esc(T('cst.col.monthly'))}</th><th class="num">${esc(T('cst.col.yearly'))}</th><th>${esc(T('cst.col.pct'))}</th></tr></thead><tbody>${cur.map((r, i) =>
-        `<tr${r.filter ? ` class="cst-click" data-i="${i}" title="${esc(T('cst.rowTip'))}"` : ''}><td${r.unassigned ? ' class="cst-un"' : ''}>${r.filter ? `<button class="cst-key" data-i="${i}">${esc(r.label)}</button>` : esc(r.label)}</td><td class="num">${r.nodes.length}</td><td class="num">${esc(cstMoney(r.monthly))}</td><td class="num">${esc(cstMoney(r.monthly * 12))}</td><td>${bars(r.monthly, tot)}</td></tr>`).join('')}</tbody>
-        <tfoot><tr><th>${esc(T('cst.total'))}</th><td class="num">${n}</td><td class="num">${esc(cstMoney(tot))}</td><td class="num">${esc(cstMoney(tot * 12))}</td><td></td></tr></tfoot></table>`;
+      const tot = cur.reduce((s, r) => s + r.monthly, 0), n = cur.reduce((s, r) => s + r.nodes.length, 0), tree = st.by === 'group';
+      const open = r => st.exp[r.pathKey] ?? r.depth < 2;
+      let hide = null; // en árbol: oculta las filas bajo un grupo contraído (orden de árbol: depth creciente dentro de la rama)
+      const vis = tree ? cur.map(r => { if (hide != null && r.depth > hide) return false; hide = r.hasChildren && !open(r) ? r.depth : null; return true; }) : cur.map(() => true);
+      const head = `<th>${esc(T(`cst.by.${st.by}`))}</th><th class="num">${esc(T('cst.col.components'))}</th>${tree ? `<th class="num">${esc(T('cst.col.own'))}</th><th class="num">${esc(T('cst.col.subtotal'))}</th>` : `<th class="num">${esc(T('cst.col.monthly'))}</th>`}<th class="num">${esc(T('cst.col.yearly'))}</th><th>${esc(T('cst.col.pct'))}</th>`;
+      const row = (r, i) => {
+        const name = r.filter ? `<button class="cst-key" data-i="${i}">${esc(r.label)}</button>` : esc(r.label);
+        const tg = tree ? (r.hasChildren ? `<button class="cst-tg" data-cst-tg="${esc(r.pathKey)}" aria-expanded="${open(r)}" aria-label="${esc(T(open(r) ? 'cst.collapse' : 'cst.expand', { g: r.label }))}">${open(r) ? '▾' : '▸'}</button>` : '<span class="cst-tg"></span>') : '';
+        const v = tree ? r.total : r.monthly;
+        return `<tr${r.filter ? ` class="cst-click" data-i="${i}" title="${esc(T('cst.rowTip'))}"` : ''}><td${r.unassigned ? ' class="cst-un"' : ''}${tree ? ` ${indent(r.depth)}` : ''}>${tg}${name}${esc(lvTag(r))}</td><td class="num">${tree ? r.nodesAll.length : r.nodes.length}</td>${tree ? `<td class="num">${r.own ? esc(cstMoney(r.own)) : '—'}</td><td class="num">${esc(cstMoney(r.total))}</td>` : `<td class="num">${esc(cstMoney(r.monthly))}</td>`}<td class="num">${esc(cstMoney(v * 12))}</td><td>${bars(v, tot)}</td></tr>`;
+      };
+      outs.breakdown.innerHTML = `<table class="cst-table"><thead><tr>${head}</tr></thead><tbody>${cur.map((r, i) => (vis[i] ? row(r, i) : '')).join('')}</tbody>
+        <tfoot><tr><th>${esc(T('cst.total'))}</th><td class="num">${n}</td>${tree ? `<td class="num">${esc(cstMoney(tot))}</td>` : ''}<td class="num">${esc(cstMoney(tot))}</td><td class="num">${esc(cstMoney(tot * 12))}</td><td></td></tr></tfoot></table>`;
     };
     const drawCompare = () => {
       if (st.a && !findVersion(st.a)) st.a = null;
@@ -4360,8 +4431,8 @@
         ${!c.rows.length ? `<p class="cm-empty">${esc(T('cst.empty'))}</p>` : `<table class="cst-table"><thead><tr>${th('label', T('cst.col.component'))}${th('a', 'A', 'num')}${th('b', 'B', 'num')}${th('delta', T('cst.col.delta'), 'num')}<th>${esc(T('cst.col.status'))}</th></tr></thead><tbody>${rows.map(r =>
           `<tr class="st-${r.status}"><td>${esc(r.label)}</td><td class="num">${esc(cstMoney(r.a))}</td><td class="num">${esc(cstMoney(r.b))}</td><td class="num cst-d">${esc(cstDelta(r.delta))}</td><td><span class="cst-st">${esc(T(`cst.st.${r.status}`))}</span></td></tr>`).join('') || `<tr><td colspan="5" class="cm-empty">${esc(T('cst.noChanges'))}</td></tr>`}</tbody></table>
         <h4 class="cst-h">${esc(T('cst.deltaBy', { by: T(`cst.by.${st.by}`) }))}</h4>
-        <table class="cst-table"><thead><tr><th>${esc(T(`cst.by.${st.by}`))}</th><th class="num">A</th><th class="num">B</th><th class="num">${esc(T('cst.col.delta'))}</th></tr></thead><tbody>${by.map(r =>
-          `<tr><td${r.unassigned ? ' class="cst-un"' : ''}>${esc(r.label)}</td><td class="num">${esc(cstMoney(r.a))}</td><td class="num">${esc(cstMoney(r.b))}</td><td class="num cst-d">${esc(cstDelta(r.delta))}</td></tr>`).join('')}</tbody></table>`}`;
+        <table class="cst-table"><thead><tr><th>${esc(T(`cst.by.${st.by}`))}</th><th class="num">A</th><th class="num">B</th><th class="num">${esc(T('cst.col.delta'))}</th>${st.by === 'group' ? `<th>${esc(T('cst.col.status'))}</th>` : ''}</tr></thead><tbody>${by.map(r =>
+          `<tr${st.by === 'group' ? ` class="st-${r.status}"` : ''}><td${r.unassigned ? ' class="cst-un"' : ''}${st.by === 'group' ? ` ${indent(r.depth)} title="${esc(r.pathLabel)}"` : ''}>${esc(r.label)}${esc(lvTag(r))}</td><td class="num">${esc(cstMoney(r.a))}</td><td class="num">${esc(cstMoney(r.b))}</td><td class="num cst-d">${esc(cstDelta(r.delta))}</td>${st.by === 'group' ? `<td><span class="cst-st">${esc(T(`cst.st.${r.status}`))}</span></td>` : ''}</tr>`).join('')}</tbody></table>`}`;
     };
     const show = () => {
       back.querySelectorAll('[data-pane]').forEach(p => { p.hidden = p.dataset.pane !== st.tab; });
@@ -4374,10 +4445,14 @@
       if (st.tab === 'breakdown') {
         if (!cur.length) return;
         const tot = cur.reduce((s, r) => s + r.monthly, 0);
+        if (st.by === 'group') { // árbol completo: ruta, profundidad, componentes (con descendientes), costo directo y subtotal; el total suma solo el costo directo
+          download(cstCSV([[T('cst.by.group'), T('cst.col.depth'), T('cst.col.components'), T('cst.col.own'), T('cst.col.subtotal'), T('cst.col.yearly'), T('cst.col.pct')], ...cur.map(r => [r.pathLabel, r.depth, r.nodesAll.length, round2(r.own), round2(r.total), round2(r.total * 12), tot ? round2(r.total / tot * 100) : 0]), [T('cst.total'), '', cur.reduce((s, r) => s + r.nodes.length, 0), round2(tot), round2(tot), round2(tot * 12), 100]]), fileName('csv', 'costs'), 'text/csv;charset=utf-8');
+          return;
+        }
         download(cstCSV([[T(`cst.by.${st.by}`), T('cst.col.components'), T('cst.col.monthly'), T('cst.col.yearly'), T('cst.col.pct')], ...cur.map(r => [r.label, r.nodes.length, round2(r.monthly), round2(r.monthly * 12), tot ? round2(r.monthly / tot * 100) : 0]), [T('cst.total'), cur.reduce((s, r) => s + r.nodes.length, 0), round2(tot), round2(tot * 12), 100]]), fileName('csv', 'costs'), 'text/csv;charset=utf-8');
       } else if (cmp) {
         download(cstCSV([[T('cst.col.component'), `A: ${cmp.a.label}`, `B: ${cmp.b.label}`, T('cst.col.delta'), T('cst.col.status')], ...cmp.shown.map(r => [r.label, round2(r.a), round2(r.b), round2(r.delta), T(`cst.st.${r.status}`)]),
-          [T('cst.total'), round2(cmp.a.monthly), round2(cmp.b.monthly), round2(cmp.delta), ''], [], [T(`cst.by.${st.by}`), 'A', 'B', T('cst.col.delta')], ...cmp.by.map(r => [r.label, round2(r.a), round2(r.b), round2(r.delta)])]), fileName('csv', 'cost-compare'), 'text/csv;charset=utf-8');
+          [T('cst.total'), round2(cmp.a.monthly), round2(cmp.b.monthly), round2(cmp.delta), ''], [], [T(`cst.by.${st.by}`), 'A', 'B', T('cst.col.delta')], ...cmp.by.map(r => [r.pathLabel || r.label, round2(r.a), round2(r.b), round2(r.delta)])]), fileName('csv', 'cost-compare'), 'text/csv;charset=utf-8');
       }
     };
     back.addEventListener('mousedown', ev => { if (ev.target === back) close(); });
@@ -4386,6 +4461,8 @@
       if (t) { st.tab = t.dataset.cstTab; return show(); }
       const s = ev.target.closest('[data-cst-sort]');
       if (s) { const k = s.dataset.cstSort; if (st.sort === k) st.dir = -st.dir; else { st.sort = k; st.dir = -1; } drawCompare(); return back.querySelector(`[data-cst-sort="${k}"]`)?.focus(); }
+      const tg = ev.target.closest('[data-cst-tg]');
+      if (tg) { const k = tg.dataset.cstTg, row = cur.find(x => x.pathKey === k); st.exp[k] = !(st.exp[k] ?? (row ? row.depth < 2 : true)); drawBreakdown(); return outs.breakdown.querySelector(`[data-cst-tg="${CSS.escape(k)}"]`)?.focus(); }
       const r = ev.target.closest('tr[data-i]');
       if (r) { const f = cur[+r.dataset.i]?.filter; if (f) { close(); setFilter(f); } return; }
       const b = ev.target.closest('[data-cst]');
@@ -6204,8 +6281,8 @@
 
     if (want('costs')) {
       const cn = m.nodes.filter(hasCost), blocks = [{ k: 'table', head: [repT('h.component'), repT('h.group'), repT('h.price'), repT('h.cost')], rows: [...cn.map(n => [n.label, gpath(n), costText(n), money(round2(perMonth(n)))]), [{ t: repT('total'), tone: 'total' }, '', '', { t: money(round2(monthlyTotal(m.nodes))), tone: 'total' }]] }];
-      const gr = m.groups.map(g => ({ g, sum: monthlyTotal(nodesUnder(g, m)), n: nodesUnder(g, m).filter(hasCost).length })).filter(x => x.n);
-      if (gr.length) { blocks.push({ k: 'h3', t: repT('h.perGroup') }); blocks.push({ k: 'table', head: [repT('h.group'), repT('h.nodes'), repT('h.cost')], rows: gr.map(x => [[gpath(x.g), x.g.label].filter(Boolean).join(' › '), String(x.n), money(round2(x.sum))]) }); }
+      const gr = costBreakdown(m, 'group'); // árbol por ruta de grupos: costo directo y subtotal (con descendientes); sin asignar al final
+      if (gr.length) { blocks.push({ k: 'h3', t: repT('h.perGroup') }); blocks.push({ k: 'table', head: [repT('h.group'), repT('h.nodes'), T('cst.col.own'), T('cst.col.subtotal')], rows: gr.map(x => ['\u00a0\u00a0\u00a0'.repeat(x.depth) + x.label + (x.kind === 'level' ? ` [${T('cst.level')}]` : ''), String(x.nodesAll.length), x.own ? money(round2(x.own)) : '—', money(round2(x.total))]) }); }
       [['team', 'byTeam', 'gov.team'], ['costCenter', 'byCostCenter', 'gov.costCenter']].forEach(([by, hk, fk]) => {
         const rs = costBreakdown(m, by);
         if (!rs.some(x => !x.unassigned)) return;

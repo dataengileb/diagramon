@@ -369,7 +369,7 @@ review db: "DB in a public subnet" by=Ana raised=2026-10-01 due=2026-11-15
       /* costos: desglose y escenarios */
       'cst.title': 'Costs', 'cst.tab.breakdown': 'Breakdown', 'cst.tab.compare': 'Compare scenarios', 'cst.groupBy': 'Group by',
       'cst.by.team': 'Team', 'cst.by.costCenter': 'Cost center', 'cst.by.owner': 'Owner', 'cst.by.group': 'Group', 'cst.by.type': 'Type', 'cst.by.provider': 'Provider', 'cst.by.region': 'Region', 'cst.by.layer': 'Layer',
-      'cst.unassigned': 'Unassigned', 'cst.col.components': 'Components', 'cst.col.monthly': 'Monthly', 'cst.col.yearly': 'Yearly', 'cst.col.pct': '% of total', 'cst.total': 'Total',
+      'cst.unassigned': 'Unassigned', 'cst.col.own': 'Direct', 'cst.col.subtotal': 'Subtotal', 'cst.col.depth': 'Depth', 'cst.level': 'inner diagram', 'cst.expand': ({ g }) => `Expand ${g}`, 'cst.collapse': ({ g }) => `Collapse ${g}`, 'cst.col.components': 'Components', 'cst.col.monthly': 'Monthly', 'cst.col.yearly': 'Yearly', 'cst.col.pct': '% of total', 'cst.total': 'Total',
       'cst.empty': 'No component has a cost yet. Select a component and type its price.', 'cst.rowTip': 'Click to filter the canvas by this value',
       'cst.canvas': 'Canvas (current)', 'cst.a': 'A (base)', 'cst.b': 'B (compare)', 'cst.delta': 'Change', 'cst.col.component': 'Component', 'cst.col.delta': 'Change', 'cst.col.status': 'Status',
       'cst.sortBy': ({ c }) => `Sort by ${c}`, 'cst.st.added': 'Added', 'cst.st.removed': 'Removed', 'cst.st.changed': 'Changed', 'cst.st.same': 'Same',
@@ -756,7 +756,7 @@ revisión db: "BD en subred pública" por=Ana levantada=2026-10-01 compromiso=20
       /* costos: desglose y escenarios */
       'cst.title': 'Costos', 'cst.tab.breakdown': 'Desglose', 'cst.tab.compare': 'Comparar escenarios', 'cst.groupBy': 'Agrupar por',
       'cst.by.team': 'Equipo', 'cst.by.costCenter': 'Centro de costo', 'cst.by.owner': 'Dueño', 'cst.by.group': 'Grupo', 'cst.by.type': 'Tipo', 'cst.by.provider': 'Proveedor', 'cst.by.region': 'Región', 'cst.by.layer': 'Capa',
-      'cst.unassigned': 'Sin asignar', 'cst.col.components': 'Componentes', 'cst.col.monthly': 'Mensual', 'cst.col.yearly': 'Anual', 'cst.col.pct': '% del total', 'cst.total': 'Total',
+      'cst.unassigned': 'Sin asignar', 'cst.col.own': 'Directo', 'cst.col.subtotal': 'Subtotal', 'cst.col.depth': 'Profundidad', 'cst.level': 'diagrama interno', 'cst.expand': ({ g }) => `Expandir ${g}`, 'cst.collapse': ({ g }) => `Contraer ${g}`, 'cst.col.components': 'Componentes', 'cst.col.monthly': 'Mensual', 'cst.col.yearly': 'Anual', 'cst.col.pct': '% del total', 'cst.total': 'Total',
       'cst.empty': 'Ningún componente tiene costo todavía. Elige un componente y escribe su precio.', 'cst.rowTip': 'Clic para filtrar el lienzo por este valor',
       'cst.canvas': 'Lienzo (actual)', 'cst.a': 'A (base)', 'cst.b': 'B (comparar)', 'cst.delta': 'Cambio', 'cst.col.component': 'Componente', 'cst.col.delta': 'Cambio', 'cst.col.status': 'Estado',
       'cst.sortBy': ({ c }) => `Ordenar por ${c}`, 'cst.st.added': 'Nuevo', 'cst.st.removed': 'Eliminado', 'cst.st.changed': 'Cambiado', 'cst.st.same': 'Igual',
