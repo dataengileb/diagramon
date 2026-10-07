@@ -3194,7 +3194,7 @@
     if (opts.fromEditor && S.model && raw && typeof raw === 'object') {
       if (!Array.isArray(raw.notes)) raw = { ...raw, notes: S.model.notes };
       if (!Array.isArray(raw.zones)) raw = { ...raw, zones: S.model.zones };
-      if (!Array.isArray(raw.decisions)) raw = { ...raw, decisions: S.model.decisions }; // ni el texto ni el JSON (si se borra la clave) tocan las decisiones
+      if (!Array.isArray(raw.decisions)) raw = { ...raw, decisions: S.model.decisions }; // el texto siempre trae las decisiones (ADR; borrarlas del texto las borra); el JSON, si omite la clave, las conserva
     }
     S.model = normalize(raw);
     ensurePositions(S.model);
@@ -3657,32 +3657,84 @@
     box.setAttribute('aria-label', T(area ? 'note.text' : 'zone.label'));
     Object.assign(box.style, { left: `${b.left - sr.left}px`, top: `${b.top - sr.top}px`, width: `${Math.max(b.width, area ? 0 : 200)}px`, ...(area ? { height: `${b.height}px` } : {}) });
     stage.appendChild(box);
-    box.focus(); box.select();
+    let ready = false; // ver inlineEdit: se enfoca después del mousedown del doble clic
+    setTimeout(() => { ready = true; box.focus(); box.select(); });
     beginEdit();
     box.addEventListener('input', () => { markEdit(); o[key] = box.value; changed(true); });
     box.addEventListener('keydown', ev => { if (ev.key === 'Enter' && (!area || ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); box.blur(); } });
-    box.addEventListener('blur', () => { box.remove(); endEdit(); if (S.sel?.id === id) renderInspector(); });
+    box.addEventListener('blur', () => { if (!ready) return; box.remove(); endEdit(); if (S.sel?.id === id) renderInspector(); });
   }
 
-  function renameNode(id) {
-    const n = S.model.nodes.find(x => x.id === id);
-    const v = prompt(T('prompt.node'), n.label);
-    if (v == null || !v.trim() || v.trim() === n.label) return;
-    pushHistory(); n.label = v.trim(); changed(true); renderInspector();
+  // Edición en el lugar de nombres y etiquetas (sustituye a prompt()): cuadro sobre `rect` (pantalla), tamaño de letra según el zoom.
+  // Enter confirma (en multilínea, Mayús+Enter salta de línea), Esc cancela, perder el foco confirma; onCommit(v) solo si cambió.
+  function inlineEdit({ rect, value, multiline, aria, font, minW = 150, onCommit }) {
+    $('.item-edit')?.blur();
+    const sr = stage.getBoundingClientRect(), fs = Math.max(11, Math.round(font * S.view.k * 10) / 10);
+    const box = document.createElement(multiline ? 'textarea' : 'input');
+    box.className = 'item-edit';
+    box.value = value;
+    box.setAttribute('aria-label', aria);
+    const w = Math.min(Math.max(rect.width + 24, minW), sr.width - 8), lines = multiline ? value.split('\n').length : 1, h = Math.round(lines * fs * 1.35 + 14);
+    box.style.fontSize = `${fs}px`;
+    box.style.width = `${w}px`;
+    if (multiline) { box.style.height = `${h}px`; box.rows = lines; }
+    // Centrado sobre el texto y dentro del escenario
+    const left = clamp(rect.left + rect.width / 2 - w / 2 - sr.left, 4, Math.max(4, sr.width - w - 4)), top = clamp(rect.top + rect.height / 2 - h / 2 - sr.top, 4, Math.max(4, sr.height - h - 4));
+    box.style.left = `${left}px`; box.style.top = `${top}px`;
+    stage.appendChild(box);
+    // El doble clic se detecta en el pointerdown: el mousedown que llega justo después le quitaría el foco, así que se enfoca en la siguiente vuelta
+    let cancel = false, ready = false;
+    setTimeout(() => { ready = true; box.focus(); box.select(); });
+    box.addEventListener('keydown', ev => {
+      ev.stopPropagation();
+      if (ev.key === 'Escape') { ev.preventDefault(); cancel = true; box.blur(); }
+      else if (ev.key === 'Enter' && !(multiline && ev.shiftKey)) { ev.preventDefault(); box.blur(); }
+    });
+    if (multiline) box.addEventListener('input', () => { const n = box.value.split('\n').length; box.rows = n; box.style.height = `${Math.round(n * fs * 1.35 + 14)}px`; });
+    box.addEventListener('blur', () => { if (!ready) return; const v = box.value; box.remove(); if (!cancel) onCommit(v); });
   }
-  function renameGroup(id) {
-    const g = groupById(id);
-    const v = prompt(T('prompt.group'), g.label);
-    if (v == null || !v.trim() || v.trim() === g.label) return;
-    pushHistory(); g.label = v.trim(); changed(true); renderInspector();
+  const unionRect = els => {
+    const rs = els.map(e => e.getBoundingClientRect()).filter(r => r.width && r.height);
+    if (!rs.length) return null;
+    const l = Math.min(...rs.map(r => r.left)), t = Math.min(...rs.map(r => r.top));
+    return { left: l, top: t, width: Math.max(...rs.map(r => r.right)) - l, height: Math.max(...rs.map(r => r.bottom)) - t };
+  };
+  function renameNode(id) {
+    const n = S.model.nodes.find(x => x.id === id), g = R.nodes.get(id);
+    if (!n || !g) return;
+    const rect = unionRect([...g.querySelectorAll('.node-label')]) || g.getBoundingClientRect();
+    inlineEdit({ rect, value: n.label, aria: T('prompt.node'), font: 13.5, minW: 170, onCommit: v => {
+      v = v.trim();
+      if (!v || v === n.label) return;
+      pushHistory(); n.label = v; changed(true); renderInspector();
+    } });
+  }
+  // fresh: grupo recién creado desde el inspector; el nombre se suma a ese paso de deshacer
+  function renameGroup(id, fresh) {
+    const g = groupById(id), r = R.groups.get(id);
+    if (!g || !r) return;
+    inlineEdit({ rect: r.tag.getBoundingClientRect(), value: g.label, aria: T('prompt.group'), font: 11, minW: 170, onCommit: v => {
+      v = v.trim();
+      if (!v || v === g.label) return;
+      if (!fresh) pushHistory();
+      g.label = v; changed(true); renderInspector();
+    } });
   }
   function renameEdge(id) {
-    const e = S.model.edges.find(x => x.id === id);
-    const v = prompt(T('prompt.edge'), e.label || '');
-    if (v == null || v.trim() === (e.label || '')) return;
-    pushHistory();
-    if (v.trim()) e.label = v.trim(); else delete e.label;
-    changed(true); renderInspector();
+    const e = S.model.edges.find(x => x.id === id), r = R.edges.get(id);
+    if (!e || !r) return;
+    let rect = r.label && unionRect([r.label]);
+    if (!rect) { // sin etiqueta visible: en el punto medio de la conexión
+      const m = r.line.getScreenCTM(), p = r.line.getPointAtLength(r.line.getTotalLength() / 2), q = new DOMPoint(p.x, p.y).matrixTransform(m);
+      rect = { left: q.x - 40, top: q.y - 10, width: 80, height: 20 };
+    }
+    inlineEdit({ rect, value: e.label || '', multiline: true, aria: T('prompt.edge'), font: 11, minW: 150, onCommit: v => {
+      v = v.replace(/\r\n?/g, '\n').trim();
+      if (v === (e.label || '')) return;
+      pushHistory();
+      if (v) e.label = v; else delete e.label;
+      changed(true); renderInspector();
+    } });
   }
 
   function relayout() {
@@ -4099,7 +4151,8 @@
   const DIFF_FIELDS = {
     node: ['label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'exposure', 'backup', 'controls', 'in', 'c4', 'sla', 'rpo', 'rto', 'replicas'],
     edge: ['label', 'style', 'weight', 'route', 'both', 'color', 'data', 'encrypted', 'datasets', 'transferOk', 'threats'],
-    group: ['label', 'icon', 'color', 'parent', 'kind', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'controls', 'in']
+    group: ['label', 'icon', 'color', 'parent', 'kind', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'controls', 'in'],
+    type: ['label', 'dash', 'color', 'width', 'particles'] // tipos de conexión propios (model.edgeTypes), por id
   };
   function diffModels(a, b) {
     const val = (f, x) => (f === 'style' ? x || 'sync' : x == null ? '' : typeof x === 'object' ? JSON.stringify(x) : String(x));
@@ -4117,6 +4170,10 @@
       groups: cmp(a.groups, b.groups, g => g.id, DIFF_FIELDS.group),
       title: a.title !== b.title ? { from: a.title, to: b.title } : null
     };
+    // Tipos de conexión propios: las versiones guardadas antes de que existieran no los tienen (lista vacía)
+    const ty = cmp(a.edgeTypes || [], b.edgeTypes || [], t => t.id, DIFF_FIELDS.type);
+    d.types = { added: ty.added, removed: ty.removed, changed: ty.changed.map(c => ({ id: c.item.id, item: c.item, fields: c.fields })) };
+    d.typeN = d.types.added.length + d.types.removed.length + d.types.changed.length; // no entra en count: «cambiados» se refiere a componentes, conexiones y grupos
     const sum = k => d.nodes[k].length + d.edges[k].length + d.groups[k].length;
     d.count = { a: sum('added'), r: sum('removed'), c: sum('changed') + (d.title ? 1 : 0) };
     return d;
@@ -4166,8 +4223,10 @@
     drawGhosts();
     const bar = $('#compare-bar');
     bar.style.setProperty('--c', verColor(v));
-    $('#compare-text').innerHTML = `${T('ver.comparing', { name: esc(verLabel(v)) })} · ${d.count.a + d.count.r + d.count.c ? esc(T('ver.summary', d.count)) : esc(T('ver.same'))}${cstVerLine(base, S.model) ? ` · ${esc(cstVerLine(base, S.model))}` : ''}${adrBarText()}`;
+    $('#compare-text').innerHTML = `${T('ver.comparing', { name: esc(verLabel(v)) })} · ${d.count.a + d.count.r + d.count.c + d.typeN ? esc(T('ver.summary', d.count)) : esc(T('ver.same'))}${d.typeN ? ` · ${esc(typesBarText(d))}` : ''}${cstVerLine(base, S.model) ? ` · ${esc(cstVerLine(base, S.model))}` : ''}${adrBarText()}`;
   }
+  // «Tipos +1 −0 ~1»: resumen de los cambios en los tipos de conexión propios al comparar
+  const typesBarText = d => T('ver.types.bar', { a: d.types.added.length, r: d.types.removed.length, c: d.types.changed.length });
   function adrBarText() { const c = adrCmp(), n = c?.diff && adrDiffN(c.diff); return n ? ` · ${esc(T('adr.cmp.bar', { a: c.diff.added.length, r: c.diff.removed.length, c: c.diff.changed.length }))}` : ''; }
   function drawGhosts() {
     L.ghosts.textContent = '';
@@ -4262,11 +4321,11 @@
     if (back) { back.focus(); if (caret) back.setSelectionRange(...caret); }
   }
   function diffList(d) {
-    if (!(d.count.a + d.count.r + d.count.c)) return `<p class="ver-sum">${esc(T('ver.same'))}</p>`;
+    if (!(d.count.a + d.count.r + d.count.c + d.typeN)) return `<p class="ver-sum">${esc(T('ver.same'))}</p>`;
     const FIELD = { label: 'insp.name', sub: 'insp.detail', type: 'insp.type', icon: 'insp.icon', group: 'insp.group', color: 'insp.color', badge: 'field.badge',
       cost: 'cost.label', costPeriod: 'cost.period', costYears: 'cost.yearsAria', desc: 'insp.desc', style: 'insp.style', weight: 'wt.label', parent: 'insp.parent',
-      data: 'data.label', encrypted: 'enc.label', route: 'insp.route', both: 'insp.dir', review: 'rev.label', kind: 'gkind.label', exposure: 'sec.expo.label', backup: 'sec.backup.label', controls: 'cmp.title', in: 'c4.in', c4: 'c4.label', sla: 'res.sla', rpo: 'res.rpo', rto: 'res.rto', replicas: 'res.replicas' };
-    const fields = (fs, kind) => fs.map(f => T(kind === 'edge' && f === 'label' ? 'insp.label' : FIELD[f] || f).toLowerCase()).join(', ');
+      data: 'data.label', encrypted: 'enc.label', route: 'insp.route', both: 'insp.dir', review: 'rev.label', kind: 'gkind.label', exposure: 'sec.expo.label', backup: 'sec.backup.label', controls: 'cmp.title', in: 'c4.in', c4: 'c4.label', sla: 'res.sla', rpo: 'res.rpo', rto: 'res.rto', replicas: 'res.replicas', dash: 'et.dash', width: 'et.width', particles: 'et.particles' };
+    const fields = (fs, kind) => fs.map(f => T(kind === 'edge' && f === 'label' ? 'insp.label' : kind === 'type' && f === 'label' ? 'et.label' : FIELD[f] || f).toLowerCase()).join(', ');
     const names = new Map([...S.compare.base.nodes, ...S.model.nodes].map(n => [n.id, n.label]));
     const edgeName = e => `${names.get(e.from) || e.from} ${e.both ? '↔' : '→'} ${names.get(e.to) || e.to}`;
     const rows = [];
@@ -4280,8 +4339,11 @@
     d.edges.added.forEach(e => rows.push(['add', edgeName(e), T('ver.edge')]));
     d.edges.changed.forEach(c => rows.push(['chg', edgeName(c.item), `${T('ver.edge')}: ${fields(c.fields, 'edge')}`]));
     d.edges.removed.forEach(e => rows.push(['del', edgeName(e), T('ver.edge')]));
+    d.types.added.forEach(t => rows.push(['add', t.label, T('ver.type')]));
+    d.types.changed.forEach(c => rows.push(['chg', c.item.label, `${T('ver.type')}: ${fields(c.fields, 'type')}`]));
+    d.types.removed.forEach(t => rows.push(['del', t.label, T('ver.type')]));
     const cl = cstVerLine(S.compare.base, S.model);
-    return `<p class="ver-sum">${esc(T('ver.summary', d.count))}</p>${cl ? `<p class="ver-sum cst-vline">${esc(cl)}</p>` : ''}<ul class="diff-list">${rows.map(([k, name, extra, id]) =>
+    return `<p class="ver-sum">${esc(T('ver.summary', d.count))}</p>${d.typeN ? `<p class="ver-sum">${esc(typesBarText(d))}</p>` : ''}${cl ? `<p class="ver-sum cst-vline">${esc(cl)}</p>` : ''}<ul class="diff-list">${rows.map(([k, name, extra, id]) =>
       `<li class="d-${k}"${id ? ` data-goto="${esc(id)}"` : ''}><i>${k === 'add' ? '+' : k === 'del' ? '−' : '~'}</i><span title="${esc(name)}">${esc(name)}</span>${extra ? `<em title="${esc(extra)}">${esc(extra)}</em>` : ''}</li>`).join('')}</ul>`;
   }
 
@@ -5171,6 +5233,7 @@
     let v = f.value;
     if (v === '__mixed') return;
     if (k === 'style' && v === '__newtype') { renderInspector(); return openEdgeTypes({ apply: !Array.isArray(t) && S.sel?.kind === 'edge' ? t : null }); }
+    let newGroup = '';
     if (k === 'region') v = v.trim();
     if (k === 'cost' || k === 'costYears') {
       // Números: vacío o no válido = quitar el valor
@@ -5179,12 +5242,11 @@
     }
     if (isSelect) pushHistory(); else markEdit();
     if (k === 'group' && v === '__new') {
-      const name = prompt(T('prompt.newGroup'), T('prompt.newGroup.def'));
       const parents = new Set(list.map(n => n.group || ''));
-      if (!name || !name.trim()) { S.history.pop(); updateUndoButtons(); renderInspector(); return; }
       const id = uniqueId('grupo-'), parent = parents.size === 1 ? [...parents][0] : '';
       const keys = paletteKeys();
-      S.model.groups.push({ id, label: name.trim(), color: keys[S.model.groups.length % keys.length], ...(parent ? { parent } : {}), ...(S.scope ? { in: S.scope } : {}) });
+      S.model.groups.push({ id, label: T('prompt.newGroup.def'), color: keys[S.model.groups.length % keys.length], ...(parent ? { parent } : {}), ...(S.scope ? { in: S.scope } : {}) });
+      newGroup = id;
       v = id;
     }
     list.forEach(x => {
@@ -5201,6 +5263,7 @@
       if ($('#region-hint')) $('#region-hint').textContent = v ? '' : regionHint(list, false);
     }
     if (isSelect) renderInspector();
+    if (newGroup) renameGroup(newGroup, true); // nombre en el lugar, sobre la etiqueta del nuevo grupo
     else if (k === 'label') $('#inspector .insp-title').textContent = S.sel.kind === 'edge' ? $('#inspector .insp-title').textContent : v;
   }
 
@@ -6526,12 +6589,15 @@
     }
 
     if (want('connections')) {
+      const anyW = m.edges.some(e => EDGE_W[e.weight]); // la columna Importancia solo sale si alguna conexión la usa: los informes viejos no cambian
       const rows = m.edges.map(e => {
         const cb = crossBorder(e, byId);
-        return [nm(e.from), nm(e.to) + (e.both ? ' ↔' : ''), e.label || '', edgeStyleLabel(e.style), e.encrypted === true ? T('enc.yes') : e.encrypted === false ? { t: T('enc.no'), tone: 'sev-high' } : T('enc.unset'),
+        return [nm(e.from), nm(e.to) + (e.both ? ' ↔' : ''), e.label || '', edgeStyleLabel(e.style), ...(anyW ? [EDGE_W[e.weight] ? { t: T(`wt.${e.weight}`), tone: e.weight === 'critical' ? 'sev-high' : '' } : T('wt.normal')] : []), e.encrypted === true ? T('enc.yes') : e.encrypted === false ? { t: T('enc.no'), tone: 'sev-high' } : T('enc.unset'),
           dShort(e.data), (e.datasets || []).join(', '), cb ? { t: `${cb.from.region} → ${cb.to.region}${cb.approved ? ' ✓' : ''}`, tone: cb.approved ? '' : 'sev-high' } : ''];
       });
-      sec('connections', [{ k: 'table', head: [repT('h.from'), repT('h.to'), repT('h.label'), repT('h.style'), repT('h.enc'), repT('h.data'), repT('h.datasets'), repT('h.xb')], rows, cls: 'wide' }]);
+      const ets = customTypes(), tb = ets.length ? [{ k: 'h3', t: repT('h.types') }, { k: 'table', head: [repT('h.type'), repT('h.dash'), repT('h.color'), repT('h.width'), repT('h.particles'), repT('h.edges')],
+        rows: ets.map(t => [loc(t.label), t.dash || T('et.solid'), t.color || '', String(t.width ?? 1.8), String(t.particles ?? 1), String(m.edges.filter(e => e.style === t.id).length)]) }] : [];
+      sec('connections', [{ k: 'table', head: [repT('h.from'), repT('h.to'), repT('h.label'), repT('h.style'), ...(anyW ? [T('wt.label')] : []), repT('h.enc'), repT('h.data'), repT('h.datasets'), repT('h.xb')], rows, cls: 'wide' }, ...tb]);
     }
 
     if (want('data')) {
@@ -6868,16 +6934,19 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
         add('datasets', (x.datasets || []).join(', '));
         if (x.transferOk) add('transferOk', yn(true));
         add('threats', Object.entries(x.threats || {}).map(([k, d]) => `${k}=${T(`stride.st.${d.status}`)}${d.note ? ` (${d.note})` : ''}`).join('; '));
+        add('adrs', decisionsOf('edges', x.id, m).map(d => d.id).join(','));
       } else if ('type' in x) {
         const r = rows.get(x.id) || {};
         // Exposición y respaldo deducidos solo cuando aportan: exposición pública o valores puestos a mano
         const skip = k => (k === 'backup' && typeof x.backup !== 'boolean') || (k === 'exposure' && !x.exposure && r.exposure !== T('sec.expo.public'));
         NODE_KEYS.forEach(k => { if (!skip(k)) add(k, r[k]); });
+        add('adrs', decisionsOf('nodes', x.id, m).map(d => d.id).join(','));
       } else {
         ['owner', 'steward', 'team', 'costCenter'].forEach(k => add(k, String(x[k] ?? '').trim()));
         add('region', String(x.region ?? '').trim());
         add('layer', x.layer ? layerInfo(x.layer)?.label || x.layer : '');
         add('compliance', Object.entries(x.controls || {}).map(([k, v]) => `${k}=${T(`cmp.${v}`)}`).join(', '));
+        add('adrs', decisionsOf('groups', x.id, m).map(d => d.id).join(','));
       }
       return out;
     };
@@ -6890,7 +6959,14 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
       sevLabel, sevHex: k => ({ low: '#4E9AD8', medium: '#C4A63A', high: '#E0965A', critical: '#E2806F' })[k] || '#C4A63A',
       layerLabel: k => layerInfo(k)?.label || k, layerHex: k => hexIn(DL[k]?.color),
       noteHex: k => hexOf(k) || hexOf('limon') || '#C4A63A',
-      words: { weightHigh: T('leg.w.high'), weightCritical: T('leg.w.critical'), note: T('insp.note'), zone: T('insp.zone'), trust: T('insp.trust'), threats: T('stride.label'), level: T('inv.c.level') }
+      // Decisiones (ADR) y hallazgos descartados: los exportadores los escriben como comentarios, atributos o una página aparte
+      adrStatus: k => T(`adr.st.${k}`),
+      // → [{ id, title, target: { kind, id } | null, reason, by, date }]; un hallazgo que ya no existe sale con título vacío y sin destino
+      dismissed: () => {
+        const byId = new Map(allFindings(m).map(f => [f.id, f]));
+        return Object.entries(m.dismissed || {}).filter(([id]) => byId.get(id)?.source !== 'review').map(([id, d]) => { const f = byId.get(id); return { id, title: f?.title || '', target: f?.target ? { kind: f.target.kind, id: f.target.id } : null, reason: d.reason || '', by: d.by || '', date: d.date || '' }; });
+      },
+      words: { adrs: T('tab.adr.tip'), adrContext: T('adr.f.context'), adrDecision: T('adr.f.decision'), adrConsequences: T('adr.f.consequences'), adrDeciders: T('adr.f.deciders'), adrStatusL: T('adr.f.status'), adrLinks: T('adr.f.links'), dismissed: T('rep.dismissed'), weightHigh: T('leg.w.high'), weightCritical: T('leg.w.critical'), note: T('insp.note'), zone: T('insp.zone'), trust: T('insp.trust'), threats: T('stride.label'), level: T('inv.c.level') }
     };
   }
   function exportOther(fmt) {
@@ -6921,7 +6997,8 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
   const INV_COMP = [['id'], ['name'], ['detail'], ['type'], ['provider'], ['service'], ['category'], ['c4'], ['level'], ['group'], ['owner'], ['steward'], ['team'], ['costCenter'], ['inherited'], ['region'], ['jurisdiction'],
     ['data'], ['sensitive'], ['layer'], ['exposure'], ['backup'], ['encIn', 'int'], ['encOut', 'int'], ['unencSens', 'int'], ['sla', 'sla'], ['rpo'], ['rto'], ['replicas', 'int'], ['cost', 'money'], ['period'], ['perMonth', 'money'], ['perYear', 'money'],
     ['review'], ['findings', 'int'], ['adrs'], ['compliance'], ['desc']];
-  const INV_CONN = [['id'], ['from'], ['to'], ['label'], ['style'], ['encrypted'], ['data'], ['datasets'], ['crossBorder'], ['transferOk'], ['threats', 'int']];
+  const INV_CONN = [['id'], ['from'], ['to'], ['label'], ['style'], ['weight'], ['custom'], ['encrypted'], ['data'], ['datasets'], ['crossBorder'], ['transferOk'], ['threats', 'int']];
+  const INV_TYPE = [['id'], ['label'], ['dash'], ['color'], ['width'], ['particles', 'int'], ['uses', 'int']];
   const INV_GROUP = [['id'], ['name'], ['parent'], ['kind'], ['region'], ['layer'], ['owner'], ['team'], ['costCenter'], ['count', 'int'], ['monthly', 'money']];
   const INV_OWNER = [['team'], ['owners'], ['stewards'], ['components', 'int'], ['monthly', 'money']];
   const INV_ADR = [['id'], ['title'], ['status'], ['date'], ['links']];
@@ -6976,12 +7053,15 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     out.push(mk('components', INV_COMP, comp.map(r => INV_COMP.map(([k]) => r[k]))));
     // Conexiones
     const open = typeof strideAll === 'function' ? (() => { try { return strideAll(m).filter(t => t.status === 'open'); } catch { return []; } })() : [];
+    const ets = Array.isArray(m.edgeTypes) ? m.edgeTypes : [], etOf = id => ets.find(t => t.id === id); // del modelo que se exporta, no del lienzo
     const conn = m.edges.map(e => {
-      const cb = typeof crossBorder === 'function' ? crossBorder(e, byId) : null;
-      return [e.id || '', nm(e.from), nm(e.to), String(e.label || '').replace(/\s*\n\s*/g, ' '), edgeStyleLabel(e.style), e.encrypted === true ? T('enc.yes') : e.encrypted === false ? T('enc.no') : T('enc.unset'),
+      const cb = typeof crossBorder === 'function' ? crossBorder(e, byId) : null, ct = etOf(e.style);
+      return [e.id || '', nm(e.from), nm(e.to), String(e.label || '').replace(/\s*\n\s*/g, ' '), ct ? loc(ct.label) : edgeStyleLabel(e.style), T(EDGE_W[e.weight] ? `wt.${e.weight}` : 'wt.normal'), invYN(!!ct), e.encrypted === true ? T('enc.yes') : e.encrypted === false ? T('enc.no') : T('enc.unset'),
         (e.data || []).map(k => loc(DATA[k]?.short) || String(k).toUpperCase()).join(' '), (e.datasets || []).join('; '), invYN(!!cb), cb ? invYN(cb.approved) : '', open.filter(t => t.e === e || t.e.id === e.id).length];
     });
     if (conn.length) out.push(mk('connections', INV_CONN, conn));
+    // Tipos de conexión propios (solo si el diagrama los tiene)
+    if (ets.length) out.push(mk('types', INV_TYPE, ets.map(t => [t.id, loc(t.label), t.dash || '', t.color || '', t.width ?? '', t.particles ?? '', m.edges.filter(e => e.style === t.id).length])));
     // Grupos
     const gpath = g => { const p = []; let x = g.parent, i = 0; while (x && i++ < 50) { const gg = m.groups.find(q => q.id === x); if (!gg) break; p.unshift(gg.label); x = gg.parent; } return p.join(' › '); };
     const grp = m.groups.map(g => {

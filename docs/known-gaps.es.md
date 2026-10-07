@@ -16,11 +16,6 @@ Estas funciones van bien en el navegador y se comprobó la estructura de lo que 
 
 ## 🔧 Aún no hecho (mejoras pequeñas)
 
-- **Renombrar** un componente, grupo o conexión con doble clic usa el diálogo `prompt()` del navegador en vez de editar en el sitio como las notas.
-- Las **decisiones de arquitectura (ADR)** no forman parte del formato de la pestaña *Texto* y no se exportan a Mermaid, PlantUML ni draw.io.
-- Los **hallazgos descartados** no se exportan a Mermaid, PlantUML ni draw.io.
-- **La importancia y los tipos propios de conexión** no son columnas del inventario ni de las tablas del informe (solo el nombre del tipo). La comparación de versiones muestra un cambio de importancia, pero no los cambios en los propios tipos.
-- Las conexiones *Por lotes* y *Control* no tienen puntos en movimiento, así que los flujos «lentos» no se animan de otra forma.
 - **Las exportaciones a Mermaid, PlantUML y draw.io** cubren los casos principales, pero en diagramas complejos pueden perder detalles o necesitar ajustes. El desglose de costos no se exporta a ellas.
 
 ## 📐 Límites por diseño

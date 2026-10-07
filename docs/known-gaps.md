@@ -16,11 +16,6 @@ These features work in the browser and their output was checked for structure, b
 
 ## 🔧 Not done yet (small improvements)
 
-- **Renaming** a component, group or connection with a double-click uses the browser's `prompt()` dialog instead of editing in place like notes.
-- **Architecture decisions (ADR)** are not part of the *Text* tab format and are not exported to Mermaid, PlantUML or draw.io.
-- **Dismissed findings** are not exported to Mermaid, PlantUML or draw.io.
-- **Connection importance and custom types** are not columns in the inventory or the report tables (only the type name is). Version comparison lists a changed importance, but not changes to the custom types themselves.
-- *Batch* and *Control* connections have no moving dots, so «slow» flows are not animated differently.
 - **Mermaid, PlantUML and draw.io exports** cover the main cases, but complex diagrams may lose details or need fixes. The cost breakdown is not exported to them.
 
 ## 📐 Limits by design

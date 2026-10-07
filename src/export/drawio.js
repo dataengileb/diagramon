@@ -28,6 +28,12 @@
      metadatos van como <object> con un atributo por campo (nombre = clave, p. ej. owner, region;
      meta_<clave> si choca con otro atributo) → aparecen en «Editar datos»; el tooltip lista
      «Etiqueta: valor». El id y la etiqueta no cambian.
+   - Los componentes, grupos y conexiones enlazados a una decisión (ADR) llevan el atributo adrs="ADR-001,ADR-002" (viene de ctx.meta).
+     Los hallazgos descartados (ctx.dismissed) van como atributo dismissed="id: motivo (quién, fecha)" en el elemento al que apuntan
+     (nodo, conexión, grupo o zona; si no existe, solo constan en la página de decisiones).
+   - Decisiones (ADR): si las hay (o hay descartados sin elemento), una última página «Decisiones de arquitectura» con una nota por
+     decisión (título, estado, fecha, decisores, contexto, decisión, consecuencias, enlaces) y, si procede, la lista de hallazgos descartados.
+     Sin ADR ni descartados el archivo es idéntico al de antes.
    API: window.DiagramonExport.drawio(model, ctx) → { text, ext, mime }.
    ========================================================================== */
 (() => {
@@ -86,6 +92,16 @@
     const pageIdOf = i => `diagramon-${i + 1}`;
     const pathName = l => (l.path && l.path.length ? l.path : [l.id]).map(id => String(nodeById[id] ? nodeById[id].label || id : id).replace(/\s*\n\s*/g, ' ')).join(' › ');
     const lang = ctx.lang === 'es' ? 'es' : 'en';
+
+    // Hallazgos descartados: atributo en el elemento al que apuntan (nodo, conexión, grupo, zona)
+    const dismissed = (typeof ctx.dismissed === 'function' ? ctx.dismissed() : []) || [];
+    const disBy = {};
+    dismissed.forEach(x => { if (x.target) (disBy[x.target.kind + ':' + x.target.id] = disBy[x.target.kind + ':' + x.target.id] || []).push(x); });
+    const disText = x => `${x.id}: ${x.reason}${x.by || x.date ? ` (${[x.by, x.date].filter(Boolean).join(', ')})` : ''}`;
+    const disAttr = (kind, id) => (disBy[kind + ':' + id] ? `dismissed="${esc(disBy[kind + ':' + id].map(disText).join('; '))}"` : '');
+    const known = new Set([...allNodes.map(n => 'node:' + n.id), ...allEdges.map(e => 'edge:' + e.id), ...allGroups.map(g => 'group:' + g.id), ...(model.zones || []).map(z => 'zone:' + z.id)]);
+    const orphans = dismissed.filter(x => !x.target || !known.has(x.target.kind + ':' + x.target.id));
+    const decisions = model.decisions || [];
 
     const buildPage = pageIdx => {
       const scope = pageIdx ? levels[pageIdx - 1].id : null;
@@ -157,7 +173,8 @@
         if (tail) label += ` <font style="font-size:10px">· ${h(tail)}</font>`;
         const style = `rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=${trust ? '3 4' : '8 4'};strokeColor=${hex};strokeWidth=2;fillColor=${hex};fillOpacity=${trust ? 4 : 8};verticalAlign=top;align=left;spacingLeft=8;spacingTop=4;fontSize=12;fontColor=${hex};`;
         const geo = `<mxGeometry x="${num(z.x)}" y="${num(z.y)}" width="${num(z.w)}" height="${num(z.h)}" as="geometry"/>`;
-        if (z.desc) cells.push(`<object id="${P}z-${esc(z.id)}" label="${esc(label)}" tooltip="${esc(h(z.desc))}"><mxCell style="${esc(style)}" vertex="1" parent="1">${geo}</mxCell></object>`);
+        const zd = disAttr('zone', z.id);
+        if (z.desc || zd) cells.push(`<object id="${P}z-${esc(z.id)}" label="${esc(label)}"${zd ? ' ' + zd : ''}${z.desc ? ` tooltip="${esc(h(z.desc))}"` : ''}><mxCell style="${esc(style)}" vertex="1" parent="1">${geo}</mxCell></object>`);
         else cells.push(`<mxCell id="${P}z-${esc(z.id)}" value="${esc(label)}" style="${esc(style)}" vertex="1" parent="1">${geo}</mxCell>`);
       });
 
@@ -174,8 +191,8 @@
           `rounded=1;arcSize=3;container=1;collapsible=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=6 4;strokeColor=${color};strokeWidth=1.5;fillColor=${color};fillOpacity=10;verticalAlign=top;align=left;spacingLeft=${gUri ? 32 : 10};spacingTop=4;fontStyle=1;fontSize=13;fontColor=#444444;`;
         const geo = `<mxGeometry x="${num(b.x - (pb ? pb.x : 0))}" y="${num(b.y - (pb ? pb.y : 0))}" width="${num(b.w)}" height="${num(b.h)}" as="geometry"/>`;
         const par = pid ? P + 'g-' + esc(pid) : '1';
-        const mt = metaOf(ctx, g);
-        if (mt.attrs.length) cells.push(`<object id="${P}g-${esc(g.id)}" label="${esc(h(g.label || g.id))}" ${mt.attrs.join(' ')} tooltip="${esc(mt.tip)}"><mxCell style="${esc(style)}" vertex="1" parent="${par}">${geo}</mxCell></object>`);
+        const mt = metaOf(ctx, g), gd = disAttr('group', g.id);
+        if (mt.attrs.length || gd) cells.push(`<object id="${P}g-${esc(g.id)}" label="${esc(h(g.label || g.id))}" ${[...mt.attrs, gd].filter(Boolean).join(' ')}${mt.tip ? ` tooltip="${esc(mt.tip)}"` : ''}><mxCell style="${esc(style)}" vertex="1" parent="${par}">${geo}</mxCell></object>`);
         else cells.push(`<mxCell id="${P}g-${esc(g.id)}" value="${esc(h(g.label || g.id))}" style="${esc(style)}" vertex="1" parent="${par}">${geo}</mxCell>`);
       });
 
@@ -211,6 +228,7 @@
         if (n.cost != null && n.cost !== '') attrs.push(`cost="${esc(n.cost)}"`);
         if (n.review && n.review.note) attrs.push(`review="${esc(n.review.status + ': ' + n.review.note)}"`);
         attrs.push(...mt.attrs);
+        { const nd = disAttr('node', n.id); if (nd) attrs.push(nd); }
         if (levelIdx[n.id]) attrs.push(`link="data:page/id,${pageIdOf(levelIdx[n.id])}"`);
         cells.push(`<object id="${P}n-${esc(n.id)}" ${attrs.join(' ')}><mxCell style="${esc(style)}" vertex="1" parent="${pid ? P + 'g-' + esc(pid) : '1'}"><mxGeometry x="${num(n.x - (pb ? pb.x : 0))}" y="${num(n.y - (pb ? pb.y : 0))}" width="${num(s.w)}" height="${num(s.h)}" as="geometry"/></mxCell></object>`);
       });
@@ -265,6 +283,7 @@
         if (tags.length) attrs.push(`data="${esc((e.data || []).join(','))}"`);
         const mt = metaOf(ctx, e);
         attrs.push(...mt.attrs);
+        { const ed = disAttr('edge', e.id); if (ed) attrs.push(ed); }
         if (mt.attrs.length) attrs.push(`tooltip="${esc(mt.tip)}"`);
         edgeCells.push(`<object id="${P}e-${esc(e.id)}" ${attrs.join(' ')}><mxCell style="${esc(style)}" edge="1" parent="1" source="${esc(src)}" target="${esc(dst)}"><mxGeometry relative="1" as="geometry"/></mxCell></object>`);
       });
@@ -294,8 +313,41 @@
         cells.join('\n') + '\n</root></mxGraphModel></diagram>';
     };
 
+    // Última página: una nota por decisión (ADR) y la lista de hallazgos descartados
+    function buildDecisionsPage() {
+      const W = ctx.words || {}, status = k => (typeof ctx.adrStatus === 'function' ? ctx.adrStatus(k) : k);
+      const title = (decisions.length ? W.adrs : W.dismissed) || (decisions.length ? 'Architecture decisions' : 'Dismissed findings');
+      const cells = [`<mxCell id="pd-title" value="${esc(h(title))}" style="text;html=1;align=left;verticalAlign=middle;fontSize=20;fontStyle=1;fontColor=#222222;strokeColor=none;fillColor=none;" vertex="1" parent="1"><mxGeometry x="0" y="0" width="640" height="32" as="geometry"/></mxCell>`];
+      const para = t => String(t == null ? '' : t).split(/\r?\n/).map(h).join('<br>');
+      const rows = t => String(t || '').split(/\r?\n/).reduce((n, l) => n + Math.max(1, Math.ceil(l.length / 78)), 0);
+      let y = 56;
+      const add = (id, label, lines, style, extra) => {
+        const hh = Math.max(70, lines * 17 + 28);
+        cells.push(`<object id="${id}" label="${esc(label)}"${extra || ''}><mxCell style="${esc(style)}" vertex="1" parent="1"><mxGeometry x="0" y="${y}" width="640" height="${hh}" as="geometry"/></mxCell></object>`);
+        y += hh + 24;
+      };
+      decisions.forEach(d => {
+        const l = d.links || {}, refs = [...(l.nodes || []), ...(l.groups || []), ...(l.edges || []), ...(l.versions || []).map(v => 'version:' + v)];
+        let label = `<b>${h(d.id)} · ${h(d.title)}</b><br><font style="font-size:10px" color="#777777">${h([status(d.status), d.date, d.deciders ? (W.adrDeciders || 'Deciders') + ': ' + d.deciders : ''].filter(Boolean).join(' · '))}</font>`;
+        let lines = 2;
+        [[W.adrContext || 'Context', d.context], [W.adrDecision || 'Decision', d.decision], [W.adrConsequences || 'Consequences', d.consequences]].forEach(([k, v]) => { if (v) { label += `<br><br><b>${h(k)}</b><br>${para(v)}`; lines += 3 + rows(v); } });
+        if (refs.length) { label += `<br><br><font style="font-size:10px" color="#777777">${h(W.adrLinks || 'Linked to')}: ${h(refs.join(', '))}</font>`; lines += 2; }
+        add('pd-adr-' + esc(d.id), label, lines, 'shape=note;size=14;backgroundOutline=1;whiteSpace=wrap;html=1;fillColor=#F2F0FA;strokeColor=#8573DB;strokeWidth=1.5;align=left;verticalAlign=top;spacing=10;fontSize=12;fontColor=#222222;',
+          ` adr="${esc(d.id)}" status="${esc(d.status)}" date="${esc(d.date)}"${refs.length ? ` links="${esc(refs.join(','))}"` : ''}`);
+      });
+      if (dismissed.length) {
+        const label = `<b>${h(W.dismissed || 'Dismissed findings')}</b><br>` + dismissed.map(x => h(disText(x))).join('<br>');
+        add('pd-dismissed', label, 1 + dismissed.reduce((n, x) => n + rows(disText(x)), 0), 'shape=note;size=14;backgroundOutline=1;whiteSpace=wrap;html=1;fillColor=#FAFAFA;strokeColor=#8A8A8A;strokeWidth=1;align=left;verticalAlign=top;spacing=10;fontSize=12;fontColor=#222222;');
+      }
+      const pid = `diagramon-${levels.length + 2}`;
+      return `<diagram name="${esc(title)}" id="${pid}">` +
+        '<mxGraphModel dx="0" dy="0" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="0" pageScale="1" pageWidth="900" pageHeight="1200" math="0" shadow="0"><root>\n' +
+        '<mxCell id="0"/>\n<mxCell id="1" parent="0"/>\n' + cells.join('\n') + '\n</root></mxGraphModel></diagram>';
+    }
+
     const pages = [];
     for (let i = 0; i <= levels.length; i++) pages.push(buildPage(i));
+    if (decisions.length || orphans.length) pages.push(buildDecisionsPage());
     const xml = '<?xml version="1.0" encoding="UTF-8"?>\n' +
       `<mxfile host="Diagramon" agent="Diagramon" version="24.0.0">${pages.join('')}</mxfile>\n`;
     return { text: xml, ext: 'drawio', mime: 'application/xml' };
