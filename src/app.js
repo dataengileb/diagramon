@@ -4099,7 +4099,8 @@
   const DIFF_FIELDS = {
     node: ['label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'exposure', 'backup', 'controls', 'in', 'c4', 'sla', 'rpo', 'rto', 'replicas'],
     edge: ['label', 'style', 'weight', 'route', 'both', 'color', 'data', 'encrypted', 'datasets', 'transferOk', 'threats'],
-    group: ['label', 'icon', 'color', 'parent', 'kind', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'controls', 'in']
+    group: ['label', 'icon', 'color', 'parent', 'kind', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'controls', 'in'],
+    type: ['label', 'dash', 'color', 'width', 'particles'] // tipos de conexión propios (model.edgeTypes), por id
   };
   function diffModels(a, b) {
     const val = (f, x) => (f === 'style' ? x || 'sync' : x == null ? '' : typeof x === 'object' ? JSON.stringify(x) : String(x));
@@ -4117,6 +4118,10 @@
       groups: cmp(a.groups, b.groups, g => g.id, DIFF_FIELDS.group),
       title: a.title !== b.title ? { from: a.title, to: b.title } : null
     };
+    // Tipos de conexión propios: las versiones guardadas antes de que existieran no los tienen (lista vacía)
+    const ty = cmp(a.edgeTypes || [], b.edgeTypes || [], t => t.id, DIFF_FIELDS.type);
+    d.types = { added: ty.added, removed: ty.removed, changed: ty.changed.map(c => ({ id: c.item.id, item: c.item, fields: c.fields })) };
+    d.typeN = d.types.added.length + d.types.removed.length + d.types.changed.length; // no entra en count: «cambiados» se refiere a componentes, conexiones y grupos
     const sum = k => d.nodes[k].length + d.edges[k].length + d.groups[k].length;
     d.count = { a: sum('added'), r: sum('removed'), c: sum('changed') + (d.title ? 1 : 0) };
     return d;
@@ -4166,8 +4171,10 @@
     drawGhosts();
     const bar = $('#compare-bar');
     bar.style.setProperty('--c', verColor(v));
-    $('#compare-text').innerHTML = `${T('ver.comparing', { name: esc(verLabel(v)) })} · ${d.count.a + d.count.r + d.count.c ? esc(T('ver.summary', d.count)) : esc(T('ver.same'))}${cstVerLine(base, S.model) ? ` · ${esc(cstVerLine(base, S.model))}` : ''}${adrBarText()}`;
+    $('#compare-text').innerHTML = `${T('ver.comparing', { name: esc(verLabel(v)) })} · ${d.count.a + d.count.r + d.count.c + d.typeN ? esc(T('ver.summary', d.count)) : esc(T('ver.same'))}${d.typeN ? ` · ${esc(typesBarText(d))}` : ''}${cstVerLine(base, S.model) ? ` · ${esc(cstVerLine(base, S.model))}` : ''}${adrBarText()}`;
   }
+  // «Tipos +1 −0 ~1»: resumen de los cambios en los tipos de conexión propios al comparar
+  const typesBarText = d => T('ver.types.bar', { a: d.types.added.length, r: d.types.removed.length, c: d.types.changed.length });
   function adrBarText() { const c = adrCmp(), n = c?.diff && adrDiffN(c.diff); return n ? ` · ${esc(T('adr.cmp.bar', { a: c.diff.added.length, r: c.diff.removed.length, c: c.diff.changed.length }))}` : ''; }
   function drawGhosts() {
     L.ghosts.textContent = '';
@@ -4262,11 +4269,11 @@
     if (back) { back.focus(); if (caret) back.setSelectionRange(...caret); }
   }
   function diffList(d) {
-    if (!(d.count.a + d.count.r + d.count.c)) return `<p class="ver-sum">${esc(T('ver.same'))}</p>`;
+    if (!(d.count.a + d.count.r + d.count.c + d.typeN)) return `<p class="ver-sum">${esc(T('ver.same'))}</p>`;
     const FIELD = { label: 'insp.name', sub: 'insp.detail', type: 'insp.type', icon: 'insp.icon', group: 'insp.group', color: 'insp.color', badge: 'field.badge',
       cost: 'cost.label', costPeriod: 'cost.period', costYears: 'cost.yearsAria', desc: 'insp.desc', style: 'insp.style', weight: 'wt.label', parent: 'insp.parent',
-      data: 'data.label', encrypted: 'enc.label', route: 'insp.route', both: 'insp.dir', review: 'rev.label', kind: 'gkind.label', exposure: 'sec.expo.label', backup: 'sec.backup.label', controls: 'cmp.title', in: 'c4.in', c4: 'c4.label', sla: 'res.sla', rpo: 'res.rpo', rto: 'res.rto', replicas: 'res.replicas' };
-    const fields = (fs, kind) => fs.map(f => T(kind === 'edge' && f === 'label' ? 'insp.label' : FIELD[f] || f).toLowerCase()).join(', ');
+      data: 'data.label', encrypted: 'enc.label', route: 'insp.route', both: 'insp.dir', review: 'rev.label', kind: 'gkind.label', exposure: 'sec.expo.label', backup: 'sec.backup.label', controls: 'cmp.title', in: 'c4.in', c4: 'c4.label', sla: 'res.sla', rpo: 'res.rpo', rto: 'res.rto', replicas: 'res.replicas', dash: 'et.dash', width: 'et.width', particles: 'et.particles' };
+    const fields = (fs, kind) => fs.map(f => T(kind === 'edge' && f === 'label' ? 'insp.label' : kind === 'type' && f === 'label' ? 'et.label' : FIELD[f] || f).toLowerCase()).join(', ');
     const names = new Map([...S.compare.base.nodes, ...S.model.nodes].map(n => [n.id, n.label]));
     const edgeName = e => `${names.get(e.from) || e.from} ${e.both ? '↔' : '→'} ${names.get(e.to) || e.to}`;
     const rows = [];
@@ -4280,8 +4287,11 @@
     d.edges.added.forEach(e => rows.push(['add', edgeName(e), T('ver.edge')]));
     d.edges.changed.forEach(c => rows.push(['chg', edgeName(c.item), `${T('ver.edge')}: ${fields(c.fields, 'edge')}`]));
     d.edges.removed.forEach(e => rows.push(['del', edgeName(e), T('ver.edge')]));
+    d.types.added.forEach(t => rows.push(['add', t.label, T('ver.type')]));
+    d.types.changed.forEach(c => rows.push(['chg', c.item.label, `${T('ver.type')}: ${fields(c.fields, 'type')}`]));
+    d.types.removed.forEach(t => rows.push(['del', t.label, T('ver.type')]));
     const cl = cstVerLine(S.compare.base, S.model);
-    return `<p class="ver-sum">${esc(T('ver.summary', d.count))}</p>${cl ? `<p class="ver-sum cst-vline">${esc(cl)}</p>` : ''}<ul class="diff-list">${rows.map(([k, name, extra, id]) =>
+    return `<p class="ver-sum">${esc(T('ver.summary', d.count))}</p>${d.typeN ? `<p class="ver-sum">${esc(typesBarText(d))}</p>` : ''}${cl ? `<p class="ver-sum cst-vline">${esc(cl)}</p>` : ''}<ul class="diff-list">${rows.map(([k, name, extra, id]) =>
       `<li class="d-${k}"${id ? ` data-goto="${esc(id)}"` : ''}><i>${k === 'add' ? '+' : k === 'del' ? '−' : '~'}</i><span title="${esc(name)}">${esc(name)}</span>${extra ? `<em title="${esc(extra)}">${esc(extra)}</em>` : ''}</li>`).join('')}</ul>`;
   }
 
@@ -6526,12 +6536,15 @@
     }
 
     if (want('connections')) {
+      const anyW = m.edges.some(e => EDGE_W[e.weight]); // la columna Importancia solo sale si alguna conexión la usa: los informes viejos no cambian
       const rows = m.edges.map(e => {
         const cb = crossBorder(e, byId);
-        return [nm(e.from), nm(e.to) + (e.both ? ' ↔' : ''), e.label || '', edgeStyleLabel(e.style), e.encrypted === true ? T('enc.yes') : e.encrypted === false ? { t: T('enc.no'), tone: 'sev-high' } : T('enc.unset'),
+        return [nm(e.from), nm(e.to) + (e.both ? ' ↔' : ''), e.label || '', edgeStyleLabel(e.style), ...(anyW ? [EDGE_W[e.weight] ? { t: T(`wt.${e.weight}`), tone: e.weight === 'critical' ? 'sev-high' : '' } : T('wt.normal')] : []), e.encrypted === true ? T('enc.yes') : e.encrypted === false ? { t: T('enc.no'), tone: 'sev-high' } : T('enc.unset'),
           dShort(e.data), (e.datasets || []).join(', '), cb ? { t: `${cb.from.region} → ${cb.to.region}${cb.approved ? ' ✓' : ''}`, tone: cb.approved ? '' : 'sev-high' } : ''];
       });
-      sec('connections', [{ k: 'table', head: [repT('h.from'), repT('h.to'), repT('h.label'), repT('h.style'), repT('h.enc'), repT('h.data'), repT('h.datasets'), repT('h.xb')], rows, cls: 'wide' }]);
+      const ets = customTypes(), tb = ets.length ? [{ k: 'h3', t: repT('h.types') }, { k: 'table', head: [repT('h.type'), repT('h.dash'), repT('h.color'), repT('h.width'), repT('h.particles'), repT('h.edges')],
+        rows: ets.map(t => [loc(t.label), t.dash || T('et.solid'), t.color || '', String(t.width ?? 1.8), String(t.particles ?? 1), String(m.edges.filter(e => e.style === t.id).length)]) }] : [];
+      sec('connections', [{ k: 'table', head: [repT('h.from'), repT('h.to'), repT('h.label'), repT('h.style'), ...(anyW ? [T('wt.label')] : []), repT('h.enc'), repT('h.data'), repT('h.datasets'), repT('h.xb')], rows, cls: 'wide' }, ...tb]);
     }
 
     if (want('data')) {
@@ -6921,7 +6934,8 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
   const INV_COMP = [['id'], ['name'], ['detail'], ['type'], ['provider'], ['service'], ['category'], ['c4'], ['level'], ['group'], ['owner'], ['steward'], ['team'], ['costCenter'], ['inherited'], ['region'], ['jurisdiction'],
     ['data'], ['sensitive'], ['layer'], ['exposure'], ['backup'], ['encIn', 'int'], ['encOut', 'int'], ['unencSens', 'int'], ['sla', 'sla'], ['rpo'], ['rto'], ['replicas', 'int'], ['cost', 'money'], ['period'], ['perMonth', 'money'], ['perYear', 'money'],
     ['review'], ['findings', 'int'], ['adrs'], ['compliance'], ['desc']];
-  const INV_CONN = [['id'], ['from'], ['to'], ['label'], ['style'], ['encrypted'], ['data'], ['datasets'], ['crossBorder'], ['transferOk'], ['threats', 'int']];
+  const INV_CONN = [['id'], ['from'], ['to'], ['label'], ['style'], ['weight'], ['custom'], ['encrypted'], ['data'], ['datasets'], ['crossBorder'], ['transferOk'], ['threats', 'int']];
+  const INV_TYPE = [['id'], ['label'], ['dash'], ['color'], ['width'], ['particles', 'int'], ['uses', 'int']];
   const INV_GROUP = [['id'], ['name'], ['parent'], ['kind'], ['region'], ['layer'], ['owner'], ['team'], ['costCenter'], ['count', 'int'], ['monthly', 'money']];
   const INV_OWNER = [['team'], ['owners'], ['stewards'], ['components', 'int'], ['monthly', 'money']];
   const INV_ADR = [['id'], ['title'], ['status'], ['date'], ['links']];
@@ -6976,12 +6990,15 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     out.push(mk('components', INV_COMP, comp.map(r => INV_COMP.map(([k]) => r[k]))));
     // Conexiones
     const open = typeof strideAll === 'function' ? (() => { try { return strideAll(m).filter(t => t.status === 'open'); } catch { return []; } })() : [];
+    const ets = Array.isArray(m.edgeTypes) ? m.edgeTypes : [], etOf = id => ets.find(t => t.id === id); // del modelo que se exporta, no del lienzo
     const conn = m.edges.map(e => {
-      const cb = typeof crossBorder === 'function' ? crossBorder(e, byId) : null;
-      return [e.id || '', nm(e.from), nm(e.to), String(e.label || '').replace(/\s*\n\s*/g, ' '), edgeStyleLabel(e.style), e.encrypted === true ? T('enc.yes') : e.encrypted === false ? T('enc.no') : T('enc.unset'),
+      const cb = typeof crossBorder === 'function' ? crossBorder(e, byId) : null, ct = etOf(e.style);
+      return [e.id || '', nm(e.from), nm(e.to), String(e.label || '').replace(/\s*\n\s*/g, ' '), ct ? loc(ct.label) : edgeStyleLabel(e.style), T(EDGE_W[e.weight] ? `wt.${e.weight}` : 'wt.normal'), invYN(!!ct), e.encrypted === true ? T('enc.yes') : e.encrypted === false ? T('enc.no') : T('enc.unset'),
         (e.data || []).map(k => loc(DATA[k]?.short) || String(k).toUpperCase()).join(' '), (e.datasets || []).join('; '), invYN(!!cb), cb ? invYN(cb.approved) : '', open.filter(t => t.e === e || t.e.id === e.id).length];
     });
     if (conn.length) out.push(mk('connections', INV_CONN, conn));
+    // Tipos de conexión propios (solo si el diagrama los tiene)
+    if (ets.length) out.push(mk('types', INV_TYPE, ets.map(t => [t.id, loc(t.label), t.dash || '', t.color || '', t.width ?? '', t.particles ?? '', m.edges.filter(e => e.style === t.id).length])));
     // Grupos
     const gpath = g => { const p = []; let x = g.parent, i = 0; while (x && i++ < 50) { const gg = m.groups.find(q => q.id === x); if (!gg) break; p.unshift(gg.label); x = gg.parent; } return p.join(' › '); };
     const grp = m.groups.map(g => {
