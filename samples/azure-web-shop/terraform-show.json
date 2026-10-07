@@ -1,0 +1,1904 @@
+{
+  "format_version": "1.0",
+  "terraform_version": "1.9.8",
+  "values": {
+    "root_module": {
+      "resources": [
+        {
+          "address": "azurerm_resource_group.shop",
+          "mode": "managed",
+          "type": "azurerm_resource_group",
+          "name": "shop",
+          "provider_name": "registry.terraform.io/hashicorp/azurerm",
+          "schema_version": 0,
+          "values": {
+            "id": "/subscriptions/2f9b6c1e-4a7d-4f3b-9e58-7c0d1a3b5e92/resourceGroups/rg-shop",
+            "location": "westeurope",
+            "managed_by": "",
+            "name": "rg-shop",
+            "tags": {
+              "project": "shop",
+              "env": "prod",
+              "owner": "platform-team",
+              "data-classification": "confidential"
+            },
+            "timeouts": null
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "azurerm_resource_group.network",
+          "mode": "managed",
+          "type": "azurerm_resource_group",
+          "name": "network",
+          "provider_name": "registry.terraform.io/hashicorp/azurerm",
+          "schema_version": 0,
+          "values": {
+            "id": "/subscriptions/2f9b6c1e-4a7d-4f3b-9e58-7c0d1a3b5e92/resourceGroups/rg-shop-network",
+            "location": "westeurope",
+            "managed_by": "",
+            "name": "rg-shop-network",
+            "tags": {
+              "project": "shop",
+              "env": "prod",
+              "owner": "platform-team",
+              "data-classification": "confidential"
+            },
+            "timeouts": null
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "azurerm_virtual_network.main",
+          "mode": "managed",
+          "type": "azurerm_virtual_network",
+          "name": "main",
+          "provider_name": "registry.terraform.io/hashicorp/azurerm",
+          "schema_version": 0,
+          "values": {
+            "address_space": [
+              "10.40.0.0/16"
+            ],
+            "bgp_community": "",
+            "dns_servers": [],
+            "edge_zone": "",
+            "flow_timeout_in_minutes": 0,
+            "guid": "6a0f3c52-91de-4b27-8c4a-2e7d51b8f903",
+            "id": "/subscriptions/2f9b6c1e-4a7d-4f3b-9e58-7c0d1a3b5e92/resourceGroups/rg-shop-network/providers/Microsoft.Network/virtualNetworks/vnet-shop",
+            "location": "westeurope",
+            "name": "vnet-shop",
+            "resource_group_name": "rg-shop-network",
+            "subnet": [],
+            "tags": {
+              "project": "shop",
+              "env": "prod",
+              "owner": "platform-team",
+              "data-classification": "confidential"
+            },
+            "timeouts": null
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "azurerm_subnet.app",
+          "mode": "managed",
+          "type": "azurerm_subnet",
+          "name": "app",
+          "provider_name": "registry.terraform.io/hashicorp/azurerm",
+          "schema_version": 0,
+          "values": {
+            "address_prefixes": [
+              "10.40.1.0/24"
+            ],
+            "delegation": [
+              {
+                "name": "appservice",
+                "service_delegation": [
+                  {
+                    "actions": [
+                      "Microsoft.Network/virtualNetworks/subnets/action"
+                    ],
+                    "name": "Microsoft.Web/serverFarms"
+                  }
+                ]
+              }
+            ],
+            "enforce_private_link_endpoint_network_policies": false,
+            "enforce_private_link_service_network_policies": false,
+            "id": "/subscriptions/2f9b6c1e-4a7d-4f3b-9e58-7c0d1a3b5e92/resourceGroups/rg-shop-network/providers/Microsoft.Network/virtualNetworks/vnet-shop/subnets/snet-app",
+            "name": "snet-app",
+            "private_endpoint_network_policies_enabled": true,
+            "private_link_service_network_policies_enabled": true,
+            "resource_group_name": "rg-shop-network",
+            "service_endpoint_policy_ids": null,
+            "service_endpoints": [
+              "Microsoft.KeyVault",
+              "Microsoft.Storage"
+            ],
+            "timeouts": null,
+            "virtual_network_name": "vnet-shop"
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "azurerm_subnet.agw",
+          "mode": "managed",
+          "type": "azurerm_subnet",
+          "name": "agw",
+          "provider_name": "registry.terraform.io/hashicorp/azurerm",
+          "schema_version": 0,
+          "values": {
+            "address_prefixes": [
+              "10.40.2.0/24"
+            ],
+            "delegation": [],
+            "enforce_private_link_endpoint_network_policies": false,
+            "enforce_private_link_service_network_policies": false,
+            "id": "/subscriptions/2f9b6c1e-4a7d-4f3b-9e58-7c0d1a3b5e92/resourceGroups/rg-shop-network/providers/Microsoft.Network/virtualNetworks/vnet-shop/subnets/snet-agw",
+            "name": "snet-agw",
+            "private_endpoint_network_policies_enabled": true,
+            "private_link_service_network_policies_enabled": true,
+            "resource_group_name": "rg-shop-network",
+            "service_endpoint_policy_ids": null,
+            "service_endpoints": null,
+            "timeouts": null,
+            "virtual_network_name": "vnet-shop"
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "azurerm_subnet.pe",
+          "mode": "managed",
+          "type": "azurerm_subnet",
+          "name": "pe",
+          "provider_name": "registry.terraform.io/hashicorp/azurerm",
+          "schema_version": 0,
+          "values": {
+            "address_prefixes": [
+              "10.40.3.0/24"
+            ],
+            "delegation": [],
+            "enforce_private_link_endpoint_network_policies": false,
+            "enforce_private_link_service_network_policies": false,
+            "id": "/subscriptions/2f9b6c1e-4a7d-4f3b-9e58-7c0d1a3b5e92/resourceGroups/rg-shop-network/providers/Microsoft.Network/virtualNetworks/vnet-shop/subnets/snet-pe",
+            "name": "snet-pe",
+            "private_endpoint_network_policies_enabled": false,
+            "private_link_service_network_policies_enabled": true,
+            "resource_group_name": "rg-shop-network",
+            "service_endpoint_policy_ids": null,
+            "service_endpoints": null,
+            "timeouts": null,
+            "virtual_network_name": "vnet-shop"
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "azurerm_network_security_group.app",
+          "mode": "managed",
+          "type": "azurerm_network_security_group",
+          "name": "app",
+          "provider_name": "registry.terraform.io/hashicorp/azurerm",
+          "schema_version": 0,
+          "values": {
+            "id": "/subscriptions/2f9b6c1e-4a7d-4f3b-9e58-7c0d1a3b5e92/resourceGroups/rg-shop-network/providers/Microsoft.Network/networkSecurityGroups/nsg-app",
+            "location": "westeurope",
+            "name": "nsg-app",
+            "resource_group_name": "rg-shop-network",
+            "security_rule": [
+              {
+                "access": "Allow",
+                "description": "",
+                "destination_address_prefix": "*",
+                "destination_address_prefixes": [],
+                "destination_port_range": "443",
+                "destination_port_ranges": [],
+                "direction": "Inbound",
+                "name": "https-from-agw",
+                "priority": 100,
+                "protocol": "Tcp",
+                "source_address_prefix": "10.40.2.0/24",
+                "source_address_prefixes": [],
+                "source_port_range": "*",
+                "source_port_ranges": []
+              }
+            ],
+            "tags": {
+              "project": "shop",
+              "env": "prod",
+              "owner": "platform-team",
+              "data-classification": "confidential"
+            },
+            "timeouts": null
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "azurerm_subnet_network_security_group_association.app",
+          "mode": "managed",
+          "type": "azurerm_subnet_network_security_group_association",
+          "name": "app",
+          "provider_name": "registry.terraform.io/hashicorp/azurerm",
+          "schema_version": 0,
+          "values": {
+            "id": "/subscriptions/2f9b6c1e-4a7d-4f3b-9e58-7c0d1a3b5e92/resourceGroups/rg-shop-network/providers/Microsoft.Network/virtualNetworks/vnet-shop/subnets/snet-app",
+            "network_security_group_id": "/subscriptions/2f9b6c1e-4a7d-4f3b-9e58-7c0d1a3b5e92/resourceGroups/rg-shop-network/providers/Microsoft.Network/networkSecurityGroups/nsg-app",
+            "subnet_id": "/subscriptions/2f9b6c1e-4a7d-4f3b-9e58-7c0d1a3b5e92/resourceGroups/rg-shop-network/providers/Microsoft.Network/virtualNetworks/vnet-shop/subnets/snet-app",
+            "timeouts": null
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "azurerm_log_analytics_workspace.main",
+          "mode": "managed",
+          "type": "azurerm_log_analytics_workspace",
+          "name": "main",
+          "provider_name": "registry.terraform.io/hashicorp/azurerm",
+          "schema_version": 0,
+          "values": {
+            "allow_resource_only_permissions": true,
+            "cmk_for_query_forced": false,
+            "daily_quota_gb": -1,
+            "id": "/subscriptions/2f9b6c1e-4a7d-4f3b-9e58-7c0d1a3b5e92/resourceGroups/rg-shop/providers/Microsoft.OperationalInsights/workspaces/log-shop-weu",
+            "internet_ingestion_enabled": true,
+            "internet_query_enabled": true,
+            "local_authentication_disabled": false,
+            "location": "westeurope",
+            "name": "log-shop-weu",
+            "resource_group_name": "rg-shop",
+            "retention_in_days": 30,
+            "sku": "PerGB2018",
+            "tags": {
+              "project": "shop",
+              "env": "prod",
+              "owner": "platform-team",
+              "data-classification": "confidential"
+            },
+            "timeouts": null,
+            "workspace_id": "c7d2f5e9-0b41-4a68-93ad-18e6f0c4b725"
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "azurerm_application_insights.main",
+          "mode": "managed",
+          "type": "azurerm_application_insights",
+          "name": "main",
+          "provider_name": "registry.terraform.io/hashicorp/azurerm",
+          "schema_version": 0,
+          "values": {
+            "app_id": "4f1a8c07-2d93-4e5b-b6a1-0c9e7d3f5a82",
+            "application_type": "web",
+            "connection_string": "InstrumentationKey=e3b0c442-98fc-4c14-9afb-f4c8996fb924;IngestionEndpoint=https://westeurope-5.in.applicationinsights.azure.com/;LiveEndpoint=https://westeurope.livediagnostics.monitor.azure.com/;ApplicationId=4f1a8c07-2d93-4e5b-b6a1-0c9e7d3f5a82",
+            "daily_data_cap_in_gb": 100,
+            "id": "/subscriptions/2f9b6c1e-4a7d-4f3b-9e58-7c0d1a3b5e92/resourceGroups/rg-shop/providers/Microsoft.Insights/components/appi-shop",
+            "instrumentation_key": "e3b0c442-98fc-4c14-9afb-f4c8996fb924",
+            "location": "westeurope",
+            "name": "appi-shop",
+            "resource_group_name": "rg-shop",
+            "retention_in_days": 90,
+            "sampling_percentage": 100,
+            "tags": {
+              "project": "shop",
+              "env": "prod",
+              "owner": "platform-team",
+              "data-classification": "confidential"
+            },
+            "timeouts": null,
+            "workspace_id": "/subscriptions/2f9b6c1e-4a7d-4f3b-9e58-7c0d1a3b5e92/resourceGroups/rg-shop/providers/Microsoft.OperationalInsights/workspaces/log-shop-weu"
+          },
+          "sensitive_values": {
+            "connection_string": true,
+            "instrumentation_key": true
+          }
+        },
+        {
+          "address": "azurerm_storage_account.main",
+          "mode": "managed",
+          "type": "azurerm_storage_account",
+          "name": "main",
+          "provider_name": "registry.terraform.io/hashicorp/azurerm",
+          "schema_version": 0,
+          "values": {
+            "access_tier": "Hot",
+            "account_kind": "StorageV2",
+            "account_replication_type": "GRS",
+            "account_tier": "Standard",
+            "allow_nested_items_to_be_public": false,
+            "enable_https_traffic_only": true,
+            "id": "/subscriptions/2f9b6c1e-4a7d-4f3b-9e58-7c0d1a3b5e92/resourceGroups/rg-shop/providers/Microsoft.Storage/storageAccounts/stshopweu",
+            "location": "westeurope",
+            "min_tls_version": "TLS1_2",
+            "name": "stshopweu",
+            "primary_blob_endpoint": "https://stshopweu.blob.core.windows.net/",
+            "primary_location": "westeurope",
+            "public_network_access_enabled": true,
+            "resource_group_name": "rg-shop",
+            "secondary_location": "northeurope",
+            "tags": {
+              "project": "shop",
+              "env": "prod",
+              "owner": "platform-team",
+              "data-classification": "confidential"
+            },
+            "timeouts": null
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "azurerm_storage_container.assets",
+          "mode": "managed",
+          "type": "azurerm_storage_container",
+          "name": "assets",
+          "provider_name": "registry.terraform.io/hashicorp/azurerm",
+          "schema_version": 0,
+          "values": {
+            "container_access_type": "private",
+            "id": "https://stshopweu.blob.core.windows.net/assets",
+            "name": "assets",
+            "storage_account_name": "stshopweu",
+            "timeouts": null
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "azurerm_storage_account.dr",
+          "mode": "managed",
+          "type": "azurerm_storage_account",
+          "name": "dr",
+          "provider_name": "registry.terraform.io/hashicorp/azurerm",
+          "schema_version": 0,
+          "values": {
+            "access_tier": "Cool",
+            "account_kind": "StorageV2",
+            "account_replication_type": "LRS",
+            "account_tier": "Standard",
+            "allow_nested_items_to_be_public": false,
+            "enable_https_traffic_only": true,
+            "id": "/subscriptions/2f9b6c1e-4a7d-4f3b-9e58-7c0d1a3b5e92/resourceGroups/rg-shop/providers/Microsoft.Storage/storageAccounts/stshopdrneu",
+            "location": "northeurope",
+            "min_tls_version": "TLS1_2",
+            "name": "stshopdrneu",
+            "primary_blob_endpoint": "https://stshopdrneu.blob.core.windows.net/",
+            "primary_location": "northeurope",
+            "public_network_access_enabled": false,
+            "resource_group_name": "rg-shop",
+            "tags": {
+              "project": "shop",
+              "env": "prod",
+              "owner": "platform-team",
+              "data-classification": "confidential",
+              "purpose": "disaster-recovery"
+            },
+            "timeouts": null
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "azurerm_key_vault.main",
+          "mode": "managed",
+          "type": "azurerm_key_vault",
+          "name": "main",
+          "provider_name": "registry.terraform.io/hashicorp/azurerm",
+          "schema_version": 0,
+          "values": {
+            "access_policy": [],
+            "enable_rbac_authorization": true,
+            "enabled_for_deployment": false,
+            "id": "/subscriptions/2f9b6c1e-4a7d-4f3b-9e58-7c0d1a3b5e92/resourceGroups/rg-shop/providers/Microsoft.KeyVault/vaults/kv-shop-weu",
+            "location": "westeurope",
+            "name": "kv-shop-weu",
+            "public_network_access_enabled": true,
+            "purge_protection_enabled": true,
+            "resource_group_name": "rg-shop",
+            "sku_name": "standard",
+            "soft_delete_retention_days": 90,
+            "tags": {
+              "project": "shop",
+              "env": "prod",
+              "owner": "platform-team",
+              "data-classification": "confidential"
+            },
+            "tenant_id": "9d4e7a12-3c58-4b1f-a6e0-5f8c2b7d1034",
+            "timeouts": null,
+            "vault_uri": "https://kv-shop-weu.vault.azure.net/"
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "azurerm_servicebus_namespace.main",
+          "mode": "managed",
+          "type": "azurerm_servicebus_namespace",
+          "name": "main",
+          "provider_name": "registry.terraform.io/hashicorp/azurerm",
+          "schema_version": 0,
+          "values": {
+            "capacity": 0,
+            "default_primary_connection_string": "Endpoint=sb://sb-shop-weu.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=REDACTED",
+            "endpoint": "https://sb-shop-weu.servicebus.windows.net:443/",
+            "id": "/subscriptions/2f9b6c1e-4a7d-4f3b-9e58-7c0d1a3b5e92/resourceGroups/rg-shop/providers/Microsoft.ServiceBus/namespaces/sb-shop-weu",
+            "identity": [],
+            "local_auth_enabled": false,
+            "location": "westeurope",
+            "minimum_tls_version": "1.2",
+            "name": "sb-shop-weu",
+            "premium_messaging_partitions": 0,
+            "public_network_access_enabled": true,
+            "resource_group_name": "rg-shop",
+            "sku": "Standard",
+            "tags": {
+              "project": "shop",
+              "env": "prod",
+              "owner": "platform-team",
+              "data-classification": "confidential"
+            },
+            "timeouts": null
+          },
+          "sensitive_values": {
+            "default_primary_connection_string": true
+          }
+        },
+        {
+          "address": "azurerm_servicebus_queue.orders",
+          "mode": "managed",
+          "type": "azurerm_servicebus_queue",
+          "name": "orders",
+          "provider_name": "registry.terraform.io/hashicorp/azurerm",
+          "schema_version": 0,
+          "values": {
+            "dead_lettering_on_message_expiration": true,
+            "default_message_ttl": "P14D",
+            "enable_partitioning": false,
+            "id": "/subscriptions/2f9b6c1e-4a7d-4f3b-9e58-7c0d1a3b5e92/resourceGroups/rg-shop/providers/Microsoft.ServiceBus/namespaces/sb-shop-weu/queues/orders",
+            "lock_duration": "PT1M",
+            "max_delivery_count": 10,
+            "name": "orders",
+            "namespace_id": "/subscriptions/2f9b6c1e-4a7d-4f3b-9e58-7c0d1a3b5e92/resourceGroups/rg-shop/providers/Microsoft.ServiceBus/namespaces/sb-shop-weu",
+            "requires_session": false,
+            "timeouts": null
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "azurerm_service_plan.web",
+          "mode": "managed",
+          "type": "azurerm_service_plan",
+          "name": "web",
+          "provider_name": "registry.terraform.io/hashicorp/azurerm",
+          "schema_version": 0,
+          "values": {
+            "id": "/subscriptions/2f9b6c1e-4a7d-4f3b-9e58-7c0d1a3b5e92/resourceGroups/rg-shop/providers/Microsoft.Web/serverFarms/asp-shop",
+            "kind": "linux",
+            "location": "westeurope",
+            "maximum_elastic_worker_count": 1,
+            "name": "asp-shop",
+            "os_type": "Linux",
+            "per_site_scaling_enabled": false,
+            "reserved": true,
+            "resource_group_name": "rg-shop",
+            "sku_name": "P1v3",
+            "tags": {
+              "project": "shop",
+              "env": "prod",
+              "owner": "platform-team",
+              "data-classification": "confidential"
+            },
+            "timeouts": null,
+            "worker_count": 2,
+            "zone_balancing_enabled": false
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "azurerm_service_plan.func",
+          "mode": "managed",
+          "type": "azurerm_service_plan",
+          "name": "func",
+          "provider_name": "registry.terraform.io/hashicorp/azurerm",
+          "schema_version": 0,
+          "values": {
+            "id": "/subscriptions/2f9b6c1e-4a7d-4f3b-9e58-7c0d1a3b5e92/resourceGroups/rg-shop/providers/Microsoft.Web/serverFarms/asp-shop-func",
+            "kind": "elastic",
+            "location": "westeurope",
+            "maximum_elastic_worker_count": 20,
+            "name": "asp-shop-func",
+            "os_type": "Linux",
+            "per_site_scaling_enabled": false,
+            "reserved": true,
+            "resource_group_name": "rg-shop",
+            "sku_name": "EP1",
+            "tags": {
+              "project": "shop",
+              "env": "prod",
+              "owner": "platform-team",
+              "data-classification": "confidential"
+            },
+            "timeouts": null,
+            "worker_count": 1,
+            "zone_balancing_enabled": false
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "azurerm_linux_web_app.shop",
+          "mode": "managed",
+          "type": "azurerm_linux_web_app",
+          "name": "shop",
+          "provider_name": "registry.terraform.io/hashicorp/azurerm",
+          "schema_version": 0,
+          "values": {
+            "app_settings": {
+              "APPLICATIONINSIGHTS_CONNECTION_STRING": "InstrumentationKey=e3b0c442-98fc-4c14-9afb-f4c8996fb924;IngestionEndpoint=https://westeurope-5.in.applicationinsights.azure.com/;LiveEndpoint=https://westeurope.livediagnostics.monitor.azure.com/;ApplicationId=4f1a8c07-2d93-4e5b-b6a1-0c9e7d3f5a82",
+              "SQL_CONNECTION_STRING": "Server=tcp:sql-shop-weu.database.windows.net,1433;Initial Catalog=sqldb-orders;Authentication=Active Directory Default;Encrypt=True;",
+              "SERVICEBUS__fullyQualifiedNamespace": "sb-shop-weu.servicebus.windows.net",
+              "KEYVAULT_URI": "https://kv-shop-weu.vault.azure.net/",
+              "ASSETS_BLOB_ENDPOINT": "https://stshopweu.blob.core.windows.net/assets"
+            },
+            "client_affinity_enabled": false,
+            "custom_domain_verification_id": "A1B2C3D4E5F60718293A4B5C6D7E8F90A1B2C3D4E5F60718293A4B5C6D7E8F90",
+            "default_hostname": "app-shop.azurewebsites.net",
+            "enabled": true,
+            "https_only": true,
+            "id": "/subscriptions/2f9b6c1e-4a7d-4f3b-9e58-7c0d1a3b5e92/resourceGroups/rg-shop/providers/Microsoft.Web/sites/app-shop",
+            "identity": [
+              {
+                "identity_ids": [],
+                "principal_id": "0b7e4d21-6c93-48fa-a5d0-3e1f9c8b2a74",
+                "tenant_id": "9d4e7a12-3c58-4b1f-a6e0-5f8c2b7d1034",
+                "type": "SystemAssigned"
+              }
+            ],
+            "kind": "app,linux",
+            "location": "westeurope",
+            "name": "app-shop",
+            "public_network_access_enabled": true,
+            "resource_group_name": "rg-shop",
+            "service_plan_id": "/subscriptions/2f9b6c1e-4a7d-4f3b-9e58-7c0d1a3b5e92/resourceGroups/rg-shop/providers/Microsoft.Web/serverFarms/asp-shop",
+            "site_config": [
+              {
+                "always_on": true,
+                "application_stack": [
+                  {
+                    "node_version": "20-lts"
+                  }
+                ],
+                "ftps_state": "Disabled",
+                "http2_enabled": true,
+                "minimum_tls_version": "1.2",
+                "vnet_route_all_enabled": true
+              }
+            ],
+            "tags": {
+              "project": "shop",
+              "env": "prod",
+              "owner": "platform-team",
+              "data-classification": "confidential"
+            },
+            "timeouts": null,
+            "virtual_network_subnet_id": "/subscriptions/2f9b6c1e-4a7d-4f3b-9e58-7c0d1a3b5e92/resourceGroups/rg-shop-network/providers/Microsoft.Network/virtualNetworks/vnet-shop/subnets/snet-app",
+            "zip_deploy_file": ""
+          },
+          "sensitive_values": {
+            "app_settings": {
+              "APPLICATIONINSIGHTS_CONNECTION_STRING": true
+            }
+          }
+        },
+        {
+          "address": "azurerm_linux_function_app.orders",
+          "mode": "managed",
+          "type": "azurerm_linux_function_app",
+          "name": "orders",
+          "provider_name": "registry.terraform.io/hashicorp/azurerm",
+          "schema_version": 0,
+          "values": {
+            "app_settings": {
+              "ServiceBusConnection__fullyQualifiedNamespace": "sb-shop-weu.servicebus.windows.net",
+              "SQL_SERVER": "sql-shop-weu.database.windows.net",
+              "APPINSIGHTS_INSTRUMENTATIONKEY": "e3b0c442-98fc-4c14-9afb-f4c8996fb924"
+            },
+            "builtin_logging_enabled": true,
+            "client_certificate_mode": "Required",
+            "default_hostname": "func-shop-orders.azurewebsites.net",
+            "enabled": true,
+            "functions_extension_version": "~4",
+            "https_only": true,
+            "id": "/subscriptions/2f9b6c1e-4a7d-4f3b-9e58-7c0d1a3b5e92/resourceGroups/rg-shop/providers/Microsoft.Web/sites/func-shop-orders",
+            "identity": [
+              {
+                "identity_ids": [],
+                "principal_id": "5d9a1f30-72b8-4c6e-8e04-b3a7c1d2f956",
+                "tenant_id": "9d4e7a12-3c58-4b1f-a6e0-5f8c2b7d1034",
+                "type": "SystemAssigned"
+              }
+            ],
+            "kind": "functionapp,linux",
+            "location": "westeurope",
+            "name": "func-shop-orders",
+            "resource_group_name": "rg-shop",
+            "service_plan_id": "/subscriptions/2f9b6c1e-4a7d-4f3b-9e58-7c0d1a3b5e92/resourceGroups/rg-shop/providers/Microsoft.Web/serverFarms/asp-shop-func",
+            "site_config": [
+              {
+                "application_stack": [
+                  {
+                    "python_version": "3.11"
+                  }
+                ],
+                "ftps_state": "Disabled",
+                "minimum_tls_version": "1.2",
+                "vnet_route_all_enabled": true
+              }
+            ],
+            "storage_account_access_key": "REDACTED",
+            "storage_account_name": "stshopweu",
+            "tags": {
+              "project": "shop",
+              "env": "prod",
+              "owner": "platform-team",
+              "data-classification": "confidential"
+            },
+            "timeouts": null,
+            "virtual_network_subnet_id": null
+          },
+          "sensitive_values": {
+            "storage_account_access_key": true
+          }
+        },
+        {
+          "address": "azurerm_app_service_virtual_network_swift_connection.func",
+          "mode": "managed",
+          "type": "azurerm_app_service_virtual_network_swift_connection",
+          "name": "func",
+          "provider_name": "registry.terraform.io/hashicorp/azurerm",
+          "schema_version": 0,
+          "values": {
+            "app_service_id": "/subscriptions/2f9b6c1e-4a7d-4f3b-9e58-7c0d1a3b5e92/resourceGroups/rg-shop/providers/Microsoft.Web/sites/func-shop-orders",
+            "id": "/subscriptions/2f9b6c1e-4a7d-4f3b-9e58-7c0d1a3b5e92/resourceGroups/rg-shop/providers/Microsoft.Web/sites/func-shop-orders/config/virtualNetwork",
+            "subnet_id": "/subscriptions/2f9b6c1e-4a7d-4f3b-9e58-7c0d1a3b5e92/resourceGroups/rg-shop-network/providers/Microsoft.Network/virtualNetworks/vnet-shop/subnets/snet-app",
+            "timeouts": null
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "azurerm_mssql_server.main",
+          "mode": "managed",
+          "type": "azurerm_mssql_server",
+          "name": "main",
+          "provider_name": "registry.terraform.io/hashicorp/azurerm",
+          "schema_version": 0,
+          "values": {
+            "administrator_login": "sqladmin",
+            "azuread_administrator": [
+              {
+                "azuread_authentication_only": true,
+                "login_username": "sql-admins",
+                "object_id": "8c3e5a17-4f20-4d96-b1a8-62d0e7f9c354",
+                "tenant_id": "9d4e7a12-3c58-4b1f-a6e0-5f8c2b7d1034"
+              }
+            ],
+            "connection_policy": "Default",
+            "fully_qualified_domain_name": "sql-shop-weu.database.windows.net",
+            "id": "/subscriptions/2f9b6c1e-4a7d-4f3b-9e58-7c0d1a3b5e92/resourceGroups/rg-shop/providers/Microsoft.Sql/servers/sql-shop-weu",
+            "identity": [],
+            "location": "westeurope",
+            "minimum_tls_version": "1.2",
+            "name": "sql-shop-weu",
+            "outbound_network_restriction_enabled": false,
+            "primary_user_assigned_identity_id": "",
+            "public_network_access_enabled": false,
+            "resource_group_name": "rg-shop",
+            "restorable_dropped_database_ids": [],
+            "tags": {
+              "project": "shop",
+              "env": "prod",
+              "owner": "platform-team",
+              "data-classification": "confidential"
+            },
+            "timeouts": null,
+            "version": "12.0"
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "azurerm_mssql_database.orders",
+          "mode": "managed",
+          "type": "azurerm_mssql_database",
+          "name": "orders",
+          "provider_name": "registry.terraform.io/hashicorp/azurerm",
+          "schema_version": 0,
+          "values": {
+            "auto_pause_delay_in_minutes": 60,
+            "collation": "SQL_Latin1_General_CP1_CI_AS",
+            "create_mode": "Default",
+            "geo_backup_enabled": true,
+            "id": "/subscriptions/2f9b6c1e-4a7d-4f3b-9e58-7c0d1a3b5e92/resourceGroups/rg-shop/providers/Microsoft.Sql/servers/sql-shop-weu/databases/sqldb-orders",
+            "license_type": "LicenseIncluded",
+            "max_size_gb": 32,
+            "min_capacity": 0.5,
+            "name": "sqldb-orders",
+            "read_replica_count": 0,
+            "read_scale": false,
+            "server_id": "/subscriptions/2f9b6c1e-4a7d-4f3b-9e58-7c0d1a3b5e92/resourceGroups/rg-shop/providers/Microsoft.Sql/servers/sql-shop-weu",
+            "sku_name": "GP_S_Gen5_2",
+            "storage_account_type": "Geo",
+            "tags": {
+              "project": "shop",
+              "env": "prod",
+              "owner": "platform-team",
+              "data-classification": "confidential"
+            },
+            "timeouts": null,
+            "zone_redundant": false
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "azurerm_private_dns_zone.sql",
+          "mode": "managed",
+          "type": "azurerm_private_dns_zone",
+          "name": "sql",
+          "provider_name": "registry.terraform.io/hashicorp/azurerm",
+          "schema_version": 0,
+          "values": {
+            "id": "/subscriptions/2f9b6c1e-4a7d-4f3b-9e58-7c0d1a3b5e92/resourceGroups/rg-shop/providers/Microsoft.Network/privateDnsZones/privatelink.database.windows.net",
+            "max_number_of_record_sets": 25000,
+            "max_number_of_virtual_network_links": 1000,
+            "name": "privatelink.database.windows.net",
+            "number_of_record_sets": 1,
+            "resource_group_name": "rg-shop",
+            "tags": {
+              "project": "shop",
+              "env": "prod",
+              "owner": "platform-team",
+              "data-classification": "confidential"
+            },
+            "timeouts": null
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "azurerm_private_dns_zone_virtual_network_link.sql",
+          "mode": "managed",
+          "type": "azurerm_private_dns_zone_virtual_network_link",
+          "name": "sql",
+          "provider_name": "registry.terraform.io/hashicorp/azurerm",
+          "schema_version": 0,
+          "values": {
+            "id": "/subscriptions/2f9b6c1e-4a7d-4f3b-9e58-7c0d1a3b5e92/resourceGroups/rg-shop/providers/Microsoft.Network/privateDnsZones/privatelink.database.windows.net/virtualNetworkLinks/link-vnet-shop",
+            "name": "link-vnet-shop",
+            "private_dns_zone_name": "privatelink.database.windows.net",
+            "registration_enabled": false,
+            "resource_group_name": "rg-shop",
+            "tags": {
+              "project": "shop",
+              "env": "prod",
+              "owner": "platform-team",
+              "data-classification": "confidential"
+            },
+            "timeouts": null,
+            "virtual_network_id": "/subscriptions/2f9b6c1e-4a7d-4f3b-9e58-7c0d1a3b5e92/resourceGroups/rg-shop-network/providers/Microsoft.Network/virtualNetworks/vnet-shop"
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "azurerm_private_endpoint.sql",
+          "mode": "managed",
+          "type": "azurerm_private_endpoint",
+          "name": "sql",
+          "provider_name": "registry.terraform.io/hashicorp/azurerm",
+          "schema_version": 0,
+          "values": {
+            "custom_network_interface_name": "",
+            "id": "/subscriptions/2f9b6c1e-4a7d-4f3b-9e58-7c0d1a3b5e92/resourceGroups/rg-shop/providers/Microsoft.Network/privateEndpoints/pe-sql-shop",
+            "location": "westeurope",
+            "name": "pe-sql-shop",
+            "private_dns_zone_group": [
+              {
+                "id": "/subscriptions/2f9b6c1e-4a7d-4f3b-9e58-7c0d1a3b5e92/resourceGroups/rg-shop/providers/Microsoft.Network/privateEndpoints/pe-sql-shop/privateDnsZoneGroups/default",
+                "name": "default",
+                "private_dns_zone_ids": [
+                  "/subscriptions/2f9b6c1e-4a7d-4f3b-9e58-7c0d1a3b5e92/resourceGroups/rg-shop/providers/Microsoft.Network/privateDnsZones/privatelink.database.windows.net"
+                ]
+              }
+            ],
+            "private_service_connection": [
+              {
+                "is_manual_connection": false,
+                "name": "psc-sql",
+                "private_connection_resource_alias": "",
+                "private_connection_resource_id": "/subscriptions/2f9b6c1e-4a7d-4f3b-9e58-7c0d1a3b5e92/resourceGroups/rg-shop/providers/Microsoft.Sql/servers/sql-shop-weu",
+                "private_ip_address": "10.40.3.4",
+                "request_message": "",
+                "subresource_names": [
+                  "sqlServer"
+                ]
+              }
+            ],
+            "resource_group_name": "rg-shop",
+            "subnet_id": "/subscriptions/2f9b6c1e-4a7d-4f3b-9e58-7c0d1a3b5e92/resourceGroups/rg-shop-network/providers/Microsoft.Network/virtualNetworks/vnet-shop/subnets/snet-pe",
+            "tags": {
+              "project": "shop",
+              "env": "prod",
+              "owner": "platform-team",
+              "data-classification": "confidential"
+            },
+            "timeouts": null
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "azurerm_public_ip.agw",
+          "mode": "managed",
+          "type": "azurerm_public_ip",
+          "name": "agw",
+          "provider_name": "registry.terraform.io/hashicorp/azurerm",
+          "schema_version": 0,
+          "values": {
+            "allocation_method": "Static",
+            "domain_name_label": "agw-shop-weu",
+            "fqdn": "agw-shop-weu.westeurope.cloudapp.azure.com",
+            "id": "/subscriptions/2f9b6c1e-4a7d-4f3b-9e58-7c0d1a3b5e92/resourceGroups/rg-shop/providers/Microsoft.Network/publicIPAddresses/pip-agw-shop",
+            "ip_address": "20.103.84.17",
+            "ip_version": "IPv4",
+            "location": "westeurope",
+            "name": "pip-agw-shop",
+            "resource_group_name": "rg-shop",
+            "sku": "Standard",
+            "sku_tier": "Regional",
+            "tags": {
+              "project": "shop",
+              "env": "prod",
+              "owner": "platform-team",
+              "data-classification": "confidential"
+            },
+            "timeouts": null,
+            "zones": [
+              "1",
+              "2",
+              "3"
+            ]
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "azurerm_application_gateway.main",
+          "mode": "managed",
+          "type": "azurerm_application_gateway",
+          "name": "main",
+          "provider_name": "registry.terraform.io/hashicorp/azurerm",
+          "schema_version": 0,
+          "values": {
+            "backend_address_pool": [
+              {
+                "fqdns": [
+                  "app-shop.azurewebsites.net"
+                ],
+                "id": "/subscriptions/2f9b6c1e-4a7d-4f3b-9e58-7c0d1a3b5e92/resourceGroups/rg-shop/providers/Microsoft.Network/applicationGateways/agw-shop/backendAddressPools/pool-web",
+                "ip_addresses": [],
+                "name": "pool-web"
+              }
+            ],
+            "backend_http_settings": [
+              {
+                "cookie_based_affinity": "Disabled",
+                "host_name": "",
+                "id": "/subscriptions/2f9b6c1e-4a7d-4f3b-9e58-7c0d1a3b5e92/resourceGroups/rg-shop/providers/Microsoft.Network/applicationGateways/agw-shop/backendHttpSettingsCollection/https-settings",
+                "name": "https-settings",
+                "pick_host_name_from_backend_address": true,
+                "port": 443,
+                "protocol": "Https",
+                "request_timeout": 30
+              }
+            ],
+            "firewall_policy_id": "",
+            "frontend_ip_configuration": [
+              {
+                "id": "/subscriptions/2f9b6c1e-4a7d-4f3b-9e58-7c0d1a3b5e92/resourceGroups/rg-shop/providers/Microsoft.Network/applicationGateways/agw-shop/frontendIPConfigurations/feip-public",
+                "name": "feip-public",
+                "private_ip_address": "",
+                "private_ip_address_allocation": "Dynamic",
+                "public_ip_address_id": "/subscriptions/2f9b6c1e-4a7d-4f3b-9e58-7c0d1a3b5e92/resourceGroups/rg-shop/providers/Microsoft.Network/publicIPAddresses/pip-agw-shop",
+                "subnet_id": ""
+              }
+            ],
+            "frontend_port": [
+              {
+                "id": "/subscriptions/2f9b6c1e-4a7d-4f3b-9e58-7c0d1a3b5e92/resourceGroups/rg-shop/providers/Microsoft.Network/applicationGateways/agw-shop/frontendPorts/port-443",
+                "name": "port-443",
+                "port": 443
+              }
+            ],
+            "gateway_ip_configuration": [
+              {
+                "id": "/subscriptions/2f9b6c1e-4a7d-4f3b-9e58-7c0d1a3b5e92/resourceGroups/rg-shop/providers/Microsoft.Network/applicationGateways/agw-shop/gatewayIPConfigurations/gwip",
+                "name": "gwip",
+                "subnet_id": "/subscriptions/2f9b6c1e-4a7d-4f3b-9e58-7c0d1a3b5e92/resourceGroups/rg-shop-network/providers/Microsoft.Network/virtualNetworks/vnet-shop/subnets/snet-agw"
+              }
+            ],
+            "http_listener": [
+              {
+                "frontend_ip_configuration_name": "feip-public",
+                "frontend_port_name": "port-443",
+                "host_name": "shop.contoso.example",
+                "name": "listener-https",
+                "protocol": "Https"
+              }
+            ],
+            "id": "/subscriptions/2f9b6c1e-4a7d-4f3b-9e58-7c0d1a3b5e92/resourceGroups/rg-shop/providers/Microsoft.Network/applicationGateways/agw-shop",
+            "location": "westeurope",
+            "name": "agw-shop",
+            "resource_group_name": "rg-shop",
+            "sku": [
+              {
+                "capacity": 2,
+                "name": "WAF_v2",
+                "tier": "WAF_v2"
+              }
+            ],
+            "tags": {
+              "project": "shop",
+              "env": "prod",
+              "owner": "platform-team",
+              "data-classification": "confidential"
+            },
+            "timeouts": null,
+            "zones": [
+              "1",
+              "2",
+              "3"
+            ]
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "azurerm_cdn_frontdoor_profile.main",
+          "mode": "managed",
+          "type": "azurerm_cdn_frontdoor_profile",
+          "name": "main",
+          "provider_name": "registry.terraform.io/hashicorp/azurerm",
+          "schema_version": 0,
+          "values": {
+            "id": "/subscriptions/2f9b6c1e-4a7d-4f3b-9e58-7c0d1a3b5e92/resourceGroups/rg-shop/providers/Microsoft.Cdn/profiles/afd-shop",
+            "name": "afd-shop",
+            "resource_group_name": "rg-shop",
+            "resource_guid": "b9c4e0d1-3a57-4f82-a6d9-7e2c8b1f4503",
+            "response_timeout_seconds": 120,
+            "sku_name": "Premium_AzureFrontDoor",
+            "tags": {
+              "project": "shop",
+              "env": "prod",
+              "owner": "platform-team",
+              "data-classification": "confidential"
+            },
+            "timeouts": null
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "azurerm_cdn_frontdoor_endpoint.main",
+          "mode": "managed",
+          "type": "azurerm_cdn_frontdoor_endpoint",
+          "name": "main",
+          "provider_name": "registry.terraform.io/hashicorp/azurerm",
+          "schema_version": 0,
+          "values": {
+            "cdn_frontdoor_profile_id": "/subscriptions/2f9b6c1e-4a7d-4f3b-9e58-7c0d1a3b5e92/resourceGroups/rg-shop/providers/Microsoft.Cdn/profiles/afd-shop",
+            "enabled": true,
+            "host_name": "ep-shop-d2e6a4c8b0f1h3g5.z01.azurefd.net",
+            "id": "/subscriptions/2f9b6c1e-4a7d-4f3b-9e58-7c0d1a3b5e92/resourceGroups/rg-shop/providers/Microsoft.Cdn/profiles/afd-shop/afdEndpoints/ep-shop",
+            "name": "ep-shop",
+            "tags": {
+              "project": "shop",
+              "env": "prod",
+              "owner": "platform-team",
+              "data-classification": "confidential"
+            },
+            "timeouts": null
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "azurerm_cdn_frontdoor_origin_group.main",
+          "mode": "managed",
+          "type": "azurerm_cdn_frontdoor_origin_group",
+          "name": "main",
+          "provider_name": "registry.terraform.io/hashicorp/azurerm",
+          "schema_version": 0,
+          "values": {
+            "cdn_frontdoor_profile_id": "/subscriptions/2f9b6c1e-4a7d-4f3b-9e58-7c0d1a3b5e92/resourceGroups/rg-shop/providers/Microsoft.Cdn/profiles/afd-shop",
+            "id": "/subscriptions/2f9b6c1e-4a7d-4f3b-9e58-7c0d1a3b5e92/resourceGroups/rg-shop/providers/Microsoft.Cdn/profiles/afd-shop/originGroups/og-shop",
+            "name": "og-shop",
+            "restore_traffic_time_to_healed_or_new_endpoint_in_minutes": 10,
+            "session_affinity_enabled": false,
+            "timeouts": null
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "azurerm_cdn_frontdoor_origin.agw",
+          "mode": "managed",
+          "type": "azurerm_cdn_frontdoor_origin",
+          "name": "agw",
+          "provider_name": "registry.terraform.io/hashicorp/azurerm",
+          "schema_version": 0,
+          "values": {
+            "cdn_frontdoor_origin_group_id": "/subscriptions/2f9b6c1e-4a7d-4f3b-9e58-7c0d1a3b5e92/resourceGroups/rg-shop/providers/Microsoft.Cdn/profiles/afd-shop/originGroups/og-shop",
+            "certificate_name_check_enabled": true,
+            "enabled": true,
+            "host_name": "agw-shop-weu.westeurope.cloudapp.azure.com",
+            "http_port": 80,
+            "https_port": 443,
+            "id": "/subscriptions/2f9b6c1e-4a7d-4f3b-9e58-7c0d1a3b5e92/resourceGroups/rg-shop/providers/Microsoft.Cdn/profiles/afd-shop/originGroups/og-shop/origins/origin-agw",
+            "name": "origin-agw",
+            "origin_host_header": "agw-shop-weu.westeurope.cloudapp.azure.com",
+            "priority": 1,
+            "private_link": [],
+            "timeouts": null,
+            "weight": 1000
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "azurerm_cdn_frontdoor_route.main",
+          "mode": "managed",
+          "type": "azurerm_cdn_frontdoor_route",
+          "name": "main",
+          "provider_name": "registry.terraform.io/hashicorp/azurerm",
+          "schema_version": 0,
+          "values": {
+            "cache": [],
+            "cdn_frontdoor_endpoint_id": "/subscriptions/2f9b6c1e-4a7d-4f3b-9e58-7c0d1a3b5e92/resourceGroups/rg-shop/providers/Microsoft.Cdn/profiles/afd-shop/afdEndpoints/ep-shop",
+            "cdn_frontdoor_origin_group_id": "/subscriptions/2f9b6c1e-4a7d-4f3b-9e58-7c0d1a3b5e92/resourceGroups/rg-shop/providers/Microsoft.Cdn/profiles/afd-shop/originGroups/og-shop",
+            "cdn_frontdoor_origin_ids": [
+              "/subscriptions/2f9b6c1e-4a7d-4f3b-9e58-7c0d1a3b5e92/resourceGroups/rg-shop/providers/Microsoft.Cdn/profiles/afd-shop/originGroups/og-shop/origins/origin-agw"
+            ],
+            "enabled": true,
+            "forwarding_protocol": "HttpsOnly",
+            "https_redirect_enabled": true,
+            "id": "/subscriptions/2f9b6c1e-4a7d-4f3b-9e58-7c0d1a3b5e92/resourceGroups/rg-shop/providers/Microsoft.Cdn/profiles/afd-shop/afdEndpoints/ep-shop/routes/route-shop",
+            "name": "route-shop",
+            "patterns_to_match": [
+              "/*"
+            ],
+            "supported_protocols": [
+              "Http",
+              "Https"
+            ],
+            "timeouts": null
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "azurerm_role_assignment.web_kv",
+          "mode": "managed",
+          "type": "azurerm_role_assignment",
+          "name": "web_kv",
+          "provider_name": "registry.terraform.io/hashicorp/azurerm",
+          "schema_version": 0,
+          "values": {
+            "condition": "",
+            "condition_version": "",
+            "delegated_managed_identity_resource_id": "",
+            "description": "",
+            "id": "/subscriptions/2f9b6c1e-4a7d-4f3b-9e58-7c0d1a3b5e92/resourceGroups/rg-shop/providers/Microsoft.KeyVault/vaults/kv-shop-weu/providers/Microsoft.Authorization/roleAssignments/web_kv-0a1b2c3d",
+            "name": "web_kv-0a1b2c3d",
+            "principal_id": "0b7e4d21-6c93-48fa-a5d0-3e1f9c8b2a74",
+            "principal_type": "ServicePrincipal",
+            "role_definition_id": "/subscriptions/2f9b6c1e-4a7d-4f3b-9e58-7c0d1a3b5e92/providers/Microsoft.Authorization/roleDefinitions/Key Vault Secrets User",
+            "role_definition_name": "Key Vault Secrets User",
+            "scope": "/subscriptions/2f9b6c1e-4a7d-4f3b-9e58-7c0d1a3b5e92/resourceGroups/rg-shop/providers/Microsoft.KeyVault/vaults/kv-shop-weu",
+            "skip_service_principal_aad_check": null,
+            "timeouts": null
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "azurerm_role_assignment.web_blob",
+          "mode": "managed",
+          "type": "azurerm_role_assignment",
+          "name": "web_blob",
+          "provider_name": "registry.terraform.io/hashicorp/azurerm",
+          "schema_version": 0,
+          "values": {
+            "condition": "",
+            "condition_version": "",
+            "delegated_managed_identity_resource_id": "",
+            "description": "",
+            "id": "/subscriptions/2f9b6c1e-4a7d-4f3b-9e58-7c0d1a3b5e92/resourceGroups/rg-shop/providers/Microsoft.Storage/storageAccounts/stshopweu/providers/Microsoft.Authorization/roleAssignments/web_blob-0a1b2c3d",
+            "name": "web_blob-0a1b2c3d",
+            "principal_id": "0b7e4d21-6c93-48fa-a5d0-3e1f9c8b2a74",
+            "principal_type": "ServicePrincipal",
+            "role_definition_id": "/subscriptions/2f9b6c1e-4a7d-4f3b-9e58-7c0d1a3b5e92/providers/Microsoft.Authorization/roleDefinitions/Storage Blob Data Reader",
+            "role_definition_name": "Storage Blob Data Reader",
+            "scope": "/subscriptions/2f9b6c1e-4a7d-4f3b-9e58-7c0d1a3b5e92/resourceGroups/rg-shop/providers/Microsoft.Storage/storageAccounts/stshopweu",
+            "skip_service_principal_aad_check": null,
+            "timeouts": null
+          },
+          "sensitive_values": {}
+        },
+        {
+          "address": "azurerm_role_assignment.func_sb",
+          "mode": "managed",
+          "type": "azurerm_role_assignment",
+          "name": "func_sb",
+          "provider_name": "registry.terraform.io/hashicorp/azurerm",
+          "schema_version": 0,
+          "values": {
+            "condition": "",
+            "condition_version": "",
+            "delegated_managed_identity_resource_id": "",
+            "description": "",
+            "id": "/subscriptions/2f9b6c1e-4a7d-4f3b-9e58-7c0d1a3b5e92/resourceGroups/rg-shop/providers/Microsoft.ServiceBus/namespaces/sb-shop-weu/providers/Microsoft.Authorization/roleAssignments/func_sb-0a1b2c3d",
+            "name": "func_sb-0a1b2c3d",
+            "principal_id": "5d9a1f30-72b8-4c6e-8e04-b3a7c1d2f956",
+            "principal_type": "ServicePrincipal",
+            "role_definition_id": "/subscriptions/2f9b6c1e-4a7d-4f3b-9e58-7c0d1a3b5e92/providers/Microsoft.Authorization/roleDefinitions/Azure Service Bus Data Receiver",
+            "role_definition_name": "Azure Service Bus Data Receiver",
+            "scope": "/subscriptions/2f9b6c1e-4a7d-4f3b-9e58-7c0d1a3b5e92/resourceGroups/rg-shop/providers/Microsoft.ServiceBus/namespaces/sb-shop-weu",
+            "skip_service_principal_aad_check": null,
+            "timeouts": null
+          },
+          "sensitive_values": {}
+        }
+      ]
+    }
+  },
+  "configuration": {
+    "provider_config": {
+      "azurerm": {
+        "name": "azurerm",
+        "full_name": "registry.terraform.io/hashicorp/azurerm",
+        "version_constraint": "~> 3.116",
+        "expressions": {
+          "features": [
+            {}
+          ],
+          "subscription_id": {
+            "constant_value": "2f9b6c1e-4a7d-4f3b-9e58-7c0d1a3b5e92"
+          }
+        }
+      }
+    },
+    "root_module": {
+      "resources": [
+        {
+          "address": "azurerm_resource_group.shop",
+          "mode": "managed",
+          "type": "azurerm_resource_group",
+          "name": "shop",
+          "provider_config_key": "azurerm",
+          "expressions": {},
+          "schema_version": 0
+        },
+        {
+          "address": "azurerm_resource_group.network",
+          "mode": "managed",
+          "type": "azurerm_resource_group",
+          "name": "network",
+          "provider_config_key": "azurerm",
+          "expressions": {},
+          "schema_version": 0
+        },
+        {
+          "address": "azurerm_virtual_network.main",
+          "mode": "managed",
+          "type": "azurerm_virtual_network",
+          "name": "main",
+          "provider_config_key": "azurerm",
+          "expressions": {
+            "resource_group_name": {
+              "references": [
+                "azurerm_resource_group.network.name",
+                "azurerm_resource_group.network"
+              ]
+            },
+            "location": {
+              "references": [
+                "azurerm_resource_group.network.location",
+                "azurerm_resource_group.network"
+              ]
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "azurerm_subnet.app",
+          "mode": "managed",
+          "type": "azurerm_subnet",
+          "name": "app",
+          "provider_config_key": "azurerm",
+          "expressions": {
+            "resource_group_name": {
+              "references": [
+                "azurerm_resource_group.network.name",
+                "azurerm_resource_group.network"
+              ]
+            },
+            "virtual_network_name": {
+              "references": [
+                "azurerm_virtual_network.main.name",
+                "azurerm_virtual_network.main"
+              ]
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "azurerm_subnet.agw",
+          "mode": "managed",
+          "type": "azurerm_subnet",
+          "name": "agw",
+          "provider_config_key": "azurerm",
+          "expressions": {
+            "resource_group_name": {
+              "references": [
+                "azurerm_resource_group.network.name",
+                "azurerm_resource_group.network"
+              ]
+            },
+            "virtual_network_name": {
+              "references": [
+                "azurerm_virtual_network.main.name",
+                "azurerm_virtual_network.main"
+              ]
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "azurerm_subnet.pe",
+          "mode": "managed",
+          "type": "azurerm_subnet",
+          "name": "pe",
+          "provider_config_key": "azurerm",
+          "expressions": {
+            "resource_group_name": {
+              "references": [
+                "azurerm_resource_group.network.name",
+                "azurerm_resource_group.network"
+              ]
+            },
+            "virtual_network_name": {
+              "references": [
+                "azurerm_virtual_network.main.name",
+                "azurerm_virtual_network.main"
+              ]
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "azurerm_network_security_group.app",
+          "mode": "managed",
+          "type": "azurerm_network_security_group",
+          "name": "app",
+          "provider_config_key": "azurerm",
+          "expressions": {
+            "resource_group_name": {
+              "references": [
+                "azurerm_resource_group.network.name",
+                "azurerm_resource_group.network"
+              ]
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "azurerm_subnet_network_security_group_association.app",
+          "mode": "managed",
+          "type": "azurerm_subnet_network_security_group_association",
+          "name": "app",
+          "provider_config_key": "azurerm",
+          "expressions": {
+            "subnet_id": {
+              "references": [
+                "azurerm_subnet.app.id",
+                "azurerm_subnet.app"
+              ]
+            },
+            "network_security_group_id": {
+              "references": [
+                "azurerm_network_security_group.app.id",
+                "azurerm_network_security_group.app"
+              ]
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "azurerm_log_analytics_workspace.main",
+          "mode": "managed",
+          "type": "azurerm_log_analytics_workspace",
+          "name": "main",
+          "provider_config_key": "azurerm",
+          "expressions": {
+            "resource_group_name": {
+              "references": [
+                "azurerm_resource_group.shop.name",
+                "azurerm_resource_group.shop"
+              ]
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "azurerm_application_insights.main",
+          "mode": "managed",
+          "type": "azurerm_application_insights",
+          "name": "main",
+          "provider_config_key": "azurerm",
+          "expressions": {
+            "resource_group_name": {
+              "references": [
+                "azurerm_resource_group.shop.name",
+                "azurerm_resource_group.shop"
+              ]
+            },
+            "workspace_id": {
+              "references": [
+                "azurerm_log_analytics_workspace.main.id",
+                "azurerm_log_analytics_workspace.main"
+              ]
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "azurerm_storage_account.main",
+          "mode": "managed",
+          "type": "azurerm_storage_account",
+          "name": "main",
+          "provider_config_key": "azurerm",
+          "expressions": {
+            "resource_group_name": {
+              "references": [
+                "azurerm_resource_group.shop.name",
+                "azurerm_resource_group.shop"
+              ]
+            },
+            "location": {
+              "references": [
+                "azurerm_resource_group.shop.location",
+                "azurerm_resource_group.shop"
+              ]
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "azurerm_storage_container.assets",
+          "mode": "managed",
+          "type": "azurerm_storage_container",
+          "name": "assets",
+          "provider_config_key": "azurerm",
+          "expressions": {
+            "storage_account_name": {
+              "references": [
+                "azurerm_storage_account.main.name",
+                "azurerm_storage_account.main"
+              ]
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "azurerm_storage_account.dr",
+          "mode": "managed",
+          "type": "azurerm_storage_account",
+          "name": "dr",
+          "provider_config_key": "azurerm",
+          "expressions": {
+            "resource_group_name": {
+              "references": [
+                "azurerm_resource_group.shop.name",
+                "azurerm_resource_group.shop"
+              ]
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "azurerm_key_vault.main",
+          "mode": "managed",
+          "type": "azurerm_key_vault",
+          "name": "main",
+          "provider_config_key": "azurerm",
+          "expressions": {
+            "resource_group_name": {
+              "references": [
+                "azurerm_resource_group.shop.name",
+                "azurerm_resource_group.shop"
+              ]
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "azurerm_servicebus_namespace.main",
+          "mode": "managed",
+          "type": "azurerm_servicebus_namespace",
+          "name": "main",
+          "provider_config_key": "azurerm",
+          "expressions": {
+            "resource_group_name": {
+              "references": [
+                "azurerm_resource_group.shop.name",
+                "azurerm_resource_group.shop"
+              ]
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "azurerm_servicebus_queue.orders",
+          "mode": "managed",
+          "type": "azurerm_servicebus_queue",
+          "name": "orders",
+          "provider_config_key": "azurerm",
+          "expressions": {
+            "namespace_id": {
+              "references": [
+                "azurerm_servicebus_namespace.main.id",
+                "azurerm_servicebus_namespace.main"
+              ]
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "azurerm_service_plan.web",
+          "mode": "managed",
+          "type": "azurerm_service_plan",
+          "name": "web",
+          "provider_config_key": "azurerm",
+          "expressions": {
+            "resource_group_name": {
+              "references": [
+                "azurerm_resource_group.shop.name",
+                "azurerm_resource_group.shop"
+              ]
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "azurerm_service_plan.func",
+          "mode": "managed",
+          "type": "azurerm_service_plan",
+          "name": "func",
+          "provider_config_key": "azurerm",
+          "expressions": {
+            "resource_group_name": {
+              "references": [
+                "azurerm_resource_group.shop.name",
+                "azurerm_resource_group.shop"
+              ]
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "azurerm_linux_web_app.shop",
+          "mode": "managed",
+          "type": "azurerm_linux_web_app",
+          "name": "shop",
+          "provider_config_key": "azurerm",
+          "expressions": {
+            "resource_group_name": {
+              "references": [
+                "azurerm_resource_group.shop.name",
+                "azurerm_resource_group.shop"
+              ]
+            },
+            "service_plan_id": {
+              "references": [
+                "azurerm_service_plan.web.id",
+                "azurerm_service_plan.web"
+              ]
+            },
+            "virtual_network_subnet_id": {
+              "references": [
+                "azurerm_subnet.app.id",
+                "azurerm_subnet.app"
+              ]
+            },
+            "app_settings": {
+              "references": [
+                "azurerm_application_insights.main.connection_string",
+                "azurerm_application_insights.main",
+                "azurerm_mssql_server.main.fully_qualified_domain_name",
+                "azurerm_mssql_server.main",
+                "azurerm_servicebus_namespace.main.endpoint",
+                "azurerm_servicebus_namespace.main",
+                "azurerm_key_vault.main.vault_uri",
+                "azurerm_key_vault.main",
+                "azurerm_storage_account.main.primary_blob_endpoint",
+                "azurerm_storage_account.main"
+              ]
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "azurerm_linux_function_app.orders",
+          "mode": "managed",
+          "type": "azurerm_linux_function_app",
+          "name": "orders",
+          "provider_config_key": "azurerm",
+          "expressions": {
+            "resource_group_name": {
+              "references": [
+                "azurerm_resource_group.shop.name",
+                "azurerm_resource_group.shop"
+              ]
+            },
+            "service_plan_id": {
+              "references": [
+                "azurerm_service_plan.func.id",
+                "azurerm_service_plan.func"
+              ]
+            },
+            "storage_account_name": {
+              "references": [
+                "azurerm_storage_account.main.name",
+                "azurerm_storage_account.main"
+              ]
+            },
+            "storage_account_access_key": {
+              "references": [
+                "azurerm_storage_account.main.primary_access_key",
+                "azurerm_storage_account.main"
+              ]
+            },
+            "app_settings": {
+              "references": [
+                "azurerm_application_insights.main.instrumentation_key",
+                "azurerm_application_insights.main"
+              ]
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "azurerm_app_service_virtual_network_swift_connection.func",
+          "mode": "managed",
+          "type": "azurerm_app_service_virtual_network_swift_connection",
+          "name": "func",
+          "provider_config_key": "azurerm",
+          "expressions": {
+            "app_service_id": {
+              "references": [
+                "azurerm_linux_function_app.orders.id",
+                "azurerm_linux_function_app.orders"
+              ]
+            },
+            "subnet_id": {
+              "references": [
+                "azurerm_subnet.app.id",
+                "azurerm_subnet.app"
+              ]
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "azurerm_mssql_server.main",
+          "mode": "managed",
+          "type": "azurerm_mssql_server",
+          "name": "main",
+          "provider_config_key": "azurerm",
+          "expressions": {
+            "resource_group_name": {
+              "references": [
+                "azurerm_resource_group.shop.name",
+                "azurerm_resource_group.shop"
+              ]
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "azurerm_mssql_database.orders",
+          "mode": "managed",
+          "type": "azurerm_mssql_database",
+          "name": "orders",
+          "provider_config_key": "azurerm",
+          "expressions": {
+            "server_id": {
+              "references": [
+                "azurerm_mssql_server.main.id",
+                "azurerm_mssql_server.main"
+              ]
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "azurerm_private_dns_zone.sql",
+          "mode": "managed",
+          "type": "azurerm_private_dns_zone",
+          "name": "sql",
+          "provider_config_key": "azurerm",
+          "expressions": {
+            "resource_group_name": {
+              "references": [
+                "azurerm_resource_group.shop.name",
+                "azurerm_resource_group.shop"
+              ]
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "azurerm_private_dns_zone_virtual_network_link.sql",
+          "mode": "managed",
+          "type": "azurerm_private_dns_zone_virtual_network_link",
+          "name": "sql",
+          "provider_config_key": "azurerm",
+          "expressions": {
+            "private_dns_zone_name": {
+              "references": [
+                "azurerm_private_dns_zone.sql.name",
+                "azurerm_private_dns_zone.sql"
+              ]
+            },
+            "virtual_network_id": {
+              "references": [
+                "azurerm_virtual_network.main.id",
+                "azurerm_virtual_network.main"
+              ]
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "azurerm_private_endpoint.sql",
+          "mode": "managed",
+          "type": "azurerm_private_endpoint",
+          "name": "sql",
+          "provider_config_key": "azurerm",
+          "expressions": {
+            "resource_group_name": {
+              "references": [
+                "azurerm_resource_group.shop.name",
+                "azurerm_resource_group.shop"
+              ]
+            },
+            "subnet_id": {
+              "references": [
+                "azurerm_subnet.pe.id",
+                "azurerm_subnet.pe"
+              ]
+            },
+            "private_service_connection": {
+              "references": [
+                "azurerm_mssql_server.main.id",
+                "azurerm_mssql_server.main"
+              ]
+            },
+            "private_dns_zone_group": {
+              "references": [
+                "azurerm_private_dns_zone.sql.id",
+                "azurerm_private_dns_zone.sql"
+              ]
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "azurerm_public_ip.agw",
+          "mode": "managed",
+          "type": "azurerm_public_ip",
+          "name": "agw",
+          "provider_config_key": "azurerm",
+          "expressions": {
+            "resource_group_name": {
+              "references": [
+                "azurerm_resource_group.shop.name",
+                "azurerm_resource_group.shop"
+              ]
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "azurerm_application_gateway.main",
+          "mode": "managed",
+          "type": "azurerm_application_gateway",
+          "name": "main",
+          "provider_config_key": "azurerm",
+          "expressions": {
+            "resource_group_name": {
+              "references": [
+                "azurerm_resource_group.shop.name",
+                "azurerm_resource_group.shop"
+              ]
+            },
+            "gateway_ip_configuration": {
+              "references": [
+                "azurerm_subnet.agw.id",
+                "azurerm_subnet.agw"
+              ]
+            },
+            "frontend_ip_configuration": {
+              "references": [
+                "azurerm_public_ip.agw.id",
+                "azurerm_public_ip.agw"
+              ]
+            },
+            "backend_address_pool": {
+              "references": [
+                "azurerm_linux_web_app.shop.default_hostname",
+                "azurerm_linux_web_app.shop"
+              ]
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "azurerm_cdn_frontdoor_profile.main",
+          "mode": "managed",
+          "type": "azurerm_cdn_frontdoor_profile",
+          "name": "main",
+          "provider_config_key": "azurerm",
+          "expressions": {
+            "resource_group_name": {
+              "references": [
+                "azurerm_resource_group.shop.name",
+                "azurerm_resource_group.shop"
+              ]
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "azurerm_cdn_frontdoor_endpoint.main",
+          "mode": "managed",
+          "type": "azurerm_cdn_frontdoor_endpoint",
+          "name": "main",
+          "provider_config_key": "azurerm",
+          "expressions": {
+            "cdn_frontdoor_profile_id": {
+              "references": [
+                "azurerm_cdn_frontdoor_profile.main.id",
+                "azurerm_cdn_frontdoor_profile.main"
+              ]
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "azurerm_cdn_frontdoor_origin_group.main",
+          "mode": "managed",
+          "type": "azurerm_cdn_frontdoor_origin_group",
+          "name": "main",
+          "provider_config_key": "azurerm",
+          "expressions": {
+            "cdn_frontdoor_profile_id": {
+              "references": [
+                "azurerm_cdn_frontdoor_profile.main.id",
+                "azurerm_cdn_frontdoor_profile.main"
+              ]
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "azurerm_cdn_frontdoor_origin.agw",
+          "mode": "managed",
+          "type": "azurerm_cdn_frontdoor_origin",
+          "name": "agw",
+          "provider_config_key": "azurerm",
+          "expressions": {
+            "cdn_frontdoor_origin_group_id": {
+              "references": [
+                "azurerm_cdn_frontdoor_origin_group.main.id",
+                "azurerm_cdn_frontdoor_origin_group.main"
+              ]
+            },
+            "host_name": {
+              "references": [
+                "azurerm_public_ip.agw.fqdn",
+                "azurerm_public_ip.agw"
+              ]
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "azurerm_cdn_frontdoor_route.main",
+          "mode": "managed",
+          "type": "azurerm_cdn_frontdoor_route",
+          "name": "main",
+          "provider_config_key": "azurerm",
+          "expressions": {
+            "cdn_frontdoor_endpoint_id": {
+              "references": [
+                "azurerm_cdn_frontdoor_endpoint.main.id",
+                "azurerm_cdn_frontdoor_endpoint.main"
+              ]
+            },
+            "cdn_frontdoor_origin_group_id": {
+              "references": [
+                "azurerm_cdn_frontdoor_origin_group.main.id",
+                "azurerm_cdn_frontdoor_origin_group.main"
+              ]
+            },
+            "cdn_frontdoor_origin_ids": {
+              "references": [
+                "azurerm_cdn_frontdoor_origin.agw.id",
+                "azurerm_cdn_frontdoor_origin.agw"
+              ]
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "azurerm_role_assignment.web_kv",
+          "mode": "managed",
+          "type": "azurerm_role_assignment",
+          "name": "web_kv",
+          "provider_config_key": "azurerm",
+          "expressions": {
+            "scope": {
+              "references": [
+                "azurerm_key_vault.main.id",
+                "azurerm_key_vault.main"
+              ]
+            },
+            "principal_id": {
+              "references": [
+                "azurerm_linux_web_app.shop.identity[0].principal_id",
+                "azurerm_linux_web_app.shop"
+              ]
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "azurerm_role_assignment.web_blob",
+          "mode": "managed",
+          "type": "azurerm_role_assignment",
+          "name": "web_blob",
+          "provider_config_key": "azurerm",
+          "expressions": {
+            "scope": {
+              "references": [
+                "azurerm_storage_account.main.id",
+                "azurerm_storage_account.main"
+              ]
+            },
+            "principal_id": {
+              "references": [
+                "azurerm_linux_web_app.shop.identity[0].principal_id",
+                "azurerm_linux_web_app.shop"
+              ]
+            }
+          },
+          "schema_version": 0
+        },
+        {
+          "address": "azurerm_role_assignment.func_sb",
+          "mode": "managed",
+          "type": "azurerm_role_assignment",
+          "name": "func_sb",
+          "provider_config_key": "azurerm",
+          "expressions": {
+            "scope": {
+              "references": [
+                "azurerm_servicebus_namespace.main.id",
+                "azurerm_servicebus_namespace.main"
+              ]
+            },
+            "principal_id": {
+              "references": [
+                "azurerm_linux_function_app.orders.identity[0].principal_id",
+                "azurerm_linux_function_app.orders"
+              ]
+            }
+          },
+          "schema_version": 0
+        }
+      ]
+    }
+  }
+}

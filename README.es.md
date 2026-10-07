@@ -427,7 +427,8 @@ Arrastra tus archivos de IaC al lienzo, o usa **Importar**. Diagramon dibuja la 
 
 Qué obtienes:
 
-- **Grupos**: región de AWS › VPC › subredes (grupos de recursos y VNet de Azure, VPC de Google Cloud), namespaces de Kubernetes y redes de Compose.
+- **Grupos**: región de AWS › VPC › subredes, grupo de recursos de Azure › VNet › subred, proyecto de Google Cloud › red VPC › subred, namespaces de Kubernetes y redes de Compose.
+- **Regiones** en grupos y componentes: `region` y ARN de AWS, `location` de Azure (`West Europe` y `westeurope` son lo mismo; un recurso sin ella toma la de su grupo de recursos), `region` y `location` de Google Cloud (regiones, multirregiones como `EU` y zonas como `europe-west1-b`, que pasan a `europe-west1`) y la región del proveedor. Así funcionan las etiquetas de región y el aviso de transferencia entre fronteras en los diagramas importados.
 - **Conexiones** deducidas de las referencias: ARN, ids, nombres de buckets, rutas `s3://`, nombres de host en variables de entorno, selectores e Ingress de Kubernetes, `depends_on`. La dirección sigue a los datos: el stream *origen* de un Firehose apunta al Firehose, y una notificación de S3 apunta a la Lambda que dispara.
 - **Iconos oficiales** y detalles: runtime, motor, horario, réplicas.
 - **Clasificación de datos** desde etiquetas como `DataClassification = pii`.
@@ -435,7 +436,7 @@ Qué obtienes:
 
 ![Data lake de AWS importado desde terraform show -json](docs/iac-data-lake.png)
 
-Pruébalo con los archivos de [`samples/`](samples): un data lake simple en AWS (en Terraform y en CloudFormation), una tienda en Kubernetes y un stack de Docker Compose.
+Pruébalo con los archivos de [`samples/`](samples): un data lake simple en AWS (en Terraform y en CloudFormation), una tienda web en Azure (`azure-web-shop`, `terraform show -json`), una plataforma de datos en Google Cloud (`gcp-data-platform`, `terraform show -json`), una tienda en Kubernetes y un stack de Docker Compose.
 
 ---
 
@@ -625,13 +626,13 @@ El lenguaje de texto está en `window.DiagramonText` (`parse` y `stringify`).
 
 Cosas que funcionan pero aún no se han revisado a fondo. Probablemente necesiten depurarse; se agradecen avisos y *pull requests*.
 
-- **Importación de infraestructura como código de Azure y Google Cloud**: la correspondencia de iconos existe, pero no se ha probado con archivos reales de Azure ni de Google Cloud.
+- **Importación de infraestructura como código de Azure y Google Cloud**: se ha probado con los dos ejemplos de `terraform show -json` escritos a mano en `samples/` (siguen los esquemas reales de azurerm y google), no con la salida de una cuenta real de Azure o Google Cloud; los tipos de recurso poco comunes pueden salir como componentes genéricos.
 - **Exportaciones a Mermaid, PlantUML y draw.io**: cubren los casos principales, pero en diagramas complejos pueden perder detalles o necesitar ajustes.
   Los iconos de grupo en la exportación a draw.io aún no se han abierto en draw.io.
 - **Temas claro y negro**: revisados para las marcas, diálogos e iconos de grupo nuevos. Los colores propios muy claros se oscurecen en el tema claro (y los muy oscuros se aclaran en los temas oscuros) para que bordes y etiquetas se lean; los colores de tono medio se respetan tal cual.
 - **Ida y vuelta en la pestaña Texto**: se probaron conexiones bidireccionales, etiquetas con saltos de línea y nombres de componentes con comillas, corchetes o `clave=valor`, en inglés y en español (los nombres que lo necesitan se escriben como `nombre="…"`).
 - Las notas y las zonas de riesgo no se exportan a Mermaid, PlantUML ni draw.io.
-- Los campos de **gobierno de datos** (conjuntos, responsables, regiones y capas) no se exportan a Mermaid, PlantUML ni draw.io. La importación de infraestructura como código solo asigna la región en AWS (aún no desde `location` de Azure ni desde las regiones de Google Cloud).
+- Los campos de **gobierno de datos** (conjuntos, responsables, regiones y capas) no se exportan a Mermaid, PlantUML ni draw.io.
 - La región se deduce del nombre de un grupo con los códigos habituales de AWS, Azure y Google Cloud; para otros nombres hay que usar el campo **Región**.
 - **Componentes muy pequeños** con todas las etiquetas a la vez (capa, región, equipo, disponibilidad): sin revisar; con el ancho fijo por defecto caben.
 - Los campos de revisión de seguridad, cumplimiento y STRIDE (`exposure`, `backup`, `controls`, `threats`, zonas de confianza, hallazgos descartados) no se exportan a Mermaid, PlantUML ni draw.io.

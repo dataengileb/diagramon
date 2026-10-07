@@ -443,7 +443,8 @@ Drop your IaC files on the canvas, or use **Import**. Diagramon draws the real a
 
 What you get:
 
-- **Groups**: AWS region › VPC › subnets (Azure resource groups and VNets, Google Cloud VPCs), Kubernetes namespaces and Compose networks.
+- **Groups**: AWS region › VPC › subnets, Azure resource group › VNet › subnet, Google Cloud project › VPC network › subnetwork, Kubernetes namespaces and Compose networks.
+- **Regions** on groups and components: AWS `region` and ARNs, Azure `location` (`West Europe` and `westeurope` are the same; a resource without one takes its resource group's), Google Cloud `region`, `location` (regions, multi-regions such as `EU`, and zones such as `europe-west1-b`, which become `europe-west1`) and the provider's `region`. So the region pills and the cross-border warning work on imported diagrams.
 - **Connections** deduced from references: ARNs, ids, bucket names, `s3://` paths, hostnames in environment variables, Kubernetes selectors and Ingress rules, `depends_on`. The direction follows the data: a Firehose *source* stream points to the Firehose, and an S3 notification points to the Lambda it triggers.
 - **Official icons** and details: runtime, engine, schedule, replicas.
 - **Data classification** from tags such as `DataClassification = pii`.
@@ -451,7 +452,7 @@ What you get:
 
 ![AWS data lake imported from terraform show -json](docs/iac-data-lake.png)
 
-Try it with the files in [`samples/`](samples): a simple AWS data lake (as Terraform and as CloudFormation), a Kubernetes shop and a Docker Compose stack.
+Try it with the files in [`samples/`](samples): a simple AWS data lake (as Terraform and as CloudFormation), an Azure web shop (`azure-web-shop`, `terraform show -json`), a Google Cloud data platform (`gcp-data-platform`, `terraform show -json`), a Kubernetes shop and a Docker Compose stack.
 
 ---
 
@@ -641,13 +642,13 @@ The text language is in `window.DiagramonText` (`parse` and `stringify`). UI tra
 
 Things that work but have not been checked in depth yet. They probably need some debugging; reports and pull requests are welcome.
 
-- **IaC import for Azure and Google Cloud**: the icon mapping exists, but it has not been tried with real Azure or Google Cloud files.
+- **IaC import for Azure and Google Cloud** is tested with the two hand-written `terraform show -json` samples in `samples/` (they follow the real azurerm and google schemas), not with the output of a live Azure or Google Cloud account; unusual resource types may show as generic components.
 - **Mermaid, PlantUML and draw.io exports**: they cover the main cases, but complex diagrams may lose details or need fixes.
   Group icons in the draw.io export have not been opened in draw.io yet.
 - **Light and black themes**: reviewed for the new marks, dialogs and group icons. Very light custom colors are darkened in the light theme (and very dark ones lightened in the dark themes) so borders and labels stay readable; mid-tone custom colors are kept as chosen.
 - **Text tab round trip**: bidirectional connections, multi-line labels and component names with quotes, brackets or `key=value` were checked in English and Spanish (names that need it are written as `name="…"`).
 - Notes and risk zones are not exported to Mermaid, PlantUML or draw.io.
-- **Data governance** fields (datasets, owners, regions, layers) are not exported to Mermaid, PlantUML or draw.io. IaC import sets the region only for AWS (not yet from Azure `location` or Google Cloud regions).
+- **Data governance** fields (datasets, owners, regions, layers) are not exported to Mermaid, PlantUML or draw.io.
 - Region detection from a group's name covers the usual AWS, Azure and Google Cloud codes; other names need the **Region** field.
 - **Very small components** carrying every pill at once (layer, region, team, availability) have not been reviewed; with the default fixed node width they fit.
 - Security review, compliance and STRIDE fields (`exposure`, `backup`, `controls`, `threats`, trust zones, dismissed findings) are not exported to Mermaid, PlantUML or draw.io.
