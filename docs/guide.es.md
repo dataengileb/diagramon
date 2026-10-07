@@ -46,8 +46,10 @@
 
 - Selecciona un nodo y pulsa **`C`**, luego haz clic en el destino.
 - O selecciona un nodo y haz **`⇧` + clic** en el destino.
-- Haz clic en una conexión para cambiar su etiqueta y su estilo:
-  **síncrona** (petición), **asíncrona** (evento), **flujo de datos** u **opcional**.
+- Haz clic en una conexión para cambiar su etiqueta, su estilo y su importancia:
+  - **Estilo** (patrón de línea): **síncrona** (petición), **asíncrona** (evento), **flujo de datos**, **opcional**, **replicación**, **por lotes / programado**, **streaming** y **control / gestión**.
+  - **Importancia**: **Normal**, **Importante** o **Crítica**. Un flujo más pesado se dibuja con línea más gruesa, punta de flecha mayor y más puntos en movimiento (la crítica añade además un halo suave). En la vista *Contexto*, un conjunto de conexiones toma la mayor importancia entre ellas. La leyenda muestra *Flujo importante* / *Flujo crítico* solo si el diagrama los usa.
+  - **Tipos propios**: abre la lista **Estilo** y elige **+ Nuevo tipo…**. Ponle nombre y elige patrón de línea, color, grosor y puntos en movimiento; se aplica a la conexión seleccionada. Tus tipos viven en este diagrama (viajan con el JSON, las versiones, la pestaña *Texto* y las exportaciones) y salen en la leyenda. El botón **Tipos de conexión…** del panel los lista para editarlos o eliminarlos; eliminar un tipo en uso devuelve sus conexiones a *Síncrona* (un solo paso de deshacer).
 
 ## 3. Editar y agrupar
 

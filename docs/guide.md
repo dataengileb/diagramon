@@ -46,8 +46,10 @@
 
 - Select a node, press **`C`**, then click the target.
 - Or select a node and **`⇧` + click** the target.
-- Click a connection to change its label and style:
-  **synchronous** (request), **asynchronous** (event), **data flow** or **optional**.
+- Click a connection to change its label, style and importance:
+  - **Style** (line pattern): **synchronous** (request), **asynchronous** (event), **data flow**, **optional**, **replication**, **batch / scheduled**, **streaming** and **control / management**.
+  - **Importance**: **Normal**, **Important** or **Critical**. A heavier flow is drawn with a thicker line, a larger arrowhead and more moving dots (critical also gets a soft glow). In the *Context* view, a bundle of connections takes the highest importance among them. The legend lists *Important flow* / *Critical flow* only when the diagram uses them.
+  - **Your own types**: open the **Style** list and choose **+ New type…**. Give it a name, pick a line pattern, color, width and moving dots; it is applied to the selected connection. Your types live in this diagram (they travel with the JSON, versions, the *Text* tab and the exports) and appear in the legend. The **Connection types…** button in the panel lists them to edit or delete; deleting a type in use sends its connections back to *Synchronous* (one undo step).
 
 ## 3. Edit and group
 

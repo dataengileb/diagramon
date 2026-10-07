@@ -49,6 +49,9 @@ api ~> cola : eventos
 | `dentro=tienda` (en inglés: `in=tienda`) · `c4=contenedor` | Niveles C4: el nodo o grupo vive en el diagrama interno de `tienda`; tipo C4 `persona`, `sistema`, `contenedor`, `componente` o `externo` (en inglés: `person`, `system`, `container`, `component`, `external`). Los nodos dentro de las llaves de un grupo con `dentro=` heredan su nivel |
 | `dentro tienda { … }` | Bloque de nivel C4 (en inglés: `inside tienda { … }`): todo lo declarado dentro (nodos, grupos, notas, zonas) vive en el diagrama interno de `tienda`, sin escribir `dentro=` en cada uno. Los bloques se anidan (`dentro api { … }` dentro de `dentro tienda { … }` exige que `api` sea un nodo de `tienda`); los grupos funcionan dentro de un bloque, pero un bloque no se abre dentro de un grupo. `dentro=` sigue valiendo |
 | `a -> b` · `a => b` · `a ~> b` · `a ..> b` | Petición · datos · evento · opcional |
+| `a -> b : copia nocturna estilo=replicación` | Tipo de conexión sin flecha propia (en inglés: `style=replication`): `replicación` (`replication`), `lotes` (`batch`), `streaming` (`stream`), `control`; también `sync`, `async`, `data`, `optional` y tus tipos propios. `estilo=` manda sobre la flecha; la pestaña Texto escribe `->` más `estilo=…` para estos |
+| `a -> b : pedidos peso=alto` · `peso=crítico` | Importancia de una conexión (en inglés: `weight=high` / `weight=critical`; alias `importante` / `important`; `normal` es lo habitual y no se escribe). Línea más gruesa, punta mayor, más puntos |
+| `tipo respaldo: "Tráfico de respaldo" trazo="6 3" color=cielo ancho=2 partículas=1` | Tipo de conexión propio de este diagrama (en inglés: `type backup: "…" dash=… width=… particles=…`). `id`: `a-z`, `0-9`, `-` (hasta 32, que no sea un nombre predefinido); `trazo`: de 1 a 6 números (`"12 4 2 4"`, vacío = continua); `color`: clave de la paleta o hex; `ancho` 1-4; `partículas` 0-4. Se usa con `a -> b : x estilo=respaldo` |
 | `a -> b -> c : etiqueta` | Cadena; la etiqueta va en la última flecha |
 | `líneas: codos` · `a -> b : x línea=curva` | Líneas en ángulo recto o curvas, para el diagrama o una conexión |
 | `autor: …` · `versión: …` | Salen en el cajetín de la exportación |
@@ -72,12 +75,14 @@ El texto no guarda posiciones: los nodos que ya existían no se mueven y los nue
   "groups": [ { "id": "vpc", "label": "VPC", "color": "cielo", "parent": "aws" } ],
   "nodes":  [ { "id": "api", "label": "API", "type": "gateway", "icon": "aws/apigateway", "sub": "REST", "badge": "x2",
                 "group": "vpc", "x": 0, "y": 0, "cost": 0.05, "costPeriod": "hour", "desc": "…" } ],
-  "edges":  [ { "from": "api", "to": "db", "label": "SQL", "style": "sync | async | data | optional", "color": "rosa" } ]
+  "edges":  [ { "from": "api", "to": "db", "label": "SQL", "style": "sync | async | data | optional | replication | batch | stream | control | <id propio>", "weight": "high | critical", "color": "rosa" } ],
+  "edgeTypes": [ { "id": "backup", "label": "Tráfico de respaldo", "dash": "6 3", "color": "cielo", "width": 2, "particles": 1 } ]
 }
 ```
 
 - Solo `id` y `type` son necesarios en los nodos. Sin `x`/`y` se colocan solos.
 - `costPeriod`: `hour`, `year` o `multi` (con `costYears`). Sin `costPeriod` el costo es mensual.
+- `weight` (`high` o `critical`; sin él = normal) es la importancia de una conexión. `edgeTypes` (opcional) son los tipos de conexión propios del diagrama: `id` (`a-z0-9-`, hasta 32), `label` (hasta 60) y, opcionales, `dash` (números separados por espacios), `color` (clave de la paleta o hex), `width` (1-4) y `particles` (0-4); una conexión usa uno con `"style": "<id>"`.
 - `routing: "elbow"` pone líneas en ángulo recto en todo el diagrama; `route` (`curved` o `elbow`) lo cambia en una conexión. `meta` guarda `author` y `version`.
 - `review` en un nodo: `{ "status": "open" | "resolved", "note", "by", "raised", "due", "closed" }`, con fechas `AAAA-MM-DD`.
 - `data` es la lista de clasificaciones (`["pii", "pci"]`) en nodos y conexiones. `encrypted` (`true` o `false`) es el cifrado en tránsito de una conexión.

@@ -21,7 +21,7 @@ Everything you can customize is in **`src/config.js`**. Save and reload `index.h
 - **Fonts**: pick Inter (default), IBM Plex Sans or Fira Code from the top bar; the choice is saved in your browser and embedded in SVG/PNG exports. They are bundled with the app (not loaded from the web). To add one, drop its `.woff2` files in `assets/fonts/`, add an entry to `FONTS` in `tools/build-fonts.py` (see the header) and run `python3 tools/build-fonts.py`.
 - **Palettes**: add an entry to `palettes` with the same color keys (`rosa`, `coral`, …) for `dark`, `light` and `black` (Pastel and Neon ship by default). A saved palette that no longer exists falls back to Pastel.
 - **New component type**: copy an entry in `types` and change `label`, `category`, `color`, `keywords` and `icon` (a 24×24 SVG).
-- **Connections**: `edgeStyles` sets dash, width and particle count.
+- **Connections**: `edgeStyles` sets dash, width and particle count. It ships eight built-in types (`sync`, `async`, `data`, `optional`, `replication`, `batch`, `stream`, `control`); add yours there to make it available in every diagram (in the Text tab it is written `style=<key>`). Types that only one diagram needs are created in the connection inspector (**Style › + New type…**) and stored in that diagram (`edgeTypes`). Importance (`weight`: `high`, `critical`) multiplies the stroke width in `index.html` / `src/app.js` (`EDGE_W`).
 - **Animation**: speed, entrance and step duration in `animation`.
 - **Costs**: `cost.currency`, `cost.hoursPerMonth` (730 = hours in a month) and `cost.defaultYears`.
 - **Templates**: add your own in `src/examples.js`.

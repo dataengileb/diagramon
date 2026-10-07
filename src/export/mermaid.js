@@ -71,6 +71,10 @@
     generic: ['[', ']'], external: ['[', ']']
   };
 
+  // Estilo de la conexión ya resuelto por la app (ctx.edgeStyleInfo); sin él, los cuatro de siempre
+  const BASE = { sync: { dash: '', width: 1.8 }, async: { dash: '6 6', width: 1.8 }, data: { dash: '', width: 2.4 }, optional: { dash: '2 6', width: 1.5 } };
+  const edgeInfo = (ctx, e) => (typeof ctx.edgeStyleInfo === 'function' ? ctx.edgeStyleInfo(e) : { id: BASE[e.style] ? e.style : 'sync', ...(BASE[e.style] || BASE.sync), mult: 1, weight: '', color: null });
+
   function mermaid(model, ctx) {
     const title = String(ctx.title || model.title || 'Diagram').replace(/[\r\n]+/g, ' ').trim();
     const groups = model.groups || [], nodes = model.nodes || [], edges = model.edges || [];
@@ -186,15 +190,24 @@
     let idx = 0;
     edges.forEach(e => {
       if (!nid[e.from] || !nid[e.to]) return;
-      const style = e.style || 'sync';
-      const two = e.both === true;
-      const arrow = style === 'data' ? (two ? '<==>' : '==>') : style === 'async' || style === 'optional' ? (two ? '<-.->' : '-.->') : (two ? '<-->' : '-->');
+      const si = edgeInfo(ctx, e), style = si.id;
+      const two = e.both === true, ew = si.width * si.mult;
+      // Con trazos: línea punteada; sin ellos, gruesa si el ancho (con el peso) lo pide
+      const arrow = si.dash ? (two ? '<-.->' : '-.->') : ew >= 2.2 ? (two ? '<==>' : '==>') : (two ? '<-->' : '-->');
       const lock = e.encrypted === true ? '🔒' : e.encrypted === false ? '🔓' : '';
       const label = e.label ? String(e.label).split('\n').map(esc).join('<br/>') : '';
       const text = [label, esc(shorts(e.data).join(' · ')), lock].filter(Boolean).join(' ');
       out.push(`    ${nid[e.from]} ${arrow}${text ? `|"${text}"|` : ''} ${nid[e.to]}`);
-      if (style === 'data') links.push(`    linkStyle ${idx} stroke-width:3px`);
-      else if (style === 'optional') links.push(`    linkStyle ${idx} stroke-width:1px,stroke-dasharray: 2 4`);
+      // linkStyle: data y optional como siempre; el resto según su grosor (×1.25 sobre el de la app), trazos y color propios
+      const props = [];
+      if (style === 'optional' && si.mult === 1) props.push('stroke-width:1px', 'stroke-dasharray: 2 4');
+      else {
+        const px = Math.round(ew * 1.25 * 10) / 10;
+        if (Math.abs(px - 2) > 0.3 || si.mult > 1) props.push(`stroke-width:${px}px`);
+        if (si.dash && style !== 'async') props.push(`stroke-dasharray: ${si.dash}`);
+      }
+      if (si.color) props.push(`stroke:${si.color}`);
+      if (props.length) links.push(`    linkStyle ${idx} ${props.join(',')}`);
       idx++;
     });
     out.push(...links);
