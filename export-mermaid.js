@@ -12,6 +12,19 @@
      -.-> más fina y punteada (linkStyle).
    - Los ids se transforman a [A-Za-z0-9_] con prefijo (n_ / g_) para no chocar
      con palabras reservadas; los textos van entre comillas con #quot; etc.
+   - Niveles C4: un nodo con diagrama interno (`in`) pasa a ser un subgraph
+     «Nombre [tipo C4]» con borde grueso continuo que contiene sus nodos, grupos
+     y notas, anidado a cualquier profundidad. Las flechas siguen apuntando al id
+     del nodo (= id del subgraph), así que las que cruzan niveles funcionan.
+   - Notas: nodos sueltos con forma [\ \] y el color de la nota, dentro del
+     subgraph de su nivel; el texto multilínea usa <br/>.
+   - Zonas de riesgo y límites de confianza: Mermaid no permite subgraphs
+     solapados, así que los nodos dentro de cada zona (geométrico, mismo nivel)
+     reciben un classDef por severidad (borde de color y grueso; el límite de
+     confianza va con borde discontinuo) y un bloque de comentarios %% las lista
+     con sus miembros. Si un nodo cae en varias zonas manda la más grave.
+   - Metadatos: líneas `%% meta <id>: etiqueta=valor; …` al final (solo comentarios;
+     `click` exige securityLevel y falla en GitHub).
    - El front matter (---) va primero: Mermaid lo exige al inicio del texto.
    API: window.DiagramonExport.mermaid(model, ctx) -> { text, ext, mime }.
    ========================================================================== */
@@ -62,16 +75,29 @@
     const title = String(ctx.title || model.title || 'Diagram').replace(/[\r\n]+/g, ' ').trim();
     const groups = model.groups || [], nodes = model.nodes || [], edges = model.edges || [];
     const gid = makeIds(groups, 'g_'), nid = makeIds(nodes, 'n_');
-    const groupIds = new Set(groups.map(g => g.id));
-    const byGroup = {}, byParent = {}, roots = [], rootNodes = [];
+    const notes = model.notes || [], zones = model.zones || [];
+    const nodeById = {};
+    nodes.forEach(n => { nodeById[n.id] = n; });
+    const lv = it => (it.in && nodeById[it.in] && it.in !== it.id ? it.in : '');  // nivel C4 (id del nodo) o '' = raíz
+    const groupById = {};
+    groups.forEach(g => { groupById[g.id] = g; });
+    const ntid = makeIds(notes, 'nt_');
+    const byGroup = {}, byParent = {}, rootsOf = {}, rootNodesOf = {}, notesOf = {}, inLevel = {};
+    const push = (o, k, v) => (o[k] = o[k] || []).push(v);
     groups.forEach(g => {
-      const p = g.parent && groupIds.has(g.parent) && g.parent !== g.id ? g.parent : null;
-      if (p) (byParent[p] = byParent[p] || []).push(g); else roots.push(g);
+      const pg = g.parent && groupById[g.parent] && g.parent !== g.id && lv(groupById[g.parent]) === lv(g) ? g.parent : null;
+      if (pg) push(byParent, pg, g); else push(rootsOf, lv(g), g);
+      if (lv(g)) inLevel[lv(g)] = true;
     });
     nodes.forEach(n => {
-      if (n.group && groupIds.has(n.group)) (byGroup[n.group] = byGroup[n.group] || []).push(n);
-      else rootNodes.push(n);
+      const g = n.group && groupById[n.group];
+      if (g && lv(g) === lv(n)) push(byGroup, n.group, n); else push(rootNodesOf, lv(n), n);
+      if (lv(n)) inLevel[lv(n)] = true;
     });
+    notes.forEach(t => { push(notesOf, lv(t), t); if (lv(t)) inLevel[lv(t)] = true; });
+    // Un nodo es un subgraph si tiene contenido y ctx.levels (cuando existe) lo reconoce como nivel
+    const levelIds = new Set((ctx.levels || []).map(l => l.id));
+    const isLevel = n => !!inLevel[n.id] && (!ctx.levels || levelIds.has(n.id));
     const shorts = keys => (keys || []).map(k => (ctx.dataLabel(k) || {}).short || k).filter(Boolean);
 
     const classes = {};  // clase -> { color, ids }
@@ -89,22 +115,71 @@
       return `${nid[n.id]}${a}"${lines.join('<br/>')}"${b}`;
     };
 
+    // Zonas de riesgo y límites de confianza: pertenencia geométrica (caja del nodo mayormente dentro, mismo nivel)
+    const SEV = ['low', 'medium', 'high', 'critical'];
+    const TRUST_HEX = '#5B7FA6';
+    const inside = (n, z) => {
+      if (![n.x, n.y, z.x, z.y, z.w, z.h].every(Number.isFinite) || lv(n) !== lv(z)) return false;
+      const sz = ctx.size(n) || { w: 180, h: 56 };
+      const ox = Math.min(n.x + sz.w, z.x + z.w) - Math.max(n.x, z.x), oy = Math.min(n.y + sz.h, z.y + z.h) - Math.max(n.y, z.y);
+      return ox > 0 && oy > 0 && ox * oy >= 0.5 * sz.w * sz.h;
+    };
+    const zoneInfo = zones.map(z => {
+      const trust = z.kind === 'trust', sev = SEV.includes(z.severity) ? z.severity : 'medium';
+      return { z, trust, sev, cls: trust ? 'z_trust' : 'z_' + sev, hex: trust ? TRUST_HEX : ctx.sevHex(sev), members: nodes.filter(n => inside(n, z)) };
+    });
+    const rank = zi => (zi.trust ? 0 : 1 + SEV.indexOf(zi.sev));
+    const zoneOf = {};  // id de nodo -> zona que manda
+    zoneInfo.forEach(zi => zi.members.forEach(n => { if (!zoneOf[n.id] || rank(zi) > rank(zoneOf[n.id])) zoneOf[n.id] = zi; }));
+
     const out = [], groupStyles = [];
+    const emitted = new Set();
     const emitGroup = (g, depth, seen) => {
       const pad = '    '.repeat(depth);
+      emitted.add('g:' + g.id);
       out.push(`${pad}subgraph ${gid[g.id]}["${esc(g.label || g.id)}"]`);
       const color = norm(ctx.color(g));
       groupStyles.push(`    style ${gid[g.id]} fill:${mix(color, 0.8)},stroke:${color},stroke-dasharray: 5 5,color:#334155`);
-      (byGroup[g.id] || []).forEach(n => out.push(pad + '    ' + nodeLine(n)));
+      (byGroup[g.id] || []).forEach(n => emitNode(n, depth + 1));
       (byParent[g.id] || []).forEach(c => { if (!seen.has(c.id)) emitGroup(c, depth + 1, new Set([...seen, c.id])); });
       out.push(`${pad}end`);
     };
+    const noteClasses = {};
+    const emitNote = (t, depth) => {
+      emitted.add('t:' + t.id);
+      const hex = norm(ctx.noteHex ? ctx.noteHex(t.color) : '#C4A63A'), cls = 'note_' + hex.slice(1);
+      (noteClasses[cls] = noteClasses[cls] || { hex, ids: [] }).ids.push(ntid[t.id]);
+      const text = String(t.text == null ? '' : t.text).split(/\r?\n/).map(esc).join('<br/>') || esc(t.id);
+      out.push(`${'    '.repeat(depth)}${ntid[t.id]}[\\"${text}"\\]`);
+    };
+    // Contenido de un nivel: grupos raíz, nodos sueltos y notas
+    const emitLevelBody = (key, depth) => {
+      (rootsOf[key] || []).forEach(g => emitGroup(g, depth, new Set([g.id])));
+      (rootNodesOf[key] || []).forEach(n => emitNode(n, depth));
+      (notesOf[key] || []).forEach(t => emitNote(t, depth));
+    };
+    const levelStyles = [];
+    function emitNode(n, depth, plain) {
+      emitted.add('n:' + n.id);
+      const pad = '    '.repeat(depth);
+      if (plain || !isLevel(n) || emitted.has('l:' + n.id)) { out.push(pad + nodeLine(n)); return; }
+      emitted.add('l:' + n.id);
+      const kind = ctx.c4Label && n.c4 ? ctx.c4Label(n.c4) : '';
+      out.push(`${pad}subgraph ${nid[n.id]}["${esc(n.label || n.id)}${kind ? ' [' + esc(kind) + ']' : ''}"]`);
+      const zi = zoneOf[n.id], color = norm(ctx.color(n)), stroke = zi ? norm(zi.hex) : color;
+      levelStyles.push(`    style ${nid[n.id]} fill:${mix(color, 0.9)},stroke:${stroke},stroke-width:3px${zi && zi.trust ? ',stroke-dasharray: 6 3' : ''},color:#1f2937`);
+      emitLevelBody(n.id, depth + 1);
+      out.push(`${pad}end`);
+    }
 
     out.push('---', `title: "${title.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`, '---');
     out.push(`%% Generated by Diagramon — ${title}`);
     out.push(`flowchart ${ctx.direction === 'TB' ? 'TB' : 'LR'}`);
-    roots.forEach(g => emitGroup(g, 1, new Set([g.id])));
-    rootNodes.forEach(n => out.push('    ' + nodeLine(n)));
+    emitLevelBody('', 1);
+    // Restos inalcanzables (niveles que se referencian en ciclo): nada se pierde
+    groups.forEach(g => { if (!emitted.has('g:' + g.id)) emitGroup(g, 1, new Set([g.id])); });
+    nodes.forEach(n => { if (!emitted.has('n:' + n.id)) emitNode(n, 1, true); });
+    notes.forEach(t => { if (!emitted.has('t:' + t.id)) emitNote(t, 1); });
 
     // Aristas: el índice de linkStyle sigue el orden de emisión
     const links = [];
@@ -128,7 +203,39 @@
     const names = Object.keys(classes).sort();
     names.forEach(cls => out.push(`    classDef ${cls} fill:${mix(classes[cls].color, 0.35)},stroke:${classes[cls].color},color:#1f2937`));
     names.forEach(cls => out.push(`    class ${classes[cls].ids.join(',')} ${cls}`));
-    out.push(...groupStyles);
+    out.push(...groupStyles, ...levelStyles);
+    Object.keys(noteClasses).sort().forEach(cls => {
+      out.push(`    classDef ${cls} fill:${noteClasses[cls].hex},stroke:${noteClasses[cls].hex},stroke-dasharray: 2 2,color:#1f2937`);
+      out.push(`    class ${noteClasses[cls].ids.join(',')} ${cls}`);
+    });
+    // Zonas: classDef por severidad (y límite de confianza) sobre los nodos miembro; los niveles expandidos ya llevan el borde en su style
+    const zcls = {};
+    nodes.forEach(n => { const zi = zoneOf[n.id]; if (zi && !emitted.has('l:' + n.id)) (zcls[zi.cls] = zcls[zi.cls] || { hex: zi.hex, trust: zi.trust, ids: [] }).ids.push(nid[n.id]); });
+    Object.keys(zcls).sort().forEach(cls => {
+      out.push(`    classDef ${cls} stroke:${norm(zcls[cls].hex)},stroke-width:4px${zcls[cls].trust ? ',stroke-dasharray: 6 3' : ''}`);
+      out.push(`    class ${zcls[cls].ids.join(',')} ${cls}`);
+    });
+    const cm = x => String(x == null ? '' : x).replace(/[\r\n]+/g, ' ').replace(/[{}]/g, m => (m === '{' ? '(' : ')')).trim();
+    const W = ctx.words || {};
+    if (zoneInfo.length) {
+      out.push('');
+      zoneInfo.forEach(zi => {
+        const kind = zi.trust ? (W.trust || 'Trust boundary') : (W.zone || 'Risk zone') + ' ' + (ctx.sevLabel ? ctx.sevLabel(zi.sev) : zi.sev);
+        const trustTxt = zi.trust && zi.z.trust ? ' (' + cm(zi.z.trust) + ')' : '';
+        out.push(`%% ${kind}: ${cm(zi.z.label || zi.z.id)}${trustTxt}${zi.z.desc ? ' - ' + cm(zi.z.desc) : ''}`);
+        out.push(`%%   members: ${zi.members.map(n => nid[n.id]).join(', ') || '-'}`);
+      });
+    }
+    // Metadatos como comentarios (no se pueden usar `click`)
+    const metaOut = [];
+    const metaLine = (id, x) => {
+      const rows = (typeof ctx.meta === 'function' ? ctx.meta(x) : []) || [];
+      if (rows.length) metaOut.push(`%% meta ${id}: ${rows.map(r => `${cm(r.label || r.key)}=${cm(r.value)}`).join('; ')}`);
+    };
+    groups.forEach(g => metaLine(gid[g.id], g));
+    nodes.forEach(n => metaLine(nid[n.id], n));
+    edges.forEach((e, i) => { if (nid[e.from] && nid[e.to]) metaLine('e_' + (e.id == null ? i + 1 : String(e.id).replace(/[^A-Za-z0-9_]/g, '_')), e); });
+    if (metaOut.length) out.push('', ...metaOut);
 
     return { text: out.join('\n') + '\n', ext: 'mmd', mime: 'text/plain' };
   }

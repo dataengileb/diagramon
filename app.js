@@ -6479,7 +6479,49 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
       dataLabel: k => (DATA[k] ? { short: loc(DATA[k].short) || k.toUpperCase(), label: loc(DATA[k].label) || k, sensitive: !!DATA[k].sensitive } : { short: String(k).toUpperCase(), label: String(k), sensitive: false }),
       icon: ref => { const i = iconInfo(ref); return i ? { src: i.src, label: i.label } : null; },
       size: n => ({ w: R.width.get(n.id) || nodeWidth(n), h: H }),
-      groupBox: id => { const b = R.gbox.get(id); return b ? { x: b.x, y: b.y, w: b.w, h: b.h } : null; }
+      groupBox: id => { const b = R.gbox.get(id); return b ? { x: b.x, y: b.y, w: b.w, h: b.h } : null; },
+      ...exportMetaCtx(m)
+    };
+  }
+  /* ---------- exportar a otras herramientas: metadatos, notas, zonas y niveles C4 (común a los tres exportadores) ---------- */
+  // meta(x) → [{ key, label, value }] con los campos de gobierno, seguridad y operación (ya heredados y en el idioma de la interfaz)
+  function exportMetaCtx(m) {
+    const rows = new Map(inventoryRows(m).map(r => [r.id, r]));
+    const NODE_KEYS = ['c4', 'owner', 'steward', 'team', 'costCenter', 'region', 'data', 'layer', 'exposure', 'backup', 'sla', 'rpo', 'rto', 'replicas', 'perMonth', 'compliance'];
+    const lab = k => T(`inv.c.${k}`);
+    const yn = v => T(v ? 'sec.yes' : 'sec.no');
+    const meta = x => {
+      if (!x) return [];
+      const out = [], add = (key, value) => { if (value !== '' && value != null) out.push({ key, label: key === 'threats' ? T('stride.label') : lab(key), value: String(value) }); };
+      if ('from' in x) {
+        add('data', (x.data || []).map(k => loc(DATA[k]?.short) || String(k).toUpperCase()).join(' '));
+        if (typeof x.encrypted === 'boolean') add('encrypted', yn(x.encrypted));
+        add('datasets', (x.datasets || []).join(', '));
+        if (x.transferOk) add('transferOk', yn(true));
+        add('threats', Object.entries(x.threats || {}).map(([k, d]) => `${k}=${T(`stride.st.${d.status}`)}${d.note ? ` (${d.note})` : ''}`).join('; '));
+      } else if ('type' in x) {
+        const r = rows.get(x.id) || {};
+        // Exposición y respaldo deducidos solo cuando aportan: exposición pública o valores puestos a mano
+        const skip = k => (k === 'backup' && typeof x.backup !== 'boolean') || (k === 'exposure' && !x.exposure && r.exposure !== T('sec.expo.public'));
+        NODE_KEYS.forEach(k => { if (!skip(k)) add(k, r[k]); });
+      } else {
+        ['owner', 'steward', 'team', 'costCenter'].forEach(k => add(k, String(x[k] ?? '').trim()));
+        add('region', String(x.region ?? '').trim());
+        add('layer', x.layer ? layerInfo(x.layer)?.label || x.layer : '');
+        add('compliance', Object.entries(x.controls || {}).map(([k, v]) => `${k}=${T(`cmp.${v}`)}`).join(', '));
+      }
+      return out;
+    };
+    const hexIn = v => (/#[0-9a-f]{6}\b/i.exec(String(v || '')) || [])[0] || null;
+    return {
+      meta,
+      // Niveles C4: nodos con diagrama interno (por profundidad) y etiqueta de su tipo C4
+      levels: scopeList(m).filter(l => l.id).map(l => ({ id: l.id, label: l.label, depth: l.depth, path: l.path })),
+      c4Label,
+      sevLabel, sevHex: k => ({ low: '#4E9AD8', medium: '#C4A63A', high: '#E0965A', critical: '#E2806F' })[k] || '#C4A63A',
+      layerLabel: k => layerInfo(k)?.label || k, layerHex: k => hexIn(DL[k]?.color),
+      noteHex: k => hexOf(k) || hexOf('limon') || '#C4A63A',
+      words: { note: T('insp.note'), zone: T('insp.zone'), trust: T('insp.trust'), threats: T('stride.label'), level: T('inv.c.level') }
     };
   }
   function exportOther(fmt) {
