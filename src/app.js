@@ -6237,7 +6237,7 @@
     }
 
     if (want('compliance')) {
-      const { rows, keys, stats } = cmpModel(m), blocks = [];
+      const { rows, keys, stats } = cmpModel(m), blocks = [], big = keys.length > 10; // más de 10 controles: una rejilla por marco (cabe en A4)
       cmpFrameworks(keys).forEach(fw => {
         const ks = keys.filter(k => ctlSplit(k)[0] === fw), ci = ctlInfo(`${fw}:x`);
         blocks.push({ k: 'h3', t: ci.fwLabel });
@@ -6245,10 +6245,10 @@
           const s = stats.get(k), d = rows.length - s.na;
           return [ctlSplit(k)[1], ctlInfo(k).title, ...CTL_STATUS.map(x => String(s[x])), String(s.unmapped), d > 0 ? Math.round(s.met / d * 100) + '%' : '—'];
         }) });
-        const st = rows.flatMap(r => ks.filter(k => r.eff.has(k)).map(k => [r.n.label, ctlSplit(k)[1], { t: `${CTL_SYM[r.eff.get(k).status]} ${T(`cmp.${r.eff.get(k).status}`)}`, tone: `st-${r.eff.get(k).status}` }, r.eff.get(k).from ? T('cmp.inh', groupById(r.eff.get(k).from)?.label || r.eff.get(k).from) : '']));
-        if (st.length) blocks.push({ k: 'table', cls: 'compact', head: [repT('h.component'), repT('h.control'), repT('h.status'), ''], rows: st });
+        if (big) { const g = cmpGridBlock(rows.filter(r => ks.some(k => r.eff.has(k))), ks); if (g) blocks.push(g); }
       });
-      blocks.push({ k: 'p', muted: true, t: T('cmp.mx.note') });
+      if (!big) { const g = cmpGridBlock(rows, keys); if (g) blocks.push(g); }
+      blocks.push({ k: 'p', muted: true, t: `${T('cmp.mx.note')} ${repT('cmpGridNote')}` });
       sec('compliance', blocks);
     }
 
@@ -6305,12 +6305,25 @@
         else if (b.k === 'cards') o.push(`| ${b.items.map(c => mdCell(c.label)).join(' | ')} |`, `|${b.items.map(() => ' --- |').join('')}`, `| ${b.items.map(c => mdCell(String(c.value))).join(' | ')} |`, '');
         else if (b.k === 'table') {
           if (!b.rows.length) return;
-          o.push(`| ${b.head.map(mdCell).join(' | ')} |`, `|${b.head.map(() => ' --- |').join('')}`, ...b.rows.map(r => `| ${r.map(mdCell).join(' | ')} |`), '');
+          const hd = b.mdHead || b.head;
+          o.push(`| ${hd.map(mdCell).join(' | ')} |`, `|${hd.map(() => ' --- |').join('')}`, ...b.rows.map(r => `| ${r.map(mdCell).join(' | ')} |`), '');
         } else if (b.k === 'img') o.push(`![${mdEsc(b.alt)}](${b.file ? encodeURI(b.file) : b.uri})`, '');
       });
     });
     o.push('---', '', `*${mdEsc(repT('footer', { app: C.app.name, date: D.date }))}*`, '');
     return o.join('\n');
+  }
+
+  // Rejilla de cumplimiento para el informe: filas = componentes, columnas = controles (cabecera de marcos con colspan + ids); celda = símbolo + tono, «↑» si es heredado
+  function cmpGridBlock(rows, ks) {
+    if (!rows.length || !ks.length) return null;
+    const fws = cmpFrameworks(ks), cut = t => (t.length > 28 ? `${t.slice(0, 27)}…` : t);
+    return { k: 'table', cls: 'grid', group: fws.map(f => [ctlInfo(`${f}:x`).short, ks.filter(k => ctlSplit(k)[0] === f).length]),
+      head: [repT('h.component'), ...ks.map(k => ctlSplit(k)[1])], mdHead: [repT('h.component'), ...ks.map(k => (fws.length > 1 ? `${ctlInfo(k).short} ` : '') + ctlSplit(k)[1])],
+      rows: rows.map(r => [{ t: cut(r.n.label), title: r.n.label }, ...ks.map(k => {
+        const e = r.eff.get(k);
+        return e ? { t: CTL_SYM[e.status] + (e.from ? '↑' : ''), tone: `st-${e.status}${e.from ? ' inh' : ''}`, title: `${ctlInfo(k).short} ${ctlSplit(k)[1]}: ${T(`cmp.${e.status}`)}${e.from ? ` (${T('cmp.inh', groupById(e.from)?.label || e.from)})` : ''}` } : '';
+      })]) };
   }
 
   /* HTML autocontenido (también el que se imprime a PDF): sin red, sin scripts, imágenes como data URI */
@@ -6324,6 +6337,7 @@ dl{display:grid;grid-template-columns:max-content 1fr;gap:3px 14px;margin:0 0 12
 .cards{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 12px}.card{min-width:110px;padding:8px 12px;border:1px solid #d6d3e0;border-radius:8px;background:#f6f5fb}.card b{display:block;font-size:16pt;line-height:1.2}.card span{font-size:8.5pt;color:#6b6778;text-transform:uppercase;letter-spacing:.04em}
 table{width:100%;border-collapse:collapse;margin:6px 0 14px;font-size:8.5pt}table.compact{width:auto;min-width:50%}th,td{padding:4px 6px;border:1px solid #d6d3e0;text-align:left;vertical-align:top;overflow-wrap:anywhere}th{background:#efedf8;font-weight:700}
 thead{display:table-header-group}tr{break-inside:avoid}table.wide{font-size:8pt}
+table.grid{width:auto;max-width:100%;font-size:8pt}table.grid th{text-align:center}table.grid th:first-child,table.grid td:first-child{text-align:left;max-width:48mm}table.grid td{text-align:center;white-space:nowrap}table.grid td.inh{font-style:italic;background:#f6f5fb}
 .txt p{white-space:pre-wrap;margin:0 0 6px}ul{margin:0 0 10px;padding-left:20px}
 figure{margin:6px 0 14px;break-inside:avoid}figure img{display:block;max-width:100%;height:auto;border:1px solid #d6d3e0;border-radius:6px}
 .sev-low{color:#2f7d4f;font-weight:700}.sev-medium{color:#9a6b00;font-weight:700}.sev-high{color:#b4361f;font-weight:700}.sev-critical{color:#fff;background:#b4361f;font-weight:700}
@@ -6333,7 +6347,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
 @page{size:A4;margin:18mm 14mm 18mm;@top-left{content:__TITLE__;font:8pt sans-serif;color:#6b6778}@bottom-right{content:counter(page) " / " counter(pages);font:8pt sans-serif;color:#6b6778}}
 @media print{body{padding:0}h2,h3{break-after:avoid}.pb{break-before:page}}`;
   function reportHTML(D) {
-    const cell = c => { const t = typeof c === 'object' && c ? c.t : c, tone = typeof c === 'object' && c?.tone ? ` class="${esc(c.tone)}"` : ''; return `<td${tone}>${esc(t).replace(/\r?\n/g, '<br>')}</td>`; };
+    const cell = c => { const t = typeof c === 'object' && c ? c.t : c, tone = typeof c === 'object' && c?.tone ? ` class="${esc(c.tone)}"` : '', tt = typeof c === 'object' && c?.title ? ` title="${esc(c.title)}"` : ''; return `<td${tone}${tt}>${esc(t).replace(/\r?\n/g, '<br>')}</td>`; };
     const css = REP_CSS.replace('__FONT__', fontCss().replace(/"/g, "'")).replace('__TITLE__', `"${String(D.title).replace(/[\\"]/g, '\\$&').replace(/[\r\n]+/g, ' ')}"`);
     const blk = b => {
       if (b.k === 'h3') return `<h3>${esc(b.t)}</h3>`;
@@ -6342,7 +6356,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
       if (b.k === 'ul') return `<ul>${b.items.map(t => `<li>${esc(t).replace(/\r?\n/g, '<br>')}</li>`).join('')}</ul>`;
       if (b.k === 'text') return `<div class="txt"><h4>${esc(b.label)}</h4><p>${esc(b.t)}</p></div>`;
       if (b.k === 'cards') return `<div class="cards">${b.items.map(c => `<div class="card"><b${c.tone ? ` class="${esc(c.tone)}"` : ''}>${esc(c.value)}</b><span>${esc(c.label)}</span></div>`).join('')}</div>`;
-      if (b.k === 'table') return b.rows.length ? `<table${b.cls ? ` class="${esc(b.cls)}"` : ''}><thead><tr>${b.head.map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${b.rows.map(r => `<tr>${r.map(cell).join('')}</tr>`).join('')}</tbody></table>` : '';
+      if (b.k === 'table') return b.rows.length ? `<table${b.cls ? ` class="${esc(b.cls)}"` : ''}><thead>${b.group ? `<tr><th rowspan="2">${esc(b.head[0])}</th>${b.group.map(([g, n]) => `<th colspan="${n}">${esc(g)}</th>`).join('')}</tr><tr>${b.head.slice(1).map(h => `<th>${esc(h)}</th>`).join('')}</tr>` : `<tr>${b.head.map(h => `<th>${esc(h)}</th>`).join('')}</tr>`}</thead><tbody>${b.rows.map(r => `<tr>${r.map(cell).join('')}</tr>`).join('')}</tbody></table>` : '';
       if (b.k === 'img') return `<figure><img src="${esc(b.uri || '')}" alt="${esc(b.alt)}"></figure>`;
       return '';
     };
