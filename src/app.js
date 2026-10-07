@@ -3657,11 +3657,12 @@
     box.setAttribute('aria-label', T(area ? 'note.text' : 'zone.label'));
     Object.assign(box.style, { left: `${b.left - sr.left}px`, top: `${b.top - sr.top}px`, width: `${Math.max(b.width, area ? 0 : 200)}px`, ...(area ? { height: `${b.height}px` } : {}) });
     stage.appendChild(box);
-    box.focus(); box.select();
+    let ready = false; // ver inlineEdit: se enfoca después del mousedown del doble clic
+    setTimeout(() => { ready = true; box.focus(); box.select(); });
     beginEdit();
     box.addEventListener('input', () => { markEdit(); o[key] = box.value; changed(true); });
     box.addEventListener('keydown', ev => { if (ev.key === 'Enter' && (!area || ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); box.blur(); } });
-    box.addEventListener('blur', () => { box.remove(); endEdit(); if (S.sel?.id === id) renderInspector(); });
+    box.addEventListener('blur', () => { if (!ready) return; box.remove(); endEdit(); if (S.sel?.id === id) renderInspector(); });
   }
 
   // Edición en el lugar de nombres y etiquetas (sustituye a prompt()): cuadro sobre `rect` (pantalla), tamaño de letra según el zoom.
@@ -3681,15 +3682,16 @@
     const left = clamp(rect.left + rect.width / 2 - w / 2 - sr.left, 4, Math.max(4, sr.width - w - 4)), top = clamp(rect.top + rect.height / 2 - h / 2 - sr.top, 4, Math.max(4, sr.height - h - 4));
     box.style.left = `${left}px`; box.style.top = `${top}px`;
     stage.appendChild(box);
-    box.focus(); box.select();
-    let cancel = false;
+    // El doble clic se detecta en el pointerdown: el mousedown que llega justo después le quitaría el foco, así que se enfoca en la siguiente vuelta
+    let cancel = false, ready = false;
+    setTimeout(() => { ready = true; box.focus(); box.select(); });
     box.addEventListener('keydown', ev => {
       ev.stopPropagation();
       if (ev.key === 'Escape') { ev.preventDefault(); cancel = true; box.blur(); }
       else if (ev.key === 'Enter' && !(multiline && ev.shiftKey)) { ev.preventDefault(); box.blur(); }
     });
     if (multiline) box.addEventListener('input', () => { const n = box.value.split('\n').length; box.rows = n; box.style.height = `${Math.round(n * fs * 1.35 + 14)}px`; });
-    box.addEventListener('blur', () => { const v = box.value; box.remove(); if (!cancel) onCommit(v); });
+    box.addEventListener('blur', () => { if (!ready) return; const v = box.value; box.remove(); if (!cancel) onCommit(v); });
   }
   const unionRect = els => {
     const rs = els.map(e => e.getBoundingClientRect()).filter(r => r.width && r.height);
