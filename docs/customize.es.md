@@ -21,7 +21,7 @@ Todo lo personalizable está en **`src/config.js`**. Guarda y recarga `index.htm
 - **Tipografías**: elige Inter (por defecto), IBM Plex Sans o Fira Code en la barra superior; la elección se guarda en tu navegador y se incrusta en las exportaciones SVG/PNG. Vienen incluidas en la app (no se cargan de la web). Para añadir una, deja sus archivos `.woff2` en `assets/fonts/`, añade una entrada a `FONTS` en `tools/build-fonts.py` (mira su cabecera) y ejecuta `python3 tools/build-fonts.py`.
 - **Paletas**: añade una entrada en `palettes` con las mismas claves de color (`rosa`, `coral`, …) para `dark`, `light` y `black` (por defecto vienen Pastel y Neón). Una paleta guardada que ya no existe vuelve a Pastel.
 - **Nuevo tipo de componente**: copia una entrada de `types` y cambia `label`, `category`, `color`, `keywords` e `icon` (SVG de 24×24).
-- **Conexiones**: `edgeStyles` define trazo, grosor y número de partículas.
+- **Conexiones**: `edgeStyles` define trazo, grosor y número de partículas. Trae ocho tipos predefinidos (`sync`, `async`, `data`, `optional`, `replication`, `batch`, `stream`, `control`); añade los tuyos ahí para tenerlos en todos los diagramas (en la pestaña Texto se escribe `estilo=<clave>`). Los tipos que solo necesita un diagrama se crean en el inspector de la conexión (**Estilo › + Nuevo tipo…**) y se guardan en ese diagrama (`edgeTypes`). La importancia (`weight`: `high`, `critical`) multiplica el grosor del trazo (`EDGE_W` en `src/app.js`).
 - **Animación**: velocidad, aparición y duración de los pasos en `animation`.
 - **Costos**: `cost.currency`, `cost.hoursPerMonth` (730 = horas de un mes) y `cost.defaultYears`.
 - **Plantillas**: añade las tuyas en `src/examples.js`.

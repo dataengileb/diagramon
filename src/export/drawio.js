@@ -51,7 +51,7 @@
     const uri = m ? `data:${m[1]},${m[2]}` : src;
     return styleSafe(uri); // el escape XML se hace al escribir el atributo style (esc)
   };
-  const META_RESERVED = new Set(['id', 'label', 'link', 'placeholders', 'tooltip', 'type', 'typeLabel', 'desc', 'data', 'cost', 'review', 'edgeStyle', 'edgeStyleLabel', 'encrypted']);
+  const META_RESERVED = new Set(['id', 'label', 'link', 'placeholders', 'tooltip', 'type', 'typeLabel', 'desc', 'data', 'cost', 'review', 'edgeStyle', 'edgeStyleLabel', 'weight', 'encrypted']);
   const OUT = { en: 'outside', es: 'fuera' };
 
   // Atributos de metadatos (ctx.meta) para un <object>: un atributo por campo y un tooltip «Etiqueta: valor»
@@ -243,10 +243,13 @@
         const elbow = (e.route || model.routing || ctx.routing) === 'elbow';
         let style = elbow ? 'edgeStyle=orthogonalEdgeStyle;rounded=1;' : 'edgeStyle=orthogonalEdgeStyle;curved=1;';
         style += `html=1;endArrow=block;endFill=1;${e.both ? 'startArrow=block;startFill=1;' : ''}strokeColor=${color};fontColor=#333333;fontSize=11;labelBackgroundColor=#FFFFFF;`;
-        if (e.style === 'async') style += 'dashed=1;dashPattern=8 8;strokeWidth=2;';
-        else if (e.style === 'data') style += 'strokeWidth=3;';
-        else if (e.style === 'optional') style += 'dashed=1;dashPattern=2 6;opacity=70;strokeWidth=2;';
-        else style += 'strokeWidth=2;';
+        // Estilo resuelto por la app (también los tipos propios); el peso multiplica el grosor
+        const si = typeof ctx.edgeStyleInfo === 'function' ? ctx.edgeStyleInfo(e) : { id: ['async', 'data', 'optional'].includes(e.style) ? e.style : 'sync', dash: e.style === 'async' ? '6 6' : e.style === 'optional' ? '2 6' : '', width: e.style === 'data' ? 2.4 : 1.8, mult: 1, weight: '' };
+        const base = si.width >= 2.2 ? 3 : si.width < 1.4 ? 1 : 2, sw = Math.round(base * (si.mult || 1) * 10) / 10;
+        if (si.id === 'async') style += `dashed=1;dashPattern=8 8;strokeWidth=${sw};`;
+        else if (si.id === 'optional') style += `dashed=1;dashPattern=2 6;opacity=70;strokeWidth=${sw === 2 ? 2 : sw};`;
+        else if (si.dash) style += `dashed=1;dashPattern=${String(si.dash).replace(/[^0-9. ]/g, '')};strokeWidth=${sw};`;
+        else style += `strokeWidth=${sw};`;
 
         const parts = [];
         if (e.label) parts.push(String(e.label).split('\n').map(h).join('<br>'));
@@ -257,6 +260,7 @@
         else if (e.encrypted === false) label = '🔓' + (label ? ' ' + label : '');
 
         const attrs = [`label="${esc(label)}"`, `edgeStyle="${esc(e.style || 'sync')}"`, `edgeStyleLabel="${esc(ctx.edgeStyleLabel(e.style))}"`];
+        if (e.weight === 'high' || e.weight === 'critical') attrs.push(`weight="${e.weight}"`);
         if (e.encrypted != null) attrs.push(`encrypted="${e.encrypted ? 'true' : 'false'}"`);
         if (tags.length) attrs.push(`data="${esc((e.data || []).join(','))}"`);
         const mt = metaOf(ctx, e);

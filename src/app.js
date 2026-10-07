@@ -106,6 +106,49 @@
   // o una variable CSS con respaldo hex opcional (las de config.js, p. ej. las capas: var(--layer-gold, #d4a72c))
   const SAFE_COLOR = /^(#[0-9a-f]{3,8}|[a-z]{3,20}|var\(--[a-z0-9-]{1,40}(,\s?#[0-9a-f]{3,8})?\))$/i;
   const colorVar = k => !k ? null : paletteKeys().includes(k) ? `var(--p-${k})` : COLOR_ALIAS[k] ? `var(--p-${COLOR_ALIAS[k]})` : SAFE_COLOR.test(String(k).trim()) ? themeSafe(String(k).trim()) : null;
+  /* ---------- tipos de conexión: los de config.js (edgeStyles) más los propios del diagrama (model.edgeTypes) ----------
+     Peso (weight): 'high' | 'critical' engrosan la línea, añaden partículas y agrandan la punta; normal = sin campo.
+     Un tipo propio: { id, label, dash?, color?, width?, particles? }; todo se valida aquí (el texto llega a atributos style="…"). */
+  const EDGE_W = { high: 1.6, critical: 2.3 };
+  const edgeMult = e => EDGE_W[e?.weight] || 1;
+  const DASH_RE = /^\d{1,2}(\.\d)?( \d{1,2}(\.\d)?){0,5}$/;
+  const EDGE_DASHES = ['', '6 6', '2 6', '12 4 2 4', '16 8', '4 3', '1 5', '10 3'];   // patrones del selector de tipos
+  const cleanDash = v => {
+    if (v == null) return null;
+    const s = String(v).replace(/[,;]/g, ' ').trim().replace(/\s+/g, ' ');
+    return s === '' ? '' : DASH_RE.test(s) && s.split(' ').some(x => +x > 0) ? s : null;
+  };
+  const cleanEdgeTypes = v => {
+    const out = [], seen = new Set();
+    (Array.isArray(v) ? v : []).forEach(t => {
+      if (out.length >= 24 || !t || typeof t !== 'object') return;
+      const id = String(t.id ?? '').trim().toLowerCase();
+      if (!/^[a-z0-9-]{1,32}$/.test(id) || seen.has(id) || Object.hasOwn(C.edgeStyles, id)) return;
+      seen.add(id);
+      const o = { id, label: String(t.label ?? '').replace(/\s+/g, ' ').trim().slice(0, 60) || id };
+      const d = cleanDash(t.dash); if (d) o.dash = d;
+      const c = t.color == null ? '' : String(t.color).trim(); if (c && colorVar(c)) o.color = c;
+      const w = +t.width; if (t.width != null && t.width !== '' && Number.isFinite(w) && w >= 1 && w <= 4) o.width = Math.round(w * 10) / 10;
+      const p = +t.particles; if (t.particles != null && t.particles !== '' && Number.isInteger(p) && p >= 0 && p <= 4) o.particles = p;
+      out.push(o);
+    });
+    return out;
+  };
+  const customTypes = () => (Array.isArray(S.model?.edgeTypes) ? S.model.edgeTypes : []);
+  // Todos los tipos: { clave: { label, dash, particles, width, color?, custom? } } (los propios van después)
+  const edgeStyles = () => {
+    const o = { ...C.edgeStyles };
+    customTypes().forEach(t => { o[t.id] = { label: t.label, dash: t.dash || '', particles: t.particles ?? 1, width: t.width ?? 1.8, color: t.color, custom: true }; });
+    return o;
+  };
+  const edgeKey = id => (typeof id === 'string' && (Object.hasOwn(C.edgeStyles, id) || customTypes().some(t => t.id === id)) ? id : 'sync');
+  const edgeStyleOf = id => edgeStyles()[edgeKey(id)];
+  const edgeCls = k => (Object.hasOwn(C.edgeStyles, k) ? `edge-${k}` : `edge-c-${k}`); // los propios con prefijo: no chocan con .edge-line, .edge-label…
+  const edgeStyleLabel = id => loc(edgeStyleOf(id).label);
+  // Patrón de trazos escalado al grosor (con extremos redondos, un trazo corto desaparece si la línea engorda)
+  const dashFor = (cfg, mu) => (cfg.dash ? cfg.dash.split(' ').map(x => +(+x * mu).toFixed(1)).join(' ') : '');
+  const arrowK = mu => 1 + (mu - 1) * 0.55;
+  const maxWeight = list => (list.some(e => e.weight === 'critical') ? 'critical' : list.some(e => e.weight === 'high') ? 'high' : '');
   const typeOf = n => C.types[n.type] || C.types.generic;
   const typeLabel = type => loc((C.types[type] || C.types.generic).label);
   const nodeColor = n => colorVar(n && n.color) || colorVar(typeOf(n || {}).color) || 'var(--accent)';
@@ -535,6 +578,7 @@
     if (raw.direction === 'LR' || raw.direction === 'TB') m.direction = raw.direction;
     if (raw.routing === 'elbow') m.routing = 'elbow';
     if (raw.layerNames === 'zones') m.layerNames = 'zones';
+    { const et = cleanEdgeTypes(raw.edgeTypes); if (et.length) m.edgeTypes = et; }
     { const dm = cleanDismissed(raw.dismissed); if (dm) m.dismissed = dm; }
     if (raw.meta && typeof raw.meta === 'object') {
       const meta = {};
@@ -606,6 +650,7 @@
       const enc = typeof o.encrypted === 'string' ? (/^(yes|true|si|sí)$/i.test(o.encrypted) ? true : /^(no|false)$/i.test(o.encrypted) ? false : null) : o.encrypted;
       if (enc === true || enc === false) o.encrypted = enc; else delete o.encrypted;
       if (o.route !== 'curved' && o.route !== 'elbow') delete o.route;
+      if (o.weight !== 'high' && o.weight !== 'critical') delete o.weight;
       if (o.both === true || (typeof o.both === 'string' && /^(yes|true|si|sí)$/i.test(o.both))) o.both = true; else delete o.both;
       const dsl = cleanDatasets(o.datasets); if (dsl.length) o.datasets = dsl; else delete o.datasets;
       if (o.transferOk === true || (typeof o.transferOk === 'string' && /^(yes|true|ok|si|sí)$/i.test(o.transferOk))) o.transferOk = true; else delete o.transferOk;
@@ -1629,27 +1674,30 @@
   };
 
   function buildEdge(e, delay) {
-    const st = C.edgeStyles[e.style] ? e.style : 'sync', cfg = C.edgeStyles[st];
-    const g = el('g', { class: `edge edge-${st}${cfg.dash ? ' edge-dashed' : ''}${delay >= 0 ? ' enter' : ''}`, 'data-id': e.id }, L.edges);
-    g.style.setProperty('--c', colorVar(e.color) || nodeColor(S.model.nodes.find(n => n.id === e.from)));
-    g.style.setProperty('--w', `${cfg.width}px`);
+    const st = edgeKey(e.style), cfg = edgeStyleOf(st), mu = edgeMult(e), wt = EDGE_W[e.weight] ? e.weight : '';
+    const g = el('g', { class: `edge ${edgeCls(st)}${cfg.dash ? ' edge-dashed' : ''}${wt ? ` w-${wt}` : ''}${delay >= 0 ? ' enter' : ''}`, 'data-id': e.id }, L.edges);
+    g.style.setProperty('--c', colorVar(e.color) || colorVar(cfg.color) || nodeColor(S.model.nodes.find(n => n.id === e.from)));
+    g.style.setProperty('--w', `${+(cfg.width * mu).toFixed(2)}px`);
     if (delay >= 0) { g.style.animationDelay = `${delay}ms`; endEnter(g); }
     const hit = el('path', { class: 'edge-hit' }, g);
     const line = el('path', { class: 'edge-line' }, g);
     if (cfg.dash) {
-      line.setAttribute('stroke-dasharray', cfg.dash);
-      const dist = cfg.dash.split(/[\s,]+/).reduce((s, v) => s + (+v || 0), 0) * 4;
+      const dash = dashFor(cfg, mu);
+      line.setAttribute('stroke-dasharray', dash);
+      const dist = dash.split(' ').reduce((s, v) => s + (+v || 0), 0) * 4;
       g.style.setProperty('--dash-to', `${-dist}px`);
       g.style.setProperty('--dash-dur', `${(dist / (C.animation.particleSpeed * 0.5)).toFixed(2)}s`);
     }
     const arrow = el('path', { class: 'edge-arrow' }, g);
-    // Con punta en ambos extremos las partículas van y vienen (al menos dos, alternando sentido)
-    const parts = Array.from({ length: cfg.particles ? (e.both ? Math.max(2, cfg.particles) : cfg.particles) : 0 }, () => el('circle', { class: 'particle', r: st === 'data' ? 2.4 : 3, cx: -9999, cy: -9999 }, g));
+    // Con punta en ambos extremos las partículas van y vienen (al menos dos, alternando sentido); el peso suma partículas (solo si el tipo ya las tiene)
+    const np = cfg.particles ? cfg.particles + (wt === 'critical' ? 2 : wt === 'high' ? 1 : 0) : 0, pr = (st === 'data' || st === 'stream' ? 2.4 : 3) + (wt === 'critical' ? 1 : wt === 'high' ? 0.5 : 0);
+    const parts = Array.from({ length: np ? (e.both ? Math.max(2, np) : np) : 0 }, () => el('circle', { class: 'particle', r: pr, cx: -9999, cy: -9999 }, g));
     const byId = id => S.model.nodes.find(n => n.id === id);
     if (isInsecure(e, byId)) g.classList.add('insecure');
-    const r = { g, e, hit, line, arrow, label: null, parts, len: 0, phase: Math.random(), xb: null };
+    const r = { g, e, hit, line, arrow, label: null, parts, len: 0, phase: Math.random(), xb: null, wpx: cfg.width * mu, ak: arrowK(mu), speed: wt === 'critical' ? 1.25 : wt === 'high' ? 1.12 : 1 };
     R.edges.set(e.id, r);
-    if (e.datasets?.length) el('title', null, g).textContent = T('lin.tip', { list: e.datasets.join(', ') });
+    const tip = [wt && T(`wt.tip.${wt}`), e.datasets?.length && T('lin.tip', { list: e.datasets.join(', ') })].filter(Boolean).join('\n');
+    if (tip) el('title', null, g).textContent = tip;
     edgeLabel(r);
     edgeDatasets(r);
     xbMarker(r);
@@ -1708,7 +1756,7 @@
     if (!info) return [];
     const A = c.byId.get(e.from), B = c.byId.get(e.to), cls = new Set([...(e.data || []), ...(A?.data || []), ...(B?.data || [])]);
     const sens = isSensitive(e) || isSensitive(A) || isSensitive(B), crit = [...cls].some(k => (STR.criticalClasses || []).includes(k));
-    const inb = info.inbound, enc = e.encrypted, sync = (C.edgeStyles[e.style] ? e.style : 'sync') === 'sync';
+    const inb = info.inbound, enc = e.encrypted, sync = edgeKey(e.style) === 'sync';
     const store = !!B && ((STR.storeTypes || []).includes(B.type) || (STR.storeIconCategories || []).includes(iconInfo(B.icon)?.category));
     const out = [], add = (cat, severity, why) => { if (STR.categories[cat]) out.push({ cat, severity, why }); };
     add('S', inb ? (SEVERITY.includes(STR.inboundSeverity) ? STR.inboundSeverity : 'high') : 'medium', inb ? 'S.in' : 'S.out');
@@ -1973,16 +2021,16 @@
   const loopPath = a => `M${a.x + a.w - 34},${a.y} C${a.x + a.w - 34},${a.y - 56} ${a.x + a.w + 52},${a.y - 30} ${a.x + a.w},${a.y + a.h / 2 - 6}`;
 
   // Punta de flecha al final de la línea (y al inicio si es bidireccional)
-  function arrowD(line, len, both) {
+  function arrowD(line, len, both, k = 1) { // k > 1: punta más grande para líneas gruesas (peso)
     const p = line.getPointAtLength(len), q = line.getPointAtLength(Math.max(0, len - 9));
     const ang = Math.atan2(p.y - q.y, p.x - q.x), c = Math.cos(ang), s = Math.sin(ang);
-    const bx = p.x - 10 * c, by = p.y - 10 * s;
-    let ad = `M${p.x},${p.y} L${bx - 5 * s},${by + 5 * c} L${bx + 5 * s},${by - 5 * c} Z`;
+    const bx = p.x - 10 * k * c, by = p.y - 10 * k * s;
+    let ad = `M${p.x},${p.y} L${bx - 5 * k * s},${by + 5 * k * c} L${bx + 5 * k * s},${by - 5 * k * c} Z`;
     if (both) { // segunda punta en el origen, mirando hacia fuera
       const p0 = line.getPointAtLength(0), q0 = line.getPointAtLength(Math.min(len, 9));
       const a0 = Math.atan2(p0.y - q0.y, p0.x - q0.x), c0 = Math.cos(a0), s0 = Math.sin(a0);
-      const bx0 = p0.x - 10 * c0, by0 = p0.y - 10 * s0;
-      ad += ` M${p0.x},${p0.y} L${bx0 - 5 * s0},${by0 + 5 * c0} L${bx0 + 5 * s0},${by0 - 5 * c0} Z`;
+      const bx0 = p0.x - 10 * k * c0, by0 = p0.y - 10 * k * s0;
+      ad += ` M${p0.x},${p0.y} L${bx0 - 5 * k * s0},${by0 + 5 * k * c0} L${bx0 + 5 * k * s0},${by0 - 5 * k * c0} Z`;
     }
     return ad;
   }
@@ -2002,13 +2050,13 @@
     const ports = elbowPorts(sm.edges, rect, routeOf);
     R.edges.forEach(r => {
       if (VW.sc.edges.has(r.e.id)) return;
-      const e = r.e, a = rect(e.from), b = rect(e.to), off = pairs.has(e.to + '\0' + e.from) ? 7 : 0, pt = ports.get(e.id);
+      const e = r.e, a = rect(e.from), b = rect(e.to), off = pairs.has(e.to + '\0' + e.from) ? 7 + Math.max(0, ((r.wpx || 1.8) - 1.8) / 2) : 0, pt = ports.get(e.id);
       const d = e.from === e.to ? loopPath(a)
         : pt ? elbowPath(a, b, pt.s, allRects.filter(o => o.id !== e.from && o.id !== e.to), pt.t) : curvePath(a, b, off);
       r.hit.setAttribute('d', d);
       r.line.setAttribute('d', d);
       r.len = r.line.getTotalLength();
-      r.arrow.setAttribute('d', arrowD(r.line, r.len, e.both));
+      r.arrow.setAttribute('d', arrowD(r.line, r.len, e.both, r.ak));
       if (r.label || r.ds) {
         const mp = r.line.getPointAtLength(r.len / 2);
         r.label?.setAttribute('transform', `translate(${mp.x} ${mp.y})`);
@@ -2860,21 +2908,23 @@
     const rects = [...reps.values()].map(rp => rp.r);
     agg.forEach(x => {
       const both = x.ab > 0 && x.ba > 0, [A, B] = x.ab ? [x.a, x.b] : [x.b, x.a], list = x.edges, one = list.length === 1;
-      const sts = new Set(list.map(e => (C.edgeStyles[e.style] ? e.style : 'sync'))), st = sts.size === 1 ? [...sts][0] : 'sync', cfg = C.edgeStyles[st];
+      const sts = new Set(list.map(e => edgeKey(e.style))), st = sts.size === 1 ? [...sts][0] : 'sync', cfg = edgeStyleOf(st);
+      const wt = maxWeight(list), mu = EDGE_W[wt] || 1; // el peso del conjunto = el mayor de sus conexiones
       const insecure = list.some(e => isInsecure(e, id => byId.get(id)));
-      const g = el('g', { class: `edge ctx-edge edge-${st}${cfg.dash ? ' edge-dashed' : ''}${insecure ? ' insecure' : ''}`, 'data-key': x.key }, L.ctx);
-      g.style.setProperty('--c', (one && colorVar(list[0].color)) || A.color);
-      g.style.setProperty('--w', `${cfg.width + (one ? 0 : Math.min(2.4, Math.log2(list.length) * 0.7))}px`);
+      const g = el('g', { class: `edge ctx-edge ${edgeCls(st)}${cfg.dash ? ' edge-dashed' : ''}${wt ? ` w-${wt}` : ''}${insecure ? ' insecure' : ''}`, 'data-key': x.key }, L.ctx);
+      g.style.setProperty('--c', (one && colorVar(list[0].color)) || (sts.size === 1 && colorVar(cfg.color)) || A.color);
+      g.style.setProperty('--w', `${+(cfg.width * mu + (one ? 0 : Math.min(2.4, Math.log2(list.length) * 0.7))).toFixed(2)}px`);
       const d = m.routing === 'elbow' ? elbowPath(A.r, B.r, 0, rects.filter(o => o !== A.r && o !== B.r), 0) : curvePath(A.r, B.r, 0);
       const hit = el('path', { class: 'edge-hit', d }, g), line = el('path', { class: 'edge-line', d }, g);
       if (cfg.dash) {
-        line.setAttribute('stroke-dasharray', cfg.dash);
-        const dist = cfg.dash.split(/[\s,]+/).reduce((sum, q) => sum + (+q || 0), 0) * 4;
+        const dash = dashFor(cfg, mu);
+        line.setAttribute('stroke-dasharray', dash);
+        const dist = dash.split(' ').reduce((sum, q) => sum + (+q || 0), 0) * 4;
         g.style.setProperty('--dash-to', `${-dist}px`);
         g.style.setProperty('--dash-dur', `${(dist / (C.animation.particleSpeed * 0.5)).toFixed(2)}s`);
       }
       const len = line.getTotalLength();
-      el('path', { class: 'edge-arrow', d: arrowD(line, len, both) }, g);
+      el('path', { class: 'edge-arrow', d: arrowD(line, len, both, arrowK(mu)) }, g);
       const txt = one ? list[0].label : T('ctx.flows', list.length);
       if (txt) {
         const lines = String(txt).split('\n'), LH = 14, lw = Math.max(...lines.map(l => textW(l, FONT.edge))) + 16, ph = Math.max(20, lines.length * LH + 6), mp = line.getPointAtLength(len / 2);
@@ -2943,7 +2993,7 @@
       R.edges.forEach(r => {
         if (!r.parts.length || r.len < 1) return;
         const f = r.g.classList.contains('pulse') ? 3 : 1;
-        r.phase = (r.phase + dt * C.animation.particleSpeed * f / r.len) % 1;
+        r.phase = (r.phase + dt * C.animation.particleSpeed * f * (r.speed || 1) / r.len) % 1;
         const count = r.parts.length;
         r.parts.forEach((c, i) => {
           const t = (r.phase + i / count) % 1, p = r.line.getPointAtLength((r.e.both && i % 2 ? 1 - t : t) * r.len);
@@ -3069,7 +3119,7 @@
   const ORDER = {
     group: ['id', 'label', 'icon', 'color', 'parent', 'kind', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'controls', 'in'],
     node: ['id', 'label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'x', 'y', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'exposure', 'backup', 'controls', 'in', 'c4', 'sla', 'rpo', 'rto', 'replicas'],
-    edge: ['id', 'from', 'to', 'label', 'style', 'route', 'both', 'color', 'data', 'encrypted', 'datasets', 'transferOk', 'threats'],
+    edge: ['id', 'from', 'to', 'label', 'style', 'weight', 'route', 'both', 'color', 'data', 'encrypted', 'datasets', 'transferOk', 'threats'],
     note: ['id', 'x', 'y', 'w', 'h', 'text', 'color', 'in'],
     zone: ['id', 'x', 'y', 'w', 'h', 'label', 'severity', 'desc', 'kind', 'trust', 'in'],
     decision: ['id', 'title', 'status', 'date', 'deciders', 'context', 'decision', 'consequences', 'supersededBy', 'links', 'history']
@@ -3087,6 +3137,7 @@
     if (m.direction) head.push(`  "direction": ${JSON.stringify(m.direction)}`);
     if (m.routing) head.push(`  "routing": ${JSON.stringify(m.routing)}`);
     if (m.layerNames === 'zones') head.push(`  "layerNames": "zones"`);
+    if (m.edgeTypes?.length) head.push(`  "edgeTypes": ${JSON.stringify(m.edgeTypes)}`);
     if (m.dismissed && Object.keys(m.dismissed).length) head.push(`  "dismissed": ${JSON.stringify(m.dismissed)}`);
     if (m.meta) head.push(`  "meta": ${JSON.stringify(m.meta)}`);
     const body = [...head, arr('groups', m.groups, ORDER.group), arr('nodes', m.nodes, ORDER.node), arr('edges', m.edges, ORDER.edge)];
@@ -3934,7 +3985,7 @@
   const findVersion = id => S.model.versions.find(v => v.id === id);
   // Solo lo que se dibuja: sin versiones y con posiciones redondeadas
   const snapshotOf = m => {
-    const d = clone({ title: m.title, ...(m.direction ? { direction: m.direction } : {}), ...(m.routing ? { routing: m.routing } : {}), ...(m.layerNames ? { layerNames: m.layerNames } : {}), ...(m.dismissed ? { dismissed: m.dismissed } : {}), groups: m.groups, nodes: m.nodes, edges: m.edges, ...(m.notes?.length ? { notes: m.notes } : {}), ...(m.zones?.length ? { zones: m.zones } : {}) });
+    const d = clone({ title: m.title, ...(m.direction ? { direction: m.direction } : {}), ...(m.routing ? { routing: m.routing } : {}), ...(m.layerNames ? { layerNames: m.layerNames } : {}), ...(m.edgeTypes?.length ? { edgeTypes: m.edgeTypes } : {}), ...(m.dismissed ? { dismissed: m.dismissed } : {}), groups: m.groups, nodes: m.nodes, edges: m.edges, ...(m.notes?.length ? { notes: m.notes } : {}), ...(m.zones?.length ? { zones: m.zones } : {}) });
     d.nodes.forEach(n => { n.x = Math.round(n.x); n.y = Math.round(n.y); });
     return d;
   };
@@ -4047,7 +4098,7 @@
   // Diferencias entre lo guardado (a) y el lienzo (b). La posición no cuenta como cambio.
   const DIFF_FIELDS = {
     node: ['label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'exposure', 'backup', 'controls', 'in', 'c4', 'sla', 'rpo', 'rto', 'replicas'],
-    edge: ['label', 'style', 'route', 'both', 'color', 'data', 'encrypted', 'datasets', 'transferOk', 'threats'],
+    edge: ['label', 'style', 'weight', 'route', 'both', 'color', 'data', 'encrypted', 'datasets', 'transferOk', 'threats'],
     group: ['label', 'icon', 'color', 'parent', 'kind', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'controls', 'in']
   };
   function diffModels(a, b) {
@@ -4213,7 +4264,7 @@
   function diffList(d) {
     if (!(d.count.a + d.count.r + d.count.c)) return `<p class="ver-sum">${esc(T('ver.same'))}</p>`;
     const FIELD = { label: 'insp.name', sub: 'insp.detail', type: 'insp.type', icon: 'insp.icon', group: 'insp.group', color: 'insp.color', badge: 'field.badge',
-      cost: 'cost.label', costPeriod: 'cost.period', costYears: 'cost.yearsAria', desc: 'insp.desc', style: 'insp.style', parent: 'insp.parent',
+      cost: 'cost.label', costPeriod: 'cost.period', costYears: 'cost.yearsAria', desc: 'insp.desc', style: 'insp.style', weight: 'wt.label', parent: 'insp.parent',
       data: 'data.label', encrypted: 'enc.label', route: 'insp.route', both: 'insp.dir', review: 'rev.label', kind: 'gkind.label', exposure: 'sec.expo.label', backup: 'sec.backup.label', controls: 'cmp.title', in: 'c4.in', c4: 'c4.label', sla: 'res.sla', rpo: 'res.rpo', rto: 'res.rto', replicas: 'res.replicas' };
     const fields = (fs, kind) => fs.map(f => T(kind === 'edge' && f === 'label' ? 'insp.label' : FIELD[f] || f).toLowerCase()).join(', ');
     const names = new Map([...S.compare.base.nodes, ...S.model.nodes].map(n => [n.id, n.label]));
@@ -5042,9 +5093,12 @@
       const a = nm(t.from), b = nm(t.to);
       html = head(colorVar(t.color) || nodeColor(a), '', T('insp.edge'), `${a.label} ${t.both ? '↔' : '→'} ${b.label}`) + `
         <label>${T('insp.label')}<textarea data-field="label" rows="2" placeholder="${esc(T('insp.label.ph'))}">${esc(t.label || '')}</textarea></label>
-        <label>${T('insp.style')}<select data-field="style">${Object.entries(C.edgeStyles).map(([k, v]) => `<option value="${k}"${k === (C.edgeStyles[t.style] ? t.style : 'sync') ? ' selected' : ''}>${esc(loc(v.label))}</option>`).join('')}</select></label>
+        <label>${T('insp.style')}<select data-field="style">${edgeStyleOptions(edgeKey(t.style))}</select></label>
+        <div class="field">${T('wt.label')}<div class="seg">${[['', 'wt.normal'], ['high', 'wt.high'], ['critical', 'wt.critical']].map(([k, l]) =>
+          `<button data-wt="${k}" class="${(t.weight || '') === k ? 'on' : ''}">${T(l)}</button>`).join('')}</div></div>
         <label>${T('insp.route')}<select data-field="route">${[['', T('route.default', { name: T(`route.${S.model.routing || 'curved'}`) })], ['curved', T('route.curved')], ['elbow', T('route.elbow')]]
           .map(([k, l]) => `<option value="${k}"${(t.route || '') === k ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select></label>
+        ${customTypes().length ? `<div class="field"><button class="btn small" data-act="edgetypes">${T('et.manage')}</button></div>` : ''}
         <div class="field">${T('insp.dir')}<div class="seg">${[['', 'dir.one'], ['both', 'dir.both']].map(([k, l]) =>
           `<button data-dir="${k}" class="${(t.both ? 'both' : '') === k ? 'on' : ''}">${T(l)}</button>`).join('')}</div></div>
         ${encField(t)}
@@ -5116,6 +5170,7 @@
     const list = Array.isArray(t) ? t : [t];
     let v = f.value;
     if (v === '__mixed') return;
+    if (k === 'style' && v === '__newtype') { renderInspector(); return openEdgeTypes({ apply: !Array.isArray(t) && S.sel?.kind === 'edge' ? t : null }); }
     if (k === 'region') v = v.trim();
     if (k === 'cost' || k === 'costYears') {
       // Números: vacío o no válido = quitar el valor
@@ -5313,6 +5368,10 @@
       if (b.dataset.zkind === 'trust') { t.kind = 'trust'; delete t.severity; if (t.label === T('zone.new')) t.label = ''; }
       else { delete t.kind; delete t.trust; t.severity = SEVERITY.includes(t.severity) ? t.severity : 'medium'; if (!t.label) t.label = T('zone.new'); }
       changed(true); renderInspector();
+    } else if (b.dataset.wt != null && t && !Array.isArray(t) && S.sel?.kind === 'edge') {
+      pushHistory();
+      if (EDGE_W[b.dataset.wt]) t.weight = b.dataset.wt; else delete t.weight;
+      changed(true); renderInspector();
     } else if (b.dataset.dir != null && t && !Array.isArray(t)) {
       pushHistory();
       if (b.dataset.dir) t.both = true; else delete t.both;
@@ -5354,6 +5413,7 @@
       case 'mkzone': markZone(); break;
       case 'mktrust': markZone('trust'); break;
       case 'delete': deleteSelection(); break;
+      case 'edgetypes': openEdgeTypes(); break;
       case 'reverse': pushHistory(); [t.from, t.to] = [t.to, t.from]; changed(true); renderInspector(); break;
     }
   });
@@ -5449,6 +5509,149 @@
     draw();
     document.body.appendChild(back);
     back.querySelector('[data-cm="close"]').focus();
+  }
+
+  /* ---------- tipos de conexión propios: opciones del inspector y gestor (model.edgeTypes) ---------- */
+  function edgeStyleOptions(cur) {
+    const ES = edgeStyles(), opt = k => `<option value="${esc(k)}"${k === cur ? ' selected' : ''}>${esc(loc(ES[k].label))}</option>`;
+    const mine = customTypes().map(t => t.id);
+    return Object.keys(C.edgeStyles).map(opt).join('') + (mine.length ? `<optgroup label="${esc(T('et.custom'))}">${mine.map(opt).join('')}</optgroup>` : '') + `<option value="__newtype">${esc(T('et.new'))}</option>`;
+  }
+  // Clave a partir del nombre: minúsculas sin acentos, a-z 0-9 y guiones; única entre los tipos de config.js y los del diagrama
+  function edgeTypeId(label) {
+    const base = (String(label).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 24) || 'tipo');
+    let id = base, n = 2;
+    while (Object.hasOwn(C.edgeStyles, id) || customTypes().some(t => t.id === id)) id = `${base}-${n++}`;
+    return id;
+  }
+  // Línea de muestra (SVG) de un tipo: patrón, grosor y color ya validados
+  function edgeSample(t, w = 56) {
+    const sv = document.createElementNS(NS, 'svg');
+    sv.setAttribute('viewBox', `0 0 ${w} 14`); sv.setAttribute('width', w); sv.setAttribute('height', 14); sv.setAttribute('class', 'et-sample');
+    const dash = cleanDash(t.dash), c = (t.color && colorVar(t.color)) || 'var(--muted)';
+    const ln = el('path', { d: `M2,7 L${w - 12},7`, fill: 'none', 'stroke-linecap': 'round', 'stroke-width': Math.min(4, Math.max(1, +t.width || 1.8)), ...(dash ? { 'stroke-dasharray': dash } : {}) }, sv);
+    ln.style.stroke = c;
+    el('path', { d: `M${w - 2},7 L${w - 10},3 L${w - 10},11 Z` }, sv).style.fill = c;
+    return sv;
+  }
+  function openEdgeTypes(opts = {}) {
+    const prev = document.activeElement, back = document.createElement('div'), id = `et${Date.now()}`, apply = opts.apply || null;
+    let editing = null, draft = { label: '', dash: '6 6', color: '', width: 1.8, particles: 1 };
+    back.className = 'cf-back';
+    back.innerHTML = `<div class="cf et" role="dialog" aria-modal="true" aria-labelledby="${id}t">
+      <h3 id="${id}t">${esc(T('et.title'))}</h3>
+      <p>${esc(T('et.hint'))}</p>
+      <div class="et-list"></div>
+      <form class="et-form" novalidate>
+        <h4 class="et-sub"></h4>
+        <label>${esc(T('et.label'))}<input class="cf-type" name="label" maxlength="60" autocomplete="off" placeholder="${esc(T('et.label.ph'))}"></label>
+        <div class="et-f"><span>${esc(T('et.dash'))}</span><div class="et-dashes" role="radiogroup"></div></div>
+        <div class="et-f"><span>${esc(T('insp.color'))}</span><div class="swatches et-colors"></div></div>
+        <div class="et-row">
+          <label>${esc(T('et.width'))} <output name="wout"></output><input type="range" name="width" min="1" max="4" step="0.1"></label>
+          <label>${esc(T('et.particles'))}<select name="particles">${[0, 1, 2, 3, 4].map(n => `<option value="${n}">${n}</option>`).join('')}</select></label>
+        </div>
+        <div class="et-prev"></div>
+        <div class="cf-actions"><button type="button" class="btn" data-et="close">${esc(T('et.close'))}</button><button type="submit" class="btn primary" data-et="save">${esc(T('et.save'))}</button></div>
+      </form></div>`;
+    const form = back.querySelector('form'), list = back.querySelector('.et-list'), dashes = back.querySelector('.et-dashes'), cols = back.querySelector('.et-colors'), prevBox = back.querySelector('.et-prev');
+    const drawPrev = () => {
+      prevBox.textContent = '';
+      prevBox.appendChild(edgeSample(draft, 120));
+      const sp = document.createElement('span'); sp.textContent = draft.label || T('et.label.ph'); prevBox.appendChild(sp);
+    };
+    const drawForm = () => {
+      form.querySelector('.et-sub').textContent = editing ? T('et.edit') : T('et.create');
+      form.label.value = draft.label; form.width.value = draft.width; form.particles.value = draft.particles;
+      form.wout.textContent = `${draft.width}px`;
+      dashes.textContent = '';
+      EDGE_DASHES.forEach(d => {
+        const b = document.createElement('button'), on = (draft.dash || '') === d;
+        b.type = 'button'; b.className = `et-dash${on ? ' on' : ''}`; b.setAttribute('role', 'radio'); b.setAttribute('aria-checked', on ? 'true' : 'false');
+        b.dataset.dash = d; b.title = d || T('et.solid');
+        b.appendChild(edgeSample({ dash: d, width: 2, color: draft.color }, 48));
+        dashes.appendChild(b);
+      });
+      cols.textContent = '';
+      const mk = (cls, k, title, color) => {
+        const b = document.createElement('button');
+        b.type = 'button'; b.className = `sw ${cls}${(draft.color || '') === k ? ' on' : ''}`; b.dataset.etc = k; b.title = title;
+        if (color) b.style.setProperty('--c', color);
+        cols.appendChild(b);
+      };
+      mk('auto', '', T('insp.auto'));
+      paletteKeys().forEach(k => mk('', k, I.colorName(k), `var(--p-${k})`));
+      const hex = /^#[0-9a-f]{6}$/i.test(draft.color || '') ? draft.color : '';
+      const ci = document.createElement('input');
+      ci.type = 'color'; ci.className = 'et-hex'; ci.value = hex || '#8573db'; ci.title = T('color.custom'); ci.setAttribute('aria-label', T('color.custom'));
+      cols.appendChild(ci);
+      drawPrev();
+    };
+    const drawList = () => {
+      list.textContent = '';
+      customTypes().forEach(t => {
+        const n = S.model.edges.filter(e => e.style === t.id).length, row = document.createElement('div');
+        row.className = 'et-item';
+        row.appendChild(edgeSample(t, 56));
+        const nm = document.createElement('span'); nm.className = 'et-name'; nm.textContent = t.label; row.appendChild(nm);
+        const cnt = document.createElement('small'); cnt.textContent = n ? T('et.used', n) : ''; row.appendChild(cnt);
+        [['edit', 'et.edit.btn'], ['del', 'et.del']].forEach(([a, k]) => {
+          const b = document.createElement('button'); b.type = 'button'; b.className = 'btn small'; b.dataset.eta = a; b.dataset.id = t.id; b.textContent = T(k); row.appendChild(b);
+        });
+        list.appendChild(row);
+      });
+      list.hidden = !list.children.length;
+    };
+    const readForm = () => { // lo escrito se valida de nuevo al guardar (cleanEdgeTypes)
+      draft = { ...draft, label: form.label.value, width: +form.width.value || 1.8, particles: +form.particles.value };
+      form.wout.textContent = `${draft.width}px`;
+    };
+    const close = () => { document.removeEventListener('keydown', key, true); back.remove(); prev?.focus?.(); };
+    const key = ev => { if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); close(); } };
+    const reset = () => { editing = null; draft = { label: '', dash: '6 6', color: '', width: 1.8, particles: 1 }; drawForm(); };
+    form.addEventListener('input', () => { readForm(); drawPrev(); });
+    form.addEventListener('change', ev => { if (ev.target.classList.contains('et-hex')) { readForm(); draft.color = ev.target.value; drawForm(); } });
+    form.addEventListener('click', ev => {
+      const d = ev.target.closest('[data-dash]'), c = ev.target.closest('[data-etc]');
+      if (d) { readForm(); draft.dash = d.dataset.dash; drawForm(); }
+      else if (c) { readForm(); draft.color = c.dataset.etc; drawForm(); }
+      else if (ev.target.closest('[data-et="close"]')) close();
+    });
+    form.addEventListener('submit', ev => {
+      ev.preventDefault(); readForm();
+      const t = cleanEdgeTypes([{ ...draft, id: editing || edgeTypeId(draft.label) }])[0];
+      if (!t || !draft.label.trim()) { form.label.focus(); return toast(T('et.need')); }
+      pushHistory();
+      const all = customTypes().slice(), i = all.findIndex(x => x.id === t.id);
+      if (i >= 0) all[i] = t; else all.push(t);
+      S.model.edgeTypes = all;
+      if (apply && !editing && S.model.edges.includes(apply)) apply.style = t.id;
+      changed(true); renderInspector();
+      toast(T(editing ? 'et.saved' : 'et.created', { label: t.label }));
+      if (apply && !editing) return close();
+      drawList(); reset();
+    });
+    back.addEventListener('mousedown', ev => { if (ev.target === back) close(); });
+    back.addEventListener('click', ev => {
+      const b = ev.target.closest('[data-eta]');
+      if (!b) return;
+      const t = customTypes().find(x => x.id === b.dataset.id);
+      if (!t) return;
+      if (b.dataset.eta === 'edit') { editing = t.id; draft = { label: t.label, dash: t.dash || '', color: t.color || '', width: t.width ?? 1.8, particles: t.particles ?? 1 }; drawForm(); return; }
+      pushHistory();
+      const n = S.model.edges.filter(e => e.style === t.id).length;
+      S.model.edges.forEach(e => { if (e.style === t.id) delete e.style; }); // en uso: vuelven a síncrona
+      const rest = customTypes().filter(x => x.id !== t.id);
+      if (rest.length) S.model.edgeTypes = rest; else delete S.model.edgeTypes;
+      changed(true); renderInspector();
+      toast(T('et.deleted', { label: t.label, n }));
+      if (editing === t.id) reset();
+      drawList();
+    });
+    document.addEventListener('keydown', key, true);
+    drawList(); drawForm();
+    document.body.appendChild(back);
+    form.label.focus();
   }
 
   /* ---------- barra lateral ---------- */
@@ -5853,17 +6056,24 @@
     // Solo lo que la vista activa muestra (reglas en config.js › views)
     const v = vc(), ex = viewLegend(), es = visEdges(), vn = visNodes();
     // Conexiones
-    const styles = [...new Set(es.map(e => (C.edgeStyles[e.style] ? e.style : 'sync')))];
+    const styles = [...new Set(es.map(e => edgeKey(e.style)))], ES = edgeStyles();
     const lockRow = (on, label) => ({ w: 46 + textW(label, '400 12px'), draw: (x, y) => {
       const lg = el('g', { transform: `translate(${x + 10} ${y})` }, g);
       lockIcon(lg, 0, on);
       textRow(x + 46, y, label);
     } });
-    const conn = styles.map(st => ({ w: 46 + textW(loc(C.edgeStyles[st].label), '400 12px'), draw: (x, y) => {
-      const cfg = C.edgeStyles[st], eg = el('g', { class: `edge edge-${st}${cfg.dash ? ' edge-dashed' : ''}`, style: `--c:var(--muted);--w:${cfg.width}px` }, g);
+    const conn = styles.map(st => ({ w: 46 + textW(loc(ES[st].label), '400 12px'), draw: (x, y) => {
+      const cfg = ES[st], eg = el('g', { class: `edge ${edgeCls(st)}${cfg.dash ? ' edge-dashed' : ''}`, style: `--c:var(--muted);--w:${cfg.width}px` }, g);
       el('path', { class: 'edge-line', d: `M${x},${y} L${x + 30},${y}`, ...(cfg.dash ? { 'stroke-dasharray': cfg.dash } : {}) }, eg);
       el('path', { class: 'edge-arrow', d: `M${x + 34},${y} L${x + 26},${y - 4} L${x + 26},${y + 4} Z` }, eg);
       textRow(x + 46, y, loc(cfg.label));
+    } }));
+    // Peso: una fila por cada nivel en uso (línea más gruesa, como se dibuja)
+    ['high', 'critical'].filter(w => es.some(e => e.weight === w)).forEach(w => conn.push({ w: 46 + textW(T(`leg.w.${w}`), '400 12px'), draw: (x, y) => {
+      const k = arrowK(EDGE_W[w]), eg = el('g', { class: `edge w-${w}`, style: `--c:var(--muted);--w:${+(1.8 * EDGE_W[w]).toFixed(2)}px` }, g);
+      el('path', { class: 'edge-line', d: `M${x},${y} L${x + 28},${y}` }, eg);
+      el('path', { class: 'edge-arrow', d: `M${x + 34},${y} L${x + 34 - 8 * k},${y - 4 * k} L${x + 34 - 8 * k},${y + 4 * k} Z` }, eg);
+      textRow(x + 46, y, T(`leg.w.${w}`));
     } }));
     if (es.some(e => e.both)) conn.push({ w: 46 + textW(T('leg.both'), '400 12px'), draw: (x, y) => {
       const eg = el('g', { class: 'edge', style: '--c:var(--muted);--w:1.8px' }, g);
@@ -6318,7 +6528,7 @@
     if (want('connections')) {
       const rows = m.edges.map(e => {
         const cb = crossBorder(e, byId);
-        return [nm(e.from), nm(e.to) + (e.both ? ' ↔' : ''), e.label || '', loc((C.edgeStyles[e.style] || C.edgeStyles.sync).label), e.encrypted === true ? T('enc.yes') : e.encrypted === false ? { t: T('enc.no'), tone: 'sev-high' } : T('enc.unset'),
+        return [nm(e.from), nm(e.to) + (e.both ? ' ↔' : ''), e.label || '', edgeStyleLabel(e.style), e.encrypted === true ? T('enc.yes') : e.encrypted === false ? { t: T('enc.no'), tone: 'sev-high' } : T('enc.unset'),
           dShort(e.data), (e.datasets || []).join(', '), cb ? { t: `${cb.from.region} → ${cb.to.region}${cb.approved ? ' ✓' : ''}`, tone: cb.approved ? '' : 'sev-high' } : ''];
       });
       sec('connections', [{ k: 'table', head: [repT('h.from'), repT('h.to'), repT('h.label'), repT('h.style'), repT('h.enc'), repT('h.data'), repT('h.datasets'), repT('h.xb')], rows, cls: 'wide' }]);
@@ -6631,8 +6841,10 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
       direction: (m.direction || C.layout.direction) === 'TB' ? 'TB' : 'LR',
       routing: m.routing === 'elbow' ? 'elbow' : 'curved',
       typeLabel,
-      edgeStyleLabel: st => loc((C.edgeStyles[st] || C.edgeStyles.sync).label),
-      color: x => (!x ? '#8573DB' : 'from' in x ? hexOf(x.color) || nodeHex(byId.get(x.from)) : 'type' in x ? nodeHex(x) : hexOf(x.color) || '#776F84'),
+      edgeStyleLabel,
+      // Estilo ya resuelto (también los propios del diagrama) para los exportadores: { id, label, dash, width, particles, custom, weight }
+      edgeStyleInfo: e => { const id = edgeKey(e?.style), c = edgeStyleOf(id); return { id, label: loc(c.label), dash: c.dash || '', width: c.width, particles: c.particles, custom: !!c.custom, color: c.color ? hexOf(c.color) : null, weight: EDGE_W[e?.weight] ? e.weight : '', mult: edgeMult(e) }; },
+      color: x => (!x ? '#8573DB' : 'from' in x ? hexOf(x.color) || hexOf(edgeStyleOf(x.style).color) || nodeHex(byId.get(x.from)) : 'type' in x ? nodeHex(x) : hexOf(x.color) || '#776F84'),
       dataLabel: k => (DATA[k] ? { short: loc(DATA[k].short) || k.toUpperCase(), label: loc(DATA[k].label) || k, sensitive: !!DATA[k].sensitive } : { short: String(k).toUpperCase(), label: String(k), sensitive: false }),
       icon: ref => { const i = iconInfo(ref); return i ? { src: i.src, label: i.label } : null; },
       size: n => ({ w: R.width.get(n.id) || nodeWidth(n), h: H }),
@@ -6678,7 +6890,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
       sevLabel, sevHex: k => ({ low: '#4E9AD8', medium: '#C4A63A', high: '#E0965A', critical: '#E2806F' })[k] || '#C4A63A',
       layerLabel: k => layerInfo(k)?.label || k, layerHex: k => hexIn(DL[k]?.color),
       noteHex: k => hexOf(k) || hexOf('limon') || '#C4A63A',
-      words: { note: T('insp.note'), zone: T('insp.zone'), trust: T('insp.trust'), threats: T('stride.label'), level: T('inv.c.level') }
+      words: { weightHigh: T('leg.w.high'), weightCritical: T('leg.w.critical'), note: T('insp.note'), zone: T('insp.zone'), trust: T('insp.trust'), threats: T('stride.label'), level: T('inv.c.level') }
     };
   }
   function exportOther(fmt) {
@@ -6766,7 +6978,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     const open = typeof strideAll === 'function' ? (() => { try { return strideAll(m).filter(t => t.status === 'open'); } catch { return []; } })() : [];
     const conn = m.edges.map(e => {
       const cb = typeof crossBorder === 'function' ? crossBorder(e, byId) : null;
-      return [e.id || '', nm(e.from), nm(e.to), String(e.label || '').replace(/\s*\n\s*/g, ' '), loc((C.edgeStyles[e.style] || C.edgeStyles.sync).label), e.encrypted === true ? T('enc.yes') : e.encrypted === false ? T('enc.no') : T('enc.unset'),
+      return [e.id || '', nm(e.from), nm(e.to), String(e.label || '').replace(/\s*\n\s*/g, ' '), edgeStyleLabel(e.style), e.encrypted === true ? T('enc.yes') : e.encrypted === false ? T('enc.no') : T('enc.unset'),
         (e.data || []).map(k => loc(DATA[k]?.short) || String(k).toUpperCase()).join(' '), (e.datasets || []).join('; '), invYN(!!cb), cb ? invYN(cb.approved) : '', open.filter(t => t.e === e || t.e.id === e.id).length];
     });
     if (conn.length) out.push(mk('connections', INV_CONN, conn));

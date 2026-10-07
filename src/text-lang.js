@@ -26,6 +26,10 @@
              los nodos heredan cada campo del grupo más cercano que lo tenga; los valores con espacios van entre comillas)
    Conexión: a -> b -> c : etiqueta color=…   (la etiqueta va en la última flecha)
    Datos:    nodo … data=pii,pci · conexión a -> b : SQL data=pii encrypted=yes
+   Tipo y peso: conexión a -> b : réplica style=replication (es: estilo=replicación; sin flecha propia: replication|replicación, batch|lotes,
+             stream|streaming, control; también async, data… y los tipos propios) · weight=high|critical (es: peso=alto|crítico; alias importante)
+   Tipos propios: type backup: "Tráfico de respaldo" dash="6 3" color=sky width=2 particles=1 (es: tipo …; trazo= ancho= partículas=); id a-z 0-9 y -;
+             luego a -> b : x style=backup. Viven en el diagrama (model.edgeTypes)
    Linaje:   conexión a -> b : SQL datasets=orders,customers   (es: tablas= o conjuntos=; con espacios: datasets="sales orders,crm.customers")
    Residencia: nodo o grupo … region=eu-west-1 (también región=, country=/país= como alias; hereda del grupo) ·
              conexión a -> b : SQL data=pii transfer=ok (transferencia=ok: transferencia entre jurisdicciones autorizada)
@@ -62,6 +66,15 @@
 
   const ARROWS = { '->': 'sync', '~>': 'async', '=>': 'data', '..>': 'optional' };
   const ARROW_OF = { sync: '->', async: '~>', data: '=>', optional: '..>' };
+  /* ---------- tipo (style=) y peso (weight=) de la conexión; tipos propios (type id: …) ---------- */
+  const BUILTIN_STYLES = ['sync', 'async', 'data', 'optional', 'replication', 'batch', 'stream', 'control'];
+  const STYLE_ES = { sincrona: 'sync', asincrona: 'async', datos: 'data', opcional: 'optional', replicacion: 'replication', lotes: 'batch', porlotes: 'batch', streaming: 'stream', flujo: 'stream', gestion: 'control' };
+  const STYLE_OUT = { es: { replication: 'replicación', batch: 'lotes', stream: 'streaming', control: 'control' } };
+  const WEIGHT_IN = { normal: '', high: 'high', alto: 'high', alta: 'high', important: 'high', importante: 'high', critical: 'critical', critico: 'critical', critica: 'critical' };
+  const WEIGHT_OUT = { en: { high: 'high', critical: 'critical' }, es: { high: 'alto', critical: 'crítico' } };
+  const TYPE_RE = /^(type|tipo)\s+([^\s:]+)\s*:\s*(.*)$/i;
+  const TYPE_KEYS = ['dash', 'trazo', 'color', 'width', 'ancho', 'particles', 'particulas', 'partículas'];
+  const DASH_OK = /^\d{1,2}(\.\d)?( \d{1,2}(\.\d)?){0,5}$/;
   const ARROW_SPLIT = /\s*(\.\.>|~>|=>|->)\s*/;
   const HAS_ARROW = /\.\.>|~>|=>|->/;
   const ID = /^[^\s:[\]"{}]+$/;
@@ -93,7 +106,7 @@
   const isDay = v => /^\d{4}-\d{2}-\d{2}$/.test(v) && !isNaN(new Date(`${v}T12:00Z`)) && new Date(`${v}T12:00Z`).toISOString().slice(0, 10) === v;
   // Opciones al final de una conexión: a -> b : etiqueta color=… data=pii encrypted=yes
   // (el valor puede ir entre comillas: datasets="sales orders,crm.customers")
-  const EDGE_OPT = /(?:^|\s)(color|data|datos|encrypted|cifrado|both|ambos|line|linea|línea|datasets|tablas|conjuntos|transfer|transferencia|threats|amenazas)=("(?:[^"\\]|\\.)*"|\S+)\s*$/i;
+  const EDGE_OPT = /(?:^|\s)(color|style|estilo|weight|peso|data|datos|encrypted|cifrado|both|ambos|line|linea|línea|datasets|tablas|conjuntos|transfer|transferencia|threats|amenazas)=("(?:[^"\\]|\\.)*"|\S+)\s*$/i;
   /* ---------- amenazas STRIDE: threats="T=mitigated,I=accepted" ---------- */
   const TH_KEY = { en: 'threats', es: 'amenazas' };
   const TH_ST = { en: { mitigated: 'mitigated', accepted: 'accepted', na: 'na' }, es: { mitigated: 'mitigada', accepted: 'aceptada', na: 'na' } };
@@ -146,6 +159,8 @@
     en: {
       icon: r => `unknown icon “${r}”`, kind: r => `unknown type or icon “${r}”`, dir: 'direction must be LR or TB',
       brace: 'extra closing brace }', groupId: id => `invalid group id “${id}”`, groupDup: id => `group “${id}” already exists`,
+      style: v => `unknown connection type “${v}” (use sync, async, data, optional, replication, batch, stream, control or a type declared with “type id: …”)`, weight: v => `invalid weight “${v}” (use normal, high or critical)`,
+      etId: v => `invalid type id “${v}” (use a-z, 0-9 and -, up to 32 characters)`, etDup: v => `type “${v}” is already declared or is a built-in type`, etDash: v => `invalid dash “${v}” (e.g. "6 3" or "12 4 2 4")`, etWidth: v => `invalid width “${v}” (1 to 4)`, etPart: v => `invalid particles “${v}” (0 to 4)`,
       edge: 'incomplete connection', id: id => `invalid id “${id || '(empty)'}”`,
       cost: v => `invalid cost “${v}” (e.g. 120/month, 0.1/hour, 1400/year, 5000/3years)`,
       data: v => `unknown data class “${v}” (e.g. pii, pci, confidential)`, enc: v => `invalid encrypted value “${v}” (use yes or no)`,
@@ -165,6 +180,8 @@
     es: {
       icon: r => `icono desconocido «${r}»`, kind: r => `tipo o icono desconocido «${r}»`, dir: 'la dirección debe ser LR o TB',
       brace: 'sobra una llave }', groupId: id => `id de grupo no válido «${id}»`, groupDup: id => `el grupo «${id}» ya existe`,
+      style: v => `tipo de conexión desconocido «${v}» (usa sync, async, data, optional, replicación, lotes, streaming, control o un tipo declarado con «tipo id: …»)`, weight: v => `peso no válido «${v}» (usa normal, alto o crítico)`,
+      etId: v => `id de tipo no válido «${v}» (usa a-z, 0-9 y -, hasta 32 caracteres)`, etDup: v => `el tipo «${v}» ya está declarado o es uno predefinido`, etDash: v => `trazo no válido «${v}» (p. ej. "6 3" o "12 4 2 4")`, etWidth: v => `grosor no válido «${v}» (de 1 a 4)`, etPart: v => `partículas no válidas «${v}» (de 0 a 4)`,
       edge: 'conexión incompleta', id: id => `id no válido «${id || '(vacío)'}»`,
       cost: v => `costo no válido «${v}» (ej.: 120/mes, 0.1/hora, 1400/año, 5000/3años)`,
       data: v => `clasificación de datos desconocida «${v}» (ej.: pii, pci, confidential)`, enc: v => `valor de cifrado no válido «${v}» (usa sí o no)`,
@@ -198,6 +215,7 @@
   }
   const costValue = (n, w) => `${+n.cost}/${n.costPeriod === 'multi' ? `${n.costYears || 3}${w.years}` : w[n.costPeriod] || w.month}`;
 
+  const TYPE_W = { en: { type: 'type', dash: 'dash', width: 'width', particles: 'particles' }, es: { type: 'tipo', dash: 'trazo', width: 'ancho', particles: 'partículas' } };
   const quote = s => JSON.stringify(String(s));
   const bare = v => (/[\s"[\]{}]/.test(String(v)) || String(v) === '' ? quote(v) : String(v));
   const unquote = s => { try { return JSON.parse(s); } catch { return s.slice(1, -1); } };
@@ -234,7 +252,11 @@
     const model = { title: ctx.lang === 'es' ? 'Diagrama sin título' : 'Untitled diagram', groups: [], nodes: [], edges: [] };
     const errors = [];
     const nodes = new Map(), groups = new Set(), stack = [], gobj = new Map(), inRefs = [], nests = [], thLines = [];
-    model.notes = []; model.zones = []; model.dismissed = {};
+    model.notes = []; model.zones = []; model.dismissed = {}; model.edgeTypes = [];
+    // Tipos propios declarados en cualquier línea (una conexión puede usarlos antes de que se declaren)
+    const customIds = new Set();
+    String(src).split(/\r?\n/).forEach(l => { const q = l.trim().match(TYPE_RE); if (q) customIds.add(q[2].toLowerCase()); });
+    const parseStyle = v => { const k = foldK(v); return BUILTIN_STYLES.includes(k) ? k : Object.hasOwn(STYLE_ES, k) ? STYLE_ES[k] : (customIds.has(k) && !BUILTIN_STYLES.includes(k) ? k : null); };
     // La pila lleva marcos { kind: 'group' | 'level', id }: los bloques `inside` quedan siempre por fuera de los grupos
     const curGroup = () => (stack.length && stack[stack.length - 1].kind === 'group' ? stack[stack.length - 1].id : undefined);
     const curLevel = () => { for (let i = stack.length - 1; i >= 0; i--) if (stack[i].kind === 'level') return stack[i].id; return undefined; };
@@ -308,6 +330,21 @@
       if ((m = line.match(/^(view|vista)\s*:\s*(\S+)\s*$/i))) {
         const v = m[2].toLowerCase() === 'gobierno' ? 'governance' : m[2].toLowerCase();
         if (!ctx.views || ctx.views.includes(v)) (model.meta ||= {}).view = v; else err(ln, msg.view(m[2]));
+        return;
+      }
+      if ((m = line.match(TYPE_RE))) {
+        const id = m[2].toLowerCase();
+        if (!/^[a-z0-9-]{1,32}$/.test(id)) return err(ln, msg.etId(m[2]));
+        if (BUILTIN_STYLES.includes(id) || model.edgeTypes.some(t => t.id === id)) return err(ln, msg.etDup(id));
+        const tk = tokens(m[3], TYPE_KEYS), kv = tk.kv, t = { id, label: (tk.quotes[0] ?? tk.words.join(' ')) || id };
+        const dv = kv.dash ?? kv.trazo;
+        if (dv != null) { const d = String(dv).replace(/[,;]/g, ' ').trim().replace(/\s+/g, ' '); if (d === '' || DASH_OK.test(d)) { if (d) t.dash = d; } else err(ln, msg.etDash(dv)); }
+        if (kv.color) t.color = kv.color;
+        const wv = kv.width ?? kv.ancho;
+        if (wv != null) { if (Number.isFinite(+wv) && +wv >= 1 && +wv <= 4) t.width = +wv; else err(ln, msg.etWidth(wv)); }
+        const pv = kv.particles ?? kv.particulas ?? kv['partículas'];
+        if (pv != null) { if (/^[0-4]$/.test(pv)) t.particles = +pv; else err(ln, msg.etPart(pv)); }
+        model.edgeTypes.push(t);
         return;
       }
       if ((m = line.match(/^(review|revisi[oó]n)\s+([^\s:]+)\s*:\s*(.*)$/i))) {
@@ -412,6 +449,10 @@
         if (routeV != null && !route) err(ln, msg.route(routeV));
         const bothV = kv.both ?? kv.ambos, both = bothV == null ? null : parseBool(bothV);
         if (bothV != null && both == null) err(ln, msg.enc(bothV));
+        const stV = kv.style ?? kv.estilo, stl = stV == null ? null : parseStyle(stV);
+        if (stV != null && !stl) err(ln, msg.style(stV));
+        const wtV = kv.weight ?? kv.peso, wt = wtV == null ? null : Object.hasOwn(WEIGHT_IN, foldK(wtV)) ? WEIGHT_IN[foldK(wtV)] : undefined;
+        if (wtV != null && wt === undefined) err(ln, msg.weight(wtV));
         const trV = kv.transfer ?? kv.transferencia, tr = trV == null ? null : /^(ok|yes|y|true|si|sí|1|on)$/i.test(trV);
         if (trV != null && !tr) err(ln, msg.transfer(trV));
         const thV = kv.threats ?? kv.amenazas, th = thV == null ? null : parseThreats(thV);
@@ -422,7 +463,9 @@
           nodeFor(parts[k]); nodeFor(parts[k + 2]);
           const e = { from: parts[k], to: parts[k + 2] };
           const style = ARROWS[parts[k + 1]];
-          if (style !== 'sync') e.style = style;
+          const sty = stl || style;
+          if (sty !== 'sync') e.style = sty;
+          if (wt) e.weight = wt;
           if (k + 3 === parts.length && label) e.label = label;
           if (color) e.color = color;
           if (data?.length) e.data = data;
@@ -494,7 +537,7 @@
   }
 
   function stringify(m, lang = 'en') {
-    const w = WORDS[lang] || WORDS.en;
+    const w = { ...(WORDS[lang] || WORDS.en), ...(TYPE_W[lang] || TYPE_W.en) };
     const out = [`${w.title}: ${m.title}`];
     if (m.direction) out.push(`${w.direction}: ${m.direction}`);
     if (m.routing === 'elbow') out.push(`${w.lines}: ${w.elbow}`);
@@ -502,6 +545,7 @@
     if (m.meta?.author) out.push(`${w.author}: ${m.meta.author}`);
     if (m.meta?.version) out.push(`${w.version}: ${m.meta.version}`);
     if (m.meta?.view) out.push(`${w.view}: ${m.meta.view}`);
+    (m.edgeTypes || []).forEach(t => out.push(`${w.type} ${t.id}: ${quote(t.label ?? t.id)}${t.dash ? ` ${w.dash}=${bare(t.dash)}` : ''}${t.color ? ` color=${bare(t.color)}` : ''}${t.width != null ? ` ${w.width}=${t.width}` : ''}${t.particles != null ? ` ${w.particles}=${t.particles}` : ''}`));
     out.push('');
     const ctlText = o => `${CTL_KEY[lang] || CTL_KEY.en}=${bare(Object.entries(o.controls).map(([k, v]) => `${k}=${(CTL_OUT[lang] || CTL_OUT.en)[v] || v}`).join(','))}`;
     // Lo que vive en un nivel C4 se escribe dentro de un bloque `inside`, sin `in=`; `inBlock` evita repetirlo
@@ -565,6 +609,7 @@
     m.edges.forEach(e => {
       const arrow = ARROW_OF[e.style] || '->';
       const tail = [e.label ? (EDGE_OPT.test(e.label) || /^".*"$/.test(e.label) || /[\n\\]/.test(e.label) ? quote(e.label) : e.label) : '', e.color ? `color=${bare(e.color)}` : '',
+        e.style && !ARROW_OF[e.style] ? `${lang === 'es' ? 'estilo' : 'style'}=${bare((STYLE_OUT[lang] || {})[e.style] || e.style)}` : '', WEIGHT_OUT.en[e.weight] ? `${lang === 'es' ? 'peso' : 'weight'}=${(WEIGHT_OUT[lang] || WEIGHT_OUT.en)[e.weight]}` : '',
         e.data?.length ? `${w.data}=${e.data.join(',')}` : '', e.datasets?.length ? `${DS_KEY[lang] || DS_KEY.en}=${bare(e.datasets.join(','))}` : '', e.encrypted != null ? `${w.encrypted}=${e.encrypted ? w.yes : w.no}` : '',
         e.both ? `${w.both}=${w.yes}` : '', e.transferOk ? `${w.transfer}=${w.ok}` : '', e.threats && Object.keys(e.threats).length ? `${TH_KEY[lang] || TH_KEY.en}=${Object.entries(e.threats).map(([k, d]) => `${k}=${(TH_ST[lang] || TH_ST.en)[d.status] || d.status}`).join(',')}` : '', e.route ? `${w.line}=${e.route === 'elbow' ? w.elbowOne : w.curvedOne}` : ''].filter(Boolean).join(' ');
       out.push(`${e.from} ${arrow} ${e.to}${tail ? ` : ${tail}` : ''}`);

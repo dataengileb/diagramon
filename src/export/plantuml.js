@@ -262,19 +262,26 @@ window.DiagramonExport.plantuml = (() => {
     emitScope('', '', 0);
     if (edges.length) out.push('');
 
-    const stylesUsed = new Set();
+    const stylesUsed = new Map(), weightsUsed = new Set();
+    const BASE = { sync: { dash: '', width: 1.8 }, async: { dash: '6 6', width: 1.8 }, data: { dash: '', width: 2.4 }, optional: { dash: '2 6', width: 1.5 } };
+    const edgeInfo = e => (typeof ctx.edgeStyleInfo === 'function' ? ctx.edgeStyleInfo(e) : { id: BASE[e.style] ? e.style : 'sync', ...(BASE[e.style] || BASE.sync), mult: 1, weight: '' });
     edges.forEach(e => {
       if (!nAlias[e.from] || !nAlias[e.to]) return;
-      const style = e.style || 'sync';
-      stylesUsed.add(style);
+      const si = edgeInfo(e), style = si.id;
+      if (!stylesUsed.has(style)) stylesUsed.set(style, si);
+      if (si.weight) weightsUsed.add(si.weight);
       const base = hexOf(ctx.color(e));
       const c = style === 'optional' ? mix(base, 0.35) : base;
-      let arrow;
       const two = e.both === true ? '<' : '';
-      if (style === 'async') arrow = `${two}.[${c}].>`;
-      else if (style === 'data') arrow = `${two}-[${c},bold]->`;
-      else if (style === 'optional') arrow = `${two}-[${c},dashed]->`;
-      else arrow = `${two}-[${c}]->`;
+      // Grosor: el peso manda (importante = 3, crítica = 5); sin peso, «bold» si el ancho del tipo lo pide
+      const mods = [c];
+      if (si.weight === 'critical') mods.push('thickness=5'); else if (si.weight === 'high') mods.push('thickness=3'); else if (si.width >= 2.2) mods.push('bold');
+      let arrow;
+      if (style === 'async') arrow = `${two}.[${mods.join(',')}].>`;
+      else {
+        if (si.dash && style !== 'async') mods.push(style !== 'optional' && parseFloat(si.dash) <= 3 ? 'dotted' : 'dashed');
+        arrow = `${two}-[${mods.join(',')}]->`;
+      }
       const parts = [];
       if (e.label) parts.push(String(e.label).split('\n').map(clean).join('\\n'));
       if (e.encrypted === true) parts.push('🔒');
@@ -299,9 +306,13 @@ window.DiagramonExport.plantuml = (() => {
     // Leyenda: estilos de conexión usados y clases de datos presentes
     const legend = [];
     const sample = { sync: '-->', async: '..>', data: '==>', optional: '--->' };
-    ['sync', 'async', 'data', 'optional'].filter(s => stylesUsed.has(s)).forEach(s => {
-      legend.push(`| ""${sample[s]}"" | ${clean(ctx.edgeStyleLabel(s))} |`);
+    [...stylesUsed.keys()].forEach(s => {
+      const si = stylesUsed.get(s);
+      legend.push(`| ""${sample[s] || (si.dash ? '..>' : si.width >= 2.2 ? '==>' : '-->')}"" | ${clean(ctx.edgeStyleLabel(s))} |`);
     });
+    const ww = ctx.words || {};
+    if (weightsUsed.has('high')) legend.push(`| ""==>"" | ${clean(ww.weightHigh || 'Important flow')} |`);
+    if (weightsUsed.has('critical')) legend.push(`| ""==>"" | ${clean(ww.weightCritical || 'Critical flow')} |`);
     dataSeen.forEach(d => {
       legend.push(`| ${clean(d.short)}${d.sensitive ? ' ⚠' : ''} | ${clean(d.label)} |`);
     });
