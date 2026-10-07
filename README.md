@@ -53,7 +53,7 @@ around 290 official cloud icons, and the browser itself blocks every network req
 **How it is enforced**
 
 - **One HTML page with plain JavaScript.** No third-party libraries, no CDN, no web fonts loaded from the internet, no trackers.
-  The official icons are embedded in `icons/*.js` and the three fonts in `fonts/fonts.js` (base64).
+  The official icons are embedded in `assets/icons/*.js` and the three fonts in `assets/fonts/fonts.js` (base64).
 - **The browser blocks the network.** `index.html` sets a Content Security Policy (`connect-src 'none'`).
   Even if someone added code that tried to send data, the browser would refuse it.
 - **Short, open code.** You can read every line. There are no calls to `fetch`, `XMLHttpRequest`, `WebSocket` or `sendBeacon`.
@@ -263,7 +263,7 @@ Tag which controls each component meets (ISO 27001, SOC 2, GDPR, HIPAA, PCI DSS)
 **Compliance matrix** (button in the section, or **Export › Compliance matrix**): one row per component that has controls or sensitive data, one column per control in use grouped by framework, with ✓ met, ◐ partial, ✗ gap, — N/A and blank for not mapped. The header stays in view while you scroll; a row at the bottom shows the coverage of each control (met ÷ components that are not N/A) and cards on top summarize each framework. Pick a framework to narrow it down. **CSV** exports one row per component and one column per control (`met|partial|gap|na|`); **CSV (long)** one row per component × control with framework, control, title, group, status, inherited-from and data classes (`<diagram>-compliance.csv`, `<diagram>-compliance-long.csv`).
 
 Review findings include a **Compliance** group: a gap is *medium* (*high* for a PCI DSS control on a component that handles PCI data, or HIPAA with PHI), a partial control is *low*, and a component with PII, PCI or PHI that lacks its main suggested control (for example GDPR Art. 32) is *low*, but only for frameworks the diagram already uses, so a diagram without controls stays quiet. The **Filter** gets a **Compliance** section (one chip per framework in use, plus *Has gaps*). From the console: `Diagramon.compliance()` and `Diagramon.exportCompliance('wide' | 'long')`.
-The catalog lives in `config.js` › `compliance` and is a practical subset, not the full standards; the control titles are short paraphrases. This is a documentation aid, not an audit or a certification.
+The catalog lives in `src/config.js` › `compliance` and is a practical subset, not the full standards; the control titles are short paraphrases. This is a documentation aid, not an audit or a certification.
 
 #### Owners and stewards
 
@@ -386,7 +386,7 @@ A **view** is a way of looking at the same diagram: it only decides what is show
 | `8` | **Governance** | Who owns what: components colored by team (or owner), with a team chip under each; components with neither fade |
 | `9` | **Resilience** | Availability tiers (effective SLA), RPO/RTO chip under each component and single points of failure with a red dashed border |
 
-The rules of each view live in `config.js` › `views`; groups can be marked `logical` or `physical` in the inspector.
+The rules of each view live in `src/config.js` › `views`; groups can be marked `logical` or `physical` in the inspector.
 
 ### C4 levels (drill-down)
 
@@ -558,29 +558,29 @@ The text does not store positions: existing nodes stay where they are, and new n
 
 ## 🎨 Customize
 
-Everything you can customize is in **`config.js`**. Save and reload `index.html`.
+Everything you can customize is in **`src/config.js`**. Save and reload `index.html`.
 
 - **Default theme**: `app.defaultTheme: 'dark' | 'light' | 'black'`. The `T` key and the theme button cycle light → dark → black.
-- **Default language**: `app.defaultLang: 'en' | 'es'`. UI texts live in `i18n.js`; texts in `config.js` and `examples.js` can be `{ en: '…', es: '…' }`.
+- **Default language**: `app.defaultLang: 'en' | 'es'`. UI texts live in `src/i18n.js`; texts in `src/config.js` and `src/examples.js` can be `{ en: '…', es: '…' }`.
 - **Data classes**: `dataClasses` sets the tags (name, short label, color). `sensitive: true` turns on the red warning for unencrypted flows.
-- **Jurisdictions (data residency)**: `residency.jurisdictions` in `config.js` is an ordered map `key → { label: { en, es }, short, match }`. `match` is a case-insensitive RegExp tested against the region text (`eu-west-1`, `westeurope`, `ES`…); the first jurisdiction that matches wins, so put specific ones (`uk`, `ch`) before wide ones (`eu`). To add one, copy a line and change its key, labels and `match`; to adjust one, edit its `match` (anchor it with `^…$`). `of` is the optional text used in the warning (*leaves **the EU***). Set `residency.warnSameJurisdiction: true` to also warn when regions differ inside the same jurisdiction.
-- **STRIDE threat rules**: `stride` in `config.js` sets the thresholds and the text. `inboundSeverity` is the severity of *Spoofing* on inbound crossings, `criticalClasses` the data classes that make *Information disclosure* critical, `storeTypes` and `storeIconCategories` what counts as a data store, secrets or identity component for *Elevation of privilege*, and `categories` the label, description and mitigation hint (`{ en, es }`) of each letter. The rules are explained in a comment above it.
-- **Data lake layers**: `dataLayers` sets the layers in order (`label` for the medallion names, `alt` for the Raw/Curated/Serving names, short letters and `color`). Colors default to `--layer-bronze`, `--layer-silver` and `--layer-gold`, set per theme in `index.html`; edit them there or put a fixed color in `config.js`. `layerAliases` lists the other words accepted when reading JSON and text. Each view's `layers` flag shows or hides them.
-- **Automatic security review**: `securityRules` in `config.js` has one entry per rule (`sec.unencrypted-sensitive`, `sec.unstated-encryption`, `sec.public-sensitive`, `sec.datastore-backup`, `sec.cross-border`, `sec.sensitive-no-owner`, `sec.public-datastore`) with `enabled` (set `false` to turn a rule off) and `severity` (`low`, `medium`, `high`, `critical`). The rest are the rule's parameters: `clientTypes`, `publicGroupIcons` and `publicGroupName` (what counts as public), `dataStoreTypes` and `dataStoreIconCategories`, `backupIcons`, `backupName` and `backupEdgeLabel` (what counts as a backup). Text patterns are case-insensitive RegExps.
+- **Jurisdictions (data residency)**: `residency.jurisdictions` in `src/config.js` is an ordered map `key → { label: { en, es }, short, match }`. `match` is a case-insensitive RegExp tested against the region text (`eu-west-1`, `westeurope`, `ES`…); the first jurisdiction that matches wins, so put specific ones (`uk`, `ch`) before wide ones (`eu`). To add one, copy a line and change its key, labels and `match`; to adjust one, edit its `match` (anchor it with `^…$`). `of` is the optional text used in the warning (*leaves **the EU***). Set `residency.warnSameJurisdiction: true` to also warn when regions differ inside the same jurisdiction.
+- **STRIDE threat rules**: `stride` in `src/config.js` sets the thresholds and the text. `inboundSeverity` is the severity of *Spoofing* on inbound crossings, `criticalClasses` the data classes that make *Information disclosure* critical, `storeTypes` and `storeIconCategories` what counts as a data store, secrets or identity component for *Elevation of privilege*, and `categories` the label, description and mitigation hint (`{ en, es }`) of each letter. The rules are explained in a comment above it.
+- **Data lake layers**: `dataLayers` sets the layers in order (`label` for the medallion names, `alt` for the Raw/Curated/Serving names, short letters and `color`). Colors default to `--layer-bronze`, `--layer-silver` and `--layer-gold`, set per theme in `index.html`; edit them there or put a fixed color in `src/config.js`. `layerAliases` lists the other words accepted when reading JSON and text. Each view's `layers` flag shows or hides them.
+- **Automatic security review**: `securityRules` in `src/config.js` has one entry per rule (`sec.unencrypted-sensitive`, `sec.unstated-encryption`, `sec.public-sensitive`, `sec.datastore-backup`, `sec.cross-border`, `sec.sensitive-no-owner`, `sec.public-datastore`) with `enabled` (set `false` to turn a rule off) and `severity` (`low`, `medium`, `high`, `critical`). The rest are the rule's parameters: `clientTypes`, `publicGroupIcons` and `publicGroupName` (what counts as public), `dataStoreTypes` and `dataStoreIconCategories`, `backupIcons`, `backupName` and `backupEdgeLabel` (what counts as a backup). Text patterns are case-insensitive RegExps.
 - **Compliance**: `compliance.frameworks` is an ordered map `key → { label, short, url?, controls: { '<id>': { label: { en, es } } } }`. Add a control by adding a line in its framework, or a framework (NIST CSF, ENS, DORA…) by copying a block; JSON and Text accept any `framework:id`, even without a catalog entry. `compliance.suggest` maps each data class (and `crossBorder`) to the controls offered as chips; the first one of each list is the one the review expects.
 - **Architecture decisions**: `adr.staleDays` (default `30`) is how many days a *proposed* decision can wait before it shows as a low finding in the *Review* tab; `0` turns it off.
-- **Resilience**: `resilience` in `config.js` sets `entryTypes` (component types treated as entry points, besides any node with no incoming flow), `dataStoreTypes` and `dataStoreIconCategories` (what counts as a data store), `spofSeverity` and `singleStoreSeverity` (severity of the findings) and `defaultTarget` (SLA in % expected from a data store, default `99.9`).
+- **Resilience**: `resilience` in `src/config.js` sets `entryTypes` (component types treated as entry points, besides any node with no incoming flow), `dataStoreTypes` and `dataStoreIconCategories` (what counts as a data store), `spofSeverity` and `singleStoreSeverity` (severity of the findings) and `defaultTarget` (SLA in % expected from a data store, default `99.9`).
 - **Environments**: `environments` sets the buttons of the *Versions* tab (name, short label and color). Add or remove as many as you need.
 - **Node size**: with `node.sameSize: true` (default) every node is `node.width` wide and long names wrap to 2 lines.
   With `false`, each node grows with its text.
 - **Shortcuts without an official icon**: `presets` adds items at the top of a provider's list (for example, SAP systems).
-- **Fonts**: pick Inter (default), IBM Plex Sans or Fira Code from the top bar; the choice is saved in your browser and embedded in SVG/PNG exports. They are bundled with the app (not loaded from the web). To add one, drop its `.woff2` files in `fonts/`, add an entry to `FONTS` in `tools/build-fonts.py` (see the header) and run `python3 tools/build-fonts.py`.
+- **Fonts**: pick Inter (default), IBM Plex Sans or Fira Code from the top bar; the choice is saved in your browser and embedded in SVG/PNG exports. They are bundled with the app (not loaded from the web). To add one, drop its `.woff2` files in `assets/fonts/`, add an entry to `FONTS` in `tools/build-fonts.py` (see the header) and run `python3 tools/build-fonts.py`.
 - **Palettes**: add an entry to `palettes` with the same color keys (`rosa`, `coral`, …) for `dark`, `light` and `black` (Pastel and Neon ship by default). A saved palette that no longer exists falls back to Pastel.
 - **New component type**: copy an entry in `types` and change `label`, `category`, `color`, `keywords` and `icon` (a 24×24 SVG).
 - **Connections**: `edgeStyles` sets dash, width and particle count.
 - **Animation**: speed, entrance and step duration in `animation`.
 - **Costs**: `cost.currency`, `cost.hoursPerMonth` (730 = hours in a month) and `cost.defaultYears`.
-- **Templates**: add your own in `examples.js`.
+- **Templates**: add your own in `src/examples.js`.
 
 <details>
 <summary><b>Update or add official icons</b></summary>
@@ -599,7 +599,7 @@ Everything you can customize is in **`config.js`**. Save and reload `index.html`
    python3 tools/build-icons.py <folder>
    ```
 
-Set `"icons": { "enabled": false }` in `config.js` to turn them off.
+Set `"icons": { "enabled": false }` in `src/config.js` to turn them off.
 
 </details>
 
@@ -620,21 +620,21 @@ The text language is in `window.DiagramonText` (`parse` and `stringify`). UI tra
 | File | Purpose |
 |---|---|
 | `index.html` | UI and styles. `#diagram-css` holds the styles that are also embedded in exports |
-| `config.js` | **Everything you can customize**: themes, palettes, types, connections, animation and costs |
-| `i18n.js` | UI texts in English and Spanish |
-| `app.js` | Editor engine |
-| `text-lang.js` | Text language (diagram as code) |
-| `examples.js` | Templates |
-| `export-mermaid.js`, `export-plantuml.js`, `export-drawio.js` | Exporters to Mermaid, PlantUML and draw.io |
-| `export-xlsx.js` | Minimal ZIP and Excel (`.xlsx`) writer, no libraries (used by the inventory export) |
-| `share.js` | Encrypted, self-contained HTML viewer for sharing |
-| `iac.js` | Infrastructure-as-code import (Terraform, CloudFormation, Kubernetes, Compose) |
+| `src/config.js` | **Everything you can customize**: themes, palettes, types, connections, animation and costs |
+| `src/i18n.js` | UI texts in English and Spanish |
+| `src/app.js` | Editor engine |
+| `src/text-lang.js` | Text language (diagram as code) |
+| `src/examples.js` | Templates |
+| `src/export/mermaid.js`, `src/export/plantuml.js`, `src/export/drawio.js` | Exporters to Mermaid, PlantUML and draw.io |
+| `src/export/xlsx.js` | Minimal ZIP and Excel (`.xlsx`) writer, no libraries (used by the inventory export) |
+| `src/share.js` | Encrypted, self-contained HTML viewer for sharing |
+| `src/iac.js` | Infrastructure-as-code import (Terraform, CloudFormation, Kubernetes, Compose) |
 | `samples/` | Sample IaC files to try the import |
-| `icons/*.js` | Embedded official icons for AWS, Azure, Google Cloud, SAP BTP and Microsoft Fabric |
-| `tools/build-icons.py` | Builds `icons/*.js` from the official packs |
-| `icons/logos.js`, `tools/build-logos.py` | Azure, Google Cloud and SAP logos for groups, built from `tools/logos/` |
-| `fonts/` | Bundled fonts (`.woff2`, OFL licenses) and the generated `fonts.js` |
-| `tools/build-fonts.py` | Builds `fonts/fonts.js` from `fonts/*.woff2` |
+| `assets/icons/*.js` | Embedded official icons for AWS, Azure, Google Cloud, SAP BTP and Microsoft Fabric |
+| `tools/build-icons.py` | Builds `assets/icons/*.js` from the official packs |
+| `assets/icons/logos.js`, `tools/build-logos.py` | Azure, Google Cloud and SAP logos for groups, built from `tools/logos/` |
+| `assets/fonts/` | Bundled fonts (`.woff2`, OFL licenses) and the generated `fonts.js` |
+| `tools/build-fonts.py` | Builds `assets/fonts/fonts.js` from `assets/fonts/*.woff2` |
 
 ---
 
@@ -668,7 +668,7 @@ To keep the spirit of the project:
 
 - **No external dependencies** and no build step: it must keep working with a double-click.
 - **No network connections**: no analytics, CDN, web fonts loaded from the web or APIs (the fonts are bundled).
-- Customizable things belong in `config.js`. New UI text goes in `i18n.js`, in both languages.
+- Customizable things belong in `src/config.js`. New UI text goes in `src/i18n.js`, in both languages.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the details, and [SECURITY.md](SECURITY.md) to report a vulnerability privately.
 
@@ -688,18 +688,18 @@ Diagramon's code is **open source** under the [MIT license](LICENSE): use it, ch
 including in commercial projects.
 
 The bundled fonts are [Inter](https://github.com/rsms/inter), [IBM Plex Sans](https://github.com/IBM/plex) and [Fira Code](https://github.com/tonsky/FiraCode), under the SIL Open Font License 1.1
-(copies in [`fonts/OFL-Inter.txt`](fonts/OFL-Inter.txt), [`fonts/OFL-IBMPlexSans.txt`](fonts/OFL-IBMPlexSans.txt) and [`fonts/OFL-FiraCode.txt`](fonts/OFL-FiraCode.txt)).
+(copies in [`assets/fonts/OFL-Inter.txt`](assets/fonts/OFL-Inter.txt), [`assets/fonts/OFL-IBMPlexSans.txt`](assets/fonts/OFL-IBMPlexSans.txt) and [`assets/fonts/OFL-FiraCode.txt`](assets/fonts/OFL-FiraCode.txt)).
 
-The **official icons** in `icons/` belong to Amazon Web Services, Microsoft, Google and SAP, and are **not** covered by the MIT license.
+The **official icons** in `assets/icons/` belong to Amazon Web Services, Microsoft, Google and SAP, and are **not** covered by the MIT license.
 AWS, Microsoft and Google allow their use in architecture diagrams under their own terms.
 SAP BTP icons come from [SAP/btp-solution-diagrams](https://github.com/SAP/btp-solution-diagrams)
-under the Apache 2.0 license (copy in [`icons/LICENSE-SAP.txt`](icons/LICENSE-SAP.txt)).
+under the Apache 2.0 license (copy in [`assets/icons/LICENSE-SAP.txt`](assets/icons/LICENSE-SAP.txt)).
 Microsoft Fabric icons come from Microsoft's official `@fabric-msft/svg-icons` package, under the MIT license
-(copy in [`icons/LICENSE-FABRIC.txt`](icons/LICENSE-FABRIC.txt)), and follow the same usage rules as Azure icons.
+(copy in [`assets/icons/LICENSE-FABRIC.txt`](assets/icons/LICENSE-FABRIC.txt)), and follow the same usage rules as Azure icons.
 SAP only publishes icons for its BTP services. Its business applications (S/4HANA, ECC, TM, EWM…) have no official icon,
 so Diagramon shows them with the SAP logo.
 The Azure, Google Cloud and SAP **logos** offered as group icons (an Azure subscription, a Google Cloud project, an SAP BTP account)
-are trademarks of their owners, used only to identify the service. Sources and terms in [`icons/LICENSE-LOGOS.txt`](icons/LICENSE-LOGOS.txt).
+are trademarks of their owners, used only to identify the service. Sources and terms in [`assets/icons/LICENSE-LOGOS.txt`](assets/icons/LICENSE-LOGOS.txt).
 Diagramon shows the icons unchanged: do not crop, rotate or distort them, and do not use them to represent your own product.
 AWS, Azure, Microsoft Fabric, Google Cloud and SAP are trademarks of their respective owners. Diagramon is not affiliated with any of them.
 

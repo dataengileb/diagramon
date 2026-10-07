@@ -789,7 +789,7 @@ revisión db: "BD en subred pública" por=Ana levantada=2026-10-01 compromiso=20
     }
   };
 
-  // Categorías del panel (config.js y icons/*.js las nombran en español)
+  // Categorías del panel (config.js y assets/icons/*.js las nombran en español)
   const CATEGORY_EN = {
     'Clientes': 'Clients', 'Red': 'Networking', 'Cómputo': 'Compute', 'Datos': 'Data', 'Integración': 'Integration',
     'Seguridad': 'Security', 'Operaciones': 'Operations', 'IA': 'AI', 'Empresa': 'Enterprise', 'Otros': 'Other',

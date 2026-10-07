@@ -14,8 +14,8 @@ These keep Diagramon what it is, so changes that break them will usually be decl
 
 1. **No external dependencies and no build step.** It must keep working by double-clicking `index.html`.
 2. **No network connections.** No analytics, CDN, web fonts or APIs. The Content Security Policy in `index.html` enforces this.
-3. **Customizable things live in `config.js`.** UI text goes in `i18n.js`, in both English and Spanish.
-4. **Escape everything.** Any text that comes from a model, import or user input and is placed into HTML must go through `esc()` (see `app.js`). Never interpolate raw values into `innerHTML` or `style="…"`. Don't add inline scripts or `on…=` handlers: the CSP blocks them.
+3. **Customizable things live in `src/config.js`.** UI text goes in `src/i18n.js`, in both English and Spanish.
+4. **Escape everything.** Any text that comes from a model, import or user input and is placed into HTML must go through `esc()` (see `src/app.js`). Never interpolate raw values into `innerHTML` or `style="…"`. Don't add inline scripts or `on…=` handlers: the CSP blocks them.
 
 ## How to send a change
 

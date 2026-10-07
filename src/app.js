@@ -35,7 +35,7 @@
     }
   } catch { /* sin almacenamiento disponible */ }
 
-  /* ---------- tipografías (las incluidas vienen de fonts/fonts.js, en base64) ---------- */
+  /* ---------- tipografías (las incluidas vienen de assets/fonts/fonts.js, en base64) ---------- */
   // Familias disponibles: `system` siempre; el resto solo si tienen archivos empaquetados
   const FONTS = {};
   for (const [k, f] of Object.entries(C.fonts.families)) if (k === 'system' || window.DIAGRAMON_FONTS?.[k]) FONTS[k] = { ...f };
@@ -112,7 +112,7 @@
   const categories = () => [...new Set([...C.categories, ...Object.values(C.types).map(t => t.category || 'Otros')])];
   const typeIcon = type => `<svg viewBox="0 0 24 24">${(C.types[type] || C.types.generic).icon}</svg>`;
 
-  /* ---------- iconos oficiales (icons/*.js, generados por tools/build-icons.py) ---------- */
+  /* ---------- iconos oficiales (assets/icons/*.js, generados por tools/build-icons.py) ---------- */
   const ICONS = (C.icons?.enabled !== false && window.DIAGRAMON_ICONS) || {};
   const iconInfo = ref => {
     if (typeof ref !== 'string') return null;
@@ -6460,7 +6460,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     form.querySelector('[type="submit"]').focus();
   }
 
-  /* ---------- exportar a otras herramientas (export-*.js) ----------
+  /* ---------- exportar a otras herramientas (src/export/*.js) ----------
      Cada exportador recibe una copia del diagrama y este contexto, y devuelve { text, ext, mime }. */
   const hexOf = k => {
     const pal = C.palettes[S.palette]?.light || {}, key = COLOR_ALIAS[k] || k;
@@ -6547,7 +6547,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     else fallback();
   }
   /* ---------- inventario exportable (CSV / Excel) ---------- */
-  // Una fila por componente (todos los niveles C4) y varias tablas de apoyo, para CMDB o auditoría. Excel: export-xlsx.js (sin librerías).
+  // Una fila por componente (todos los niveles C4) y varias tablas de apoyo, para CMDB o auditoría. Excel: src/export/xlsx.js (sin librerías).
   // Las ayudas opcionales se protegen con typeof para que la exportación siga funcionando si una función se quita.
   const INV_COMP = [['id'], ['name'], ['detail'], ['type'], ['provider'], ['service'], ['category'], ['c4'], ['level'], ['group'], ['owner'], ['steward'], ['team'], ['costCenter'], ['inherited'], ['region'], ['jurisdiction'],
     ['data'], ['sensitive'], ['layer'], ['exposure'], ['backup'], ['encIn', 'int'], ['encOut', 'int'], ['unencSens', 'int'], ['sla', 'sla'], ['rpo'], ['rto'], ['replicas', 'int'], ['cost', 'money'], ['period'], ['perMonth', 'money'], ['perYear', 'money'],
@@ -6641,7 +6641,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     try {
       const tabs = inventoryTables(S.model), X = window.DiagramonXlsx;
       if (kind === 'xlsx') {
-        if (!X) throw new Error('export-xlsx.js missing');
+        if (!X) throw new Error('src/export/xlsx.js missing');
         download(X.blob(tabs.map(t => ({ name: t.name, head: t.head, rows: t.rows, fmt: t.fmt })), { title: `${S.model.title || 'Diagramon'} · ${T('inv.title')}`, creator: 'Diagramon' }), fileName('xlsx', 'inventory'), X.MIME);
       } else if (kind === 'csv-all') {
         tabs.forEach((t, i) => setTimeout(() => download(toCSV([t.head, ...t.rows]), fileName('csv', `inventory-${t.key}`), 'text/csv;charset=utf-8'), i * 300));
