@@ -1111,36 +1111,101 @@
     });
     return out.sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id));
   }
-  // Disponibilidad compuesta del camino más corto entre a y b (en serie; el peor camino si hay varios)
+  // Disponibilidad compuesta entre a y b: probabilidad de que funcione AL MENOS UNA ruta (los nodos fallan de forma independiente; las aristas no fallan)
+  // Fiabilidad exacta de dos terminales por nodos (factorización: se fija un nodo del camino como activo/caído y se memoiza). Con grafos muy enmallados (presupuesto de llamadas agotado)
+  // cae a una cota inferior: rutas disjuntas en nodos, de más a menos probable. n nodos 0..n-1, succ[i] = sucesores, s origen, t destino, p[i] = disponibilidad (1 = sin dato)
+  /* routeReliability:start */
+  function routeReliability(n, succ, s, t, p, budget = 8000) {
+    const out = succ.map((l, i) => (i === t ? [] : l.filter(j => j !== s && j !== i))), inn = out.map(() => []);
+    out.forEach((l, i) => l.forEach(j => inn[j].push(i)));
+    const reach = (from, adj) => { const seen = new Set([from]), q = [from]; for (let i = 0; i < q.length; i++) adj[q[i]].forEach(v => { if (!seen.has(v)) { seen.add(v); q.push(v); } }); return seen; };
+    const F0 = reach(s, out), B0 = reach(t, inn);
+    if (!F0.has(t)) return null;
+    // Poda: solo los nodos que están en algún camino de s a t
+    const rel = []; for (let i = 0; i < n; i++) if (F0.has(i) && B0.has(i)) rel.push(i);
+    const isRel = new Set(rel), g = out.map((l, i) => (isRel.has(i) ? l.filter(j => isRel.has(j)) : [])), gi = g.map(() => []);
+    g.forEach((l, i) => l.forEach(j => gi[j].push(i)));
+    const w = i => (p[i] >= 1 ? 0 : -Math.log(Math.max(p[i], 1e-300))) + 1e-9;
+    // Ruta más probable (Dijkstra con pesos −ln p) evitando los nodos bloqueados
+    const best = blocked => {
+      const d = new Map([[s, 0]]), prev = new Map(), done = new Set();
+      for (;;) {
+        let u = -1; d.forEach((v, k) => { if (!done.has(k) && (u < 0 || v < d.get(u))) u = k; });
+        if (u < 0) return null;
+        if (u === t) { const r = []; for (let x = t; x != null; x = prev.get(x)) r.unshift(x); return r; }
+        done.add(u);
+        g[u].forEach(v => { if (blocked && blocked.has(v)) return; const nd = d.get(u) + w(v); if (!d.has(v) || nd < d.get(v)) { d.set(v, nd); prev.set(v, u); } });
+      }
+    };
+    const main = best(null), pos = new Map(main.map((x, i) => [x, i]));
+    // ¿Una sola ruta? Solo el camino principal y ningún atajo hacia delante
+    const single = rel.length === main.length && main.every((u, i) => g[u].every(v => pos.get(v) <= i + 1));
+    // Nº de rutas simples (acotado)
+    let steps = 0, routes = 0; const onp = new Set([s]);
+    const cnt = u => { if (routes >= 100 || ++steps > 20000) return; if (u === t) { routes++; return; } g[u].forEach(v => { if (!onp.has(v)) { onp.add(v); cnt(v); onp.delete(v); } }); };
+    cnt(s);
+    const ends = p[s] * p[t], base = { routes: single ? 1 : Math.max(routes, 2), main, rel, single };
+    if (single) { let v = 1; main.forEach(i => { v *= p[i]; }); return { ...base, value: v, exact: true }; }
+    // Exacto por factorización
+    const st = new Uint8Array(n), memo = new Map(); let calls = 0;
+    rel.forEach(i => { if (i === s || i === t || p[i] >= 1) st[i] = 1; });
+    const rec = () => {
+      if (++calls > budget) throw new Error('budget');
+      const F = reach2(s, g), B = reach2(t, gi);
+      if (!F.has(t)) return 0;
+      const key = rel.map(i => (F.has(i) && B.has(i) ? st[i] : 9)).join('');
+      if (memo.has(key)) return memo.get(key);
+      // Camino con menos nodos inciertos (0-1 BFS) y pivote = primer nodo incierto
+      const dist = new Map([[s, 0]]), prev = new Map(), dq = [s];
+      while (dq.length) {
+        const u = dq.shift();
+        g[u].forEach(v => { if (st[v] === 2 || !B.has(v)) return; const c = st[v] === 1 ? 0 : 1, nd = dist.get(u) + c; if (!dist.has(v) || nd < dist.get(v)) { dist.set(v, nd); prev.set(v, u); c ? dq.push(v) : dq.unshift(v); } });
+      }
+      let piv = -1; for (let x = t; x != null; x = prev.get(x)) if (st[x] === 0) piv = x;
+      let val;
+      if (piv < 0) val = 1;
+      else { st[piv] = 1; const a1 = rec(); st[piv] = 2; const a0 = rec(); st[piv] = 0; val = p[piv] * a1 + (1 - p[piv]) * a0; }
+      memo.set(key, val);
+      return val;
+    };
+    const reach2 = (from, adj) => { const seen = new Set([from]), q = [from]; for (let i = 0; i < q.length; i++) adj[q[i]].forEach(v => { if (st[v] !== 2 && !seen.has(v)) { seen.add(v); q.push(v); } }); return seen; };
+    try { return { ...base, value: ends * rec(), exact: true }; } catch (e) { if (e.message !== 'budget') throw e; }
+    // Aproximación: rutas disjuntas en nodos inciertos → cota inferior de la fiabilidad real
+    const blocked = new Set(); let fail = 1;
+    for (let k = 0; k < 64; k++) {
+      const r = best(blocked); if (!r) break;
+      const inner = r.filter(i => i !== s && i !== t), pr = inner.reduce((a, i) => a * p[i], 1);
+      fail *= 1 - pr;
+      const unc = inner.filter(i => p[i] < 1); if (!unc.length) break;
+      unc.forEach(i => blocked.add(i));
+    }
+    return { ...base, value: ends * (1 - fail), exact: false };
+  }
+  /* routeReliability:end */
+  // Disponibilidad compuesta de a a b: combina todas las rutas (res = caminos más cortos; sirve para a, el sentido y el resultado «sin ruta»)
+  // worst = el componente con menor disponibilidad de la ruta más probable; rpo/rto = máximo a lo largo de esa ruta
   function pathAvailability(m, b, res) {
     if (!res || !res.nodes.size) return null;
-    const byId = new Map(m.nodes.map(n => [n.id, n])), dist = res.dist, preds = new Map();
+    const a = [...res.nodes].find(id => res.dist.get(id) === 0), ids = m.nodes.map(n => n.id), ix = new Map(ids.map((id, i) => [id, i])), byId = new Map(m.nodes.map(n => [n.id, n]));
+    const succ = ids.map(() => []);
     m.edges.forEach(e => {
-      if (!res.edges.has(e.id)) return;
-      [[e.from, e.to], [e.to, e.from]].forEach(([u, v]) => { if (dist.get(u) + 1 === dist.get(v)) (preds.get(v) || preds.set(v, new Set()).get(v)).add(u); });
+      if (e.from === e.to || !ix.has(e.from) || !ix.has(e.to)) return;
+      succ[ix.get(e.from)].push(ix.get(e.to));
+      if (!res.directed || e.both) succ[ix.get(e.to)].push(ix.get(e.from));
     });
-    const fac = id => availOf(byId.get(id)) ?? 1, best = new Map();
-    [...res.nodes].sort((x, y) => dist.get(x) - dist.get(y)).forEach(id => {
-      let bp = null, bv = 1;
-      (preds.get(id) || []).forEach(p => { const v = best.get(p)?.val ?? 1; if (bp == null || v < bv) { bp = p; bv = v; } });
-      best.set(id, { val: bv * fac(id), prev: bp });
-    });
-    const order = [];
-    for (let id = b, i = 0; id != null && i++ < 1000; id = best.get(id)?.prev) order.unshift(id);
-    const ns = order.map(id => byId.get(id)), known = ns.filter(n => availOf(n) != null);
+    const p = ids.map(id => availOf(byId.get(id)) ?? 1), rr = routeReliability(ids.length, succ, ix.get(a), ix.get(b), p);
+    if (!rr) return null;
+    const order = rr.main.map(i => ids[i]), ns = order.map(id => byId.get(id)), known = ns.filter(n => availOf(n) != null);
     const worst = known.reduce((w, n) => (!w || availOf(n) < availOf(w) ? n : w), null);
     const mx = k => { const v = ns.map(n => (n[k] != null ? parseDur(n[k]) : null)).filter(x => x != null); return v.length ? Math.max(...v) : null; };
-    const av = known.length ? best.get(b).val : null;
-    return { availability: av, downtimeYear: av == null ? null : downtime(av).year, nodes: order, unknown: ns.length - known.length, routes: res.count,
-      worst: worst ? { id: worst.id, label: worst.label, availability: availOf(worst) } : null, rpo: mx('rpo'), rto: mx('rto') };
+    const rn = rr.rel.map(i => byId.get(ids[i])), anyKnown = rn.some(n => availOf(n) != null), av = anyKnown ? Math.min(1, Math.max(0, rr.value)) : null;
+    return { availability: av, downtimeYear: av == null ? null : downtime(av).year, nodes: order, unknown: rn.filter(n => availOf(n) == null).length, routes: rr.routes,
+      method: rr.single ? 'single' : rr.exact ? 'exact' : 'approx', approx: !rr.exact, worst: worst ? { id: worst.id, label: worst.label, availability: availOf(worst) } : null, rpo: mx('rpo'), rto: mx('rto') };
   }
   function availability(a, b) {
     const m = S.model;
     const res = shortestPaths(m, a, b, true) || shortestPaths(m, a, b, false);
-    const r = pathAvailability(m, b, res);
-    if (!r) return null;
-    const { routes, ...rest } = r;
-    return rest;
+    return pathAvailability(m, b, res);
   }
   // Fragmento HTML para la barra del camino
   function pathResText(b, res) {
@@ -1149,7 +1214,7 @@
     const parts = [];
     if (r.availability != null) {
       parts.push(T('res.path.comp', { a: fmtPct(r.availability), d: fmtApprox(r.downtimeYear) }) + (r.worst ? ` · ${T('res.path.worst', { n: esc(r.worst.label), a: fmtPct(r.worst.availability) })}` : ''));
-      if (r.routes > 1) parts.push(T('res.path.routes', r.routes));
+      if (r.method !== 'single' && r.routes > 1) parts.push(T('res.path.routes', { n: r.routes >= 100 ? '100+' : r.routes, approx: r.approx }));
       if (r.unknown) parts.push(T('res.path.unknown', r.unknown));
     }
     if (r.rpo != null) parts.push(`RPO ${esc(fmtDur(r.rpo))}`);
@@ -2029,7 +2094,7 @@
       const ok = (u, v) => nodes.has(u) && nodes.has(v) && dist.get(u) + 1 === dist.get(v);
       if (ok(e.from, e.to) || ((!directed || e.both) && ok(e.to, e.from))) edges.add(e.id);
     });
-    return { nodes, edges, hops, count: f.cnt.get(b), dist };
+    return { nodes, edges, hops, count: f.cnt.get(b), dist, directed };
   }
 
   function showPath(a, b) {
