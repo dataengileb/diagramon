@@ -121,7 +121,7 @@ Prefer Spanish? Click the 🌐 **EN** button in the top bar, or press **`L`**.
 | [⌨️ Diagram as code](docs/text-format.md) | The *Text* tab syntax, in English and Spanish |
 | [🎨 Customize](docs/customize.md) | Themes, palettes, types, rules and templates in `src/config.js` |
 | [🗂️ Project structure](docs/project-structure.md) | What each file and folder does |
-| [🧭 Known gaps](docs/known-gaps.md) | What works but has not been checked in depth yet |
+| [🧭 Known gaps](docs/known-gaps.md) | What still needs testing outside the browser, small improvements not done yet, and limits by design |
 | [🛣️ Ideas and possible improvements](docs/roadmap.md) | Larger changes open for contributors, such as connections between groups |
 
 ---
