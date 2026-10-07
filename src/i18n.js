@@ -827,8 +827,10 @@ revisión db: "BD en subred pública" por=Ana levantada=2026-10-01 compromiso=20
   const own = (o, k) => o != null && Object.prototype.hasOwnProperty.call(o, k);
   if (!own(DICT, lang)) lang = own(DICT, C.app.defaultLang) ? C.app.defaultLang : 'en';
 
+  // Textos en Map: la clave nunca se busca como propiedad de un objeto (no llega al prototipo)
+  const TEXTS = new Map(langs.map(l => [l, new Map(Object.entries(DICT[l]))]));
   function T(key, vars) {
-    const v = own(DICT[lang], key) ? DICT[lang][key] : own(DICT.en, key) ? DICT.en[key] : key;
+    const k = String(key), v = TEXTS.get(lang)?.get(k) ?? TEXTS.get('en').get(k) ?? k;
     return typeof v === 'function' ? v(vars) : v;
   }
   // { en: '…', es: '…' } → texto del idioma activo; cualquier otro valor se devuelve igual
