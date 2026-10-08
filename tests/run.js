@@ -480,6 +480,136 @@
     assert(m.requirements.some(r => r.check?.metric === 'residency') && m.requirements.some(r => r.check?.metric === 'encryption'), 'has checks');
   });
 
+  /* ======================================================================
+     8. Registro RAID: riesgos, supuestos, problemas y dependencias
+     ====================================================================== */
+  section('RAID log');
+  const raidSrc = between('/* raidModel:start */', '/* raidModel:end */');
+  const RAIDM = new Function('isDay', 'today', `${raidSrc}; return { cleanRaid, raidScore, raidLevel, raidHeat, raidSummary, raidIssues, raidState };`)(v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v), () => '2026-10-07');
+  const raidDoc = { nodes: [{ id: 'a' }, { id: 'b' }], edges: [{ id: 'e1' }], groups: [{ id: 'g' }], decisions: [{ id: 'ADR-001', status: 'accepted' }, { id: 'ADR-002', status: 'proposed' }, { id: 'ADR-003', status: 'rejected' }] };
+  const raidSet = () => [
+    { id: 'R-001', type: 'risk', title: 'SAP CDC licence not available', detail: 'd', owner: 'PMO', status: 'open', probability: 3, impact: 4, mitigation: 'Ask the vendor', raised: '2026-10-01', links: { decisions: ['ADR-001'], nodes: ['a'] } },
+    { id: 'A-001', type: 'assumption', title: 'Volume ≤ 2 TB/day', owner: 'Data owner', validation: 'pending', due: '2026-11-15', links: { decisions: ['ADR-001', 'ADR-002'], requirements: ['REQ-003'], edges: ['e1'], groups: ['g'] },
+      history: [{ validation: 'validated', date: '2026-10-02', by: 'Ana', note: 'Checked with "finance"' }] },
+    { id: 'I-001', type: 'issue', title: 'No access to the ERP test system', status: 'closed', due: '2026-09-30' },
+    { id: 'D-001', type: 'dependency', title: 'Network team opens private link', status: 'open', due: '2026-11-30', links: { nodes: ['b'] } }
+  ];
+  test('cleanRaid keeps valid items in canonical key order, with the fields of each type', () => {
+    const r = RAIDM.cleanRaid(raidSet(), raidDoc, ['REQ-003']);
+    eq(r.map(x => x.id), ['R-001', 'A-001', 'I-001', 'D-001'], 'ids');
+    eq(Object.keys(r[0]), ['id', 'type', 'title', 'detail', 'owner', 'status', 'probability', 'impact', 'mitigation', 'raised', 'links'], 'risk keys');
+    eq(Object.keys(r[1]), ['id', 'type', 'title', 'owner', 'validation', 'due', 'links', 'history'], 'assumption keys');
+    eq(Object.keys(r[2]), ['id', 'type', 'title', 'status', 'due'], 'issue keys');
+    eq(r[1].links, { decisions: ['ADR-001', 'ADR-002'], requirements: ['REQ-003'], edges: ['e1'], groups: ['g'] }, 'links');
+  });
+  test('cleanRaid drops fields that do not belong to the type and invalid values', () => {
+    const r = RAIDM.cleanRaid([
+      { id: 'R-001', type: 'risk', title: 'x', validation: 'validated', due: '2026-11-01', probability: 9, impact: 2.5, history: [{ validation: 'validated', date: '2026-10-02' }] },
+      { id: 'A-001', type: 'assumption', title: 'y', status: 'closed', probability: 3, impact: 3, mitigation: 'm', validation: 'maybe', due: 'soon' },
+      { id: 'I-001', type: 'issue', title: 'z', status: 'weird', validation: 'validated', mitigation: 'm', raised: 'yesterday' }], raidDoc);
+    eq(r[0], { id: 'R-001', type: 'risk', title: 'x', status: 'open' }, 'risk');
+    eq(r[1], { id: 'A-001', type: 'assumption', title: 'y', validation: 'pending' }, 'assumption');
+    eq(r[2], { id: 'I-001', type: 'issue', title: 'z', status: 'open' }, 'issue');
+  });
+  test('cleanRaid numbers per type, fixes ids that do not match the type and rejects duplicates', () => {
+    const r = RAIDM.cleanRaid([{ type: 'risk', title: 'a' }, { id: 'R-005', type: 'risk', title: 'b' }, { type: 'risk', title: 'c' }, { type: 'assumption', title: 'd' }, { id: 'R-005', type: 'risk', title: 'dup' },
+      { id: 'A-009', type: 'risk', title: 'wrong prefix' }, { id: 'X-1', type: 'dependency', title: 'e' }, { id: 'I-007', title: 'type from the id' }, { type: 'nonsense', title: 'dropped' }, null, 'x', { type: 'issue' }], raidDoc);
+    eq(r.map(x => `${x.id}:${x.type}`), ['R-006:risk', 'R-005:risk', 'R-007:risk', 'A-001:assumption', 'R-008:risk', 'R-009:risk', 'D-001:dependency', 'I-007:issue'].map(x => x), 'ids');
+  });
+  test('cleanRaid accepts Spanish type, status and validation words', () => {
+    const r = RAIDM.cleanRaid([{ id: 'S-1', type: 'riesgo', title: 'r', status: 'cerrado' }, { type: 'supuesto', title: 's', validation: 'invalidado' }, { type: 'problema', title: 'p', status: 'abierto' }, { type: 'dependencia', title: 'd' }], raidDoc);
+    eq(r.map(x => [x.id, x.type, x.status || x.validation]), [['R-001', 'risk', 'closed'], ['A-001', 'assumption', 'invalidated'], ['I-001', 'issue', 'open'], ['D-001', 'dependency', 'open']], 'normalized');
+  });
+  test('cleanRaid prunes links to ids that do not exist, and works when requirements do not exist', () => {
+    const it = { id: 'R-001', type: 'risk', title: 't', links: { decisions: ['ADR-001', 'ADR-999'], requirements: ['REQ-001'], nodes: ['a', 'zzz'], edges: ['nope'], groups: ['g', 'g'] } };
+    eq(RAIDM.cleanRaid([it], raidDoc)[0].links, { decisions: ['ADR-001'], nodes: ['a'], groups: ['g'] }, 'no requirements key');
+    eq(RAIDM.cleanRaid([it], { ...raidDoc, requirements: [{ id: 'REQ-001' }] })[0].links.requirements, ['REQ-001'], 'model with requirements');
+    eq(RAIDM.cleanRaid([it], raidDoc, ['REQ-001'])[0].links.requirements, ['REQ-001'], 'ids passed in');
+    eq(RAIDM.cleanRaid([{ ...it, links: { nodes: ['zzz'] } }], raidDoc)[0].links, undefined, 'empty links disappear');
+  });
+  test('cleanRaid enforces the limits', () => {
+    const r = RAIDM.cleanRaid([{ type: 'risk', title: `  ${'t'.repeat(300)}  `, detail: 'd'.repeat(5000), owner: 'o'.repeat(200), mitigation: 'm'.repeat(3000), history: 1 }], raidDoc)[0];
+    eq([r.title.length, r.detail.length, r.owner.length, r.mitigation.length], [200, 4000, 120, 2000], 'lengths');
+    const many = RAIDM.cleanRaid(Array.from({ length: 600 }, (_, i) => ({ type: 'issue', title: `i${i}` })), raidDoc);
+    eq(many.length, 500, 'entries');
+    const h = RAIDM.cleanRaid([{ type: 'assumption', title: 'a', history: Array.from({ length: 150 }, (_, i) => ({ validation: 'validated', date: '2026-10-07', note: `${i}` })).concat([{ validation: 'validated', date: 'bad' }]) }], raidDoc)[0].history;
+    eq([h.length, h[0].note], [100, '50'], 'history keeps the latest 100 valid entries');
+  });
+  test('old registers stay byte-identical and an absent register adds nothing', () => {
+    const old = RAIDM.cleanRaid(raidSet(), raidDoc, ['REQ-003']);
+    eq(JSON.stringify(RAIDM.cleanRaid(old, raidDoc, ['REQ-003'])), JSON.stringify(old), 'idempotent');
+    eq(RAIDM.cleanRaid(undefined, raidDoc), [], 'no key');
+    assert(/if \(m\.raid\?\.length\) body\.push\(arr\('raid'/.test(app), 'JSON export only writes the key when there are items');
+    const base = withPositions({ title: 'No RAID', nodes: [{ id: 'a', label: 'A' }], edges: [] });
+    ['en', 'es'].forEach(l => {
+      const t0 = TXT.stringify(base, l), t1 = TXT.stringify({ ...base, raid: [] }, l);
+      assert(t0 === t1 && !/riesgo|risk|supuesto|assumption/.test(t0.replace(/^t[ií]tulo: .*$/m, '')), `text unchanged without a register (${l})`);
+      const p = TXT.parse(t0, textCtx(l));
+      eq([p.errors, p.model.raid], [[], []], 'parse');
+    });
+  });
+  test('score, level, heat map and summary', () => {
+    eq([RAIDM.raidScore({ type: 'risk', probability: 3, impact: 4 }), RAIDM.raidScore({ type: 'risk', probability: 3 }), RAIDM.raidScore({ type: 'issue', probability: 3, impact: 4 })], [12, 0, 0], 'score = p × i, only for risks');
+    eq([1, 7, 8, 14, 15, 25].map(RAIDM.raidLevel), ['low', 'low', 'medium', 'medium', 'high', 'high'], 'levels');
+    const list = RAIDM.cleanRaid([{ type: 'risk', title: 'a', probability: 3, impact: 4 }, { type: 'risk', title: 'b', probability: 3, impact: 4 }, { type: 'risk', title: 'c', probability: 5, impact: 5 }, { type: 'risk', title: 'd' }], raidDoc);
+    const g = RAIDM.raidHeat(list);
+    eq([g[3][2], g[4][4], g.flat().reduce((a, b) => a + b, 0)], [2, 1, 3], 'cells [impact-1][probability-1]');
+    const all = RAIDM.cleanRaid(raidSet().concat([{ type: 'risk', title: 'big', probability: 5, impact: 4 }, { type: 'risk', title: 'closed', status: 'closed', probability: 5, impact: 5 }, { type: 'assumption', title: 'ok', validation: 'validated', due: '2020-01-01' }]), raidDoc, ['REQ-003']);
+    eq(RAIDM.raidSummary({ raid: all }, '2026-10-07'), { risks: 2, high: 1, toValidate: 1, overdue: 0 }, 'summary');
+    eq(RAIDM.raidSummary({ raid: all }, '2026-12-01').overdue, 2, 'pending assumption and open dependency past due; closed and validated ones do not count');
+  });
+  test('raidIssues: invalidated assumption, unvalidated, high risk and overdue', () => {
+    const doc = { ...raidDoc, raid: RAIDM.cleanRaid([
+      { type: 'assumption', title: 'bad', validation: 'invalidated', links: { decisions: ['ADR-001', 'ADR-002', 'ADR-003'] } },
+      { type: 'assumption', title: 'late', validation: 'pending', due: '2026-10-01', links: { decisions: ['ADR-001', 'ADR-003'] } },
+      { type: 'assumption', title: 'fine', validation: 'pending', due: '2026-12-01' },
+      { type: 'risk', title: 'naked', probability: 4, impact: 4 }, { type: 'risk', title: 'covered', probability: 5, impact: 3, mitigation: 'm' }, { type: 'risk', title: 'minor', probability: 2, impact: 3 }, { type: 'risk', title: 'old', status: 'closed', probability: 5, impact: 5 },
+      { type: 'issue', title: 'late issue', due: '2026-10-06' }, { type: 'dependency', title: 'on time', due: '2026-10-07' }, { type: 'dependency', title: 'done', status: 'closed', due: '2020-01-01' }], raidDoc) };
+    const is = RAIDM.raidIssues(doc, '2026-10-07').map(x => [x.key, x.severity]);
+    eq(is, [['invalid:A-001:ADR-001', 'high'], ['invalid:A-001:ADR-002', 'high'], ['unvalidated:A-002', 'medium'], ['risk:R-001', 'high'], ['risk:R-002', 'low'], ['overdue:I-001', 'medium']], 'issues');
+    eq(RAIDM.raidIssues(doc, '2026-10-07').find(x => x.rule === 'unvalidated').acc, ['ADR-001'], 'accepted decisions that rely on the late assumption');
+  });
+  const raidText = () => ({ ...withPositions({ title: 'RAID', nodes: [{ id: 'a', label: 'A' }, { id: 'b', label: 'B' }], edges: [{ from: 'a', to: 'b' }, { from: 'a', to: 'b' }], groups: [{ id: 'g', label: 'G' }] }),
+    decisions: [{ id: 'ADR-001', title: 'D1', status: 'accepted', date: '2026-06-02', context: '', decision: '', consequences: '', links: {} }],
+    raid: [
+      { id: 'R-001', type: 'risk', title: 'SAP CDC "licence" not available', detail: 'Line 1\nLine 2', owner: 'PMO team', status: 'open', probability: 3, impact: 4, mitigation: 'Ask; then "decide"', raised: '2026-10-01', links: { decisions: ['ADR-001'], nodes: ['a'], groups: ['g'], edges: ['e2'] } },
+      { id: 'A-001', type: 'assumption', title: 'Volume ≤ 2 TB/day', owner: 'Data owner', validation: 'invalidated', due: '2026-11-15', links: { decisions: ['ADR-001'], requirements: ['REQ-003'] },
+        history: [{ validation: 'validated', date: '2026-10-02', by: 'Ana María', note: 'Checked; with finance' }, { validation: 'invalidated', date: '2026-10-05' }] },
+      { id: 'I-001', type: 'issue', title: 'No ERP test system', status: 'closed', due: '2026-09-30' },
+      { id: 'D-001', type: 'dependency', title: 'Network team opens private link', status: 'open', due: '2026-11-30', links: { nodes: ['b'], edges: ['e1'] } }] });
+  ['en', 'es'].forEach(lang => test(`RAID round trip in the text format · ${lang}`, () => {
+    const m = raidText();
+    m.edges.forEach((e, i) => { e.id = `e${i + 1}`; });
+    const ctx = textCtx(lang), t1 = TXT.stringify(m, lang), r = TXT.parse(t1, ctx);
+    eq(r.errors, [], 'parse errors');
+    const t2 = TXT.stringify({ ...r.model, meta: m.meta }, lang);
+    assert(t1 === t2, `text changed:\n${t1}\n---\n${t2}`);
+    const doc = { ...r.model, requirements: [{ id: 'REQ-003' }] }, back = RAIDM.cleanRaid(r.model.raid, doc), want = RAIDM.cleanRaid(m.raid, { ...m, requirements: [{ id: 'REQ-003' }] });
+    eq(back, want, 'model');
+    if (lang === 'es') assert(/^riesgo R-001: .* p=3 i=4 dueño="PMO team" estado=abierto /m.test(t1) && /^supuesto A-001: .* validación=invalidado fecha=2026-11-15 /m.test(t1) && /^  mitigación: /m.test(t1) && /^  detalle: /m.test(t1) && /^  historial: validado 2026-10-02 por="Ana María" nota="Checked; with finance"; invalidado 2026-10-05$/m.test(t1) && /^problema I-001: .* estado=cerrado fecha=2026-09-30$/m.test(t1), 'Spanish keywords');
+    else assert(/^risk R-001: .* p=3 i=4 owner="PMO team" status=open raised=2026-10-01 links=ADR-001,a,g,a->b#2$/m.test(t1) && /^dependency D-001: .* due=2026-11-30 links=b,a->b#1$/m.test(t1), 'English keywords');
+  }));
+  test('RAID text accepts both languages and reports errors with line numbers', () => {
+    const ctx = textCtx('en');
+    const ok = TXT.parse(['a: A', 'adr ADR-1: "D"', 'riesgo R-1: "r" p=2 i=5 dueño=Ana estado=cerrado enlaces=a,ADR-1,REQ-9', '  mitigation: "m"', 'assumption A-1: "s" validación=validado fecha=2026-11-15 registrado=2026-10-01', '  historial: validado 2026-10-02 por=Ana'].join('\n'), ctx);
+    eq(ok.errors, [], 'mixed-language input');
+    eq(ok.model.raid.map(x => [x.id, x.type, x.probability, x.impact, x.owner, x.status, x.validation, x.due, x.raised, x.mitigation, x.links, x.history]),
+      [['R-1', 'risk', 2, 5, 'Ana', 'closed', undefined, undefined, undefined, 'm', { nodes: ['a'], decisions: ['ADR-1'], requirements: ['REQ-9'] }, undefined],
+       ['A-1', 'assumption', undefined, undefined, undefined, undefined, 'validated', '2026-11-15', '2026-10-01', undefined, undefined, [{ validation: 'validated', date: '2026-10-02', by: 'Ana' }]]], 'values');
+    const bad = TXT.parse(['a: A', 'risk X-1: "bad id"', 'risk R-1: "x" p=9 i=0 status=maybe due=soon', 'risk R-1: "dup" links=nowhere', 'assumption A-1: "a" validation=perhaps', '  history: validated nope', '  mitigation: "ok"'].join('\n'), ctx);
+    eq(bad.errors.map(e => e.line).sort(), [2, 3, 3, 3, 3, 4, 4, 5, 6], 'one error per problem, with its line');
+  });
+  test('lakehouse starter template carries a RAID log linked to its decisions and components', () => {
+    const m = templates('en').find(x => /Lakehouse greenfield/.test(x.name)).model;
+    eq(m.raid.map(x => x.id), ['A-001', 'A-002', 'A-003', 'A-004', 'R-001', 'R-002', 'D-001'], 'items');
+    eq(m.raid.map(x => x.type), ['assumption', 'assumption', 'assumption', 'assumption', 'risk', 'risk', 'dependency'], 'types');
+    const nodes = new Set(m.nodes.map(n => n.id)), decs = new Set((m.decisions || []).map(d => d.id));
+    m.raid.forEach(x => { (x.links?.nodes || []).forEach(id => assert(nodes.has(id), `${x.id} links to node ${id}`)); if (decs.size) (x.links?.decisions || []).forEach(id => assert(decs.has(id), `${x.id} links to ${id}`)); assert(!x.links?.requirements, 'no requirement links'); });
+    assert(m.raid.filter(x => x.type === 'risk').every(x => x.probability && x.impact && x.mitigation), 'risks have p, i and mitigation');
+    const es = templates('es').find(x => /Lakehouse greenfield/.test(x.name)).model;
+    assert(es.raid.every(x => x.title && x.title !== m.raid.find(y => y.id === x.id).title), 'titles are translated');
+  });
+
   /* ---------- resumen ---------- */
   print(`\n${pass} passed, ${fail} failed`);
   return finish(fail === 0);

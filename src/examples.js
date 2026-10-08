@@ -416,6 +416,24 @@ window.DIAGRAMON_EXAMPLES = [
           links: { decisions: ['ADR-002', 'ADR-003'], nodes: ['bronze', 'silver', 'gold'] } },
         { id: 'REQ-008', title: { en: 'Built for a team that works in SQL and Python', es: 'Pensado para un equipo que trabaja en SQL y Python' }, kind: 'principle', priority: 'could', status: 'draft', source: { en: 'Head of data engineering', es: 'Jefe de ingeniería de datos' },
           links: { decisions: ['ADR-009', 'ADR-016'] } }
+      ],
+      // Registro RAID de un descubrimiento típico: supuestos por validar, dos riesgos con mitigación y una dependencia (enlazados a las ADR del kit y a los componentes)
+      raid: [
+        { id: 'A-001', type: 'assumption', title: { en: 'Daily volume stays under 2 TB', es: 'El volumen diario se mantiene por debajo de 2 TB' }, detail: { en: 'Sizing of storage, compute and cost depends on it. Confirm with the data owners.', es: 'El dimensionamiento de almacenamiento, cómputo y costo depende de esto. Confirmar con los dueños del dato.' },
+          owner: { en: 'Data owners', es: 'Dueños del dato' }, validation: 'pending', due: '2026-11-15', raised: '2026-10-07', links: { decisions: ['ADR-002', 'ADR-004', 'ADR-017'], nodes: ['bronze'] } },
+        { id: 'A-002', type: 'assumption', title: { en: 'The ERP can expose change data capture', es: 'El ERP puede exponer captura de cambios (CDC)' }, detail: { en: 'Depends on the ERP vendor, version and database. If not, CDC falls back to scheduled extracts.', es: 'Depende del proveedor, la versión y la base de datos del ERP. Si no, el CDC se sustituye por extracciones programadas.' },
+          owner: { en: 'ERP team', es: 'Equipo del ERP' }, validation: 'pending', due: '2026-11-15', raised: '2026-10-07', links: { decisions: ['ADR-007'], nodes: ['erp', 'ingc'] } },
+        { id: 'A-003', type: 'assumption', title: { en: 'The team already knows SQL and Python', es: 'El equipo ya conoce SQL y Python' }, detail: { en: 'Drives the choice of transformation and orchestration tools.', es: 'Condiciona la elección de herramientas de transformación y orquestación.' },
+          owner: { en: 'Data engineering lead', es: 'Líder de ingeniería de datos' }, validation: 'pending', due: '2026-11-30', raised: '2026-10-07', links: { decisions: ['ADR-009', 'ADR-010'], nodes: ['transf', 'orch'] } },
+        { id: 'A-004', type: 'assumption', title: { en: 'A corporate cloud agreement already exists', es: 'Ya existe un acuerdo corporativo con la nube' }, owner: { en: 'Procurement', es: 'Compras' }, validation: 'pending', due: '2026-10-31', raised: '2026-10-07', links: { decisions: ['ADR-001', 'ADR-017'] } },
+        { id: 'R-001', type: 'risk', title: { en: 'Change data capture licence is not available for the ERP', es: 'La licencia de captura de cambios no está disponible para el ERP' }, detail: { en: 'Vendors often charge extra for log-based CDC.', es: 'Los proveedores suelen cobrar aparte el CDC basado en logs.' },
+          owner: { en: 'PMO', es: 'PMO' }, status: 'open', probability: 3, impact: 4, mitigation: { en: 'Ask the vendor for a quote now. Fallback: incremental extracts by timestamp, with a nightly reconciliation.', es: 'Pedir cotización al proveedor ya. Alternativa: extracciones incrementales por marca de tiempo, con conciliación nocturna.' },
+          raised: '2026-10-07', links: { decisions: ['ADR-007'], nodes: ['erp', 'ingc'] } },
+        { id: 'R-002', type: 'risk', title: { en: 'Personal data reaches raw and curated layers unmasked', es: 'Datos personales llegan sin enmascarar a las capas cruda y curada' },
+          owner: { en: 'Data governance', es: 'Gobierno de datos' }, status: 'open', probability: 3, impact: 5, mitigation: { en: 'Classify sources first, mask or tokenise PII before the curated layer, and restrict raw access to the pipelines.', es: 'Clasificar las fuentes primero, enmascarar o tokenizar la PII antes de la capa curada y limitar el acceso a la capa cruda a los pipelines.' },
+          raised: '2026-10-07', links: { decisions: ['ADR-005', 'ADR-013'], nodes: ['silver', 'iam'] } },
+        { id: 'D-001', type: 'dependency', title: { en: 'Network and identity teams provide private connectivity and SSO', es: 'Los equipos de red e identidad entregan conectividad privada y SSO' },
+          owner: { en: 'Network team', es: 'Equipo de red' }, status: 'open', due: '2026-11-30', raised: '2026-10-07', links: { decisions: ['ADR-013', 'ADR-014'], nodes: ['iam'] } }
       ]
     }
   }
