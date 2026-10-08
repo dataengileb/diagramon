@@ -17,7 +17,9 @@ No server. No account. No internet. Not a single byte of your customers' data le
 ![Works offline](https://img.shields.io/badge/works-offline-A9D2F3?style=flat-square)
 ![English and Spanish](https://img.shields.io/badge/UI-EN%20%7C%20ES-E0B5EE?style=flat-square)
 
-<img src="docs/diagram-dark.png" alt="A 3-tier AWS web app drawn with Diagramon in dark mode, with a cost tag under each service">
+<img src="docs/diagramon-demo.gif" width="960" alt="Diagramon in action: an animated AWS web app, the Security and Cost views, data lineage in a lakehouse, the Resilience view and a C4 drill-down">
+
+<sub>Animated architecture · Security and Cost views · data lineage · resilience · C4 levels</sub>
 
 </div>
 

@@ -16,7 +16,9 @@ Sin servidor. Sin cuenta. Sin internet. Sin enviar ni un byte de los datos de tu
 ![Sin dependencias](https://img.shields.io/badge/dependencias-0-F5A9C6?style=flat-square)
 ![Funciona offline](https://img.shields.io/badge/funciona-offline-A9D2F3?style=flat-square)
 
-<img src="docs/diagram-dark.es.png" alt="Diagrama de una web app en AWS hecho con Diagramon, en modo oscuro, con costos bajo cada servicio">
+<img src="docs/diagramon-demo.gif" width="960" alt="Diagramon en acción: una web app en AWS animada, las vistas de Seguridad y Costos, el linaje de datos de un lakehouse, la vista de Resiliencia y un nivel C4">
+
+<sub>Arquitectura animada · vistas de Seguridad y Costos · linaje de datos · resiliencia · niveles C4</sub>
 
 </div>
 
