@@ -736,6 +736,38 @@
   .adr-opt-h { display: flex; align-items: center; gap: 6px; font-size: 12px; } .adr-opt-h span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 650; } .adr-opt-h b { color: var(--muted); }
   .adr-mx .adr-x, .adr-opt-h .adr-x { padding: 0 5px; border: 0; background: none; color: var(--muted); font: inherit; cursor: pointer; } .adr-mx .adr-x:hover, .adr-opt-h .adr-x:hover { color: var(--p-coral); }
   .ver.adr-flash { box-shadow: 0 0 0 3px color-mix(in srgb, var(--p-lavanda) 55%, transparent); }
+  /* Requisitos (pestaña Requisitos): fichas con la base de .adr, control (fitness function) y matriz de trazabilidad */
+  .req-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+  .req-chip { max-width: 100%; padding: 1px 9px; border-radius: 999px; font: inherit; font-size: 11.5px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); background: color-mix(in srgb, var(--s, var(--muted)) 12%, transparent); border: 1px solid color-mix(in srgb, var(--s, var(--muted)) 40%, transparent); }
+  .req-chip:hover { background: color-mix(in srgb, var(--s, var(--muted)) 24%, transparent); }
+  .req-chip b { color: var(--s, var(--muted)); font-variant-numeric: tabular-nums; }
+  .req-chip.dropped { opacity: .55; text-decoration: line-through; }
+  .req-for > span, .req-field { font-size: 11px; font-weight: 650; color: var(--muted); }
+  .req-for { margin-top: 5px; } .req-field .req-chips { margin: 5px 0 6px; }
+  .req.dropped .adr-title { text-decoration: line-through; opacity: .7; }
+  .req-cov { margin-top: 3px; font-size: 11.5px; color: var(--muted); } .req-cov.ok { color: var(--p-menta); } .req-cov.bad { color: var(--p-coral); }
+  .req-detail { margin-top: 4px; font-size: 11.5px; color: var(--text); opacity: .85; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .req-chk { flex: none; max-width: 96px; padding: 0 7px; border-radius: 999px; font-size: 10.5px; font-weight: 750; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border: 1px solid currentColor; }
+  .req-chk.pass { color: var(--p-menta); } .req-chk.fail { color: var(--p-coral); } .req-chk.unknown { color: var(--muted); }
+  .req-check { display: grid; gap: 7px; padding: 8px; border: 1px solid var(--border); border-radius: 10px; background: color-mix(in srgb, var(--surface2) 55%, transparent); min-width: 0; }
+  .req-check-h { display: flex; align-items: center; gap: 8px; font-size: 11.5px; font-weight: 700; color: var(--text); } .req-check-h > span { flex: 1; }
+  .req-check-h .req-chk { max-width: 60%; }
+  .req-view { margin-left: auto; } .req-view button { padding: 2px 10px; }
+  .req-mx-box { display: grid; gap: 7px; min-width: 0; }
+  .req-mx-wrap { max-width: 100%; overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+  .req-mx { border-collapse: collapse; width: max-content; min-width: 100%; font-size: 11.5px; }
+  .req-mx th, .req-mx td { padding: 3px 4px; border-bottom: 1px solid var(--border); border-right: 1px solid var(--border); text-align: center; font-weight: 500; }
+  .req-mx thead th { background: var(--surface2); color: var(--muted); font-size: 10px; font-weight: 700; }
+  .req-mx tr:last-child > * { border-bottom: 0; } .req-mx th:last-child, .req-mx td:last-child { border-right: 0; }
+  .req-mx .req-mx-r { text-align: left; min-width: 110px; max-width: 170px; position: sticky; left: 0; background: var(--surface); z-index: 1; } .req-mx thead .req-mx-r { background: var(--surface2); }
+  .req-mx .req-mx-r .adr-mx-t { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .req-mx-d { min-width: 28px; } .req-mx-d.acc { color: var(--p-menta); background: color-mix(in srgb, var(--p-menta) 16%, var(--surface2)); }
+  .req-mx-c { width: 28px; min-width: 28px; padding: 0; } .req-mx-c button { width: 100%; height: 26px; padding: 0; border: 0; background: none; color: var(--accent); font: 700 13px var(--font); cursor: pointer; }
+  .req-mx-c button:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); } .req-mx-c.acc { background: color-mix(in srgb, var(--p-menta) 22%, transparent); } .req-mx-c.acc button { color: var(--p-menta); }
+  .req-mx-n { width: 28px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .req-mx-box.wide { position: fixed; inset: 6vh 4vw; z-index: 60; overflow: auto; align-content: start; grid-auto-rows: max-content; padding: 16px; border-radius: 12px; background: var(--surface); box-shadow: 0 24px 70px rgba(0,0,0,.45); }
+  .req-mx-box.wide .req-mx { width: 100%; font-size: 13px; } .req-mx-box.wide .req-mx-r { min-width: 200px; max-width: 320px; }
+  .req-back { position: fixed; inset: 0; z-index: 59; background: rgba(0,0,0,.45); }
 </style>
 
 <!-- Estilos del diagrama. También se incrustan al exportar SVG/PNG. -->
@@ -1201,6 +1233,7 @@
         <button class="tab" data-tab="versions" data-i18n="tab.versions"></button>
         <button class="tab" data-tab="review"><span data-i18n="tab.review"></span><b class="tab-badge" id="review-badge" hidden></b></button>
         <button class="tab" data-tab="adr" data-i18n="tab.adr" data-i18n-title="tab.adr.tip"></button>
+        <button class="tab" data-tab="req" data-i18n="tab.req" data-i18n-title="tab.req.tip"></button>
         <button class="tab" data-tab="text" data-i18n="tab.text"></button>
         <button class="tab" data-tab="code" data-i18n="tab.json"></button>
       </div>
@@ -1220,6 +1253,7 @@
       <div class="pane" data-pane="versions"><div id="versions"></div></div>
       <div class="pane" data-pane="review"><div id="review-panel"></div></div>
       <div class="pane" data-pane="adr"><div id="adr-panel"><div id="adr-bar"></div><div id="adr-list"></div></div></div>
+      <div class="pane" data-pane="req"><div id="req-panel"><div id="req-bar"></div><div id="req-list"></div></div></div>
       <div class="pane pane-code" data-pane="text">
         <details class="help"><summary data-i18n="text.help"></summary><pre data-i18n-html="text.guide"></pre></details>
         <div class="code"><div class="gutter" aria-hidden="true"></div><textarea id="text-src" class="code-input" spellcheck="false" data-i18n-aria="text.aria"></textarea></div>

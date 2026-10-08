@@ -676,6 +676,7 @@
     cleanScopes(m);
     m.versions = normVersions(raw.versions);
     m.decisions = cleanDecisions(raw.decisions, m);
+    { const rq = cleanRequirements(raw.requirements, m); if (rq.length) m.requirements = rq; }   // sin requisitos no hay clave: JSON y exportaciones idénticos
     // Cada versión puede llevar las decisiones que había al guardarla (para compararlas); sus enlaces se limpian contra el diagrama de la versión
     m.versions.forEach(v => { if (v.decisions) v.decisions = cleanDecisions(v.decisions, { nodes: v.diagram.nodes || [], edges: v.diagram.edges || [], groups: v.diagram.groups || [], versions: m.versions }); });
     if (raw.active != null && m.versions.some(v => v.id === String(raw.active))) m.active = String(raw.active);
@@ -1119,6 +1120,144 @@
           const c = os.find(o => o.id === d.chosen), l = os.find(o => o.id === lead);
           out.push({ id: `adr:not-leader:${d.id}`, source: 'adr', rule: 'not-leader', severity: 'low', target: tgt(d), title: T('adr.find.notLeader', { id: d.id, c: c.title || c.id, l: l.title || l.id }), detail: T('adr.find.notLeader.d', { c: adrScore(d, c).pct, l: adrScore(d, l).pct }), fix: T('adr.find.notLeader.fix') });
         }
+      }
+    });
+    return out;
+  });
+
+  /* ---------- requisitos (impulsores, RNF, restricciones, principios) y sus controles: modelo ---------- */
+  // m.requirements = [{ id: 'REQ-001', title, kind, detail?, priority?, status, source?, check?: { metric, from?, to?, target?, cls?, jur? }, links?: { decisions?, nodes?, edges?, groups? } }]
+  // Son del documento (como las decisiones): no entran en las fotos de versiones y sobreviven al abrir una versión y a los editores.
+  // Sin la clave (o vacía) el JSON y las exportaciones quedan idénticos. check = «función de aptitud»: se evalúa con lo que la app ya calcula (reqEval).
+  /* reqModel:start */
+  const REQ_KIND = ['driver', 'nfr', 'constraint', 'principle'], REQ_PRIO = ['must', 'should', 'could'], REQ_STATUS = ['draft', 'agreed', 'dropped'];
+  const REQ_METRIC = ['availability', 'rpo', 'rto', 'cost', 'encryption', 'residency'];
+  const REQ_PARAMS = { availability: ['from', 'to', 'target'], rpo: ['from', 'to', 'target'], rto: ['from', 'to', 'target'], cost: ['target'], encryption: ['cls'], residency: ['cls', 'jur'] };
+  const REQ_ALIAS = { impulsor: 'driver', rnf: 'nfr', restriccion: 'constraint', principio: 'principle', debe: 'must', deberia: 'should', podria: 'could', borrador: 'draft', acordado: 'agreed', acordada: 'agreed', descartado: 'dropped', descartada: 'dropped',
+    disponibilidad: 'availability', costo: 'cost', coste: 'cost', cifrado: 'encryption', residencia: 'residency' };
+  const REQ_COLOR = { driver: 'var(--p-cielo)', nfr: 'var(--p-lavanda)', constraint: 'var(--p-melocoton)', principle: 'var(--p-menta)' };
+  const reqEnum = (v, list) => { const k = String(v ?? '').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, ''); return list.includes(k) ? k : list.includes(REQ_ALIAS[k]) ? REQ_ALIAS[k] : ''; };
+  const reqNum = id => { const r = /^REQ-(\d+)$/i.exec(String(id)); return r ? +r[1] : 0; };
+  const reqNextId = list => `REQ-${String(Math.max(0, ...list.map(r => reqNum(r.id))) + 1).padStart(3, '0')}`;
+  // Solo enlaces a ids que existen (decisiones: las de m.decisions)
+  function cleanReqLinks(l, m) {
+    const out = {};
+    l = l && typeof l === 'object' ? l : {};
+    [['decisions', m.decisions || []], ['nodes', m.nodes], ['edges', m.edges], ['groups', m.groups]].forEach(([k, src]) => {
+      const ok = new Set(src.map(x => x.id)), ids = [...new Set((Array.isArray(l[k]) ? l[k] : []).map(String).filter(id => ok.has(id)))];
+      if (ids.length) out[k] = ids;
+    });
+    return out;
+  }
+  // Solo los parámetros que la métrica necesita; origen y destino solo si el nodo existe; objetivo numérico (disponibilidad: 0..100; el resto: 0 o más)
+  function cleanReqCheck(c, m) {
+    const metric = reqEnum(c?.metric, REQ_METRIC);
+    if (!metric) return null;
+    const out = { metric }, ps = REQ_PARAMS[metric];
+    ['from', 'to'].filter(k => ps.includes(k)).forEach(k => { const v = String(c[k] ?? '').trim(); if (m.nodes.some(n => n.id === v)) out[k] = v; });
+    if (ps.includes('target') && c.target != null && String(c.target).trim() !== '') { const t = Number(String(c.target).replace(',', '.')); if (Number.isFinite(t) && t >= 0 && (metric !== 'availability' || t <= 100)) out.target = t; }
+    ['cls', 'jur'].filter(k => ps.includes(k)).forEach(k => { const v = String(c[k] ?? '').trim().toLowerCase().slice(0, 40); if (v) out[k] = v; });
+    return out;
+  }
+  function cleanRequirements(raw, m) {
+    const txt = v => String(v ?? '').replace(/\r\n?/g, '\n').slice(0, 4000);
+    const seen = new Set(), items = [];
+    (Array.isArray(raw) ? raw : []).forEach(r => {
+      if (!r || typeof r !== 'object' || Array.isArray(r)) return;
+      const title = String(r.title ?? '').trim().slice(0, 200), detail = txt(r.detail);
+      let id = String(r.id ?? '').trim().slice(0, 40);
+      if (!id && !title && !detail.trim()) return;
+      if (!id || seen.has(id)) id = ''; else seen.add(id);
+      const o = { id, title, kind: reqEnum(r.kind, REQ_KIND) || 'driver' };
+      if (detail.trim()) o.detail = detail;
+      const pr = reqEnum(r.priority, REQ_PRIO);
+      if (pr) o.priority = pr;
+      o.status = reqEnum(r.status, REQ_STATUS) || 'draft';
+      const src = String(r.source ?? '').replace(/\s+/g, ' ').trim().slice(0, 120);
+      if (src) o.source = src;
+      const ck = r.check && typeof r.check === 'object' ? cleanReqCheck(r.check, m) : null;
+      if (ck) o.check = ck;
+      const lk = cleanReqLinks(r.links, m);
+      if (Object.keys(lk).length) o.links = lk;
+      items.push(o);
+    });
+    items.forEach(o => { if (!o.id) o.id = reqNextId(items); });
+    return items;
+  }
+  // Cobertura: decisiones aceptadas enlazadas y componentes (nodos, conexiones, grupos) enlazados; cubierto = alguna de las dos
+  function reqCover(r, m) {
+    const l = r.links || {}, ds = (l.decisions || []).map(id => (m.decisions || []).find(d => d.id === id)).filter(d => d && d.status === 'accepted');
+    const comps = (l.nodes || []).length + (l.edges || []).length + (l.groups || []).length;
+    return { decisions: ds, comps, covered: ds.length > 0 || comps > 0 };
+  }
+  // Evalúa el control de un requisito → { state: 'pass' | 'fail' | 'unknown', actual, detail }. Solo corre con estado «agreed».
+  // h = lo que la app ya calcula: T, availability(a, b) → { availability, rpo, rto } | null, cost(m) → mensual | null, carries(e, get, cls), crossBorder(e), sensitive(cls),
+  //     nodeJur(n) → clave de jurisdicción, edgeName(e), pct(a), dur(seg), money(v), num(v)
+  function reqEval(r, m, h) {
+    const c = r.check, T = h.T, res = (state, actual, detail = '') => ({ state, actual, detail });
+    if (!c) return res('unknown', null, T('req.chk.none'));
+    if (r.status !== 'agreed') return res('unknown', null, T('req.chk.draft'));
+    const miss = (REQ_PARAMS[c.metric] || []).filter(k => c[k] == null || c[k] === '');
+    if (miss.length) return res('unknown', null, T('req.chk.missing', { p: miss.map(k => T(`req.chk.p.${k}`)).join(', ') }));
+    const get = id => m.nodes.find(n => n.id === id), list = es => { const nm = es.slice(0, 5).map(h.edgeName).join('; '); return es.length > 5 ? `${nm}; +${es.length - 5}` : nm; };
+    if (c.metric === 'availability' || c.metric === 'rpo' || c.metric === 'rto') {
+      if (!get(c.from) || !get(c.to)) return res('unknown', null, T('req.chk.node'));
+      const a = h.availability(c.from, c.to);
+      if (!a) return res('unknown', null, T('req.chk.noRoute'));
+      if (c.metric === 'availability') {
+        if (a.availability == null) return res('unknown', null, T('req.chk.noSla'));
+        const act = a.availability * 100, ok = act + 1e-9 >= c.target;
+        return res(ok ? 'pass' : 'fail', act, T('req.chk.d.avail', { a: h.pct(a.availability), t: `${h.num(c.target)}%` }));
+      }
+      const sec = a[c.metric];
+      if (sec == null) return res('unknown', null, T('req.chk.noDur', c.metric.toUpperCase()));
+      const ok = sec <= c.target * 3600 + 1e-6;
+      return res(ok ? 'pass' : 'fail', sec / 3600, T('req.chk.d.dur', { m: c.metric.toUpperCase(), a: h.dur(sec), t: h.dur(c.target * 3600) }));
+    }
+    if (c.metric === 'cost') {
+      const tot = h.cost(m);
+      if (tot == null) return res('unknown', null, T('req.chk.noCost'));
+      return res(tot <= c.target + 1e-9 ? 'pass' : 'fail', tot, T('req.chk.d.cost', { a: h.money(tot), t: h.money(c.target) }));
+    }
+    if (c.metric === 'encryption') {
+      const es = m.edges.filter(e => h.carries(e, get, c.cls));
+      if (!es.length) return res('unknown', null, T('req.chk.noEdges', c.cls));
+      const bad = es.filter(e => e.encrypted !== true);
+      return res(bad.length ? 'fail' : 'pass', bad.length, bad.length ? T('req.chk.d.enc', { n: bad.length, c: c.cls, list: list(bad) }) : T('req.chk.d.encOk', { n: es.length, c: c.cls }));
+    }
+    if (!h.sensitive(c.cls)) return res('unknown', null, T('req.chk.notSens', c.cls));
+    if (!m.nodes.some(n => h.nodeJur(n) === c.jur)) return res('unknown', null, T('req.chk.noJur', c.jur));
+    const bad = m.edges.filter(e => { const cb = h.crossBorder(e); return cb && !cb.approved && cb.classes.includes(c.cls) && cb.from.jur.key === c.jur && cb.to.jur.key !== c.jur; });
+    return res(bad.length ? 'fail' : 'pass', bad.length, bad.length ? T('req.chk.d.res', { n: bad.length, c: c.cls, j: c.jur, list: list(bad) }) : T('req.chk.d.resOk', { c: c.cls, j: c.jur }));
+  }
+  /* reqModel:end */
+  const requirementsOf = (kind, id, m = S.model) => (m?.requirements || []).filter(r => r.links?.[kind]?.includes(id));
+  // Tras borrar nodos, conexiones, grupos o decisiones: quita de los enlaces (y de origen/destino del control) los ids que ya no existen
+  function pruneReqLinks(m = S.model) {
+    (m.requirements || []).forEach(r => {
+      const l = cleanReqLinks(r.links, m);
+      if (Object.keys(l).length) r.links = l; else delete r.links;
+      ['from', 'to'].forEach(k => { if (r.check?.[k] && !m.nodes.some(n => n.id === r.check[k])) delete r.check[k]; });
+    });
+  }
+  // El control con lo que la app ya calcula: disponibilidad compuesta (availability), costo mensual (monthlyTotal), cifrado y cruce de fronteras (crossBorder)
+  const REQ_H = {
+    T: (k, v) => T(k, v), availability: (a, b) => availability(a, b), cost: m => { const ns = m.nodes.filter(hasCost); return ns.length ? monthlyTotal(ns) : null; },
+    carries: (e, get, cls) => (e.data?.length ? e.data : [...(get(e.from)?.data || []), ...(e.both ? get(e.to)?.data || [] : [])]).includes(cls),
+    crossBorder: e => crossBorder(e, id => S.model.nodes.find(n => n.id === id)), sensitive: cls => !!DATA[cls]?.sensitive, nodeJur: n => jurOf(regionOf(n).value)?.key || '',
+    edgeName: e => { const nm = id => S.model.nodes.find(n => n.id === id)?.label || id; return `${nm(e.from)} ${e.both ? '↔' : '→'} ${nm(e.to)}`; }, pct: a => fmtPct(a), dur: s => fmtDur(s), money: v => money(v), num: v => numFmt(v, 4)
+  };
+  const reqCheck = (r, m = S.model) => reqEval(r, m, REQ_H);
+  // Hallazgos (fuente «req»): obligatorios y recomendables acordados sin cobertura (ni decisión aceptada ni componente enlazado); controles que fallan
+  addFindingSource('req', m => {
+    const out = [];
+    (m.requirements || []).forEach(r => {
+      if (r.status !== 'agreed') return;
+      const l = r.links || {}, id0 = r.check?.from || l.nodes?.[0] || '', tgt = id0 ? { kind: 'node', id: id0 } : l.edges?.[0] ? { kind: 'edge', id: l.edges[0] } : l.groups?.[0] ? { kind: 'group', id: l.groups[0] } : { kind: 'node', id: '' };
+      if ((r.priority === 'must' || r.priority === 'should') && !reqCover(r, m).covered) out.push({ id: `req:uncovered:${r.id}`, source: 'req', rule: 'uncovered', severity: r.priority === 'must' ? 'medium' : 'low', target: tgt, title: T('req.find.uncovered', { id: r.id, t: r.title }), detail: T(`req.pr.${r.priority}`), fix: T('req.find.uncovered.fix') });
+      if (r.check) {
+        const c = reqCheck(r, m);
+        if (c.state === 'fail') out.push({ id: `req:fail:${r.id}`, source: 'req', rule: 'fail', severity: r.priority === 'must' ? 'high' : 'medium', target: tgt, title: T('req.find.fail', { id: r.id, t: r.title }), detail: c.detail, fix: T('req.find.fail.fix') });
       }
     });
     return out;
@@ -3183,7 +3322,7 @@
   }
 
   // Además de guardar, refresca el aviso de "cambios sin guardar" de la versión abierta
-  const save = debounce(() => { store.set('model', S.model); updateMeta(); renderVersions(); renderAdr(); }, 250);
+  const save = debounce(() => { store.set('model', S.model); updateMeta(); renderVersions(); renderAdr(); renderReq(); }, 250);
 
   const ORDER = {
     group: ['id', 'label', 'icon', 'color', 'parent', 'kind', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'controls', 'in'],
@@ -3191,6 +3330,7 @@
     edge: ['id', 'from', 'to', 'label', 'style', 'weight', 'route', 'both', 'color', 'data', 'encrypted', 'datasets', 'transferOk', 'threats'],
     note: ['id', 'x', 'y', 'w', 'h', 'text', 'color', 'in'],
     zone: ['id', 'x', 'y', 'w', 'h', 'label', 'severity', 'desc', 'kind', 'trust', 'in'],
+    requirement: ['id', 'title', 'kind', 'detail', 'priority', 'status', 'source', 'check', 'links'],
     decision: ['id', 'title', 'status', 'date', 'deciders', 'context', 'decision', 'consequences', 'supersededBy', 'area', 'criteria', 'options', 'chosen', 'links', 'history']
   };
   function serialize(m, full = false) {
@@ -3213,6 +3353,7 @@
     if (m.notes?.length) body.push(arr('notes', m.notes, ORDER.note));
     if (m.zones?.length) body.push(arr('zones', m.zones, ORDER.zone));
     if (m.decisions?.length) body.push(arr('decisions', m.decisions, ORDER.decision));
+    if (m.requirements?.length) body.push(arr('requirements', m.requirements, ORDER.requirement));
     // El archivo exportado lleva también las versiones; el editor JSON no las muestra
     if (full && m.versions?.length) {
       if (m.active) body.push(`  "active": ${JSON.stringify(m.active)}`);
@@ -3263,6 +3404,7 @@
     if (opts.fromEditor && S.model && raw && typeof raw === 'object') {
       if (!Array.isArray(raw.notes)) raw = { ...raw, notes: S.model.notes };
       if (!Array.isArray(raw.zones)) raw = { ...raw, zones: S.model.zones };
+      if (!Array.isArray(raw.requirements) && S.model.requirements) raw = { ...raw, requirements: S.model.requirements }; // igual que las decisiones: el texto siempre las trae; el JSON, si omite la clave, las conserva
       if (!Array.isArray(raw.decisions)) raw = { ...raw, decisions: S.model.decisions }; // el texto siempre trae las decisiones (ADR; borrarlas del texto las borra); el JSON, si omite la clave, las conserva
     }
     S.model = normalize(raw);
@@ -3281,6 +3423,7 @@
     writeEditors(opts.fromEditor, !opts.fromEditor);
     renderInspector();
     renderAdr(true);
+    renderReq(true);
     save();
     updateUndoButtons();
     if (opts.fit) fitView(opts.fit !== 'instant');
@@ -3290,6 +3433,7 @@
   function changed(structural = true) {
     if (S.path) clearPath();
     if (S.model.decisions?.length) pruneAdrLinks();
+    if (S.model.requirements?.length) pruneReqLinks();
     if (structural) render(false); else { updateGeometry(); applyCompare(); }
     syncEditor();
     save();
@@ -4183,7 +4327,7 @@
     const v = findVersion(id);
     if (!v) return;
     S.sel = null;
-    setModel({ ...clone(v.diagram), versions: S.model.versions, active: v.id, decisions: S.model.decisions }, { history: true });
+    setModel({ ...clone(v.diagram), versions: S.model.versions, active: v.id, decisions: S.model.decisions, requirements: S.model.requirements }, { history: true });
     toast(T('ver.opened', { name: verLabel(v) }));
   }
   async function deleteVersion(id, { force } = {}) {
@@ -5870,6 +6014,7 @@
     store.set('tab', t.dataset.tab);
     if (t.dataset.tab === 'review') renderFindings();
     else if (t.dataset.tab === 'adr') renderAdr(true);
+    else if (t.dataset.tab === 'req') renderReq(true);
   }));
 
   function codeBox(box, apply) {
@@ -6541,7 +6686,7 @@
   // reportData() arma un modelo plano (secciones de bloques) y dos dibujantes lo pintan: reportMarkdown y reportHTML, así que los dos formatos no se desincronizan.
   // Bloques: { k: 'h3', t } · { k: 'p', t, muted? } · { k: 'kv', items: [[k, v]] } · { k: 'cards', items: [{ label, value, tone? }] }
   //          { k: 'table', head: [], rows: [[celda]], cls? } (celda = texto | { t, tone }) · { k: 'text', label, t } · { k: 'ul', items } · { k: 'img', alt, caption, svg?, uri?, file? }
-  const REP_SECS = ['summary', 'diagram', 'components', 'connections', 'data', 'owners', 'layers', 'costs', 'resilience', 'findings', 'compliance', 'threats', 'decisions', 'versions', 'notes'];
+  const REP_SECS = ['summary', 'diagram', 'components', 'connections', 'data', 'owners', 'layers', 'costs', 'resilience', 'findings', 'compliance', 'threats', 'decisions', 'requirements', 'versions', 'notes'];
   const REP_PAGE = ['diagram', 'components', 'findings', 'decisions']; // secciones que empiezan página al imprimir
   const repT = (k, v) => T(`rep.${k}`, v);
   const repSleep = ms => new Promise(r => setTimeout(r, ms));
@@ -6561,7 +6706,7 @@
       summary: true, diagram: m.nodes.length > 0, components: m.nodes.length > 0, connections: m.edges.length > 0,
       data: m.nodes.some(n => dataClassesOf(n, m).length || regionOf(n, m).value), owners: govTeamList(m).length > 0,
       layers: m.nodes.some(n => layerOf(n).value), costs: m.nodes.some(hasCost), resilience: m.nodes.some(hasRes) || spofList(m).length > 0, findings: findingsOf(m).length > 0,
-      compliance: cmpModel(m).keys.length > 0, threats: strideAll(m).length > 0, decisions: !!m.decisions?.length,
+      compliance: cmpModel(m).keys.length > 0, threats: strideAll(m).length > 0, decisions: !!m.decisions?.length, requirements: !!m.requirements?.length,
       versions: m.versions.length > 0, notes: (m.notes || []).length > 0 || (m.zones || []).some(z => z.kind !== 'trust')
     };
   }
@@ -6619,6 +6764,7 @@
       if (m.nodes.some(hasCost)) cards.push({ label: repT('k.cost'), value: money(round2(mt)) });
       cards.push({ label: repT('k.findings'), value: open.length, tone: open.some(f => f.severity === 'critical' || f.severity === 'high') ? 'sev-high' : '' });
       if (m.decisions?.length) cards.push({ label: repT('k.decisions'), value: m.decisions.length });
+      if (m.requirements?.length) cards.push({ label: repT('k.requirements'), value: m.requirements.length });
       const kv = [[repT('author'), D.author], [repT('version'), D.version], [repT('active'), D.active ? `${D.active.label} · ${D.active.status}` : ''], [repT('date'), D.date]].filter(r => r[1]);
       const blocks = [];
       if (D.desc) blocks.push({ k: 'p', t: D.desc });
@@ -6764,6 +6910,15 @@
         });
       });
       sec('decisions', blocks);
+    }
+
+    if (want('requirements')) {
+      const rs = m.requirements, cov = r => reqCoveredBy(r, m), chk = new Map(rs.filter(r => r.check).map(r => [r.id, reqCheck(r, m)]));
+      const res = r => { const c = chk.get(r.id); return c ? { t: `${{ pass: '✓', fail: '✗', unknown: '?' }[c.state]} ${reqCheckText(r)}${c.detail ? ` · ${c.detail}` : ''}`, tone: c.state === 'fail' ? 'sev-high' : '' } : ''; };
+      const blocks = [{ k: 'table', cls: 'wide', head: [repT('h.id'), repT('h.title'), repT('h.kind'), repT('h.priority'), repT('h.status'), repT('h.coveredBy'), repT('h.check')],
+        rows: rs.map(r => [r.id, r.title, T(`req.kind.${r.kind}`), r.priority ? T(`req.pr.${r.priority}`) : '', T(`req.st.${r.status}`), cov(r), res(r)]) }];
+      rs.filter(r => r.detail || r.source).forEach(r => blocks.push({ k: 'text', label: `${r.id} · ${r.title}${r.source ? ` (${T('req.f.source')}: ${r.source})` : ''}`, t: r.detail || '' }));
+      sec('requirements', blocks);
     }
 
     if (want('versions')) {
@@ -7079,6 +7234,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
   const INV_GROUP = [['id'], ['name'], ['parent'], ['kind'], ['region'], ['layer'], ['owner'], ['team'], ['costCenter'], ['count', 'int'], ['monthly', 'money']];
   const INV_OWNER = [['team'], ['owners'], ['stewards'], ['components', 'int'], ['monthly', 'money']];
   const INV_ADR = [['id'], ['title'], ['status'], ['date'], ['links']];
+  const INV_REQ = [['id'], ['title'], ['kind'], ['priority'], ['status'], ['source'], ['coveredBy'], ['check'], ['result']];
   const INV_FIND = [['severity'], ['source'], ['rule'], ['title'], ['target'], ['dismissed'], ['reason']];
   const INV_VER = [['name'], ['env'], ['status'], ['author'], ['created'], ['updated'], ['decidedOn']];
   const invYN = v => T(v ? 'sec.yes' : 'sec.no');
@@ -7156,6 +7312,9 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     if (m.decisions?.length) {   // Área y Elegida solo aparecen si alguna decisión las usa
       const ar = m.decisions.some(d => d.area), ch = m.decisions.some(d => d.chosen), pick = d => { const o = d.chosen && (d.options || []).find(x => x.id === d.chosen); return o ? `${o.id} · ${o.title || o.id}` : ''; };
       out.push(mk('decisions', [...INV_ADR, ...(ar ? [['area']] : []), ...(ch ? [['chosen']] : [])], m.decisions.map(d => [d.id, d.title, T(`adr.st.${d.status}`), d.date || '', links(d.links), ...(ar ? [d.area || ''] : []), ...(ch ? [pick(d)] : [])])));
+    }
+    if (m.requirements?.length) {   // Requisitos: cubierto por, control y su resultado
+      out.push(mk('requirements', INV_REQ, m.requirements.map(r => { const c = r.check && reqCheck(r, m); return [r.id, r.title, T(`req.kind.${r.kind}`), r.priority ? T(`req.pr.${r.priority}`) : '', T(`req.st.${r.status}`), r.source || '', reqCoveredBy(r, m), r.check ? reqCheckText(r) : '', c ? `${T(`req.chk.${c.state}`)}${c.detail ? ` · ${c.detail}` : ''}` : '']; })));
     }
     // Hallazgos (abiertos y descartados)
     const tl = t => { const o = (t.kind === 'node' ? m.nodes : t.kind === 'edge' ? m.edges : t.kind === 'group' ? m.groups : t.kind === 'zone' ? m.zones || [] : []).find(x => x.id === t.id); return !o ? t.id : t.kind === 'edge' ? `${nm(o.from)} → ${nm(o.to)}` : o.label || t.id; };
@@ -7416,6 +7575,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     else if (mod) return;
     else if (ev.key === 'Delete' || ev.key === 'Backspace') { if (S.sel) { ev.preventDefault(); deleteSelection(); } }
     else if (ev.key === 'Escape' && ADR.wide) { ADR.wide = null; renderAdr(true); }   // cierra la matriz de opciones ampliada
+    else if (ev.key === 'Escape' && REQ.wide) { REQ.wide = false; renderReq(true); }   // y la de trazabilidad de requisitos
     else if (ev.key === 'Escape' && filterMenu.open) filterMenu.open = false;
     else if (ev.key === 'Escape') { if (S.play) stopPlay(); else if (S.path) clearPath(); else if (S.connecting) cancelConnect(); else if (!S.sel && S.compare) compareVersion(null); else if (!S.sel && !S.flow && S.scope) scopeUp(); else select(null); }
     else if (ev.altKey && ev.key === 'ArrowUp') { ev.preventDefault(); scopeUp(); }  // sube un nivel C4
@@ -7692,6 +7852,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     pushHistory();
     S.model.decisions = cleanDecisions(S.model.decisions.filter(d => d.id !== id), S.model);
     if (ADR.open === id) ADR.open = null;
+    pruneReqLinks();
     changed(true); renderInspector(); renderAdr(true);
     return true;
   }
@@ -7894,6 +8055,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
       <div class="adr-meta">${esc(adrMeta(d))}</div>
       ${d.options?.length ? `<div class="adr-osum">${esc(T('adr.osum', { n: d.options.length }))}${d.chosen ? ` · <b>✓ ${esc(d.options.find(o => o.id === d.chosen).title || d.chosen)}</b>` : ''}</div>` : ''}
       ${adrMark(d, cmp)}
+      ${reqChipsFor(d.id)}
       ${!on && links.length ? `<div class="adr-links">${links.map(l => goChip(l, false)).join('')}</div>` : ''}
       ${form}
     </div>`;
@@ -8020,7 +8182,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     const linked = decisionsOf(kind, t.id), rest = (S.model.decisions || []).filter(d => !linked.includes(d));
     return `<div class="field adr-field">${T('adr.field')}${adrChips(linked)}
       <div class="adr-row"><button class="btn small" data-adr="new">+ ${esc(T('adr.new'))}</button>
-      ${rest.length ? `<select data-adr-link aria-label="${esc(T('adr.linkTo'))}"><option value="">${esc(T('adr.linkTo'))}</option>${rest.map(d => `<option value="${esc(d.id)}">${esc(`${d.id} · ${adrTitle(d)}`)}</option>`).join('')}</select>` : ''}</div></div>`;
+      ${rest.length ? `<select data-adr-link aria-label="${esc(T('adr.linkTo'))}"><option value="">${esc(T('adr.linkTo'))}</option>${rest.map(d => `<option value="${esc(d.id)}">${esc(`${d.id} · ${adrTitle(d)}`)}</option>`).join('')}</select>` : ''}</div></div>${reqField(kind, t.id)}`;
   };
   $('#inspector').addEventListener('click', ev => {
     const b = ev.target.closest('button');
@@ -8097,6 +8259,247 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     download(md, `${slug}-decisions.md`, 'text/markdown;charset=utf-8');
     return md;
   }
+
+  /* ---------- requisitos: pestaña (fichas, controles, matriz de trazabilidad), inspector y API ---------- */
+  const REQ = { open: null, kind: '', st: '', pr: '', q: '', view: 'list', wide: false };   // ficha abierta, filtros por tipo, estado y prioridad, búsqueda, vista (lista | matriz) y matriz ampliada
+  const REQ_ST_COLOR = { draft: 'var(--p-limon)', agreed: 'var(--p-menta)', dropped: 'var(--muted)' };
+  const reqById = id => (S.model.requirements || []).find(r => r.id === id);
+  const reqTitle = r => r.title || r.id;
+  const REQ_LINKS = ['decisions', 'nodes', 'edges', 'groups'];
+  const reqLinkLabel = (k, id) => { if (k !== 'decisions') return adrLinkLabel(k, id); const d = adrById(id); return d ? `${d.id} · ${adrTitle(d)}` : id; };
+  const reqLinkList = r => REQ_LINKS.flatMap(k => (r.links?.[k] || []).map(id => ({ kind: k, id, label: reqLinkLabel(k, id) || id })));
+  const reqAddLinks = (r, add) => { const l = {}; REQ_LINKS.forEach(k => { const v = [...(r.links?.[k] || []), ...(add[k] || [])]; if (v.length) l[k] = v; }); return l; };
+  const reqChips = list => (list.length ? `<div class="req-chips">${list.map(r => `<button type="button" class="req-chip${r.status === 'dropped' ? ' dropped' : ''}" data-req-open="${esc(r.id)}" style="--s:${REQ_COLOR[r.kind]}" title="${esc(`${r.id} · ${reqTitle(r)} · ${T(`req.kind.${r.kind}`)} · ${T(`req.st.${r.status}`)}`)}"><b>${esc(r.id)}</b> ${esc(r.title)}</button>`).join('')}</div>` : '');
+  // Fila «Aborda: REQ-001 …» en la ficha de una decisión, y fila compacta en el inspector (solo si hay vínculos)
+  const reqChipsFor = decisionId => { const l = requirementsOf('decisions', decisionId); return l.length ? `<div class="req-for"><span>${esc(T('req.addresses'))}</span>${reqChips(l)}</div>` : ''; };
+  const reqField = (kind, id) => { const l = requirementsOf(kind, id); return l.length ? `<div class="field req-field">${esc(T('req.field'))}${reqChips(l)}</div>` : ''; };
+
+  // Crear, cambiar y borrar: todo pasa por cleanRequirements, así tipos, estados, controles y enlaces siempre quedan coherentes
+  const setReqs = list => { if (list.length) S.model.requirements = list; else delete S.model.requirements; };
+  function addRequirement(p = {}) {
+    p = p && typeof p === 'object' ? p : {};
+    pushHistory();
+    const list = cleanRequirements([...(S.model.requirements || []), { ...p, title: p.title || T('req.new.title') }], S.model);
+    setReqs(list);
+    changed(true); renderInspector(); renderReq(true);
+    return list[list.length - 1].id;
+  }
+  function updateRequirement(id, patch) {
+    const r = reqById(id);
+    if (!r || !patch || typeof patch !== 'object') return false;
+    pushHistory();
+    setReqs(cleanRequirements(S.model.requirements.map(x => (x === r ? { ...r, ...patch, id: r.id } : x)), S.model));
+    changed(true); renderInspector(); renderReq(true);
+    return true;
+  }
+  function removeRequirement(id) {
+    if (!reqById(id)) return false;
+    pushHistory();
+    setReqs(cleanRequirements(S.model.requirements.filter(r => r.id !== id), S.model));
+    if (REQ.open === id) REQ.open = null;
+    changed(true); renderInspector(); renderReq(true);
+    return true;
+  }
+  const checkRequirement = id => { const r = reqById(id); return r ? reqCheck(r) : null; };
+
+  // Abre un requisito en la pestaña Requisitos (quita los filtros que lo esconderían)
+  function reqOpen(id) {
+    const r = reqById(id);
+    if (!r) return;
+    REQ.open = id; REQ.view = 'list'; REQ.wide = false;
+    if (REQ.kind && REQ.kind !== r.kind) REQ.kind = '';
+    if (REQ.st && REQ.st !== r.status) REQ.st = '';
+    if (REQ.pr && REQ.pr !== r.priority) REQ.pr = '';
+    REQ.q = '';
+    $('.tab[data-tab="req"]')?.click();
+    renderReq(true);
+    $(`#req-list .adr[data-id="${CSS.escape(id)}"]`)?.scrollIntoView({ block: 'nearest' });
+    if (matchMedia('(max-width: 760px)').matches) $('#main').classList.add('open');
+  }
+  const reqChecks = () => new Map((S.model.requirements || []).filter(r => r.check).map(r => [r.id, reqCheck(r)]));
+  // Insignia del control: ✓ cumple · ✗ falla · ? sin datos (el detalle va en el tooltip)
+  const reqBadge = (r, chk) => {
+    const c = chk.get(r.id);
+    if (!c) return '';
+    const sym = { pass: '✓', fail: '✗', unknown: '?' }[c.state], tip = `${T(`req.m.${r.check.metric}`)}: ${c.detail}`;
+    return `<span class="req-chk ${c.state}" title="${esc(tip)}" aria-label="${esc(`${T(`req.chk.${c.state}`)}. ${tip}`)}">${sym} ${esc(T(`req.m.${r.check.metric}`))}</span>`;
+  };
+  // «Cubierto por ADR-003 (aceptada), 2 componentes»
+  function reqCoverText(r) {
+    const cv = reqCover(r, S.model), ds = (r.links?.decisions || []).map(id => adrById(id)).filter(Boolean).map(d => `${d.id} (${T(`adr.st.${d.status}`).toLowerCase()})`);
+    const parts = [...ds, ...(cv.comps ? [T('req.cov.comps', cv.comps)] : [])];
+    return { cls: cv.covered ? 'ok' : r.status === 'agreed' && (r.priority === 'must' || r.priority === 'should') ? 'bad' : '', text: !parts.length ? T('req.cov.none') : cv.covered ? T('req.cov.by', parts.join(', ')) : T('req.cov.not', parts.join(', ')) };
+  }
+  const reqMeta = r => [T(`req.kind.${r.kind}`), r.priority ? T(`req.pr.${r.priority}`) : '', r.source].filter(Boolean).join(' · ');
+  // «ADR-003 (aceptada), Tienda, Tienda → API» en una línea (informe y Excel)
+  function reqCoveredBy(r, m = S.model) {
+    const l = r.links || {}, nm = id => m.nodes.find(n => n.id === id)?.label || id;
+    return [...(l.decisions || []).map(id => { const d = (m.decisions || []).find(x => x.id === id); return d ? `${d.id} (${T(`adr.st.${d.status}`).toLowerCase()})` : id; }), ...(l.nodes || []).map(nm),
+      ...(l.edges || []).map(id => { const e = m.edges.find(x => x.id === id); return e ? `${nm(e.from)} ${e.both ? '↔' : '→'} ${nm(e.to)}` : id; }), ...(l.groups || []).map(id => m.groups.find(g => g.id === id)?.label || id)].join(', ');
+  }
+  // «Disponibilidad ERP → BI ≥ 99,9 %» · «Costo ≤ US$ 10.000» · «Cifrado: PII» · «Residencia: PII en UE»
+  function reqCheckText(r) {
+    const c = r.check;
+    if (!c) return '';
+    const nm = id => S.model.nodes.find(n => n.id === id)?.label || id || '?', mt = T(`req.m.${c.metric}`), cn = k => (DATA[k] ? loc(DATA[k].label) : k) || '?';
+    if (c.metric === 'availability') return `${mt} ${nm(c.from)} → ${nm(c.to)} ≥ ${c.target != null ? `${numFmt(c.target, 4)}%` : '?'}`;
+    if (c.metric === 'rpo' || c.metric === 'rto') return `${mt} ${nm(c.from)} → ${nm(c.to)} ≤ ${c.target != null ? `${numFmt(c.target, 2)} ${T('req.unit.h')}` : '?'}`;
+    if (c.metric === 'cost') return `${mt} ≤ ${c.target != null ? money(c.target) : '?'}`;
+    if (c.metric === 'encryption') return `${mt}: ${cn(c.cls)}`;
+    return `${mt}: ${cn(c.cls)} → ${c.jur ? loc(JURS[c.jur]?.label) || c.jur : '?'}`;
+  }
+  const reqMatches = r => (!REQ.kind || r.kind === REQ.kind) && (!REQ.st || r.status === REQ.st) && (!REQ.pr || r.priority === REQ.pr)
+    && (!REQ.q || [r.id, r.title, r.detail, r.source].some(x => String(x || '').toLowerCase().includes(REQ.q.toLowerCase())));
+
+  /* pestaña */
+  const reqPanel = $('#req-panel');
+  function renderReq(force) {
+    if (!reqPanel || !S.model || !$('.pane[data-pane="req"]')?.classList.contains('on')) return;
+    const a = document.activeElement;
+    if (!force && a && reqPanel.contains(a) && a.matches('input, textarea, select')) return; // no pisar lo que se está escribiendo
+    const rs = S.model.requirements || [];
+    if (REQ.open && !reqById(REQ.open)) REQ.open = null;
+    if (REQ.kind && !rs.some(r => r.kind === REQ.kind)) REQ.kind = '';
+    if (REQ.st && !rs.some(r => r.status === REQ.st)) REQ.st = '';
+    if (REQ.pr && !rs.some(r => r.priority === REQ.pr)) REQ.pr = '';
+    const chk = reqChecks(), ag = rs.filter(r => r.status === 'agreed'), cov = ag.filter(r => reqCover(r, S.model).covered).length, pass = ag.filter(r => chk.get(r.id)?.state === 'pass').length;
+    const pc = n => (rs.length ? (100 * n / rs.length).toFixed(1) : 0), progT = T('req.prog', { n: ag.length, c: cov, p: pass });
+    const nDr = rs.filter(r => r.status === 'draft').length;
+    const prog = rs.length ? `<div class="adr-prog"><div class="adr-prog-t">${esc(progT)}</div>
+      <div class="adr-prog-b" role="img" aria-label="${esc(progT)}"><i style="width:${pc(ag.length)}%;background:${REQ_ST_COLOR.agreed}"></i><i style="width:${pc(nDr)}%;background:${REQ_ST_COLOR.draft}"></i><i style="width:${pc(rs.length - ag.length - nDr)}%;background:var(--muted)"></i></div></div>` : '';
+    const group = (key, label, vals, cur, name, color) => { const on = vals.filter(([k]) => rs.some(r => (key === 'priority' ? r.priority : r[key]) === k)); return on.length > 1 || cur ? `<div class="fnd-chips" role="group" aria-label="${esc(label)}">${on.map(([k, t]) => `<button class="fnd-chip${cur === k ? ' on' : ''}" data-req-f="${name}:${k}" aria-pressed="${cur === k}" style="--s:${color(k)}">${esc(t)} <b>${rs.filter(r => (key === 'priority' ? r.priority : r[key]) === k).length}</b></button>`).join('')}</div>` : ''; };
+    const kinds = REQ_KIND.map(k => [k, T(`req.kind.${k}`)]), sts = REQ_STATUS.map(k => [k, T(`req.st.${k}`)]), prs = REQ_PRIO.map(k => [k, T(`req.pr.${k}`)]);
+    $('#req-bar').innerHTML = `<div class="adr-tools"><button class="btn small primary" data-req="new">+ ${esc(T('req.new'))}</button>
+      ${rs.length ? `<span class="seg req-view" role="group" aria-label="${esc(T('req.view'))}"><button data-req-view="list" class="${REQ.view === 'list' ? 'on' : ''}" aria-pressed="${REQ.view === 'list'}">${esc(T('req.view.list'))}</button><button data-req-view="matrix" class="${REQ.view === 'matrix' ? 'on' : ''}" aria-pressed="${REQ.view === 'matrix'}">${esc(T('req.view.matrix'))}</button></span>` : ''}</div>${prog}
+      ${rs.length ? `${group('kind', T('req.f.kind'), kinds, REQ.kind, 'kind', k => REQ_COLOR[k])}${group('status', T('req.f.status'), sts, REQ.st, 'st', k => REQ_ST_COLOR[k])}${group('priority', T('req.f.priority'), prs, REQ.pr, 'pr', () => 'var(--accent)')}
+      <input class="search" id="req-q" style="padding-left:10px;margin-bottom:6px" value="${esc(REQ.q)}" placeholder="${esc(T('req.search'))}" aria-label="${esc(T('req.search'))}" autocomplete="off">` : ''}`;
+    renderReqList(chk);
+  }
+  // Matriz de trazabilidad: filas = requisitos, columnas = decisiones; ✓ donde hay vínculo (las aceptadas, resaltadas); una celda vincula o desvincula
+  function reqMatrix(rs, ds) {
+    const wide = REQ.wide, head = ds.map(d => `<th class="req-mx-d${d.status === 'accepted' ? ' acc' : ''}" title="${esc(`${d.id} · ${adrTitle(d)} (${T(`adr.st.${d.status}`)})`)}"><span>${esc(d.id.replace(/^ADR-/i, ''))}</span></th>`).join('');
+    const rows = rs.map(r => `<tr><th scope="row" class="req-mx-r"><button type="button" class="adr-mx-t" data-req-open="${esc(r.id)}" title="${esc(reqTitle(r))}"><b>${esc(r.id)}</b> <span>${esc(reqTitle(r))}</span></button></th>${ds.map(d => {
+      const on = r.links?.decisions?.includes(d.id), lbl = `${r.id} · ${d.id}`;
+      return `<td class="req-mx-c${on ? ' on' : ''}${on && d.status === 'accepted' ? ' acc' : ''}"><button type="button" data-req-tgl="${esc(r.id)}|${esc(d.id)}" aria-pressed="${!!on}" aria-label="${esc(lbl)}" title="${esc(lbl)}">${on ? '✓' : ''}</button></td>`;
+    }).join('')}<td class="req-mx-n" title="${esc(T('req.mx.comps'))}">${(r.links?.nodes?.length || 0) + (r.links?.edges?.length || 0) + (r.links?.groups?.length || 0) || ''}</td></tr>`).join('');
+    return `${wide ? '<div class="req-back" data-req="wide"></div>' : ''}<div class="req-mx-box${wide ? ' wide' : ''}"><div class="adr-opts-h"><span>${esc(T('req.mx.title'))}</span><button type="button" class="btn small" data-req="wide" title="${esc(T('adr.wide.tip'))}">${esc(T(wide ? 'adr.narrow' : 'adr.wide'))}</button></div>
+      <div class="req-mx-wrap"><table class="req-mx"><thead><tr><th class="req-mx-r">${esc(T('req.mx.req'))}</th>${head}<th class="req-mx-n" title="${esc(T('req.mx.comps'))}">⬡</th></tr></thead><tbody>${rows}</tbody></table></div>
+      <p class="adr-hint">${esc(T('req.mx.legend'))}</p></div>`;
+  }
+  function reqCheckEditor(r, chk) {
+    const c = r.check || {}, m = S.model, ps = REQ_PARAMS[c.metric] || [];
+    const sel = (attrs, cur, items, label) => `<select ${attrs} aria-label="${esc(label)}">${items.map(([v, t]) => `<option value="${esc(v)}"${String(v) === String(cur ?? '') ? ' selected' : ''}>${esc(t)}</option>`).join('')}</select>`;
+    const nodes = [['', '–'], ...m.nodes.map(n => [n.id, n.label || n.id])];
+    const unit = { availability: '%', rpo: T('req.unit.h'), rto: T('req.unit.h'), cost: `${COST.currency} / ${T('adr.o.month')}` }[c.metric];
+    const fields = [
+      ps.includes('from') ? `<label>${esc(T('req.chk.p.from'))}${sel('data-rc="from"', c.from, nodes, T('req.chk.p.from'))}</label><label>${esc(T('req.chk.p.to'))}${sel('data-rc="to"', c.to, nodes, T('req.chk.p.to'))}</label>` : '',
+      ps.includes('target') ? `<label>${esc(T('req.chk.p.target'))} (${esc(unit)})<input type="number" min="0"${c.metric === 'availability' ? ' max="100"' : ''} step="any" data-rc="target" value="${c.target != null ? esc(c.target) : ''}" autocomplete="off"></label>` : '',
+      ps.includes('cls') ? `<label>${esc(T('req.chk.p.cls'))}${sel('data-rc="cls"', c.cls, [['', '–'], ...Object.keys(DATA).map(k => [k, loc(DATA[k].label) || k])], T('req.chk.p.cls'))}</label>` : '',
+      ps.includes('jur') ? `<label>${esc(T('req.chk.p.jur'))}${sel('data-rc="jur"', c.jur, [['', '–'], ...Object.keys(JURS).map(k => [k, loc(JURS[k].label) || k])], T('req.chk.p.jur'))}</label>` : ''
+    ].filter(Boolean);
+    return `<div class="req-check"><div class="req-check-h"><span>${esc(T('req.check'))}</span>${reqBadge(r, chk)}</div>
+      <label>${esc(T('req.chk.metric'))}${sel('data-rc="metric"', c.metric, [['', T('req.chk.nometric')], ...REQ_METRIC.map(k => [k, T(`req.m.${k}`)])], T('req.chk.metric'))}</label>
+      ${fields.length ? `<div class="adr-two req-check-p">${fields.join('')}</div>` : ''}
+      ${c.metric ? `<p class="adr-hint">${esc(T(`req.m.${c.metric}.hint`))}${r.status === 'agreed' ? '' : ` ${esc(T('req.chk.draft'))}`}</p>` : ''}</div>`;
+  }
+  function reqCard(r, rs, chk) {
+    const on = REQ.open === r.id, links = reqLinkList(r), col = REQ_COLOR[r.kind], cov = reqCoverText(r);
+    const goChip = (l, rm) => `<span class="adr-link"><button type="button" data-req-go="${l.kind}:${esc(l.id)}" title="${esc(T('adr.go'))}">${esc(T(l.kind === 'decisions' ? 'req.kind.dec' : `adr.kind.${l.kind}`))}: ${esc(l.label)}</button>${rm ? `<button type="button" class="adr-x" data-req-unlink="${l.kind}:${esc(l.id)}" title="${esc(T('adr.unlink'))}" aria-label="${esc(T('adr.unlink'))}">×</button>` : ''}</span>`;
+    const sel = (attrs, cur, items) => `<select ${attrs}>${items.map(([v, t]) => `<option value="${esc(v)}"${v === cur ? ' selected' : ''}>${esc(t)}</option>`).join('')}</select>`;
+    let form = '';
+    if (on) {
+      const free = (S.model.decisions || []).filter(d => !r.links?.decisions?.includes(d.id));
+      form = `<div class="adr-form">
+        <label>${esc(T('adr.f.id'))}<input value="${esc(r.id)}" readonly></label>
+        <label>${esc(T('adr.f.title'))}<input data-rf="title" value="${esc(r.title)}" maxlength="200" autocomplete="off" placeholder="${esc(T('req.f.title.ph'))}"></label>
+        <div class="adr-two"><label>${esc(T('req.f.kind'))}${sel('data-rf="kind"', r.kind, kinds2())}</label><label>${esc(T('req.f.priority'))}${sel('data-rf="priority"', r.priority || '', [['', '–'], ...REQ_PRIO.map(k => [k, T(`req.pr.${k}`)])])}</label></div>
+        <div class="adr-two"><label>${esc(T('req.f.status'))}${sel('data-rf="status"', r.status, REQ_STATUS.map(k => [k, T(`req.st.${k}`)]))}</label>
+          <label>${esc(T('req.f.source'))}<input data-rf="source" value="${esc(r.source || '')}" maxlength="120" placeholder="${esc(T('req.f.source.ph'))}" autocomplete="off"></label></div>
+        <label>${esc(T('req.f.detail'))}<textarea data-rf="detail" rows="4" maxlength="4000" placeholder="${esc(T('req.f.detail.ph'))}">${esc(r.detail || '')}</textarea></label>
+        ${reqCheckEditor(r, chk)}
+        <div class="adr-links-edit"><span>${esc(T('req.f.links'))}</span>${links.length ? links.map(l => goChip(l, true)).join('') : `<em>${esc(T('adr.noLinks'))}</em>`}
+          <div class="adr-row"><button class="btn small" data-req="linksel">${esc(T('adr.linkSel'))}</button>
+          ${free.length ? `<select data-req-linkdec aria-label="${esc(T('req.linkDec'))}"><option value="">${esc(T('req.linkDec'))}</option>${free.map(d => `<option value="${esc(d.id)}">${esc(`${d.id} · ${adrTitle(d)}`)}</option>`).join('')}</select>` : ''}</div></div>
+        <button class="btn small danger" data-req="del">${esc(T('req.delete'))}</button>
+      </div>`;
+    }
+    return `<div class="adr req${on ? ' on' : ''}${r.status === 'dropped' ? ' dropped' : ''}" data-id="${esc(r.id)}" style="--s:${col}">
+      <button type="button" class="adr-head" data-req-toggle aria-expanded="${on}"><b class="adr-id">${esc(r.id)}</b><span class="adr-title">${esc(reqTitle(r))}</span>${reqBadge(r, chk)}<span class="adr-pill" style="--s:${REQ_ST_COLOR[r.status]}">${esc(T(`req.st.${r.status}`))}</span></button>
+      <div class="adr-meta">${esc(reqMeta(r))}</div>
+      <div class="req-cov ${cov.cls}">${esc(cov.text)}</div>
+      ${!on && r.detail ? `<div class="req-detail">${esc(r.detail)}</div>` : ''}
+      ${form}
+    </div>`;
+  }
+  const kinds2 = () => REQ_KIND.map(k => [k, T(`req.kind.${k}`)]);
+  function renderReqList(chk = reqChecks()) {
+    const box = $('#req-list');
+    if (!box || !S.model) return;
+    const rs = S.model.requirements || [], shown = rs.filter(reqMatches), keep = box.parentElement?.scrollTop || 0, hx = box.querySelector('.req-mx-wrap')?.scrollLeft || 0;
+    box.innerHTML = !rs.length ? `<p class="fnd-empty">${esc(T('req.empty'))}</p>`
+      : !shown.length ? `<p class="fnd-empty">${esc(T('req.noMatch'))}</p>`
+      : REQ.view === 'matrix' ? reqMatrix(shown, S.model.decisions || []) : shown.map(r => reqCard(r, rs, chk)).join('');
+    if (box.parentElement) box.parentElement.scrollTop = keep;
+    const w = box.querySelector('.req-mx-wrap');
+    if (w && hx) w.scrollLeft = hx;
+  }
+  reqPanel?.addEventListener('focusin', ev => { if (ev.target.dataset?.rf && ev.target.tagName !== 'SELECT') beginEdit(); });
+  reqPanel?.addEventListener('focusout', ev => { if (ev.target.dataset?.rf) endEdit(); });
+  reqPanel?.addEventListener('input', ev => {
+    const f = ev.target;
+    if (f.id === 'req-q') { REQ.q = f.value; return renderReqList(); }
+    const k = f.dataset?.rf, card = f.closest('.req'), r = k && f.tagName !== 'SELECT' && card && reqById(card.dataset.id);
+    if (!r) return;
+    markEdit();
+    if ((k === 'source' || k === 'detail') && !f.value.trim()) delete r[k]; else r[k] = f.value;
+    syncEditor(); save();
+    if (k === 'title') card.querySelector('.adr-title').textContent = reqTitle(r);
+    if (k === 'source') card.querySelector('.adr-meta').textContent = reqMeta(r);
+  });
+  reqPanel?.addEventListener('change', ev => {
+    const f = ev.target, card = f.closest('.req'), r = card && reqById(card.dataset.id);
+    if (!r) return;
+    if (f.dataset.reqLinkdec != null) { if (f.value) updateRequirement(r.id, { links: reqAddLinks(r, { decisions: [f.value] }) }); return; }
+    const rc = f.dataset.rc;
+    if (rc) {
+      if (rc === 'metric') return void updateRequirement(r.id, { check: f.value ? { ...r.check, metric: f.value } : null });
+      return void updateRequirement(r.id, { check: { ...r.check, [rc]: f.value } });
+    }
+    const k = f.dataset.rf;
+    if (!k) return;
+    if (f.tagName === 'SELECT') updateRequirement(r.id, { [k]: f.value });
+    else { changed(true); renderInspector(); renderReq(true); }
+  });
+  reqPanel?.addEventListener('click', async ev => {
+    const b = ev.target.closest('button');
+    if (!b) return;
+    const d0 = b.dataset, card = b.closest('.req'), r = card && reqById(card.dataset.id);
+    if (d0.reqF != null) { const [name, v] = d0.reqF.split(':'); REQ[name] = REQ[name] === v ? '' : v; return renderReq(true); }
+    if (d0.reqView) { REQ.view = d0.reqView; REQ.wide = false; return renderReq(true); }
+    if (d0.req === 'new') { REQ.q = ''; REQ.kind = ''; REQ.st = ''; REQ.pr = ''; return reqOpen(addRequirement()); }
+    if (d0.req === 'wide') { REQ.wide = !REQ.wide; return renderReq(true); }
+    if (d0.reqOpen) return reqOpen(d0.reqOpen);
+    if (d0.reqTgl) {   // celda de la matriz: vincula o desvincula la decisión
+      const [rid, did] = d0.reqTgl.split('|'), q = reqById(rid);
+      if (!q) return;
+      return void updateRequirement(rid, { links: { ...q.links, decisions: q.links?.decisions?.includes(did) ? q.links.decisions.filter(x => x !== did) : [...(q.links?.decisions || []), did] } });
+    }
+    if (d0.reqToggle != null && r) { REQ.open = REQ.open === r.id ? null : r.id; return renderReq(true); }
+    if (d0.reqGo) { const [k, ...rest] = d0.reqGo.split(':'), id = rest.join(':'); return k === 'decisions' ? adrOpen(id) : adrFocus(k, id); }
+    if (!r) return;
+    if (d0.reqUnlink) {
+      const [k, ...rest] = d0.reqUnlink.split(':'), id = rest.join(':');
+      return void updateRequirement(r.id, { links: { ...r.links, [k]: (r.links?.[k] || []).filter(x => x !== id) } });
+    }
+    if (d0.req === 'linksel') {
+      const l = adrSelLinks();
+      if (!l) return toast(T('adr.noSel'));
+      return void updateRequirement(r.id, { links: reqAddLinks(r, l) });
+    }
+    if (d0.req === 'del' && await confirmBox({ title: T('req.cf.title', r.id), text: T('req.cf.text', reqTitle(r)), ok: T('req.delete'), cancel: T('ver.cf.cancel'), danger: true })) removeRequirement(r.id);
+  });
+  // Chips de requisitos en la ficha de la decisión y en el inspector abren el requisito
+  [adrPanel, $('#inspector')].forEach(box => box?.addEventListener('click', ev => { const b = ev.target.closest('button[data-req-open]'); if (b) reqOpen(b.dataset.reqOpen); }));
 
   // Inspector del nodo: exposición y respaldo (automáticos o a mano) y sus hallazgos abiertos
   const secField = n => {
@@ -8251,6 +8654,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     decisions: () => clone(S.model.decisions || []), compareDecisions: id => { const v = S.model.versions.find(x => x.id === id); return v && Array.isArray(v.decisions) ? diffDecisions(v.decisions, S.model.decisions || []) : null; }, addDecision, updateDecision, removeDecision, exportDecisions,
     addDecisionKit: id => addDecisionKit(id), decisionKits: () => adrKits().map(k => ({ id: k.id, name: loc(k.name), desc: loc(k.desc), decisions: k.decisions.length })),
     adrScore: id => { const d = adrById(id); return d ? { options: Object.fromEntries((d.options || []).map(o => [o.id, adrScore(d, o)])), leader: adrLeader(d) || null, chosen: d.chosen || null } : null; },
+    requirements: () => clone(S.model.requirements || []), addRequirement, updateRequirement, removeRequirement, checkRequirement,
     setScope: id => setScope(id), get scope() { return S.scope; }, scopes: () => scopeList().map(x => ({ ...x, path: [...x.path] })), exportLevels,
     exportSVG, exportPNG, exportViews, exportJSON, shareEncrypted, exportOther, exportCtx, toggleRouting, importFiles, config: C, icons: ICONS
   };
