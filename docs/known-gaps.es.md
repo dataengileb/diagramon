@@ -12,6 +12,7 @@ Estas funciones van bien en el navegador y se comprobó la estructura de lo que 
 - **Exportación a PlantUML**: solo se comprobó su estructura (bloques cerrados, alias declarados), sin dibujarla. Las exportaciones de las plantillas a Mermaid y draw.io sí se dibujaron con sus propios motores (Mermaid 11 y el visor de draw.io, incluidos los iconos de grupo).
 - **Importación de infraestructura como código de Azure y Google Cloud**: se probó con los dos ejemplos de `terraform show -json` escritos a mano en `samples/`, que siguen los esquemas reales de azurerm y google, no con la salida de una cuenta real. Los tipos de recurso poco comunes pueden salir como componentes genéricos.
 - **Informe de arquitectura en PDF**: se probó hasta la llamada de impresión del navegador. Se carga el documento completo con sus 14 secciones, imágenes y tablas, se llama a `print()` y las tablas caben en el ancho de un A4. El diálogo de impresión y la paginación final no se han revisado.
+- **Kit de decisiones de lakehouse** (`src/adr-kits.js`): las opciones, pros y contras están escritos para ser neutrales y duraderos, pero no los ha revisado un especialista de cada producto. Contrástalos con la documentación actual de cada fabricante antes de presentarlos a un cliente.
 - **Componentes muy pequeños** con todas las etiquetas a la vez (capa, región, equipo, disponibilidad): sin revisar. Con el ancho fijo por defecto caben.
 
 ## 🔧 Aún no hecho (mejoras pequeñas)

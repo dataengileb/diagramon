@@ -7415,6 +7415,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     else if (mod && k === 'a') { ev.preventDefault(); select({ kind: 'multi', ids: S.model.nodes.map(n => n.id) }); }  // visibleSel descarta los ocultos
     else if (mod) return;
     else if (ev.key === 'Delete' || ev.key === 'Backspace') { if (S.sel) { ev.preventDefault(); deleteSelection(); } }
+    else if (ev.key === 'Escape' && ADR.wide) { ADR.wide = null; renderAdr(true); }   // cierra la matriz de opciones ampliada
     else if (ev.key === 'Escape' && filterMenu.open) filterMenu.open = false;
     else if (ev.key === 'Escape') { if (S.play) stopPlay(); else if (S.path) clearPath(); else if (S.connecting) cancelConnect(); else if (!S.sel && S.compare) compareVersion(null); else if (!S.sel && !S.flow && S.scope) scopeUp(); else select(null); }
     else if (ev.altKey && ev.key === 'ArrowUp') { ev.preventDefault(); scopeUp(); }  // sube un nivel C4
@@ -7642,7 +7643,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     renderFindings();
   });
   /* ---------- decisiones de arquitectura (ADR): pestaña, inspector, versiones y exportación ---------- */
-  const ADR = { open: null, st: '', q: '', area: '', menu: false, opt: new Set() };   // ficha abierta, filtros por estado, área y búsqueda, menú de kits, opciones desplegadas (`id|opción`)
+  const ADR = { open: null, st: '', q: '', area: '', menu: false, opt: new Set(), wide: null };   // ficha abierta, filtros por estado, área y búsqueda, menú de kits, opciones desplegadas (`id|opción`), matriz ampliada (id)
   const adrById = id => (S.model.decisions || []).find(d => d.id === id);
   const adrTitle = d => d.title || d.id;
   const adrChips = list => (list.length ? `<div class="adr-chips">${list.map(d => `<button type="button" class="adr-chip" data-adr-open="${esc(d.id)}" style="--s:${ADR_COLOR[d.status]}" title="${esc(`${d.id} · ${adrTitle(d)} · ${T(`adr.st.${d.status}`)}`)}"><b>${esc(d.id)}</b> ${esc(d.title)}</button>`).join('')}</div>` : '');
@@ -7841,7 +7842,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
   function adrOptions(d) {
     const cs = d.criteria || [], os = d.options || [], lead = adrLeader(d), key = o => `${d.id}|${o.id}`, nm = o => o.title || T('adr.opt.untitled', o.id);
     const sel = (attrs, cur, items, label) => `<select ${attrs} aria-label="${esc(label)}">${items.map(([v, t]) => `<option value="${esc(v)}"${String(v) === String(cur ?? '') ? ' selected' : ''}>${esc(t)}</option>`).join('')}</select>`;
-    const head = cs.map(c => `<th class="adr-mx-c"><input data-ac="label" data-cid="${esc(c.id)}" value="${esc(c.label)}" maxlength="80" autocomplete="off" aria-label="${esc(T('adr.crit.name'))}" title="${esc(c.label)}">
+    const head = cs.map(c => `<th class="adr-mx-c"><input data-ac="label" data-cid="${esc(c.id)}" value="${esc(c.label)}" maxlength="80" size="8" autocomplete="off" aria-label="${esc(T('adr.crit.name'))}" title="${esc(c.label)}">
       <span class="adr-mx-w">${sel(`data-ac="weight" data-cid="${esc(c.id)}"`, c.weight, [1, 2, 3, 4, 5].map(n => [n, `×${n}`]), T('adr.crit.weight'))}<button type="button" class="adr-x" data-adr-rmcrit="${esc(c.id)}" title="${esc(T('adr.crit.remove'))}" aria-label="${esc(T('adr.crit.remove'))}">×</button></span></th>`).join('');
     const rows = os.map(o => {
       const sc = adrScore(d, o), full = adrFull(sc), isC = d.chosen === o.id, isL = lead === o.id && os.length > 1, on = ADR.opt.has(key(o));
@@ -7860,7 +7861,8 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
         <label>${esc(T('adr.o.risk'))}${sel(`data-ao="risk" data-oid="${esc(o.id)}"`, o.risk, [['', '–'], ...ADR_RISK.map(r => [r, T(`adr.risk.${r}`)])], T('adr.o.risk'))}</label></div>
       <label>${esc(T('adr.o.version'))}${sel(`data-ao="version" data-oid="${esc(o.id)}"`, o.version, [['', '–'], ...free.map(v => [v.id, verLabel(v)])], T('adr.o.version'))}</label>
       ${o.version && findVersion(o.version) ? `<div class="adr-row"><button type="button" class="btn small" data-adr-optcmp="${esc(o.id)}">${esc(T('adr.o.compare'))}</button><button type="button" class="btn small" data-adr-optgo="${esc(o.id)}">${esc(T('adr.o.show'))}</button></div>` : ''}</div>`).join('');
-    return `<div class="adr-opts"><div class="adr-opts-h"><span>${esc(T('adr.opts'))}</span><button type="button" class="btn small" data-adr="addopt">+ ${esc(T('adr.opt.add'))}</button><button type="button" class="btn small" data-adr="addcrit">+ ${esc(T('adr.crit.add'))}</button></div>
+    const wide = ADR.wide === d.id;   // ampliada: la misma sección, fija sobre la pantalla (p. ej. para puntuar con el cliente)
+    return `${wide ? '<div class="adr-back" data-adr="wide"></div>' : ''}<div class="adr-opts${wide ? ' wide' : ''}"><div class="adr-opts-h"><span>${esc(T('adr.opts'))}</span><button type="button" class="btn small" data-adr="addopt">+ ${esc(T('adr.opt.add'))}</button><button type="button" class="btn small" data-adr="addcrit">+ ${esc(T('adr.crit.add'))}</button>${os.length ? `<button type="button" class="btn small" data-adr="wide" title="${esc(T('adr.wide.tip'))}">${esc(T(wide ? 'adr.narrow' : 'adr.wide'))}</button>` : ''}</div>
       ${os.length ? `<div class="adr-mx-wrap"><table class="adr-mx"><thead><tr><th class="adr-mx-o">${esc(T('adr.opt'))}</th>${head}<th class="adr-mx-tot">${esc(T('adr.total'))}</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
       ${cs.length ? '' : `<p class="adr-hint">${esc(T('adr.crit.hint'))}</p>`}` : `<p class="adr-hint">${esc(T('adr.opts.empty'))}</p>`}${det}</div>`;
   }
@@ -7984,6 +7986,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     if (d0.adrToggle != null && d) { ADR.open = ADR.open === d.id ? null : d.id; return renderAdr(true); }
     if (d0.adrGo) { const [k, ...r] = d0.adrGo.split(':'); return adrFocus(k, r.join(':')); }
     if (!d) return;
+    if (d0.adr === 'wide') { ADR.wide = ADR.wide === d.id ? null : d.id; return renderAdr(true); }
     if (d0.adr === 'addopt') return adrAddOption(d);
     if (d0.adr === 'addcrit') return adrAddCriterion(d);
     if (d0.adrOptopen != null) { const k = `${d.id}|${d0.adrOptopen}`; if (!ADR.opt.delete(k)) ADR.opt.add(k); return renderAdr(true); }
