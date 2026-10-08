@@ -992,6 +992,7 @@
   // m.decisions = [{ id: 'ADR-001', title, status, date, context, decision, consequences, deciders?, supersededBy?, links: { nodes?, edges?, groups?, versions? }, history?: [{ status, date, by?, note? }] }]
   // Son del documento: no entran en las fotos de versiones (snapshotOf; cada versión guarda aparte una copia en v.decisions, solo para comparar) y sobreviven al abrir una versión y a los editores.
   // history = historial de estados (el más antiguo primero); sin él se muestra una entrada implícita (estado actual + fecha). date = fecha del estado actual.
+  /* adrModel:start */
   const ADR_STATUS = ['proposed', 'accepted', 'rejected', 'deprecated', 'superseded'];
   const ADR_COLOR = { proposed: 'var(--p-limon)', accepted: 'var(--p-menta)', rejected: 'var(--p-coral)', deprecated: 'var(--muted)', superseded: 'var(--p-lavanda)' };
   const ADR_ALIAS = { propuesta: 'proposed', propuesto: 'proposed', aceptada: 'accepted', aceptado: 'accepted', rechazada: 'rejected', rechazado: 'rejected', obsoleta: 'deprecated', obsoleto: 'deprecated', reemplazada: 'superseded', reemplazado: 'superseded', sustituida: 'superseded', sustituido: 'superseded', superada: 'superseded', superado: 'superseded' };
@@ -1008,6 +1009,57 @@
     });
     return out;
   }
+  /* ---------- decisiones (ADR): opciones, criterios y puntuación ---------- */
+  // Por decisión (todo opcional): area, criteria: [{ id, label, weight 1..5 }], options: [{ id, title, summary?, pros?, cons?, cost?, risk?, version?, scores?: { criterio: 1..5 } }], chosen (id de una opción)
+  // Sin ellos, el JSON y las exportaciones quedan idénticos a los de antes.
+  const ADR_RISK = ['low', 'medium', 'high'];
+  const ADR_MAX = { options: 12, criteria: 12 };
+  // Puntaje de una opción: % ponderado sobre los criterios que ya puntuó. Líder = la opción con todos los criterios puntuados y mayor %, a igualdad la primera
+  function adrScore(d, o) {
+    const cs = Array.isArray(d?.criteria) ? d.criteria : [], sc = o?.scores || {};
+    let num = 0, den = 0, n = 0;
+    cs.forEach(c => { const s = sc[c.id], w = Number.isInteger(c.weight) ? c.weight : 3; if (Number.isInteger(s) && s >= 1 && s <= 5) { num += w * s; den += w * 5; n++; } });
+    return { pct: den ? Math.round(100 * num / den) : 0, scored: n, total: cs.length };
+  }
+  const adrFull = s => s.total > 0 && s.scored === s.total;
+  function adrLeader(d) {
+    let best = '', top = -1;
+    (Array.isArray(d?.options) ? d.options : []).forEach(o => { const s = adrScore(d, o); if (adrFull(s) && s.pct > top) { top = s.pct; best = o.id; } });
+    return best;
+  }
+  const adrLong = (v, n) => String(v ?? '').replace(/\r\n?/g, '\n').trim().slice(0, n);
+  function cleanAdrCriteria(raw) {
+    const seen = new Set(), out = [];
+    (Array.isArray(raw) ? raw : []).forEach(c => {
+      if (!c || typeof c !== 'object' || Array.isArray(c)) return;
+      const id = String(c.id ?? '').trim();
+      if (!/^[a-z0-9-]{1,30}$/.test(id) || seen.has(id)) return;
+      seen.add(id);
+      const w = Math.round(Number(c.weight));
+      out.push({ id, label: String(c.label ?? '').replace(/\s+/g, ' ').trim().slice(0, 80) || id, weight: Number.isFinite(w) ? Math.min(5, Math.max(1, w)) : 3 });
+    });
+    return out.slice(0, ADR_MAX.criteria);
+  }
+  function cleanAdrOptions(raw, crit, m) {
+    const seen = new Set(), out = [], vids = new Set((m.versions || []).map(v => v.id));
+    (Array.isArray(raw) ? raw : []).forEach(x => {
+      if (!x || typeof x !== 'object' || Array.isArray(x)) return;
+      const id = String(x.id ?? '').trim();
+      if (!/^[A-Za-z0-9-]{1,20}$/.test(id) || seen.has(id)) return;
+      seen.add(id);
+      const o = { id, title: String(x.title ?? '').replace(/\s+/g, ' ').trim().slice(0, 120) };
+      ['summary', 'pros', 'cons'].forEach(k => { const t = adrLong(x[k], 2000); if (t) o[k] = t; });
+      const cost = x.cost === '' || x.cost == null ? NaN : Number(x.cost);
+      if (Number.isFinite(cost) && cost >= 0) o.cost = cost;
+      if (ADR_RISK.includes(x.risk)) o.risk = x.risk;
+      if (x.version != null && vids.has(String(x.version))) o.version = String(x.version);
+      const sc = {};
+      if (x.scores && typeof x.scores === 'object' && !Array.isArray(x.scores)) crit.forEach(c => { const r = x.scores[c.id], v = r === '' || r == null ? NaN : Number(r); if (Number.isInteger(v) && v >= 1 && v <= 5) sc[c.id] = v; });
+      if (Object.keys(sc).length) o.scores = sc;
+      out.push(o);
+    });
+    return out.slice(0, ADR_MAX.options);
+  }
   function cleanDecisions(raw, m) {
     const txt = v => String(v ?? '').replace(/\r\n?/g, '\n').slice(0, 20000);
     const seen = new Set(), items = [];
@@ -1023,7 +1075,9 @@
         if (h.note != null && String(h.note).trim()) e.note = String(h.note).trim().slice(0, 500);
         return e;
       });
-      items.push({ ...o, hist, id, status: adrStatus(d.status), date: isDay(d.date) ? d.date : today(), deciders: String(d.deciders ?? '').trim().slice(0, 200), sup: String(d.supersededBy ?? '').trim(), links: cleanAdrLinks(d.links, m) });
+      const crit = cleanAdrCriteria(d.criteria), opts = cleanAdrOptions(d.options, crit, m), chosen = String(d.chosen ?? '').trim();
+      items.push({ ...o, hist, id, status: adrStatus(d.status), date: isDay(d.date) ? d.date : today(), deciders: String(d.deciders ?? '').trim().slice(0, 200), sup: String(d.supersededBy ?? '').trim(), links: cleanAdrLinks(d.links, m),
+        area: String(d.area ?? '').replace(/\s+/g, ' ').trim().slice(0, 60), crit, opts, chosen: opts.some(x => x.id === chosen) ? chosen : '' });
     });
     items.forEach(o => { if (!o.id) o.id = adrNextId(items); });
     const ids = new Set(items.map(o => o.id));
@@ -1031,28 +1085,43 @@
       const r = { id: o.id, title: o.title, status: o.status, date: o.date, context: o.context, decision: o.decision, consequences: o.consequences };
       if (o.deciders) r.deciders = o.deciders;
       if (o.sup && o.sup !== o.id && ids.has(o.sup)) { r.supersededBy = o.sup; r.status = 'superseded'; }
+      if (o.area) r.area = o.area;
+      if (o.crit.length) r.criteria = o.crit;
+      if (o.opts.length) r.options = o.opts;
+      if (o.chosen) r.chosen = o.chosen;
       r.links = o.links;
       if (o.hist.length) r.history = o.hist;
       return r;
     });
   }
+  /* adrModel:end */
   // Historial a mostrar: el guardado o, en decisiones antiguas, una entrada implícita (estado actual + fecha)
   const adrHist = d => (d.history?.length ? d.history : [{ status: d.status, date: d.date }]);
   const adrAuthor = () => store.get('author', '') || S.model.meta?.author || '';
   const decisionsOf = (kind, id, m = S.model) => (m?.decisions || []).filter(d => d.links?.[kind]?.includes(id));
   // Tras borrar nodos, conexiones, grupos o versiones: quita de los enlaces los ids que ya no existen
   function pruneAdrLinks(m = S.model) { (m.decisions || []).forEach(d => { d.links = cleanAdrLinks(d.links, m); }); }
-  // Hallazgo bajo (fuente «adr»): propuestas sin resolver desde hace más de C.adr.staleDays días
+  // Hallazgos bajos (fuente «adr»): propuestas sin resolver desde hace más de C.adr.staleDays días; aceptadas con opciones y sin elegida;
+  // elegida que no es la mejor puntuada cuando todas las opciones están completamente puntuadas
   addFindingSource('adr', m => {
-    const days = C.adr?.staleDays ?? 30;
-    if (!(days > 0)) return [];
-    const now = Date.now();
-    return (m.decisions || []).filter(d => d.status === 'proposed').flatMap(d => {
-      const age = Math.floor((now - new Date(`${d.date}T12:00`).getTime()) / 864e5);
-      if (!(age > days)) return [];
-      const l = d.links || {}, tk = l.nodes?.[0] ? 'node' : l.edges?.[0] ? 'edge' : l.groups?.[0] ? 'group' : 'node', tid = l.nodes?.[0] || l.edges?.[0] || l.groups?.[0] || '';
-      return [{ id: `adr:stale:${d.id}`, source: 'adr', rule: 'stale', severity: 'low', target: { kind: tk, id: tid }, title: T('adr.find.stale', { id: d.id, n: age }), detail: d.title, fix: T('adr.find.fix') }];
+    const days = C.adr?.staleDays ?? 30, now = Date.now(), out = [];
+    const tgt = d => { const l = d.links || {}, tk = l.nodes?.[0] ? 'node' : l.edges?.[0] ? 'edge' : l.groups?.[0] ? 'group' : 'node'; return { kind: tk, id: l.nodes?.[0] || l.edges?.[0] || l.groups?.[0] || '' }; };
+    (m.decisions || []).forEach(d => {
+      if (days > 0 && d.status === 'proposed') {
+        const age = Math.floor((now - new Date(`${d.date}T12:00`).getTime()) / 864e5);
+        if (age > days) out.push({ id: `adr:stale:${d.id}`, source: 'adr', rule: 'stale', severity: 'low', target: tgt(d), title: T('adr.find.stale', { id: d.id, n: age }), detail: d.title, fix: T('adr.find.fix') });
+      }
+      const os = d.options || [];
+      if (d.status === 'accepted' && os.length >= 2 && !d.chosen) out.push({ id: `adr:no-choice:${d.id}`, source: 'adr', rule: 'no-choice', severity: 'low', target: tgt(d), title: T('adr.find.noChoice', { id: d.id, n: os.length }), detail: d.title, fix: T('adr.find.noChoice.fix') });
+      if (d.chosen && os.length >= 2 && os.every(o => adrFull(adrScore(d, o)))) {
+        const lead = adrLeader(d);
+        if (lead && lead !== d.chosen) {
+          const c = os.find(o => o.id === d.chosen), l = os.find(o => o.id === lead);
+          out.push({ id: `adr:not-leader:${d.id}`, source: 'adr', rule: 'not-leader', severity: 'low', target: tgt(d), title: T('adr.find.notLeader', { id: d.id, c: c.title || c.id, l: l.title || l.id }), detail: T('adr.find.notLeader.d', { c: adrScore(d, c).pct, l: adrScore(d, l).pct }), fix: T('adr.find.notLeader.fix') });
+        }
+      }
     });
+    return out;
   });
 
   /* ---------- disponibilidad (SLA), RPO/RTO, réplicas y puntos únicos de fallo ---------- */
@@ -3122,7 +3191,7 @@
     edge: ['id', 'from', 'to', 'label', 'style', 'weight', 'route', 'both', 'color', 'data', 'encrypted', 'datasets', 'transferOk', 'threats'],
     note: ['id', 'x', 'y', 'w', 'h', 'text', 'color', 'in'],
     zone: ['id', 'x', 'y', 'w', 'h', 'label', 'severity', 'desc', 'kind', 'trust', 'in'],
-    decision: ['id', 'title', 'status', 'date', 'deciders', 'context', 'decision', 'consequences', 'supersededBy', 'links', 'history']
+    decision: ['id', 'title', 'status', 'date', 'deciders', 'context', 'decision', 'consequences', 'supersededBy', 'area', 'criteria', 'options', 'chosen', 'links', 'history']
   };
   function serialize(m, full = false) {
     const ordered = (o, keys) => { const r = {}; keys.forEach(k => k in o && (r[k] = o[k])); Object.keys(o).forEach(k => k in r || (r[k] = o[k])); return r; };
@@ -4180,7 +4249,7 @@
   }
 
   /* ---------- decisiones (ADR): comparar entre versiones ---------- */
-  const ADR_DIFF = ['title', 'status', 'context', 'decision', 'consequences', 'deciders', 'supersededBy', 'links'];
+  const ADR_DIFF = ['title', 'status', 'context', 'decision', 'consequences', 'deciders', 'supersededBy', 'area', 'criteria', 'options', 'chosen', 'links'];
   // a = decisiones de la versión, b = las actuales. El historial no cuenta como cambio por sí solo.
   function diffDecisions(a, b) {
     const am = new Map((a || []).map(d => [d.id, d])), bm = new Map((b || []).map(d => [d.id, d]));
@@ -7682,9 +7751,25 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     if (df.added.includes(d.id)) return `<div class="adr-cmp add">${esc(T('adr.cmp.new'))}</div>`;
     const c = df.changed.find(x => x.id === d.id);
     if (!c) return `<div class="adr-cmp same">${esc(T('adr.cmp.same'))}</div>`;
-    const old = cmp.v.decisions.find(x => x.id === d.id), FN = { title: 'adr.f.title', status: 'adr.f.status', context: 'adr.f.context', decision: 'adr.f.decision', consequences: 'adr.f.consequences', deciders: 'adr.f.deciders', supersededBy: 'adr.f.superseded', links: 'adr.f.links' };
+    const old = cmp.v.decisions.find(x => x.id === d.id), FN = { title: 'adr.f.title', status: 'adr.f.status', context: 'adr.f.context', decision: 'adr.f.decision', consequences: 'adr.f.consequences', deciders: 'adr.f.deciders', supersededBy: 'adr.f.superseded', area: 'adr.f.area', criteria: 'adr.crit', options: 'adr.opts', chosen: 'adr.chosen', links: 'adr.f.links' };
     const fs = c.fields.map(f => T(FN[f]).toLowerCase()).join(', '), st = c.fields.includes('status') ? ` · ${T(`adr.st.${old.status}`)} → ${T(`adr.st.${d.status}`)}` : '';
-    return `<div class="adr-cmp chg">${esc(`${T('adr.cmp.chg')}: ${fs}${st}`)}</div>`;
+    const more = adrOptDiff(old, d).map(x => `<div class="adr-cmp-d">${esc(x)}</div>`).join('');
+    return `<div class="adr-cmp chg">${esc(`${T('adr.cmp.chg')}: ${fs}${st}`)}${more}</div>`;
+  }
+  // Cambios legibles de opciones, criterios y elegida entre la decisión de una versión (a) y la actual (b)
+  function adrOptDiff(a, b) {
+    const out = [], by = l => new Map((l || []).map(x => [x.id, x])), nm = o => o.title || o.id;
+    const ac = by(a.criteria), bc = by(b.criteria), ao = by(a.options), bo = by(b.options);
+    bc.forEach((c, id) => { if (!ac.has(id)) out.push(T('adr.cmp.c.add', { t: c.label, w: c.weight })); else if (ac.get(id).weight !== c.weight || ac.get(id).label !== c.label) out.push(T('adr.cmp.c.chg', { t: c.label, a: ac.get(id).weight, b: c.weight })); });
+    ac.forEach((c, id) => { if (!bc.has(id)) out.push(T('adr.cmp.c.del', { t: c.label })); });
+    bo.forEach((o, id) => {
+      if (!ao.has(id)) return void out.push(T('adr.cmp.o.add', { t: nm(o) }));
+      const p = ao.get(id), fs = ['title', 'summary', 'pros', 'cons', 'cost', 'risk', 'version', 'scores'].filter(f => canon(p[f] ?? null) !== canon(o[f] ?? null));
+      if (fs.length) out.push(T('adr.cmp.o.chg', { t: nm(o), f: fs.map(f => T(`adr.o.${f}`).toLowerCase()).join(', ') }));
+    });
+    ao.forEach((o, id) => { if (!bo.has(id)) out.push(T('adr.cmp.o.del', { t: nm(o) })); });
+    if ((a.chosen || '') !== (b.chosen || '')) out.push(T('adr.cmp.chosen', { a: a.chosen ? nm(ao.get(a.chosen) || { id: a.chosen }) : '—', b: b.chosen ? nm(bo.get(b.chosen) || { id: b.chosen }) : '—' }));
+    return out;
   }
   function adrGone(d) {
     return `<div class="adr gone" style="--s:${ADR_COLOR[d.status]}"><div class="adr-head"><b class="adr-id">${esc(d.id)}</b><span class="adr-title">${esc(adrTitle(d))}</span><span class="adr-pill">${esc(T(`adr.st.${d.status}`))}</span></div><div class="adr-cmp del">${esc(T('adr.cmp.del'))}</div></div>`;

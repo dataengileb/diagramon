@@ -60,6 +60,11 @@
                context: "…"  decision: "…"  consequences: "…"  history: proposed 2026-05-20 by="Ana" note="…"; accepted 2026-06-02
              (es: contexto: decisión: consecuencias: historial: … por= nota=). links= lista ids de nodos, grupos, conexiones (`origen->destino`, `#2` si hay
              varias iguales) y versiones (`version:<id>`; las versiones no viven en el texto, así que solo se conservan los enlaces a las que ya existen).
+             Opciones evaluadas (opcional): area="Almacenamiento" en la línea `adr`, y líneas de campo con criterios y opciones:
+               criterion cost: "Cost" weight=3
+               option A: "Delta Lake" chosen cost=0 risk=low version=v2 scores=cost:4,skills:5 summary="…" pros="…" cons="…"
+             (es: área= · criterio … peso= · opción … elegida costo= riesgo=bajo|medio|alto versión= puntos= resumen= pros= contras=). Puntos 1..5 por id de criterio;
+             `version=` es el id de una versión guardada (las versiones no viven en el texto: setModel descarta las que no existen).
              Los campos solo valen justo después de la línea `adr` (o de otro campo); cualquier otra línea cierra la decisión.
    El texto es la fuente de verdad de notas, zonas, fronteras, notas STRIDE, descartados y decisiones (ADR): borrarlos del texto los borra del diagrama.
    Comentario: líneas que empiezan por # o //
@@ -146,13 +151,20 @@
   /* ---------- decisiones de arquitectura (ADR): adr ID: "título" status= date= … + líneas context/decision/consequences/history ---------- */
   const ADR_RE = /^adr\s+([^\s:]+)\s*:\s*(.*)$/i;
   const ADR_FIELD_RE = /^(context|contexto|decision|decisi[oó]n|consequences|consecuencias|history|historial)\s*:\s*(.*)$/i;
-  const ADR_KEYS = ['status', 'estado', 'date', 'fecha', 'deciders', 'decisores', 'links', 'enlaces', 'superseded-by', 'reemplazada-por', 'sustituida-por'];
+  const ADR_KEYS = ['status', 'estado', 'date', 'fecha', 'deciders', 'decisores', 'links', 'enlaces', 'superseded-by', 'reemplazada-por', 'sustituida-por', 'area', 'área'];
+  // Criterios y opciones de una decisión (líneas de campo tras `adr`)
+  const ADR_CRIT_RE = /^(criterion|criterio)\s+([^\s:]+)\s*:\s*(.*)$/i, ADR_OPT_RE = /^(option|opci[oó]n)\s+([^\s:]+)\s*:\s*(.*)$/i;
+  const ADR_CKEYS = ['weight', 'peso'];
+  const ADR_OKEYS = ['cost', 'costo', 'risk', 'riesgo', 'version', 'versión', 'scores', 'puntos', 'summary', 'resumen', 'pros', 'cons', 'contras'];
+  const ADR_CHOSEN = ['chosen', 'elegida', 'elegido'];
+  const ADR_RISK_IN = { low: 'low', bajo: 'low', baja: 'low', medium: 'medium', medio: 'medium', media: 'medium', high: 'high', alto: 'high', alta: 'high' };
+  const ADR_RISK_OUT = { en: {}, es: { low: 'bajo', medium: 'medio', high: 'alto' } };
   const ADR_HKEYS = ['by', 'por', 'note', 'nota'];
   const ADR_ST_IN = { proposed: 'proposed', propuesta: 'proposed', propuesto: 'proposed', accepted: 'accepted', aceptada: 'accepted', aceptado: 'accepted', rejected: 'rejected', rechazada: 'rejected', rechazado: 'rejected',
     deprecated: 'deprecated', obsoleta: 'deprecated', obsoleto: 'deprecated', superseded: 'superseded', reemplazada: 'superseded', reemplazado: 'superseded', sustituida: 'superseded', sustituido: 'superseded', superada: 'superseded', superado: 'superseded' };
   const ADR_ST_OUT = { en: {}, es: { proposed: 'propuesta', accepted: 'aceptada', rejected: 'rechazada', deprecated: 'obsoleta', superseded: 'reemplazada' } };
-  const ADR_W = { en: { status: 'status', date: 'date', deciders: 'deciders', links: 'links', sup: 'superseded-by', context: 'context', decision: 'decision', consequences: 'consequences', history: 'history', by: 'by', note: 'note' },
-    es: { status: 'estado', date: 'fecha', deciders: 'decisores', links: 'enlaces', sup: 'reemplazada-por', context: 'contexto', decision: 'decisión', consequences: 'consecuencias', history: 'historial', by: 'por', note: 'nota' } };
+  const ADR_W = { en: { area: 'area', crit: 'criterion', opt: 'option', weight: 'weight', chosen: 'chosen', cost: 'cost', risk: 'risk', version: 'version', scores: 'scores', summary: 'summary', pros: 'pros', cons: 'cons', status: 'status', date: 'date', deciders: 'deciders', links: 'links', sup: 'superseded-by', context: 'context', decision: 'decision', consequences: 'consequences', history: 'history', by: 'by', note: 'note' },
+    es: { area: 'área', crit: 'criterio', opt: 'opción', weight: 'peso', chosen: 'elegida', cost: 'costo', risk: 'riesgo', version: 'versión', scores: 'puntos', summary: 'resumen', pros: 'pros', cons: 'contras', status: 'estado', date: 'fecha', deciders: 'decisores', links: 'enlaces', sup: 'reemplazada-por', context: 'contexto', decision: 'decisión', consequences: 'consecuencias', history: 'historial', by: 'por', note: 'nota' } };
   const ADR_FIELD = { context: 'context', contexto: 'context', decision: 'decision', decisión: 'decision', consequences: 'consequences', consecuencias: 'consequences', history: 'history', historial: 'history' };
   const adrText = v => { const t = v.trim(); return /^"(?:[^"\\]|\\.)*"$/.test(t) ? unquote(t) : t.replace(/\\n/g, '\n'); };
   // Divide por `;` ignorando los de dentro de comillas
@@ -199,6 +211,9 @@
       lvNest: (id, o) => `“${id}” is not a component of “${o}”, so “inside ${id}” cannot be nested there`,
       adrDup: id => `decision “${id}” is declared twice`, adrSt: v => `unknown decision status “${v}” (use proposed, accepted, rejected, deprecated or superseded)`, adrLink: v => `“${v}” is not a node, group or connection (use ids, source->target or version:<id>)`,
       adrHist: v => `invalid history entry “${v}” (use status YYYY-MM-DD by="…" note="…"; separate entries with ;)`,
+      adrCritId: v => `invalid criterion id “${v}” (use a-z, 0-9 and -, up to 30 characters)`, adrCritDup: v => `criterion “${v}” is declared twice in this decision`, adrWeight: v => `invalid weight “${v}” (use a whole number from 1 to 5)`,
+      adrOptId: v => `invalid option id “${v}” (use letters, digits and -, up to 20 characters)`, adrOptDup: v => `option “${v}” is declared twice in this decision`, adrChosen: v => `only one option can be chosen (“${v}” is already)`,
+      adrCost: v => `invalid cost “${v}” (a number, 0 or more)`, adrRisk: v => `invalid risk “${v}” (use low, medium or high)`, adrScore: v => `invalid score “${v}” (use criterion:1..5, e.g. scores=cost:4,skills:5)`, adrScoreCrit: v => `score for “${v}”, which is not a criterion of this decision`,
       thEdge: (a, b) => `no connection ${a} -> ${b} for this threat note`, thNone: (a, b, k) => `${a} -> ${b} has no decided ${k} threat (add it with threats="${k}=mitigated")`
     },
     es: {
@@ -222,6 +237,9 @@
       lvNest: (id, o) => `«${id}» no es un componente de «${o}», así que «dentro ${id}» no puede anidarse ahí`,
       adrDup: id => `la decisión «${id}» está declarada dos veces`, adrSt: v => `estado de decisión desconocido «${v}» (usa propuesta, aceptada, rechazada, obsoleta o reemplazada)`, adrLink: v => `«${v}» no es un nodo, grupo ni conexión (usa ids, origen->destino o version:<id>)`,
       adrHist: v => `entrada de historial no válida «${v}» (usa estado AAAA-MM-DD por="…" nota="…"; separa las entradas con ;)`,
+      adrCritId: v => `id de criterio no válido «${v}» (usa a-z, 0-9 y -, hasta 30 caracteres)`, adrCritDup: v => `el criterio «${v}» está declarado dos veces en esta decisión`, adrWeight: v => `peso no válido «${v}» (usa un número entero de 1 a 5)`,
+      adrOptId: v => `id de opción no válido «${v}» (usa letras, dígitos y -, hasta 20 caracteres)`, adrOptDup: v => `la opción «${v}» está declarada dos veces en esta decisión`, adrChosen: v => `solo una opción puede ser la elegida («${v}» ya lo es)`,
+      adrCost: v => `costo no válido «${v}» (un número, 0 o más)`, adrRisk: v => `riesgo no válido «${v}» (usa bajo, medio o alto)`, adrScore: v => `puntaje no válido «${v}» (usa criterio:1..5, p. ej. puntos=costo:4,habilidades:5)`, adrScoreCrit: v => `puntaje para «${v}», que no es un criterio de esta decisión`,
       thEdge: (a, b) => `no hay conexión ${a} -> ${b} para esta nota de amenaza`, thNone: (a, b, k) => `${a} -> ${b} no tiene decidida la amenaza ${k} (añádela con amenazas="${k}=mitigada")`
     }
   };
@@ -279,7 +297,7 @@
     const errors = [];
     const nodes = new Map(), groups = new Set(), stack = [], gobj = new Map(), inRefs = [], nests = [], thLines = [];
     model.notes = []; model.zones = []; model.dismissed = {}; model.edgeTypes = []; model.decisions = [];
-    const adrSeen = new Set(), adrRefs = []; let adrCur = null, adrOpen = false;
+    const adrSeen = new Set(), adrRefs = [], adrScores = []; let adrCur = null, adrOpen = false;
     // Tipos propios declarados en cualquier línea (una conexión puede usarlos antes de que se declaren)
     const customIds = new Set();
     String(src).split(/\r?\n/).forEach(l => { const q = l.trim().match(TYPE_RE); if (q) customIds.add(q[2].toLowerCase()); });
@@ -337,6 +355,38 @@
 
       const inAdr = adrOpen; adrOpen = false;
       let m;
+      if (inAdr && adrCur && (m = line.match(ADR_CRIT_RE))) {   // criterio de la decisión: criterion id: "Etiqueta" weight=3
+        adrOpen = true;
+        const id = m[2], tk = tokens(m[3], ADR_CKEYS), c = { id, label: (tk.quotes[0] ?? tk.words.join(' ')).trim() || id, weight: 3 }, wv = tk.kv.weight ?? tk.kv.peso;
+        if (!/^[a-z0-9-]{1,30}$/.test(id)) return err(ln, msg.adrCritId(id));
+        if ((adrCur.criteria || []).some(x => x.id === id)) return err(ln, msg.adrCritDup(id));
+        if (wv != null) { const w = Number(wv); if (wv.trim() !== '' && Number.isInteger(w) && w >= 1 && w <= 5) c.weight = w; else err(ln, msg.adrWeight(wv)); }
+        (adrCur.criteria ||= []).push(c);
+        return;
+      }
+      if (inAdr && adrCur && (m = line.match(ADR_OPT_RE))) {   // opción: option A: "Título" chosen cost= risk= version= scores=crit:n,… summary= pros= cons=
+        adrOpen = true;
+        const id = m[2], tk = tokens(m[3], ADR_OKEYS), chosen = tk.words.filter(x => ADR_CHOSEN.includes(foldK(x))), rest = tk.words.filter(x => !ADR_CHOSEN.includes(foldK(x)));
+        if (!/^[A-Za-z0-9-]{1,20}$/.test(id)) return err(ln, msg.adrOptId(id));
+        if ((adrCur.options || []).some(x => x.id === id)) return err(ln, msg.adrOptDup(id));
+        const o = { id, title: (tk.quotes[0] ?? rest.join(' ')).trim() }, kv = k => tk.kv[k.en] ?? tk.kv[k.es] ?? tk.kv[foldK(k.es)];
+        const cv = kv({ en: 'cost', es: 'costo' }), rv = kv({ en: 'risk', es: 'riesgo' }), vv = kv({ en: 'version', es: 'versión' }), sv = kv({ en: 'scores', es: 'puntos' });
+        if (cv != null) { const c = Number(cv); if (String(cv).trim() !== '' && Number.isFinite(c) && c >= 0) o.cost = c; else err(ln, msg.adrCost(cv)); }
+        if (rv != null) { const r = ADR_RISK_IN[foldK(rv)]; if (r) o.risk = r; else err(ln, msg.adrRisk(rv)); }
+        if (vv != null && String(vv).trim()) o.version = String(vv).trim();
+        if (sv != null) {
+          const sc = {}, ids = [];
+          String(sv).split(',').map(x => x.trim()).filter(Boolean).forEach(pr => {
+            const i = pr.lastIndexOf(':'), k = pr.slice(0, i).trim(), n = Number(pr.slice(i + 1));
+            if (i > 0 && pr.slice(i + 1).trim() !== '' && Number.isInteger(n) && n >= 1 && n <= 5) { sc[k] = n; ids.push(k); } else err(ln, msg.adrScore(pr));
+          });
+          if (ids.length) { o.scores = sc; adrScores.push({ d: adrCur, ids, ln }); }
+        }
+        for (const [k, key] of [['summary', 'summary'], ['resumen', 'summary'], ['pros', 'pros'], ['cons', 'cons'], ['contras', 'cons']]) if (tk.kv[k] != null && String(tk.kv[k]).trim()) o[key] = tk.kv[k];
+        if (chosen.length) { if (adrCur.chosen) err(ln, msg.adrChosen(adrCur.chosen)); else adrCur.chosen = id; }
+        (adrCur.options ||= []).push(o);
+        return;
+      }
       if (inAdr && adrCur && (m = line.match(ADR_FIELD_RE))) {
         adrOpen = true;
         const f = ADR_FIELD[m[1].toLowerCase()];
@@ -363,6 +413,8 @@
         if (dc) d.deciders = dc;
         const sp = (tk.kv['superseded-by'] ?? tk.kv['reemplazada-por'] ?? tk.kv['sustituida-por'])?.trim();
         if (sp) d.supersededBy = sp;
+        const ar = (tk.kv.area ?? tk.kv['área'])?.trim();
+        if (ar) d.area = ar;
         const lk = tk.kv.links ?? tk.kv.enlaces;
         if (lk != null) adrRefs.push({ d, ln, refs: String(lk).split(',').map(x => x.trim()).filter(Boolean) });
         model.decisions.push(d); adrCur = d;
@@ -592,6 +644,8 @@
       const tk = tokens(t.rest, []), note = tk.quotes[0] ?? tk.words.join(' ').replace(/\\n/g, '\n');
       if (note) e.threats[t.k].note = note;
     });
+    // Puntajes: cada criterio citado debe estar declarado en la misma decisión
+    adrScores.forEach(({ d, ids, ln }) => ids.forEach(k => { if (!(d.criteria || []).some(c => c.id === k)) err(ln, msg.adrScoreCrit(k)); }));
     // Enlaces de las decisiones: nodo, grupo, conexión (origen->destino[#n]) o version:<id> (las versiones no están en el texto: las valida setModel)
     adrRefs.forEach(({ d, ln, refs }) => {
       const l = {}, add = (k, id) => { if (!(l[k] ||= []).includes(id)) l[k].push(id); };
@@ -716,7 +770,12 @@
       const refs = [...(l.nodes || []), ...(l.groups || []),
         ...(l.edges || []).map(id => m.edges.find(e => e.id === id)).filter(Boolean).map(e => `${e.from}->${e.to}${same(e).length > 1 ? `#${same(e).indexOf(e) + 1}` : ''}`),
         ...(l.versions || []).map(id => `version:${id}`)];
-      out.push('', `adr ${d.id}: ${quote(d.title ?? '')} ${aw.status}=${ast[d.status] || d.status || 'proposed'}${d.date ? ` ${aw.date}=${d.date}` : ''}${d.deciders ? ` ${aw.deciders}=${bare(d.deciders)}` : ''}${refs.length ? ` ${aw.links}=${bare(refs.join(','))}` : ''}${d.supersededBy ? ` ${aw.sup}=${bare(d.supersededBy)}` : ''}`);
+      out.push('', `adr ${d.id}: ${quote(d.title ?? '')} ${aw.status}=${ast[d.status] || d.status || 'proposed'}${d.date ? ` ${aw.date}=${d.date}` : ''}${d.deciders ? ` ${aw.deciders}=${bare(d.deciders)}` : ''}${refs.length ? ` ${aw.links}=${bare(refs.join(','))}` : ''}${d.supersededBy ? ` ${aw.sup}=${bare(d.supersededBy)}` : ''}${d.area ? ` ${aw.area}=${bare(d.area)}` : ''}`);
+      (d.criteria || []).forEach(c => out.push(`  ${aw.crit} ${c.id}: ${quote(c.label ?? c.id)} ${aw.weight}=${c.weight ?? 3}`));
+      (d.options || []).forEach(o => {
+        const sc = (d.criteria || []).filter(c => o.scores?.[c.id] != null).map(c => `${c.id}:${o.scores[c.id]}`).join(',');
+        out.push(`  ${aw.opt} ${o.id}: ${quote(o.title ?? '')}${d.chosen === o.id ? ` ${aw.chosen}` : ''}${o.cost != null ? ` ${aw.cost}=${+o.cost}` : ''}${o.risk ? ` ${aw.risk}=${(ADR_RISK_OUT[lang] || {})[o.risk] || o.risk}` : ''}${o.version ? ` ${aw.version}=${bare(o.version)}` : ''}${sc ? ` ${aw.scores}=${sc}` : ''}${['summary', 'pros', 'cons'].filter(k => o[k]).map(k => ` ${aw[k]}=${quote(o[k])}`).join('')}`);
+      });
       ['context', 'decision', 'consequences'].forEach(k => { if (d[k]) out.push(`  ${aw[k]}: ${quote(d[k])}`); });
       if (d.history?.length) out.push(`  ${aw.history}: ${d.history.map(h => `${ast[h.status] || h.status} ${h.date}${h.by ? ` ${aw.by}=${hv(h.by)}` : ''}${h.note ? ` ${aw.note}=${hv(h.note)}` : ''}`).join('; ')}`);
     });
