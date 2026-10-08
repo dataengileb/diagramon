@@ -135,6 +135,10 @@
       eq((r1.model.decisions || []).map(d => [d.id, d.status]), (model.decisions || []).map(d => [d.id, d.status]), 'decisions');
     });
   }));
+  test('lakehouse starter template keeps its node and edge counts', () => {
+    const m = templates('en').find(x => /Lakehouse greenfield/.test(x.name)).model;
+    eq({ nodes: m.nodes.length, edges: m.edges.length }, { nodes: 24, edges: 25 }, 'counts');
+  });
   test('every documented line kind parses (notes, zones, trust, threat, dismiss, levels, types, weight)', () => {
     const src = [
       'title: Syntax check',
