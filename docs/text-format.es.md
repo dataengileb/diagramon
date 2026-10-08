@@ -76,6 +76,17 @@ adr ADR-002: "Procesar el despacho con una cola" estado=reemplazada reemplazada-
 - Claves de la cabecera (en inglés entre paréntesis): `estado=` (`status=`) con `propuesta`, `aceptada`, `rechazada`, `obsoleta` o `reemplazada` (`proposed`, `accepted`, `rejected`, `deprecated`, `superseded`); `fecha=` (`date=`); `decisores=` (`deciders=`); `enlaces=` (`links=`); `reemplazada-por=` (`superseded-by=`, el id de la decisión más nueva).
 - `enlaces=` es una lista separada por comas de ids de componentes, ids de grupos, conexiones escritas `origen->destino` (añade `#2` para elegir la segunda de varias conexiones iguales) y versiones escritas `version:<id>`.
 - Campos: `contexto:`, `decisión:`, `consecuencias:` (en inglés: `context:`, `decision:`, `consequences:`) e `historial:` (`history:`): los cambios de estado, el más antiguo primero, `estado AAAA-MM-DD por="…" nota="…"` separados por `;`.
+- Las opciones y los criterios (todo opcional) van en las mismas líneas de campo. Agrega `área="Almacenamiento"` (`area=`) a la línea `adr` y luego:
+
+```
+adr ADR-003: "Formato de tabla abierto" estado=propuesta área="Almacenamiento"
+  criterio costo: "Costo" peso=3
+  criterio habilidades: "Habilidades del equipo" peso=4
+  opción A: "Delta Lake" elegida costo=0 riesgo=bajo versión=v2 puntos=costo:4,habilidades:5 resumen="El ecosistema más maduro." pros="• Amplio soporte\n• Conocido por el equipo" contras="• Requiere tareas de mantenimiento"
+  opción B: "Iceberg" puntos=costo:3,habilidades:2
+```
+
+  `criterio <id>: "Etiqueta" peso=1..5` (inglés `criterion … weight=`; id `a-z 0-9 -`, hasta 30 caracteres). `opción <id>: "Título"` (`option`; id con letras, dígitos y `-`, hasta 20) con la palabra suelta opcional `elegida` (`chosen`; solo una opción por decisión), `costo=` número mensual (`cost=`), `riesgo=bajo|medio|alto` (`risk=low|medium|high`), `versión=<id de una versión guardada>` (`version=`; se descarta si no existe), `puntos=criterio:1..5,…` (`scores=`; solo criterios declarados en la misma decisión) y `resumen=`, `pros=`, `contras=` entre comillas (`summary=`, `cons=`). Al leer se aceptan ambos idiomas; el texto se escribe en el idioma activo. Los errores indican el número de línea.
 - Un campo solo vale justo después de su línea `adr` (o de otro campo); cualquier otra línea cierra la decisión. Borrar un bloque `adr` del texto borra la decisión. Las versiones no están en el texto: los enlaces `version:<id>` solo se conservan para versiones que ya existen.
 
 Los colores también aceptan su nombre en inglés (`peach`, `sky`, `mint`…).

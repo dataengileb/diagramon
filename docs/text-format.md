@@ -76,6 +76,17 @@ adr ADR-002: "Process fulfilment with a queue" status=superseded superseded-by=A
 - Header keys (Spanish in brackets): `status=` (`estado=`) with `proposed`, `accepted`, `rejected`, `deprecated` or `superseded` (`propuesta`, `aceptada`, `rechazada`, `obsoleta`, `reemplazada`); `date=` (`fecha=`); `deciders=` (`decisores=`); `links=` (`enlaces=`); `superseded-by=` (`reemplazada-por=`, the id of the newer decision).
 - `links=` is a comma-separated list of component ids, group ids, connections written `source->target` (add `#2` to pick the second of several identical connections) and versions written `version:<id>`.
 - Fields: `context:`, `decision:`, `consequences:` (Spanish: `contexto:`, `decisión:`, `consecuencias:`) and `history:` (`historial:`): status changes oldest first, `status YYYY-MM-DD by="…" note="…"` separated by `;`.
+- Options and criteria (all optional) go in the same field lines. Add `area="Storage"` (`área=`) to the `adr` line, then:
+
+```
+adr ADR-003: "Open table format" status=proposed area="Storage"
+  criterion cost: "Cost" weight=3
+  criterion skills: "Team skills" weight=4
+  option A: "Delta Lake" chosen cost=0 risk=low version=v2 scores=cost:4,skills:5 summary="Most mature ecosystem." pros="• Wide tooling\n• Familiar to the team" cons="• Needs maintenance jobs"
+  option B: "Iceberg" scores=cost:3,skills:2
+```
+
+  `criterion <id>: "Label" weight=1..5` (Spanish `criterio … peso=`; id `a-z 0-9 -`, up to 30 characters). `option <id>: "Title"` (`opción`; id letters, digits and `-`, up to 20) with the optional bare word `chosen` (`elegida`; only one option per decision), `cost=` monthly number (`costo=`), `risk=low|medium|high` (`riesgo=bajo|medio|alto`), `version=<id of a saved version>` (`versión=`; dropped if it does not exist), `scores=criterion:1..5,…` (`puntos=`; only criteria declared in the same decision) and quoted `summary=`, `pros=`, `cons=` (`resumen=`, `contras=`). Both languages are accepted when reading; the text is written in the active language. Errors report the line number.
 - A field only counts right after its `adr` line (or another field); any other line closes the decision. Deleting an `adr` block from the text deletes the decision. Versions are not in the text: `version:<id>` links are kept only for versions that already exist.
 
 A node that only appears in a connection is created for you. Errors are shown in red with their line number.
