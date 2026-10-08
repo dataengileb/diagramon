@@ -25,6 +25,40 @@ Todo lo personalizable está en **`src/config.js`**. Guarda y recarga `index.htm
 - **Animación**: velocidad, aparición y duración de los pasos en `animation`.
 - **Costos**: `cost.currency`, `cost.hoursPerMonth` (730 = horas de un mes) y `cost.defaultYears`.
 - **Plantillas**: añade las tuyas en `src/examples.js`.
+- **Kits de decisiones**: backlogs ya redactados de decisiones de arquitectura (ADR), que salen en **Añadir kit de decisiones…** de la pestaña ADR. Viven en `src/adr-kits.js` (ver abajo). La plantilla *Lakehouse greenfield · kit de decisiones* muestra un kit aplicado a un diagrama inicial.
+
+### Kits de decisiones
+
+`src/adr-kits.js` define `window.DIAGRAMON_ADR_KITS`, una lista de kits. Para añadir el tuyo, agrega un objeto (o edita el `lakehouse`) y recarga `index.html`:
+
+```js
+window.DIAGRAMON_ADR_KITS.push({
+  id: 'mi-kit',                                        // clave única
+  name: { en: 'My kit', es: 'Mi kit' },                // se ve en el menú de kits
+  desc: { en: 'What it covers', es: 'Qué cubre' },
+  criteria: [                                          // criterios por defecto, se copian a cada decisión que no tenga los suyos
+    { id: 'cost', label: { en: 'Total cost', es: 'Costo total' }, weight: 3 }   // id: a-z 0-9 -, peso 1..5
+  ],
+  decisions: [{
+    area: { en: 'Storage', es: 'Almacenamiento' },     // agrupa las decisiones en la pestaña ADR
+    title: { en: 'Which table format?', es: '¿Qué formato de tabla?' },
+    context: { en: 'Why it matters and what to ask the client.', es: 'Por qué importa y qué preguntar al cliente.' },
+    criteria: [],                                      // opcional: reemplaza los criterios del kit en esta decisión
+    options: [{                                        // lo habitual son 2 a 4 opciones (hasta 12)
+      id: 'A', title: 'Delta Lake',                    // texto simple o { en, es }
+      summary: { en: 'One sentence.', es: 'Una frase.' },
+      pros: { en: '• First\n• Second', es: '• Primero\n• Segundo' },
+      cons: { en: '• First\n• Second', es: '• Primero\n• Segundo' }
+    }],
+    links: { nodes: ['bronze', 'silver'] }             // ids de nodo; los que no existan en el diagrama actual se descartan
+  }]
+});
+```
+
+- Cada texto puede ser un texto simple o `{ en, es }`; se usa el del idioma activo.
+- Las decisiones se añaden como *proposed* con ids `ADR-###` nuevos y sin puntuar: el consultor las puntúa con el cliente. Si ya existe una decisión con el mismo título en el diagrama, se omite.
+- Escribe `pros` y `cons` como líneas cortas que empiezan con `• ` unidas por `\n`. Que sean factuales y neutrales respecto a los proveedores; evita precios.
+- Una plantilla puede construir sus decisiones desde un kit (ver el final de la plantilla *Lakehouse greenfield* en `src/examples.js`), por eso los `links` apuntan a los ids de nodo de esa plantilla. `src/adr-kits.js` debe cargarse antes que `src/examples.js`.
 
 <details>
 <summary><b>Actualizar o añadir iconos oficiales</b></summary>

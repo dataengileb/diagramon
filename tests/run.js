@@ -34,9 +34,10 @@
   const win = {};
   const storage = { getItem: () => null, setItem: () => {} };
   const doc = { documentElement: {}, querySelectorAll: () => [], querySelector: () => null };
-  const load = p => new Function('window', 'localStorage', 'document', read(p))(win, storage, doc);
+  // src/adr-kits.js puede faltar (kits de decisiones opcionales): solo ese archivo se carga con tolerancia
+  const load = p => { try { new Function('window', 'localStorage', 'document', read(p))(win, storage, doc); } catch (e) { if (p !== 'src/adr-kits.js') throw e; } };
   ['src/config.js', 'src/i18n.js', 'assets/icons/aws.js', 'assets/icons/azure.js', 'assets/icons/gcp.js', 'assets/icons/sap.js', 'assets/icons/fabric.js', 'assets/icons/logos.js',
-    'src/text-lang.js', 'src/examples.js', 'src/iac.js', 'src/export/mermaid.js', 'src/export/plantuml.js', 'src/export/drawio.js', 'src/export/xlsx.js'].forEach(load);
+    'src/text-lang.js', 'src/adr-kits.js', 'src/examples.js', 'src/iac.js', 'src/export/mermaid.js', 'src/export/plantuml.js', 'src/export/drawio.js', 'src/export/xlsx.js'].forEach(load);
   const C = win.DIAGRAMON_CONFIG, TXT = win.DiagramonText, IAC = win.DiagramonIaC, EXP = win.DiagramonExport, XLSX = win.DiagramonXlsx;
 
   /* ---------- mini marco de pruebas ---------- */
@@ -134,6 +135,10 @@
       eq((r1.model.decisions || []).map(d => [d.id, d.status]), (model.decisions || []).map(d => [d.id, d.status]), 'decisions');
     });
   }));
+  test('lakehouse starter template keeps its node and edge counts', () => {
+    const m = templates('en').find(x => /Lakehouse greenfield/.test(x.name)).model;
+    eq({ nodes: m.nodes.length, edges: m.edges.length }, { nodes: 24, edges: 25 }, 'counts');
+  });
   test('every documented line kind parses (notes, zones, trust, threat, dismiss, levels, types, weight)', () => {
     const src = [
       'title: Syntax check',
@@ -260,6 +265,98 @@
   test('color sanitizer accepts hex, names and CSS variables only', () => {
     eq(['#fff', '#A1B2C3', 'coral', 'var(--layer-gold, #d4a72c)', 'var(--p-menta)'].map(c => SAFE_COLOR.test(c)), [true, true, true, true, true], 'accepted');
     eq(['red;background:url(x)', 'url(x)', 'expression(alert(1))', '"><img>', 'var(--x);color:red'].map(c => SAFE_COLOR.test(c)), [false, false, false, false, false], 'rejected');
+  });
+
+
+  /* ======================================================================
+     6. Decisiones (ADR): opciones, criterios y puntuación
+     ====================================================================== */
+  section('ADR options');
+  const adrSrc = between('/* adrModel:start */', '/* adrModel:end */');
+  const ADRM = new Function('isDay', 'today', `${adrSrc}; return { adrScore, adrFull, adrLeader, cleanDecisions };`)(v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v), () => '2026-01-01');
+  const adrModel = { nodes: [{ id: 'a' }], edges: [], groups: [], versions: [{ id: 'v2' }] };
+  const adrDec = () => ({
+    id: 'ADR-001', title: 'Open table format', status: 'proposed', date: '2026-10-07', context: 'c', decision: '', consequences: '', area: 'Storage',
+    criteria: [{ id: 'cost', label: 'Cost', weight: 3 }, { id: 'skills', label: 'Skills', weight: 4 }],
+    options: [{ id: 'A', title: 'Delta Lake', summary: 'S', pros: '• x\n• y', cons: '• z', cost: 0, risk: 'low', version: 'v2', scores: { cost: 4, skills: 5 } },
+      { id: 'B', title: 'Iceberg', scores: { cost: 5, skills: 2 } }, { id: 'C', title: 'Hudi', scores: { cost: 5 } }], chosen: 'A', links: {}
+  });
+  test('adrScore: weighted percentage over the scored criteria', () => {
+    const d = adrDec();
+    eq(ADRM.adrScore(d, d.options[0]), { pct: Math.round(100 * (3 * 4 + 4 * 5) / (7 * 5)), scored: 2, total: 2 }, 'full');
+    eq(ADRM.adrScore(d, d.options[2]), { pct: 100, scored: 1, total: 2 }, 'partial counts only what is scored');
+    eq(ADRM.adrScore(d, { id: 'X' }), { pct: 0, scored: 0, total: 2 }, 'no scores');
+    eq(ADRM.adrScore({ criteria: [] }, { scores: { cost: 3 } }), { pct: 0, scored: 0, total: 0 }, 'no criteria');
+  });
+  test('adrLeader: highest fully-scored option, ties go to the first, partial ones never lead', () => {
+    const d = adrDec();
+    eq(ADRM.adrLeader(d), 'A', 'A=91 B=69; C is partial');
+    d.options[1].scores = { cost: 5, skills: 5 };
+    d.options[0].scores = { cost: 5, skills: 5 };
+    eq(ADRM.adrLeader(d), 'A', 'tie');
+    d.options.forEach(o => { o.scores = {}; });
+    eq(ADRM.adrLeader(d), '', 'nobody fully scored');
+  });
+  test('cleanDecisions keeps valid options, criteria and chosen, in canonical key order', () => {
+    const r = ADRM.cleanDecisions([adrDec()], adrModel)[0];
+    eq(Object.keys(r), ['id', 'title', 'status', 'date', 'context', 'decision', 'consequences', 'area', 'criteria', 'options', 'chosen', 'links'], 'decision keys');
+    eq(Object.keys(r.options[0]), ['id', 'title', 'summary', 'pros', 'cons', 'cost', 'risk', 'version', 'scores'], 'option keys');
+    eq(r.options[2].scores, { cost: 5 }, 'partial scores kept'); eq(r.chosen, 'A', 'chosen');
+  });
+  test('cleanDecisions drops invalid fields', () => {
+    const d = adrDec();
+    d.criteria.push({ id: 'Bad ID', label: 'x' }, { id: 'cost', label: 'dup' }, { id: 'w', label: 'W', weight: 9 }, { id: 'z', label: 'Z', weight: 'x' });
+    d.options[0].risk = 'extreme'; d.options[0].version = 'nope'; d.options[0].cost = -5; d.options[1].scores = { cost: 9, skills: 3.5, ghost: 2 };
+    d.options.push({ id: 'A', title: 'dup' }, { id: 'bad id', title: 'x' }); d.chosen = 'Q';
+    const r = ADRM.cleanDecisions([d], adrModel)[0];
+    eq(r.criteria.map(c => [c.id, c.weight]), [['cost', 3], ['skills', 4], ['w', 5], ['z', 3]], 'criteria');
+    eq(r.options.map(o => o.id), ['A', 'B', 'C'], 'options'); eq(r.options[0].risk, undefined, 'risk'); eq(r.options[0].version, undefined, 'version'); eq(r.options[0].cost, undefined, 'cost');
+    eq(r.options[1].scores, undefined, 'invalid scores'); eq(r.chosen, undefined, 'chosen must be an option');
+  });
+  test('cleanDecisions enforces the limits and drops scores of removed criteria', () => {
+    const d = adrDec();
+    d.criteria = Array.from({ length: 15 }, (_, i) => ({ id: `c${i}`, label: `C${i}` })); d.options = Array.from({ length: 15 }, (_, i) => ({ id: `o${i}`, title: `O${i}`, scores: { c14: 3, c0: 2 } }));
+    d.area = 'x'.repeat(100);
+    const r = ADRM.cleanDecisions([d], adrModel)[0];
+    eq([r.criteria.length, r.options.length, r.area.length], [12, 12, 60], 'limits'); eq(r.options[0].scores, { c0: 2 }, 'scores of criteria beyond the limit');
+  });
+  test('old decisions stay byte-identical (no new keys appear)', () => {
+    const old = { id: 'ADR-001', title: 'T', status: 'accepted', date: '2026-06-02', context: 'a', decision: 'b', consequences: 'c', deciders: 'Ana', links: { nodes: ['a'] }, history: [{ status: 'accepted', date: '2026-06-02' }] };
+    eq(JSON.stringify(ADRM.cleanDecisions([old], adrModel)[0]), JSON.stringify(old), 'unchanged');
+  });
+  ['en', 'es'].forEach(lang => test(`options round trip in the text format · ${lang}`, () => {
+    const m = withPositions({ title: 'ADR', nodes: [{ id: 'a', label: 'A' }], edges: [] });
+    const d = adrDec(); d.options[1].summary = 'Line 1\nLine "2"'; m.decisions = [d];
+    const ctx = textCtx(lang), t1 = TXT.stringify(m, lang), r = TXT.parse(t1, ctx);
+    eq(r.errors, [], 'parse errors');
+    const t2 = TXT.stringify({ ...r.model, meta: m.meta }, lang);
+    assert(t1 === t2, `text changed:\n${t1}\n---\n${t2}`);
+    const back = ADRM.cleanDecisions(r.model.decisions, adrModel)[0], want = ADRM.cleanDecisions([d], adrModel)[0];
+    eq([back.area, back.criteria, back.options, back.chosen], [want.area, want.criteria, want.options, want.chosen], 'model');
+    if (lang === 'es') assert(/área=Storage/.test(t1) && /criterio cost:/.test(t1) && /opción A:.* elegida .*riesgo=bajo .*puntos=cost:4,skills:5/.test(t1), 'Spanish keywords');
+  }));
+  test('text format accepts both languages and reports errors with line numbers', () => {
+    const ctx = textCtx('en');
+    const ok = TXT.parse(['a: A', 'adr ADR-1: "T" estado=aceptada área="X"', '  criterio q: "Q" peso=2', '  opción A: "Uno" elegida costo=10 riesgo=alto puntos=q:5 resumen="r" contras="c"'].join('\n'), ctx);
+    eq(ok.errors, [], 'mixed-language input'); const d = ok.model.decisions[0];
+    eq([d.area, d.chosen, d.criteria, d.options[0].risk, d.options[0].cost, d.options[0].scores, d.options[0].cons], ['X', 'A', [{ id: 'q', label: 'Q', weight: 2 }], 'high', 10, { q: 5 }, 'c'], 'values');
+    const bad = TXT.parse(['adr ADR-1: "T"', '  criterion q: "Q" weight=9', '  option A: "A" risk=huge cost=-1 scores=q:7,zz:3', '  option B: "B" chosen', '  option C: "C" chosen', '  option A: "again"'].join('\n'), ctx);
+    eq(bad.errors.map(e => e.line).sort(), [2, 3, 3, 3, 3, 5, 6], 'one error per problem, with its line');
+  });
+  test('decision kits (when present) have at least 2 options with en + es titles', () => {
+    const kits = win.DIAGRAMON_ADR_KITS;
+    if (!kits) { print('       (src/adr-kits.js not present: skipped)'); return; }
+    assert(Array.isArray(kits) && kits.length, 'kits array');
+    kits.forEach(k => {
+      assert(k.id && k.name?.en && k.name?.es && k.desc?.en && k.desc?.es, `kit ${k.id} name/desc`);
+      assert(k.decisions.length > 0, `kit ${k.id} has decisions`);
+      k.decisions.forEach((d, i) => {
+        const lbl = `${k.id}[${i}]`, both = v => typeof v === 'string' ? !!v : !!(v && v.en && v.es);
+        assert(d.options?.length >= 2, `${lbl} needs at least 2 options`);
+        assert(both(d.title) && both(d.context) && both(d.area), `${lbl} title/context/area in en + es`);
+        d.options.forEach(o => assert(both(o.title), `${lbl} option ${o.id} title in en + es`));
+      });
+    });
   });
 
   /* ---------- resumen ---------- */

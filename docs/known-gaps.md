@@ -12,6 +12,7 @@ These features work in the browser and their output was checked for structure, b
 - **PlantUML export**: checked for structure only (balanced blocks, declared aliases), not rendered. The Mermaid and draw.io exports of the templates were rendered with their own renderers (Mermaid 11 and the draw.io viewer, group icons included).
 - **IaC import for Azure and Google Cloud**: tested with the two hand-written `terraform show -json` samples in `samples/`, which follow the real azurerm and google schemas, not with the output of a live account. Unusual resource types may show as generic components.
 - **Architecture report as PDF**: checked up to the browser print call. The full document, its 14 sections, images and tables load, `print()` is called, and tables fit an A4 page width. The print dialog itself and the final pagination have not been reviewed.
+- **Lakehouse decision kit** (`src/adr-kits.js`): the options, pros and cons are written to be neutral and durable, but they have not been reviewed by specialists in each product. Check them against current vendor documentation before presenting them to a client.
 - **Very small components** carrying every pill at once (layer, region, team, availability) have not been reviewed. With the default fixed node width they fit.
 
 ## 🔧 Not done yet (small improvements)

@@ -307,5 +307,92 @@ window.DIAGRAMON_EXAMPLES = [
           links: { nodes: ['queue', 'worker'] } }
       ]
     }
+  },
+  {
+    name: { en: 'Lakehouse greenfield · decision kit', es: 'Lakehouse greenfield · kit de decisiones' },
+    desc: { en: 'Cloud-agnostic starting point for a new data lakehouse, with the backlog of decisions (ADR) to take with the client.', es: 'Punto de partida sin nube definida para un lakehouse nuevo, con el backlog de decisiones (ADR) a tomar con el cliente.' },
+    diagram: {
+      title: { en: 'Lakehouse greenfield · starter architecture', es: 'Lakehouse greenfield · arquitectura inicial' },
+      meta: { author: { en: 'Architecture team', es: 'Equipo de arquitectura' }, version: '0.1' },
+      groups: [
+        { id: 'gSrc',  label: { en: 'Sources', es: 'Fuentes' }, color: 'cielo', kind: 'logical', team: { en: 'Business IT', es: 'TI de negocio' } },
+        { id: 'gIng',  label: { en: 'Ingestion', es: 'Ingesta' }, color: 'lila', kind: 'logical', team: { en: 'Data engineering', es: 'Ingeniería de datos' }, owner: { en: 'To be assigned', es: 'Por asignar' } },
+        { id: 'gLake', label: { en: 'Lakehouse storage', es: 'Almacenamiento lakehouse' }, color: 'limon', kind: 'logical', team: { en: 'Data platform', es: 'Plataforma de datos' }, owner: { en: 'To be assigned', es: 'Por asignar' } },
+        { id: 'lBr',   label: { en: 'Bronze · raw', es: 'Bronce · crudo' }, color: 'melocoton', kind: 'logical', parent: 'gLake', layer: 'bronze' },
+        { id: 'lSi',   label: { en: 'Silver · curated', es: 'Plata · curado' }, color: 'lavanda', kind: 'logical', parent: 'gLake', layer: 'silver' },
+        { id: 'lGo',   label: { en: 'Gold · serving', es: 'Oro · consumo' }, color: 'limon', kind: 'logical', parent: 'gLake', layer: 'gold' },
+        { id: 'gProc', label: { en: 'Transformation and orchestration', es: 'Transformación y orquestación' }, color: 'menta', kind: 'logical', team: { en: 'Data engineering', es: 'Ingeniería de datos' } },
+        { id: 'gServ', label: { en: 'Serving', es: 'Consumo' }, color: 'coral', kind: 'logical', team: { en: 'Analytics', es: 'Analítica' } },
+        { id: 'gGov',  label: { en: 'Governance, security and operations', es: 'Gobierno, seguridad y operaciones' }, color: 'rosa', kind: 'logical', team: { en: 'Data governance', es: 'Gobierno de datos' } }
+      ],
+      nodes: [
+        { id: 'erp',   label: 'ERP', type: 'erp', group: 'gSrc', sub: { en: 'Finance, orders', es: 'Finanzas, pedidos' }, data: ['confidential'], owner: { en: 'To be assigned', es: 'Por asignar' }, x: 0, y: 40, desc: { en: 'Core business system. Confirm vendor, version and export options with the client.', es: 'Sistema central del negocio. Confirmar con el cliente proveedor, versión y opciones de exportación.' } },
+        { id: 'crm',   label: 'CRM', type: 'erp', group: 'gSrc', sub: { en: 'Customers', es: 'Clientes' }, data: ['pii'], owner: { en: 'To be assigned', es: 'Por asignar' }, x: 0, y: 190, desc: { en: 'Customer records: personal data from the first load.', es: 'Registros de clientes: datos personales desde la primera carga.' } },
+        { id: 'opdb',  label: { en: 'Operational database', es: 'Base operacional' }, type: 'db', group: 'gSrc', sub: { en: 'Transactional', es: 'Transaccional' }, data: ['pii', 'confidential'], owner: { en: 'To be assigned', es: 'Por asignar' }, x: 0, y: 340, desc: { en: 'Application database; candidate for change data capture.', es: 'Base de datos de una aplicación; candidata para captura de cambios.' } },
+        { id: 'files', label: { en: 'Files and exports', es: 'Archivos y exportaciones' }, type: 'storage', group: 'gSrc', sub: 'CSV · JSON · Excel', data: ['internal'], x: 0, y: 490, desc: { en: 'Partner files, spreadsheets and SaaS exports.', es: 'Archivos de socios, hojas de cálculo y exportaciones de SaaS.' } },
+        { id: 'evt',   label: { en: 'Apps and IoT events', es: 'Eventos de apps e IoT' }, type: 'external', group: 'gSrc', sub: { en: 'Event producers', es: 'Productores de eventos' }, data: ['internal'], x: 0, y: 640, desc: { en: 'Only needed if streaming is confirmed.', es: 'Solo hace falta si se confirma el streaming.' } },
+
+        { id: 'ingb',  label: { en: 'Batch ingestion', es: 'Ingesta batch' }, type: 'compute', group: 'gIng', sub: { en: 'Scheduled loads', es: 'Cargas programadas' }, data: ['pii', 'confidential'], x: 380, y: 100, desc: { en: 'Loads ERP, CRM and files into the raw layer.', es: 'Carga ERP, CRM y archivos en la capa cruda.' } },
+        { id: 'ingc',  label: { en: 'CDC ingestion', es: 'Ingesta CDC' }, type: 'compute', group: 'gIng', sub: { en: 'Change data capture', es: 'Captura de cambios' }, data: ['pii', 'confidential'], x: 380, y: 340, desc: { en: 'Captures inserts, updates and deletes from operational databases.', es: 'Captura inserciones, actualizaciones y borrados de las bases operacionales.' } },
+        { id: 'ings',  label: { en: 'Streaming ingestion', es: 'Ingesta streaming' }, type: 'stream', group: 'gIng', sub: { en: 'Optional', es: 'Opcional' }, data: ['internal'], x: 380, y: 640, desc: { en: 'Event backbone. May be left out of phase 1.', es: 'Columna vertebral de eventos. Puede quedar fuera de la fase 1.' } },
+
+        { id: 'bronze', label: { en: 'Raw tables', es: 'Tablas crudas' }, type: 'storage', group: 'lBr', sub: { en: 'Open table format', es: 'Formato de tabla abierto' }, data: ['pii', 'confidential'], x: 760, y: 150, desc: { en: 'Immutable copy of what was received, kept for reprocessing and audit.', es: 'Copia inmutable de lo recibido, para reprocesar y auditar.' } },
+        { id: 'silver', label: { en: 'Curated tables', es: 'Tablas curadas' }, type: 'storage', group: 'lSi', sub: { en: 'Cleaned, conformed', es: 'Limpias, conformadas' }, data: ['pii', 'confidential'], x: 760, y: 350, desc: { en: 'Deduplicated, typed and conformed data. Decide where personal data is masked.', es: 'Datos deduplicados, tipados y conformados. Decidir dónde se enmascaran los datos personales.' } },
+        { id: 'gold',   label: { en: 'Business models', es: 'Modelos de negocio' }, type: 'storage', group: 'lGo', sub: { en: 'Marts and metrics', es: 'Data marts y métricas' }, data: ['internal'], x: 760, y: 550, desc: { en: 'Aggregated, business-ready tables.', es: 'Tablas agregadas, listas para el negocio.' } },
+
+        { id: 'transf', label: { en: 'Transformation', es: 'Transformación' }, type: 'analytics', group: 'gProc', sub: { en: 'SQL / Spark / declarative', es: 'SQL / Spark / declarativo' }, data: ['pii', 'confidential'], x: 1140, y: 350, desc: { en: 'Builds silver and gold from the layer below.', es: 'Construye plata y oro a partir de la capa anterior.' } },
+        { id: 'orch',   label: { en: 'Orchestration', es: 'Orquestación' }, type: 'compute', group: 'gProc', sub: { en: 'Schedules and monitors', es: 'Programa y monitorea' }, x: 1140, y: 100, desc: { en: 'Runs, retries and monitors every pipeline.', es: 'Ejecuta, reintenta y monitorea cada pipeline.' } },
+
+        { id: 'sqlwh', label: { en: 'SQL warehouse', es: 'Almacén SQL' }, type: 'analytics', group: 'gServ', sub: { en: 'Query engine for BI', es: 'Motor de consultas para BI' }, data: ['internal'], x: 1520, y: 400, desc: { en: 'Serves gold tables to analysts and tools.', es: 'Sirve las tablas oro a analistas y herramientas.' } },
+        { id: 'sem',   label: { en: 'Semantic layer', es: 'Capa semántica' }, type: 'analytics', group: 'gServ', sub: { en: 'Shared metrics', es: 'Métricas compartidas' }, data: ['internal'], x: 1520, y: 550, desc: { en: 'One definition per business metric.', es: 'Una definición por métrica de negocio.' } },
+
+        { id: 'bi',   label: { en: 'BI and reporting', es: 'BI y reportes' }, type: 'user', sub: { en: 'Business users', es: 'Usuarios de negocio' }, x: 1900, y: 400, desc: { en: 'Dashboards and self-service analysis.', es: 'Tableros y análisis de autoservicio.' } },
+        { id: 'ds',   label: { en: 'Data science and ML', es: 'Ciencia de datos y ML' }, type: 'ai', sub: { en: 'Notebooks, models', es: 'Notebooks, modelos' }, data: ['internal'], x: 1900, y: 550, desc: { en: 'Reads curated and gold data.', es: 'Lee datos curados y oro.' } },
+        { id: 'apps', label: { en: 'Applications and APIs', es: 'Aplicaciones y APIs' }, type: 'web', sub: { en: 'Data products', es: 'Productos de datos' }, x: 1900, y: 700, desc: { en: 'Operational apps that consume data products.', es: 'Aplicaciones operacionales que consumen productos de datos.' } },
+
+        { id: 'catalog', label: { en: 'Catalog and governance', es: 'Catálogo y gobierno' }, type: 'generic', group: 'gGov', sub: { en: 'Lineage, ownership, permissions', es: 'Linaje, responsables, permisos' }, x: 760, y: 800, desc: { en: 'Where tables, owners, lineage and permissions are managed.', es: 'Donde se gestionan tablas, responsables, linaje y permisos.' } },
+        { id: 'dq',      label: { en: 'Data quality', es: 'Calidad de datos' }, type: 'monitor', group: 'gGov', sub: { en: 'Checks and alerts', es: 'Controles y alertas' }, x: 1140, y: 800, desc: { en: 'Automated checks on critical datasets.', es: 'Controles automáticos sobre los datasets críticos.' } },
+        { id: 'iam',     label: { en: 'Identity and access', es: 'Identidad y acceso' }, type: 'auth', group: 'gGov', sub: { en: 'SSO, roles, masking', es: 'SSO, roles, enmascaramiento' }, x: 760, y: 950, desc: { en: 'Corporate identity provider and access policies.', es: 'Proveedor de identidad corporativo y políticas de acceso.' } },
+        { id: 'kms',     label: { en: 'Keys and secrets', es: 'Claves y secretos' }, type: 'secrets', group: 'gGov', sub: { en: 'Encryption', es: 'Cifrado' }, x: 1140, y: 950, desc: { en: 'Encryption keys and credentials for pipelines.', es: 'Claves de cifrado y credenciales de los pipelines.' } },
+        { id: 'cicd',    label: 'CI/CD · IaC', type: 'cicd', group: 'gGov', sub: { en: 'Environments, releases', es: 'Ambientes, despliegues' }, x: 1520, y: 950, desc: { en: 'Infrastructure as code and release pipelines.', es: 'Infraestructura como código y pipelines de despliegue.' } },
+        { id: 'obs',     label: { en: 'Monitoring and cost', es: 'Monitoreo y costos' }, type: 'monitor', group: 'gGov', sub: { en: 'Operations, FinOps', es: 'Operación, FinOps' }, x: 1900, y: 950, desc: { en: 'Platform health, usage and cost visibility.', es: 'Salud de la plataforma, uso y visibilidad de costos.' } }
+      ],
+      edges: [
+        { from: 'erp', to: 'ingb', label: 'Batch', style: 'batch', encrypted: true, data: ['confidential'] },
+        { from: 'crm', to: 'ingb', label: 'Batch', style: 'batch', encrypted: true, data: ['pii'] },
+        { from: 'files', to: 'ingb', label: { en: 'Files', es: 'Archivos' }, style: 'batch', encrypted: true, data: ['internal'] },
+        { from: 'opdb', to: 'ingc', label: 'CDC', style: 'stream', encrypted: true, data: ['pii', 'confidential'] },
+        { from: 'evt', to: 'ings', label: { en: 'Events', es: 'Eventos' }, style: 'stream', encrypted: true, data: ['internal'] },
+        { from: 'ingb', to: 'bronze', style: 'data', encrypted: true, data: ['pii', 'confidential'] },
+        { from: 'ingc', to: 'bronze', style: 'data', encrypted: true, data: ['pii', 'confidential'] },
+        { from: 'ings', to: 'bronze', style: 'stream', encrypted: true, data: ['internal'] },
+        { from: 'bronze', to: 'silver', label: { en: 'clean · conform', es: 'limpiar · conformar' }, style: 'data', encrypted: true, data: ['pii', 'confidential'] },
+        { from: 'silver', to: 'gold', label: { en: 'model', es: 'modelar' }, style: 'data', encrypted: true, data: ['internal'] },
+        { from: 'transf', to: 'silver', label: { en: 'builds', es: 'construye' }, style: 'control' },
+        { from: 'transf', to: 'gold', label: { en: 'builds', es: 'construye' }, style: 'control' },
+        { from: 'orch', to: 'ingb', label: { en: 'schedules', es: 'programa' }, style: 'control' },
+        { from: 'orch', to: 'transf', label: { en: 'schedules', es: 'programa' }, style: 'control' },
+        { from: 'gold', to: 'sqlwh', style: 'data', encrypted: true, data: ['internal'] },
+        { from: 'sqlwh', to: 'sem', style: 'data', encrypted: true, data: ['internal'] },
+        { from: 'sem', to: 'bi', label: 'SQL', encrypted: true, data: ['internal'] },
+        { from: 'gold', to: 'ds', style: 'data', encrypted: true, data: ['internal'] },
+        { from: 'sqlwh', to: 'apps', label: 'API', encrypted: true, data: ['internal'] },
+        { from: 'catalog', to: 'silver', label: { en: 'governs', es: 'gobierna' }, style: 'optional' },
+        { from: 'dq', to: 'silver', label: { en: 'checks', es: 'verifica' }, style: 'optional' },
+        { from: 'iam', to: 'catalog', label: { en: 'access', es: 'acceso' }, style: 'optional' },
+        { from: 'kms', to: 'bronze', label: { en: 'encrypts', es: 'cifra' }, style: 'optional' },
+        { from: 'cicd', to: 'orch', label: { en: 'deploys', es: 'despliega' }, style: 'optional' },
+        { from: 'obs', to: 'orch', label: { en: 'monitors', es: 'monitorea' }, style: 'optional' }
+      ],
+      notes: [
+        { id: 'n1', x: 0, y: -190, w: 340, h: 130, color: 'limon', text: { en: 'Undecided: cloud and platform.\nSee ADR-001 and ADR-002. Icons stay generic until they are decided.', es: 'Sin decidir: nube y plataforma.\nVer ADR-001 y ADR-002. Los iconos son genéricos hasta decidirlos.' } },
+        { id: 'n2', x: 380, y: -190, w: 340, h: 130, color: 'limon', text: { en: 'Undecided: how data is ingested.\nSee ADR-006 (batch), ADR-007 (CDC) and ADR-008 (streaming, maybe not in phase 1).', es: 'Sin decidir: cómo se ingieren los datos.\nVer ADR-006 (batch), ADR-007 (CDC) y ADR-008 (streaming, quizá no en la fase 1).' } },
+        { id: 'n3', x: 760, y: -190, w: 340, h: 130, color: 'limon', text: { en: 'Undecided: table format and layers.\nSee ADR-003 and ADR-004. PII is expected in raw and curated.', es: 'Sin decidir: formato de tabla y capas.\nVer ADR-003 y ADR-004. Se espera PII en las capas cruda y curada.' } },
+        { id: 'n4', x: 1140, y: -190, w: 340, h: 130, color: 'limon', text: { en: 'Undecided: transformation and orchestration.\nSee ADR-009 and ADR-010.', es: 'Sin decidir: transformación y orquestación.\nVer ADR-009 y ADR-010.' } },
+        { id: 'n5', x: 1520, y: -190, w: 340, h: 130, color: 'limon', text: { en: 'Undecided: serving and semantic layer.\nSee ADR-012.', es: 'Sin decidir: consumo y capa semántica.\nVer ADR-012.' } },
+        { id: 'n6', x: 760, y: 1100, w: 700, h: 110, color: 'rosa', text: { en: 'Undecided: governance and operations.\nCatalog ADR-005 · quality ADR-011 · access ADR-013 · network and keys ADR-014 · IaC and CI/CD ADR-015 · operating model ADR-016 · FinOps ADR-017.', es: 'Sin decidir: gobierno y operaciones.\nCatálogo ADR-005 · calidad ADR-011 · acceso ADR-013 · red y claves ADR-014 · IaC y CI/CD ADR-015 · modelo operativo ADR-016 · FinOps ADR-017.' } }
+      ],
+      decisions: (() => { const kit = (window.DIAGRAMON_ADR_KITS || []).find(k => k.id === 'lakehouse'); return kit ? kit.decisions.map((d, i) => ({ id: 'ADR-' + String(i + 1).padStart(3, '0'), status: 'proposed', date: '2026-10-07', criteria: d.criteria || kit.criteria, ...d })) : []; })()
+    }
   }
 ];
