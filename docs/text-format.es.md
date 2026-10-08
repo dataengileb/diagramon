@@ -59,7 +59,7 @@ api ~> cola : eventos
 | `# …` o `// …` | Comentario |
 
 Las palabras clave funcionan en los dos idiomas: `title`/`título`, `group`/`grupo`, `cost`/`costo`, `/month`/`/mes`, `/hour`/`/hora`, `/year`/`/año`, `/3years`/`/3años`.
-El texto es la fuente de verdad de notas, zonas, fronteras de confianza, notas STRIDE, hallazgos descartados, decisiones de arquitectura (ADR) y requisitos: borrarlos del texto los borra del diagrama. Las versiones se conservan.
+El texto es la fuente de verdad de notas, zonas, fronteras de confianza, notas STRIDE, hallazgos descartados, decisiones de arquitectura (ADR), requisitos y el registro RAID: borrarlos del texto los borra del diagrama. Las versiones se conservan.
 ### Decisiones de arquitectura (ADR)
 
 Una línea `adr` abre una decisión; los campos van en las líneas siguientes, cada uno con su texto entre comillas (`\n` = salto de línea). Las decisiones se escriben al final del texto.
@@ -114,6 +114,26 @@ req REQ-002: "Capa de consumo disponible al 99,9 %" tipo=rnf prioridad=debería 
 | `residencia` (`residency`) | `clase=`, `jurisdicción=` (`jur=`) id de jurisdicción, p. ej. `eu` | ninguna conexión que cruza fronteras sin aprobar lleva esa clase fuera de esa jurisdicción |
 
 - La línea de campo es `detalle:` (`detail:`) y solo vale justo después de su línea `req`. Al leer se aceptan los dos idiomas; el texto se escribe en el idioma activo, así que el viaje de ida y vuelta es exacto. Parámetros sin `control=`, valores desconocidos, un `desde=` / `hasta=` que no es un componente y enlaces a cosas que no existen se señalan con su número de línea. Borrar un bloque `req` del texto borra el requisito.
+
+### Registro RAID (riesgos, supuestos, problemas, dependencias)
+
+Una línea por item, escrita después de las decisiones y los requisitos. La primera palabra es el tipo y el id empieza por su letra: `R-` riesgo, `A-` supuesto, `I-` problema, `D-` dependencia. Los campos de texto van en las líneas siguientes, entre comillas (`\n` = salto de línea).
+
+```
+riesgo R-001: "Falta la licencia CDC de SAP" p=3 i=4 dueño="PMO" estado=abierto registrado=2026-10-07 enlaces=ADR-007,erp
+  mitigación: "Pedir cotización al proveedor ya."
+  detalle: "Los proveedores suelen cobrar aparte el CDC basado en logs."
+supuesto A-001: "Volumen <= 2 TB/día" validación=pendiente fecha=2026-11-15 dueño="Dueño del dato" enlaces=ADR-002,REQ-003
+  historial: validado 2026-11-02 por="Ana" nota="Revisado con finanzas"; invalidado 2026-12-01
+problema I-001: "Sin acceso al sistema de pruebas del ERP" estado=abierto fecha=2026-11-01
+dependencia D-001: "El equipo de red abre el enlace privado" estado=abierto fecha=2026-11-30 enlaces=ADR-014,iam
+```
+
+- Claves (en inglés entre paréntesis): `p=` probabilidad e `i=` impacto, de 1 a 5, solo en riesgos; `dueño=` (`owner=`); `estado=abierto|cerrado` (`status=open|closed`) en riesgos, problemas y dependencias; `validación=pendiente|validado|invalidado` (`validation=pending|validated|invalidated`) en supuestos; `fecha=` (`due=`, validar antes de / necesario para, no en riesgos); `registrado=` (`raised=`); `enlaces=` (`links=`).
+- Palabras de tipo: `riesgo`, `supuesto`, `problema`, `dependencia` (en inglés `risk`, `assumption`, `issue`, `dependency`).
+- `enlaces=` es una lista separada por comas de ids de decisión (`ADR-001`), ids de requisito (`REQ-001`), ids de componente, ids de grupo y conexiones escritas `origen->destino` (añade `#2` para la segunda de varias iguales). Un enlace a algo que no existe es un error, salvo los ids de requisito, que se comprueban al cargar el diagrama.
+- Campos: `detalle:` (`detail:`), `mitigación:` (`mitigation:`, riesgos) e `historial:` (`history:`, supuestos): cambios de validación del más antiguo al más reciente, `validado|invalidado|pendiente AAAA-MM-DD por="…" nota="…"` separados por `;` (en inglés `validated`, `invalidated`, `pending`, `by=`, `note=`).
+- Un campo solo vale justo después de la línea del item (o de otro campo). Al leer se aceptan ambos idiomas; el texto se escribe en el idioma activo. Borrar las líneas de un item lo borra.
 
 Un nodo que solo aparece en una conexión se crea solo. Los errores salen en rojo con su número de línea.
 El texto no guarda posiciones: los nodos que ya existían no se mueven y los nuevos se colocan junto a sus vecinos.
