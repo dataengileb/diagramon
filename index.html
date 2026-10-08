@@ -688,6 +688,49 @@
   .adr-row select { flex: 1; min-width: 0; max-width: 100%; height: 28px; padding: 0 6px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface2); color: var(--text); font: 12px var(--font); }
   .adr-field .adr-chips { margin: 5px 0 6px; }
   .ver .adr-chips { margin-top: 5px; }
+  /* ADR: opciones (matriz opciones × criterios), progreso, áreas y kits */
+  .adr-prog { margin: 0 0 8px; }
+  .adr-prog-t { font-size: 11.5px; font-weight: 650; color: var(--muted); margin-bottom: 3px; }
+  .adr-prog-b { display: flex; height: 6px; border-radius: 999px; overflow: hidden; background: var(--surface2); }
+  .adr-prog-b i { display: block; height: 100%; }
+  .adr-areas .fnd-chip b { font-variant-numeric: tabular-nums; }
+  .adr-kits { display: grid; gap: 5px; margin: 0 0 8px; }
+  .adr-kit { display: grid; gap: 1px; padding: 7px 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+  .adr-kit:hover { border-color: var(--accent); }
+  .adr-kit b { font-size: 12.5px; } .adr-kit span { font-size: 11.5px; color: var(--muted); } .adr-kit em { font-size: 11px; font-style: normal; color: var(--accent); font-weight: 650; }
+  .adr-osum { margin-top: 2px; font-size: 11.5px; color: var(--muted); } .adr-osum b { color: var(--p-menta); }
+  .adr-cmp-d { font-weight: 500; font-size: 11px; color: var(--text); }
+  .adr-opts { display: grid; gap: 7px; padding: 8px; border: 1px solid var(--border); border-radius: 10px; background: color-mix(in srgb, var(--surface2) 55%, transparent); min-width: 0; }
+  .adr-opts-h { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+  .adr-opts-h > span { flex: 1; min-width: 0; font-size: 11.5px; font-weight: 700; color: var(--text); }
+  .adr-hint { margin: 0; font-size: 11.5px; color: var(--muted); }
+  .adr-mx-wrap { max-width: 100%; overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+  .adr-mx { border-collapse: collapse; width: max-content; min-width: 100%; font-size: 11.5px; }
+  .adr-mx th, .adr-mx td { padding: 4px 6px; border-bottom: 1px solid var(--border); text-align: center; vertical-align: middle; font-weight: 500; }
+  .adr-mx thead th { background: var(--surface2); color: var(--muted); font-size: 10.5px; font-weight: 700; }
+  .adr-mx tr:last-child > * { border-bottom: 0; }
+  .adr-mx .adr-mx-o { text-align: left; min-width: 100px; max-width: 170px; position: sticky; left: 0; background: var(--surface); z-index: 1; }
+  .adr-mx thead .adr-mx-o { background: var(--surface2); }
+  .adr-mx tr.chosen .adr-mx-o { background: color-mix(in srgb, var(--p-menta) 16%, var(--surface)); }
+  .adr-mx-c { min-width: 92px; }
+  .adr-mx-c input { width: 100%; min-width: 0; box-sizing: border-box; padding: 2px 4px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--text); font: 700 10.5px var(--font); text-align: center; }
+  .adr-mx-c input:hover, .adr-mx-c input:focus { border-color: var(--border); background: var(--surface); outline: none; }
+  .adr-mx-w { display: inline-flex; align-items: center; gap: 2px; }
+  .adr-mx select { height: 24px; padding: 0 2px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface2); color: var(--text); font: 11.5px var(--font); }
+  .adr-mx-t { display: inline; max-width: 100%; padding: 0; border: 0; background: none; color: var(--text); font: inherit; font-weight: 650; text-align: left; cursor: pointer; }
+  .adr-mx-t:hover span { text-decoration: underline; }
+  .adr-mx-t b { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .adr-mark { display: inline-block; margin-left: 5px; font-size: 10.5px; font-weight: 750; white-space: nowrap; }
+  .adr-mark.lead { color: var(--p-limon); font-size: 12px; } .adr-mark.ok { color: var(--p-menta); }
+  .adr-mx-tot { min-width: 88px; white-space: nowrap; }
+  .adr-mx-tot b { margin-left: 5px; font-variant-numeric: tabular-nums; } .adr-mx-tot em { margin-left: 4px; font-style: normal; font-size: 10px; color: var(--muted); }
+  .adr-bar { display: inline-block; width: 38px; height: 6px; border-radius: 999px; background: var(--surface2); vertical-align: middle; overflow: hidden; border: 1px solid var(--border); }
+  .adr-bar i { display: block; height: 100%; background: var(--accent); }
+  .adr-mx-a { white-space: nowrap; }
+  .adr-mx-a .btn { padding: 2px 8px; }
+  .adr-opt { display: grid; gap: 7px; padding: 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+  .adr-opt-h { display: flex; align-items: center; gap: 6px; font-size: 12px; } .adr-opt-h span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 650; } .adr-opt-h b { color: var(--muted); }
+  .adr-mx .adr-x, .adr-opt-h .adr-x { padding: 0 5px; border: 0; background: none; color: var(--muted); font: inherit; cursor: pointer; } .adr-mx .adr-x:hover, .adr-opt-h .adr-x:hover { color: var(--p-coral); }
   .ver.adr-flash { box-shadow: 0 0 0 3px color-mix(in srgb, var(--p-lavanda) 55%, transparent); }
 </style>
 
@@ -1240,6 +1283,7 @@
 <script src="assets/icons/logos.js"></script>
 <script src="assets/fonts/fonts.js"></script>
 <script src="src/text-lang.js"></script>
+<script src="src/adr-kits.js"></script>
 <script src="src/examples.js"></script>
 <script src="src/iac.js"></script>
 <script src="src/share.js"></script>
