@@ -27,9 +27,10 @@ The app code is in `src/` (engine, config, texts, text language, import, sharing
 1. Fork the repository and create a branch from `main` (`fix/short-description` or `feature/short-description`).
 2. Make your change. Keep it focused: one topic per pull request.
 3. Try it in a browser: open `index.html`, exercise the feature, and check the console for errors or CSP violations.
-4. Open a pull request against `main` and fill in the template.
+4. Run the automated tests from the repository root: `node tests/run.js` (on macOS without Node: `osascript -l JavaScript tests/run.js`). They also run on every pull request. If you change a sample in `samples/` on purpose, update its expected counts in `tests/run.js`.
+5. Open a pull request against `main` and fill in the template.
 
-`main` is protected: every change goes through a pull request, and the CodeQL checks must pass before merging.
+`main` is protected: every change goes through a pull request, and the CodeQL checks must pass before merging. The tests run on every pull request too.
 
 ## Style
 
