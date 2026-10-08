@@ -6,7 +6,7 @@ Thanks for your interest! Diagramon is a small, dependency-free project, and con
 
 - **Report a bug or suggest a feature** by opening an [issue](../../issues/new/choose).
 - **Fix something small** (typos, docs, a bug). Look for issues labelled `good first issue`.
-- **Take on a larger idea** from [docs/roadmap.md](docs/roadmap.md), such as connections between groups. Open an issue first to agree on the approach.
+- **Take on a larger idea** from [docs/roadmap.md](docs/roadmap.md), such as connections between groups or splitting `src/app.js` into modules. Open an issue first to agree on the approach.
 - **Report a vulnerability** privately. See [SECURITY.md](SECURITY.md); please don't open a public issue for it.
 
 ## Project principles

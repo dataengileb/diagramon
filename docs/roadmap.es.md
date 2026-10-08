@@ -49,3 +49,24 @@ Además, borrar un grupo tendría que borrar o reenganchar sus conexiones, y des
 5. Pestaña Texto y exportaciones.
 
 Cada paso debe dejar idénticos, byte a byte, los diagramas que no tengan extremos de grupo.
+
+## Dividir `src/app.js` en módulos
+
+**Estado: abierto a colaboradores.** Los mantenedores actuales no tienen previsto hacerlo.
+
+**La necesidad.** `src/app.js` ha crecido hasta unas 8.000 líneas en una sola clausura, organizada en unos 80 bloques marcados con cabeceras `/* ---------- … ---------- */`. Funciona, pero cuesta recorrerlo, revisarlo y cambiarlo en paralelo, y la mayoría de sus funciones no se pueden probar por separado. (`tests/run.js` solo llega a las pocas que son puras, recortándolas del archivo.)
+
+**Condiciones que deben mantenerse.**
+
+- **Sin paso de compilación ni dependencias:** Diagramon debe seguir abriéndose con doble clic en `index.html`, desde el disco (`file://`).
+- **La política de seguridad de contenidos (CSP) sigue siendo estricta** (`script-src 'self'`).
+- **Todas las funciones, exportaciones y el visor cifrado siguen funcionando igual, byte a byte**, y `tests/run.js` sigue pasando.
+
+**Enfoque posible.**
+
+- Mantener archivos `<script>` clásicos: los módulos ES (`type="module"`) no cargan desde `file://` en todos los navegadores.
+- Dividir según las cabeceras de bloque que ya existen, en archivos bajo `src/` que compartan un objeto de espacio de nombres (por ejemplo `window.DiagramonApp`): modelo y saneado, dibujo, conectores, vistas, análisis (seguridad, residencia, STRIDE, disponibilidad, costos, cumplimiento, linaje), inspector, versiones, exportaciones, informe e interacción con el lienzo.
+- Mover primero las funciones puras (limpieza del modelo, diferencias, disponibilidad, desglose de costos, filas del inventario), para que `tests/run.js` pueda cargarlas directamente y cubrir más.
+- Hacerlo paso a paso, un área por pull request y sin cambios de comportamiento. Tras cada paso deben pasar la revisión en el navegador y las pruebas automáticas.
+
+**Por qué es arriesgado.** Los bloques comparten mucho estado a través de clausuras: `S`, `R`, `VW`, `C`, `T` y muchas funciones auxiliares pequeñas. Una división descuidada puede romper funciones que se usan poco, como el visor cifrado, el informe o los fantasmas C4.

@@ -49,3 +49,24 @@ Deleting a group would also have to delete or re-attach its connections, and und
 5. Text tab and exports.
 
 Each step must keep existing diagrams byte-identical when they have no group endpoints.
+
+## Split `src/app.js` into modules
+
+**Status: open for contributors.** The current maintainers do not plan to do it themselves.
+
+**The need.** `src/app.js` has grown to about 8,000 lines in a single closure, organized in about 80 blocks marked with `/* ---------- … ---------- */` headers. It works, but it is hard to navigate, review and change in parallel, and most helpers cannot be tested on their own. (`tests/run.js` reaches only the few that are pure, by cutting them out of the file.)
+
+**Constraints that must stay.**
+
+- **No build step and no dependencies:** Diagramon must keep opening with a double-click on `index.html`, from disk (`file://`).
+- **The Content Security Policy stays strict** (`script-src 'self'`).
+- **Every existing feature, export and the encrypted viewer keep working byte-for-byte**, and `tests/run.js` keeps passing.
+
+**Possible approach.**
+
+- Keep classic `<script>` files: ES modules (`type="module"`) do not load from `file://` in every browser.
+- Split by the existing block headers into files under `src/` that share one namespace object (for example `window.DiagramonApp`): model and sanitizing, drawing, routing, views, analyses (security, residency, STRIDE, availability, costs, compliance, lineage), inspector, versions, exports, report, and canvas interaction.
+- Move the pure functions first (model cleaning, diff, availability, cost breakdown, inventory rows), so that `tests/run.js` can load them directly and cover more.
+- Do it step by step, one area per pull request, with no behavior change. The browser check and the automated tests must pass after each step.
+
+**Why it is risky.** The blocks share a lot of state through closures: `S`, `R`, `VW`, `C`, `T` and many small helpers. A careless split can break features that are rarely exercised, such as the encrypted viewer, the report or C4 ghosts.
