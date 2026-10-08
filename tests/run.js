@@ -359,6 +359,127 @@
     });
   });
 
+  /* ======================================================================
+     7. Requisitos: modelo, controles (fitness functions), hallazgos y texto
+     ====================================================================== */
+  section('Requirements');
+  const REQM = new Function(`${between('/* reqModel:start */', '/* reqModel:end */')}; return { cleanRequirements, cleanReqCheck, cleanReqLinks, reqEval, reqCover, reqIssues };`)();
+  const serializeM = new Function(`${app.slice(app.indexOf('  const ORDER = {'), app.indexOf('  /* ---------- editores de código'))}; return serialize;`)();
+  const reqModel = () => ({ nodes: [{ id: 'a', label: 'A', data: ['pii'] }, { id: 'b', label: 'B' }, { id: 'c', label: 'C' }], edges: [{ id: 'e1', from: 'a', to: 'b', encrypted: true, data: ['pii'] }, { id: 'e2', from: 'b', to: 'c' }],
+    groups: [{ id: 'g' }], decisions: [{ id: 'ADR-001', status: 'accepted' }, { id: 'ADR-002', status: 'proposed' }] });
+  // Lo que la app calcula, simulado: disponibilidad/RPO/RTO de la ruta, costo total, cruce de fronteras
+  const reqH = (o = {}) => ({ T: (k, v) => (v && typeof v === 'object' ? `${k} ${JSON.stringify(v)}` : v != null ? `${k} ${v}` : k), availability: () => ({ availability: 0.9995, rpo: 7200, rto: 14400 }), cost: () => 1200,
+    carries: (e, get, cls) => (e.data?.length ? e.data : get(e.from)?.data || []).includes(cls), crossBorder: () => null, sensitive: c => c === 'pii', nodeJur: n => n.jur || '', edgeName: e => `${e.from}>${e.to}`,
+    pct: a => `${a * 100}%`, dur: s => `${s}s`, money: v => `$${v}`, num: v => String(v), ...o });
+  const rq = (o = {}) => ({ id: 'REQ-001', title: 'T', kind: 'nfr', status: 'agreed', ...o });
+  test('cleanRequirements: field limits and defaults', () => {
+    const m = reqModel(), long = n => 'x'.repeat(n);
+    const [r, ...rest] = REQM.cleanRequirements([{ id: 'REQ-005', title: long(300), detail: long(5000), source: `  ${long(200)}  `, kind: 'zzz', status: 'zzz', priority: 'zzz', links: { decisions: ['ADR-001', 'ADR-009'], nodes: ['a', 'q'], edges: ['e1'], groups: ['g', 'h'] } },
+      { title: 'next' }, { id: 'REQ-005', title: 'dup' }, null, 5, {}, { title: '', detail: '  ' }], m);
+    eq([r.title.length, r.detail.length, r.source.length, r.kind, r.status, 'priority' in r], [200, 4000, 120, 'driver', 'draft', false], 'limits and defaults');
+    eq(r.links, { decisions: ['ADR-001'], nodes: ['a'], edges: ['e1'], groups: ['g'] }, 'only existing ids');
+    eq(Object.keys(r), ['id', 'title', 'kind', 'detail', 'status', 'source', 'links'], 'key order');
+    eq(rest.map(x => x.id), ['REQ-006', 'REQ-007'], 'new ids continue after the highest; duplicates get a fresh id; junk is dropped');
+    eq(REQM.cleanRequirements(undefined, m), [], 'absent → empty');
+  });
+  test('cleanRequirements: Spanish values are understood and checks keep only the parameters their metric needs', () => {
+    const m = reqModel();
+    const [a] = REQM.cleanRequirements([{ id: 'R', title: 'x', kind: 'Restricción', priority: 'Debería', status: 'Acordado', check: { metric: 'Residencia', cls: 'PII', jur: 'EU', from: 'a', target: 5 } }], m);
+    eq([a.kind, a.priority, a.status, a.check], ['constraint', 'should', 'agreed', { metric: 'residency', cls: 'pii', jur: 'eu' }], 'aliases + metric params');
+    eq(REQM.cleanReqCheck({ metric: 'availability', from: 'a', to: 'zzz', target: '99,9' }, m), { metric: 'availability', from: 'a', target: 99.9 }, 'missing node dropped, comma decimal');
+    eq(REQM.cleanReqCheck({ metric: 'availability', target: 101 }, m), { metric: 'availability' }, 'availability target above 100 dropped');
+    eq([REQM.cleanReqCheck({ metric: 'nope' }, m), REQM.cleanReqCheck(null, m), REQM.cleanReqCheck({ metric: 'cost', target: -1 }, m)], [null, null, { metric: 'cost' }], 'invalid');
+  });
+  test('JSON and exports stay byte-identical when there are no requirements', () => {
+    const base = { title: 'X', nodes: [{ id: 'a', label: 'A', type: 'generic', x: 0, y: 0 }], edges: [], groups: [], decisions: [] };
+    const a = serializeM(base), b = serializeM({ ...base, requirements: [] }), c = serializeM({ ...base, requirements: undefined });
+    assert(a === b && a === c && !/requirement/.test(a), 'no key without requirements');
+    const withReq = serializeM({ ...base, requirements: [{ links: { nodes: ['a'] }, status: 'agreed', id: 'REQ-001', check: { metric: 'cost', target: 5 }, title: 'T', kind: 'nfr' }] });
+    assert(withReq.startsWith(a.replace(/\n}\n$/, ',\n')), 'the rest is unchanged');
+    assert(/"requirements": \[\n    \{ "id": "REQ-001", "title": "T", "kind": "nfr", "status": "agreed", "check": \{"metric":"cost","target":5\}, "links": \{"nodes":\["a"\]\} \}\n  \]/.test(withReq), `serialized: ${withReq}`);
+  });
+  test('check availability: pass at or above the target, fail below, unknown without SLA or route', () => {
+    const m = reqModel(), c = (t, h) => REQM.reqEval(rq({ check: { metric: 'availability', from: 'a', to: 'c', target: t } }), m, reqH(h));
+    eq(c(99.9).state, 'pass', '99.95 ≥ 99.9'); near(c(99.9).actual, 99.95, 1e-9, 'actual in %'); eq(c(99.95).state, 'pass', 'equal passes'); eq(c(99.99).state, 'fail', 'below');
+    eq(c(99.9, { availability: () => ({ availability: null }) }).state, 'unknown', 'no SLA'); eq(c(99.9, { availability: () => null }).state, 'unknown', 'no route');
+    eq(REQM.reqEval(rq({ check: { metric: 'availability', from: 'a', to: 'zzz', target: 99 } }), m, reqH()).state, 'unknown', 'missing node');
+  });
+  test('check rpo / rto: hours against the worst value on the route; unknown when not set', () => {
+    const m = reqModel(), c = (metric, t, h) => REQM.reqEval(rq({ check: { metric, from: 'a', to: 'c', target: t } }), m, reqH(h));
+    eq([c('rpo', 2).state, c('rpo', 1).state, c('rto', 4).state, c('rto', 3).state], ['pass', 'fail', 'pass', 'fail'], 'rpo 2h / rto 4h');
+    eq(c('rpo', 1).actual, 2, 'actual in hours'); eq(c('rto', 4, { availability: () => ({ availability: 1, rto: null }) }).state, 'unknown', 'rto not set');
+  });
+  test('check cost: total monthly cost against the ceiling; unknown without costs', () => {
+    const m = reqModel(), c = (t, h) => REQM.reqEval(rq({ check: { metric: 'cost', target: t } }), m, reqH(h));
+    eq([c(1200).state, c(1199).state, c(5000, { cost: () => null }).state], ['pass', 'fail', 'unknown'], 'cost');
+  });
+  test('check encryption: every edge carrying the class must be encrypted, failures are listed', () => {
+    const m = reqModel(), c = (cls, edges) => REQM.reqEval(rq({ check: { metric: 'encryption', cls } }), { ...m, edges: edges || m.edges }, reqH());
+    eq(c('pii').state, 'pass', 'e1 is encrypted');
+    const bad = c('pii', [...m.edges, { id: 'e3', from: 'a', to: 'c', data: ['pii'], encrypted: false }, { id: 'e4', from: 'a', to: 'b', data: ['pii'] }]);
+    eq([bad.state, bad.actual], ['fail', 2], 'false and unstated both fail'); assert(/a>c; a>b/.test(bad.detail), `lists the edges: ${bad.detail}`);
+    eq(c('pci').state, 'unknown', 'nothing carries pci');
+  });
+  test('check residency: unapproved cross-border edges carrying the class out of the jurisdiction', () => {
+    const m = { ...reqModel(), nodes: [{ id: 'a', jur: 'eu' }, { id: 'b', jur: 'us' }, { id: 'c', jur: 'eu' }] };
+    const cb = (from, to, approved) => ({ from: { jur: { key: from } }, to: { jur: { key: to } }, classes: ['pii'], approved });
+    const run = (fn, cls = 'pii') => REQM.reqEval(rq({ check: { metric: 'residency', cls, jur: 'eu' } }), m, reqH({ crossBorder: fn }));
+    eq(run(() => null).state, 'pass', 'nothing crosses');
+    const out = run(e => (e.id === 'e1' ? cb('eu', 'us', false) : null));
+    eq([out.state, out.actual], ['fail', 1], 'eu → us unapproved'); assert(/a>b/.test(out.detail), 'lists the edge');
+    eq(run(e => (e.id === 'e1' ? cb('eu', 'us', true) : null)).state, 'pass', 'approved transfer is fine');
+    eq(run(e => (e.id === 'e1' ? cb('us', 'eu', false) : null)).state, 'pass', 'entering the EU is fine');
+    eq(run(() => null, 'internal').state, 'unknown', 'not a sensitive class');
+    eq(REQM.reqEval(rq({ check: { metric: 'residency', cls: 'pii', jur: 'br' } }), m, reqH()).state, 'unknown', 'no component in that jurisdiction');
+  });
+  test('checks only run for agreed requirements and report missing parameters', () => {
+    const m = reqModel();
+    eq(REQM.reqEval(rq({ status: 'draft', check: { metric: 'cost', target: 1 } }), m, reqH()).state, 'unknown', 'draft');
+    eq(REQM.reqEval(rq({ check: { metric: 'cost' } }), m, reqH()).state, 'unknown', 'no target');
+    eq(REQM.reqEval(rq(), m, reqH()).state, 'unknown', 'no check');
+  });
+  test('coverage and findings: uncovered must (medium) / should (low), failing checks (high for must, medium otherwise)', () => {
+    const m = { ...reqModel(), requirements: [rq({ id: 'REQ-001', priority: 'must' }), rq({ id: 'REQ-002', priority: 'should', links: { decisions: ['ADR-002'] } }), rq({ id: 'REQ-003', priority: 'could' }),
+      rq({ id: 'REQ-004', priority: 'must', links: { decisions: ['ADR-001'] } }), rq({ id: 'REQ-005', priority: 'must', links: { nodes: ['a'] } }), rq({ id: 'REQ-006', priority: 'must', status: 'draft' }),
+      rq({ id: 'REQ-007', priority: 'could', links: { nodes: ['a'] }, check: { metric: 'cost', target: 1 } }), rq({ id: 'REQ-008', priority: 'must', links: { nodes: ['a'] }, check: { metric: 'cost', target: 5000 } })] };
+    eq(REQM.reqCover(m.requirements[1], m).covered, false, 'a proposed decision does not cover');
+    eq(REQM.reqCover(m.requirements[3], m), { decisions: [{ id: 'ADR-001', status: 'accepted' }], comps: 0, covered: true }, 'accepted decision covers');
+    eq(REQM.reqIssues(m, reqH()).map(i => [i.r.id, i.rule, i.severity]), [['REQ-001', 'uncovered', 'medium'], ['REQ-002', 'uncovered', 'low'], ['REQ-007', 'fail', 'medium']], 'issues');
+  });
+  const sortK = v => JSON.parse(JSON.stringify(v, (k, x) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map(j => [j, x[j]])) : x)));
+  const reqText = { title: 'R', nodes: [{ id: 'raw', label: 'Raw' }, { id: 'bi', label: 'BI' }], edges: [{ id: 'e1', from: 'raw', to: 'bi', label: 'x' }], groups: [],
+    decisions: [{ id: 'ADR-005', title: 'Cloud', status: 'accepted', date: '2026-10-07' }],
+    requirements: [{ id: 'REQ-001', title: 'Data must "stay" in the EU', kind: 'constraint', detail: 'Line 1\nLine "2"', priority: 'must', status: 'agreed', source: 'CISO office', check: { metric: 'residency', cls: 'pii', jur: 'eu' }, links: { decisions: ['ADR-005'], nodes: ['raw'], edges: ['e1'] } },
+      { id: 'REQ-002', title: 'Serving up', kind: 'nfr', priority: 'should', status: 'draft', check: { metric: 'availability', from: 'raw', to: 'bi', target: 99.9 } },
+      { id: 'REQ-003', title: 'Budget', kind: 'constraint', status: 'agreed', check: { metric: 'cost', target: 25000 } }, { id: 'REQ-004', title: 'Open', kind: 'principle', priority: 'could', status: 'dropped' }, { id: 'REQ-005', title: 'RPO', kind: 'driver', status: 'draft', check: { metric: 'rpo', from: 'raw', to: 'bi', target: 4 } }] };
+  ['en', 'es'].forEach(lang => test(`requirements round trip in the text format · ${lang}`, () => {
+    const m = withPositions(reqText), ctx = textCtx(lang), t1 = TXT.stringify(m, lang), r = TXT.parse(t1, ctx);
+    eq(r.errors, [], 'parse errors');
+    assert(t1 === TXT.stringify({ ...r.model, meta: m.meta }, lang), `text changed:\n${t1}`);
+    eq(sortK(r.model.requirements), sortK(m.requirements), 'model');
+    if (lang === 'es') assert(/req REQ-001: .* tipo=restricción prioridad=debe estado=acordado fuente="CISO office" control=residencia clase=pii jurisdicción=eu enlaces=ADR-005,raw,raw->bi/.test(t1) && /desde=raw hasta=bi objetivo=99.9/.test(t1) && /control=costo objetivo=25000/.test(t1) && /\n  detalle: "Line 1\\nLine \\"2\\""/.test(t1), `Spanish keywords:\n${t1}`);
+    else assert(/req REQ-001: .* kind=constraint priority=must status=agreed source="CISO office" check=residency cls=pii jur=eu links=ADR-005,raw,raw->bi/.test(t1), `English keywords:\n${t1}`);
+  }));
+  test('requirements text: mixed languages parse the same, errors carry their line', () => {
+    const ctx = textCtx('en');
+    const ok = TXT.parse(['a: A', 'b: B', 'adr ADR-1: "D"', 'req R1: "Uno" tipo=rnf prioridad=debería estado=acordado control=disponibilidad desde=a hasta=b objetivo=99,5 enlaces=ADR-1,a', '  detalle: "x"'].join('\n'), ctx);
+    eq(ok.errors, [], 'mixed-language input');
+    eq(sortK(ok.model.requirements), sortK([{ id: 'R1', title: 'Uno', kind: 'nfr', priority: 'should', status: 'agreed', check: { metric: 'availability', from: 'a', to: 'b', target: 99.5 }, links: { decisions: ['ADR-1'], nodes: ['a'] }, detail: 'x' }]), 'values');
+    const bad = TXT.parse(['a: A', 'req R1: "x" kind=nope priority=high status=maybe', 'req R1: "dup" check=magic', 'req R2: "y" check=cost target=abc', 'req R3: "z" check=rpo from=zzz to=a target=1 links=ghost', 'req R4: "w" cls=pii', 'req R5: "v" check=encryption cls=nope'].join('\n'), ctx);
+    eq(bad.errors.map(e => e.line).sort((x, y) => x - y), [2, 2, 2, 3, 3, 4, 5, 5, 6, 7], 'one error per problem, with its line');
+  });
+  test('requirements text: without any req line the model carries an empty list and stringify writes nothing', () => {
+    const r = TXT.parse('a: A\nb: B\na -> b', textCtx('en'));
+    eq(r.model.requirements, [], 'empty'); assert(!/req /.test(TXT.stringify(r.model, 'en')), 'nothing written');
+  });
+  test('lakehouse template ships ~8 draft requirements linked to its decisions and nodes', () => {
+    const m = templates('en').find(x => /Lakehouse greenfield/.test(x.name)).model, ids = new Set([...m.decisions.map(d => d.id), ...m.nodes.map(n => n.id)]);
+    eq(m.requirements.length, 8, 'count'); assert(m.requirements.every(r => r.status === 'draft' && r.title && r.kind), 'draft, titled, typed');
+    const dangling = m.requirements.flatMap(r => [...(r.links?.decisions || []), ...(r.links?.nodes || []), r.check?.from, r.check?.to].filter(Boolean).filter(id => !ids.has(id)));
+    eq(dangling, [], 'every link and check node exists');
+    assert(m.requirements.some(r => r.check?.metric === 'residency') && m.requirements.some(r => r.check?.metric === 'encryption'), 'has checks');
+  });
+
   /* ---------- resumen ---------- */
   print(`\n${pass} passed, ${fail} failed`);
   return finish(fail === 0);

@@ -1230,6 +1230,17 @@
     const bad = m.edges.filter(e => { const cb = h.crossBorder(e); return cb && !cb.approved && cb.classes.includes(c.cls) && cb.from.jur.key === c.jur && cb.to.jur.key !== c.jur; });
     return res(bad.length ? 'fail' : 'pass', bad.length, bad.length ? T('req.chk.d.res', { n: bad.length, c: c.cls, j: c.jur, list: list(bad) }) : T('req.chk.d.resOk', { c: c.cls, j: c.jur }));
   }
+  // Hallazgos de los requisitos acordados: obligatorios y recomendables sin cobertura (ni decisión aceptada ni componente enlazado) y controles que fallan
+  function reqIssues(m, h) {
+    const out = [];
+    (m.requirements || []).forEach(r => {
+      if (r.status !== 'agreed') return;
+      if ((r.priority === 'must' || r.priority === 'should') && !reqCover(r, m).covered) out.push({ rule: 'uncovered', r, severity: r.priority === 'must' ? 'medium' : 'low' });
+      const c = r.check && reqEval(r, m, h);
+      if (c?.state === 'fail') out.push({ rule: 'fail', r, severity: r.priority === 'must' ? 'high' : 'medium', detail: c.detail });
+    });
+    return out;
+  }
   /* reqModel:end */
   const requirementsOf = (kind, id, m = S.model) => (m?.requirements || []).filter(r => r.links?.[kind]?.includes(id));
   // Tras borrar nodos, conexiones, grupos o decisiones: quita de los enlaces (y de origen/destino del control) los ids que ya no existen
@@ -1249,19 +1260,12 @@
   };
   const reqCheck = (r, m = S.model) => reqEval(r, m, REQ_H);
   // Hallazgos (fuente «req»): obligatorios y recomendables acordados sin cobertura (ni decisión aceptada ni componente enlazado); controles que fallan
-  addFindingSource('req', m => {
-    const out = [];
-    (m.requirements || []).forEach(r => {
-      if (r.status !== 'agreed') return;
-      const l = r.links || {}, id0 = r.check?.from || l.nodes?.[0] || '', tgt = id0 ? { kind: 'node', id: id0 } : l.edges?.[0] ? { kind: 'edge', id: l.edges[0] } : l.groups?.[0] ? { kind: 'group', id: l.groups[0] } : { kind: 'node', id: '' };
-      if ((r.priority === 'must' || r.priority === 'should') && !reqCover(r, m).covered) out.push({ id: `req:uncovered:${r.id}`, source: 'req', rule: 'uncovered', severity: r.priority === 'must' ? 'medium' : 'low', target: tgt, title: T('req.find.uncovered', { id: r.id, t: r.title }), detail: T(`req.pr.${r.priority}`), fix: T('req.find.uncovered.fix') });
-      if (r.check) {
-        const c = reqCheck(r, m);
-        if (c.state === 'fail') out.push({ id: `req:fail:${r.id}`, source: 'req', rule: 'fail', severity: r.priority === 'must' ? 'high' : 'medium', target: tgt, title: T('req.find.fail', { id: r.id, t: r.title }), detail: c.detail, fix: T('req.find.fail.fix') });
-      }
-    });
-    return out;
-  });
+  addFindingSource('req', m => reqIssues(m, REQ_H).map(({ rule, r, severity, detail }) => {
+    const l = r.links || {}, id0 = r.check?.from || l.nodes?.[0] || '', target = id0 ? { kind: 'node', id: id0 } : l.edges?.[0] ? { kind: 'edge', id: l.edges[0] } : l.groups?.[0] ? { kind: 'group', id: l.groups[0] } : { kind: 'node', id: '' };
+    return rule === 'uncovered'
+      ? { id: `req:uncovered:${r.id}`, source: 'req', rule, severity, target, title: T('req.find.uncovered', { id: r.id, t: r.title }), detail: T(`req.pr.${r.priority}`), fix: T('req.find.uncovered.fix') }
+      : { id: `req:fail:${r.id}`, source: 'req', rule, severity, target, title: T('req.find.fail', { id: r.id, t: r.title }), detail, fix: T('req.find.fail.fix') };
+  }));
 
   /* ---------- disponibilidad (SLA), RPO/RTO, réplicas y puntos únicos de fallo ---------- */
   const RSL = { entryTypes: ['user', 'web', 'mobile', 'external', 'client'], dataStoreTypes: ['db', 'nosql', 'storage'], dataStoreIconCategories: ['Bases de datos', 'Almacenamiento'],
