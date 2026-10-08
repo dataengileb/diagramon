@@ -677,6 +677,7 @@
     m.versions = normVersions(raw.versions);
     m.decisions = cleanDecisions(raw.decisions, m);
     { const rq = cleanRequirements(raw.requirements, m); if (rq.length) m.requirements = rq; }   // sin requisitos no hay clave: JSON y exportaciones idénticos
+    m.raid = cleanRaid(raw.raid, m, raw.requirements);   // los requisitos se limpian aparte (si existen): aquí solo importan sus ids
     // Cada versión puede llevar las decisiones que había al guardarla (para compararlas); sus enlaces se limpian contra el diagrama de la versión
     m.versions.forEach(v => { if (v.decisions) v.decisions = cleanDecisions(v.decisions, { nodes: v.diagram.nodes || [], edges: v.diagram.edges || [], groups: v.diagram.groups || [], versions: m.versions }); });
     if (raw.active != null && m.versions.some(v => v.id === String(raw.active))) m.active = String(raw.active);
@@ -1124,6 +1125,128 @@
     });
     return out;
   });
+
+  /* ---------- registro RAID (riesgos, supuestos, problemas, dependencias): modelo ---------- */
+  // m.raid = [{ id: 'R-001', type: 'risk'|'assumption'|'issue'|'dependency', title, detail?, owner?, status?: 'open'|'closed' (riesgo, problema, dependencia), probability?, impact? 1..5 y mitigation? (riesgo),
+  //   validation?: 'pending'|'validated'|'invalidated' (supuesto), due?, raised?, links?: { decisions?, requirements?, nodes?, edges?, groups? }, history?: [{ validation, date, by?, note? }] (supuesto) }]
+  // Es del documento (como las decisiones): no entra en las fotos de versiones y sobrevive al abrir una versión y a los editores. Sin él, el JSON y las exportaciones quedan idénticos.
+  // due = «validar antes de» (supuesto) o «necesario para» (problema, dependencia); el riesgo no lleva fecha. Puntaje de un riesgo = probabilidad × impacto (1..25).
+  /* raidModel:start */
+  const RAID_TYPES = ['risk', 'assumption', 'issue', 'dependency'];
+  const RAID_PFX = { risk: 'R', assumption: 'A', issue: 'I', dependency: 'D' };
+  const RAID_ALIAS = { riesgo: 'risk', supuesto: 'assumption', problema: 'issue', dependencia: 'dependency' };
+  const RAID_STATUS = ['open', 'closed'], RAID_VAL = ['pending', 'validated', 'invalidated'];
+  const RAID_ST_ALIAS = { abierto: 'open', abierta: 'open', cerrado: 'closed', cerrada: 'closed' };
+  const RAID_VAL_ALIAS = { pendiente: 'pending', validado: 'validated', validada: 'validated', invalidado: 'invalidated', invalidada: 'invalidated' };
+  const RAID_COLOR = { open: 'var(--p-limon)', closed: 'var(--muted)', pending: 'var(--p-limon)', validated: 'var(--p-menta)', invalidated: 'var(--p-coral)' };
+  const RAID_TYPE_COLOR = { risk: 'var(--p-coral)', assumption: 'var(--p-lavanda)', issue: 'var(--p-melocoton)', dependency: 'var(--p-cielo)' };
+  const RAID_LEVEL_COLOR = { low: 'var(--p-menta)', medium: 'var(--p-limon)', high: 'var(--p-coral)' };
+  const RAID_MAX = 500, RAID_HIGH = 15, RAID_MEDIUM = 8;   // límite de entradas; puntaje desde el que un riesgo es alto / medio
+  const raidType = v => { const k = String(v ?? '').trim().toLowerCase(); return RAID_TYPES.includes(k) ? k : RAID_ALIAS[k] || ''; };
+  const raidStatus = v => { const k = String(v ?? '').trim().toLowerCase(); return RAID_STATUS.includes(k) ? k : RAID_ST_ALIAS[k] || 'open'; };
+  const raidVal = v => { const k = String(v ?? '').trim().toLowerCase(); return RAID_VAL.includes(k) ? k : RAID_VAL_ALIAS[k] || 'pending'; };
+  const raidNum = (id, p) => { const r = new RegExp(`^${p}-(\\d+)$`).exec(String(id)); return r ? +r[1] : 0; };
+  const raidNextId = (list, type) => { const p = RAID_PFX[type]; return `${p}-${String(Math.max(0, ...list.map(x => raidNum(x.id, p))) + 1).padStart(3, '0')}`; };
+  const raidInt = v => { const n = v === '' || v == null ? NaN : Number(v); return Number.isInteger(n) && n >= 1 && n <= 5 ? n : 0; };
+  const raidLong = (v, n) => String(v ?? '').replace(/\r\n?/g, '\n').trim().slice(0, n);
+  const raidScore = it => (it?.type === 'risk' && it.probability && it.impact ? it.probability * it.impact : 0);
+  const raidLevel = s => (s >= RAID_HIGH ? 'high' : s >= RAID_MEDIUM ? 'medium' : 'low');
+  // Estado a mostrar y filtrar: validación en los supuestos, abierto/cerrado en el resto
+  const raidState = it => (it.type === 'assumption' ? it.validation || 'pending' : it.status || 'open');
+  // Solo enlaces a ids que existen; los requisitos se buscan en `reqs` (ids) o en m.requirements, que puede no existir
+  function cleanRaidLinks(l, m, reqs) {
+    const out = {};
+    l = l && typeof l === 'object' ? l : {};
+    const rq = reqs || (m.requirements || []).map(x => x.id);
+    [['decisions', (m.decisions || []).map(x => x.id)], ['requirements', rq], ['nodes', (m.nodes || []).map(x => x.id)], ['edges', (m.edges || []).map(x => x.id)], ['groups', (m.groups || []).map(x => x.id)]].forEach(([k, src]) => {
+      const ok = new Set(src), ids = [...new Set((Array.isArray(l[k]) ? l[k] : []).map(String).filter(id => ok.has(id)))];
+      if (ids.length) out[k] = ids;
+    });
+    return out;
+  }
+  function cleanRaid(raw, m, reqs) {
+    const seen = new Set(), items = [];
+    (Array.isArray(raw) ? raw : []).forEach(r => {
+      if (!r || typeof r !== 'object' || Array.isArray(r)) return;
+      const rid = String(r.id ?? '').trim().slice(0, 40), pre = /^([RAID])-\d+$/.exec(rid);
+      const type = raidType(r.type) || (pre ? RAID_TYPES.find(t => RAID_PFX[t] === pre[1]) : '');
+      if (!type) return;
+      const title = String(r.title ?? '').replace(/\s+/g, ' ').trim().slice(0, 200), detail = raidLong(r.detail, 4000);
+      const id = pre && pre[1] === RAID_PFX[type] && !seen.has(rid) ? rid : '';
+      if (!id && !title && !detail) return;
+      if (id) seen.add(id);
+      const o = { id, type, title };
+      if (detail) o.detail = detail;
+      const owner = String(r.owner ?? '').replace(/\s+/g, ' ').trim().slice(0, 120);
+      if (owner) o.owner = owner;
+      if (type === 'assumption') o.validation = raidVal(r.validation); else o.status = raidStatus(r.status);
+      if (type === 'risk') {
+        const p = raidInt(r.probability), i = raidInt(r.impact), mit = raidLong(r.mitigation, 2000);
+        if (p) o.probability = p;
+        if (i) o.impact = i;
+        if (mit) o.mitigation = mit;
+      } else if (isDay(r.due)) o.due = r.due;
+      if (isDay(r.raised)) o.raised = r.raised;
+      const links = cleanRaidLinks(r.links, m, reqs);
+      if (Object.keys(links).length) o.links = links;
+      if (type === 'assumption') {
+        const hist = (Array.isArray(r.history) ? r.history : []).filter(h => h && typeof h === 'object' && isDay(h.date)).slice(-100).map(h => {
+          const e = { validation: raidVal(h.validation), date: h.date };
+          if (h.by != null && String(h.by).trim()) e.by = String(h.by).trim().slice(0, 100);
+          if (h.note != null && String(h.note).trim()) e.note = String(h.note).trim().slice(0, 500);
+          return e;
+        });
+        if (hist.length) o.history = hist;
+      }
+      items.push(o);
+    });
+    items.forEach(o => { if (!o.id) o.id = raidNextId(items, o.type); });
+    return items.slice(0, RAID_MAX);
+  }
+  // Mapa de calor 5×5: cuenta de riesgos por [impacto - 1][probabilidad - 1]
+  function raidHeat(list) {
+    const g = Array.from({ length: 5 }, () => [0, 0, 0, 0, 0]);
+    (list || []).forEach(it => { if (it.type === 'risk' && it.probability && it.impact) g[it.impact - 1][it.probability - 1]++; });
+    return g;
+  }
+  // Resumen de la cabecera: riesgos abiertos (y cuántos altos), supuestos por validar y vencidos (supuestos pendientes, problemas y dependencias abiertos con fecha pasada)
+  function raidSummary(m, now) {
+    const l = m.raid || [], risks = l.filter(x => x.type === 'risk' && x.status === 'open');
+    const late = x => x.due && x.due < now && (x.type === 'assumption' ? x.validation === 'pending' : x.type !== 'risk' && x.status === 'open');
+    return { risks: risks.length, high: risks.filter(x => raidLevel(raidScore(x)) === 'high').length, toValidate: l.filter(x => x.type === 'assumption' && x.validation === 'pending').length, overdue: l.filter(late).length };
+  }
+  // Avisos del registro, sin textos: [{ rule, key, severity, it, d?, acc?, score? }] (los textos y el destino los pone la fuente de hallazgos)
+  function raidIssues(m, now) {
+    const out = [], decs = new Map((m.decisions || []).map(d => [d.id, d]));
+    (m.raid || []).forEach(it => {
+      const ds = it.links?.decisions || [];
+      if (it.type === 'assumption') {
+        if (it.validation === 'invalidated') ds.forEach(id => { const d = decs.get(id); if (d && (d.status === 'accepted' || d.status === 'proposed')) out.push({ rule: 'invalid', key: `invalid:${it.id}:${id}`, severity: 'high', it, d }); });
+        else if (it.validation === 'pending' && it.due && it.due < now) out.push({ rule: 'unvalidated', key: `unvalidated:${it.id}`, severity: 'medium', it, acc: ds.filter(id => decs.get(id)?.status === 'accepted') });
+      } else if (it.status === 'open') {
+        if (it.type === 'risk') { const s = raidScore(it); if (s >= RAID_HIGH) out.push({ rule: 'risk', key: `risk:${it.id}`, severity: it.mitigation ? 'low' : 'high', it, score: s }); }
+        else if (it.due && it.due < now) out.push({ rule: 'overdue', key: `overdue:${it.id}`, severity: 'medium', it });
+      }
+    });
+    return out;
+  }
+  /* raidModel:end */
+  const raidById = id => (S.model.raid || []).find(x => x.id === id);
+  const raidOf = (kind, id, m = S.model) => (m?.raid || []).filter(x => x.links?.[kind]?.includes(id));
+  // Tras borrar nodos, conexiones, grupos, decisiones o requisitos: quita de los enlaces los ids que ya no existen
+  function pruneRaidLinks(m = S.model) {
+    (m.raid || []).forEach(x => { if (!x.links) return; const l = cleanRaidLinks(x.links, m); if (Object.keys(l).length) x.links = l; else delete x.links; });
+  }
+  // Hallazgos (fuente «raid»): supuesto invalidado que sostiene una decisión, supuesto sin validar a tiempo, riesgo alto y problema o dependencia vencidos
+  addFindingSource('raid', m => raidIssues(m, today()).map(({ rule, key, severity, it, d, acc, score }) => {
+    const l = it.links || {}, dl = d?.links || {}, pick = x => (x.nodes?.[0] ? { kind: 'node', id: x.nodes[0] } : x.edges?.[0] ? { kind: 'edge', id: x.edges[0] } : x.groups?.[0] ? { kind: 'group', id: x.groups[0] } : null);
+    const target = pick(l) || (d && pick(dl)) || { kind: 'node', id: '' }, base = { id: `raid:${key}`, source: 'raid', rule, severity, target };
+    if (rule === 'invalid') return { ...base, title: T('raid.find.invalid', { adr: d.id, id: it.id }), detail: it.title, fix: T('raid.find.invalid.fix') };
+    if (rule === 'unvalidated') return { ...base, title: T('raid.find.unvalidated', { id: it.id, due: fmtDay(it.due) }), detail: [it.title, acc.length ? T('raid.find.unvalidated.acc', acc.join(', ')) : ''].filter(Boolean).join(' · '), fix: T('raid.find.unvalidated.fix') };
+    if (rule === 'risk') return { ...base, title: T('raid.find.risk', { id: it.id, s: score }), detail: it.title, fix: T(it.mitigation ? 'raid.find.risk.fix2' : 'raid.find.risk.fix') };
+    return { ...base, title: T('raid.find.overdue', { id: it.id, type: T(`raid.type1.${it.type}`).toLowerCase(), due: fmtDay(it.due) }), detail: it.title, fix: T('raid.find.overdue.fix') };
+  }));
+
 
   /* ---------- requisitos (impulsores, RNF, restricciones, principios) y sus controles: modelo ---------- */
   // m.requirements = [{ id: 'REQ-001', title, kind, detail?, priority?, status, source?, check?: { metric, from?, to?, target?, cls?, jur? }, links?: { decisions?, nodes?, edges?, groups? } }]
@@ -3326,7 +3449,7 @@
   }
 
   // Además de guardar, refresca el aviso de "cambios sin guardar" de la versión abierta
-  const save = debounce(() => { store.set('model', S.model); updateMeta(); renderVersions(); renderAdr(); renderReq(); }, 250);
+  const save = debounce(() => { store.set('model', S.model); updateMeta(); renderVersions(); renderAdr(); renderReq(); renderRaid(); }, 250);
 
   const ORDER = {
     group: ['id', 'label', 'icon', 'color', 'parent', 'kind', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'controls', 'in'],
@@ -3335,7 +3458,8 @@
     note: ['id', 'x', 'y', 'w', 'h', 'text', 'color', 'in'],
     zone: ['id', 'x', 'y', 'w', 'h', 'label', 'severity', 'desc', 'kind', 'trust', 'in'],
     requirement: ['id', 'title', 'kind', 'detail', 'priority', 'status', 'source', 'check', 'links'],
-    decision: ['id', 'title', 'status', 'date', 'deciders', 'context', 'decision', 'consequences', 'supersededBy', 'area', 'criteria', 'options', 'chosen', 'links', 'history']
+    decision: ['id', 'title', 'status', 'date', 'deciders', 'context', 'decision', 'consequences', 'supersededBy', 'area', 'criteria', 'options', 'chosen', 'links', 'history'],
+    raid: ['id', 'type', 'title', 'detail', 'owner', 'status', 'probability', 'impact', 'mitigation', 'validation', 'due', 'raised', 'links', 'history']
   };
   function serialize(m, full = false) {
     const ordered = (o, keys) => { const r = {}; keys.forEach(k => k in o && (r[k] = o[k])); Object.keys(o).forEach(k => k in r || (r[k] = o[k])); return r; };
@@ -3358,6 +3482,7 @@
     if (m.zones?.length) body.push(arr('zones', m.zones, ORDER.zone));
     if (m.decisions?.length) body.push(arr('decisions', m.decisions, ORDER.decision));
     if (m.requirements?.length) body.push(arr('requirements', m.requirements, ORDER.requirement));
+    if (m.raid?.length) body.push(arr('raid', m.raid, ORDER.raid));
     // El archivo exportado lleva también las versiones; el editor JSON no las muestra
     if (full && m.versions?.length) {
       if (m.active) body.push(`  "active": ${JSON.stringify(m.active)}`);
@@ -3409,6 +3534,7 @@
       if (!Array.isArray(raw.notes)) raw = { ...raw, notes: S.model.notes };
       if (!Array.isArray(raw.zones)) raw = { ...raw, zones: S.model.zones };
       if (!Array.isArray(raw.requirements) && S.model.requirements) raw = { ...raw, requirements: S.model.requirements }; // igual que las decisiones: el texto siempre las trae; el JSON, si omite la clave, las conserva
+      if (!Array.isArray(raw.raid)) raw = { ...raw, raid: S.model.raid };   // el texto siempre trae el registro RAID; el JSON, si omite la clave, lo conserva
       if (!Array.isArray(raw.decisions)) raw = { ...raw, decisions: S.model.decisions }; // el texto siempre trae las decisiones (ADR; borrarlas del texto las borra); el JSON, si omite la clave, las conserva
     }
     S.model = normalize(raw);
@@ -3428,6 +3554,7 @@
     renderInspector();
     renderAdr(true);
     renderReq(true);
+    renderRaid(true);
     save();
     updateUndoButtons();
     if (opts.fit) fitView(opts.fit !== 'instant');
@@ -3438,6 +3565,7 @@
     if (S.path) clearPath();
     if (S.model.decisions?.length) pruneAdrLinks();
     if (S.model.requirements?.length) pruneReqLinks();
+    if (S.model.raid?.length) pruneRaidLinks();
     if (structural) render(false); else { updateGeometry(); applyCompare(); }
     syncEditor();
     save();
@@ -4331,7 +4459,7 @@
     const v = findVersion(id);
     if (!v) return;
     S.sel = null;
-    setModel({ ...clone(v.diagram), versions: S.model.versions, active: v.id, decisions: S.model.decisions, requirements: S.model.requirements }, { history: true });
+    setModel({ ...clone(v.diagram), versions: S.model.versions, active: v.id, decisions: S.model.decisions, requirements: S.model.requirements, raid: S.model.raid }, { history: true });
     toast(T('ver.opened', { name: verLabel(v) }));
   }
   async function deleteVersion(id, { force } = {}) {
@@ -5355,6 +5483,7 @@
         ${secField(t)}
         ${cmpField(t, 'node')}
         ${reviewField(t)}
+        ${raidField(t)}
         ${adrField(t)}
         <label>${T('insp.desc')}<textarea data-field="desc" rows="3" placeholder="${esc(T('insp.desc.ph'))}">${esc(t.desc || '')}</textarea></label>
         <div class="field">${T('insp.reach')}<div class="seg">${modes.map(([k, l]) => `<button data-reach="${k}" class="${S.reach === k ? 'on' : ''}">${l}</button>`).join('')}</div></div>
@@ -5385,6 +5514,7 @@
         ${dsField(t)}
         ${xferField(t)}
         ${strideField(t)}
+        ${raidField(t)}
         ${adrField(t)}
         <div class="field">${T('insp.color')}${swatches(t.color)}</div>
         <div class="conns"><div class="conn-title">${T('insp.ends')}</div>
@@ -5432,6 +5562,7 @@
         <div class="field">${T('insp.color')}${swatches(t.color)}</div>
         ${govField(t, 'group')}
         ${cmpField(t, 'group')}
+        ${raidField(t)}
         ${adrField(t)}
         <div class="insp-actions"><button class="btn danger" data-act="delete">${T('insp.deleteGroup')}</button></div>`;
     }
@@ -6019,6 +6150,7 @@
     if (t.dataset.tab === 'review') renderFindings();
     else if (t.dataset.tab === 'adr') renderAdr(true);
     else if (t.dataset.tab === 'req') renderReq(true);
+    else if (t.dataset.tab === 'raid') renderRaid(true);
   }));
 
   function codeBox(box, apply) {
@@ -6690,7 +6822,7 @@
   // reportData() arma un modelo plano (secciones de bloques) y dos dibujantes lo pintan: reportMarkdown y reportHTML, así que los dos formatos no se desincronizan.
   // Bloques: { k: 'h3', t } · { k: 'p', t, muted? } · { k: 'kv', items: [[k, v]] } · { k: 'cards', items: [{ label, value, tone? }] }
   //          { k: 'table', head: [], rows: [[celda]], cls? } (celda = texto | { t, tone }) · { k: 'text', label, t } · { k: 'ul', items } · { k: 'img', alt, caption, svg?, uri?, file? }
-  const REP_SECS = ['summary', 'diagram', 'components', 'connections', 'data', 'owners', 'layers', 'costs', 'resilience', 'findings', 'compliance', 'threats', 'decisions', 'requirements', 'versions', 'notes'];
+  const REP_SECS = ['summary', 'diagram', 'components', 'connections', 'data', 'owners', 'layers', 'costs', 'resilience', 'findings', 'compliance', 'threats', 'decisions', 'requirements', 'raid', 'versions', 'notes'];
   const REP_PAGE = ['diagram', 'components', 'findings', 'decisions']; // secciones que empiezan página al imprimir
   const repT = (k, v) => T(`rep.${k}`, v);
   const repSleep = ms => new Promise(r => setTimeout(r, ms));
@@ -6711,6 +6843,7 @@
       data: m.nodes.some(n => dataClassesOf(n, m).length || regionOf(n, m).value), owners: govTeamList(m).length > 0,
       layers: m.nodes.some(n => layerOf(n).value), costs: m.nodes.some(hasCost), resilience: m.nodes.some(hasRes) || spofList(m).length > 0, findings: findingsOf(m).length > 0,
       compliance: cmpModel(m).keys.length > 0, threats: strideAll(m).length > 0, decisions: !!m.decisions?.length, requirements: !!m.requirements?.length,
+      raid: !!m.raid?.length,
       versions: m.versions.length > 0, notes: (m.notes || []).length > 0 || (m.zones || []).some(z => z.kind !== 'trust')
     };
   }
@@ -6923,6 +7056,32 @@
         rows: rs.map(r => [r.id, r.title, T(`req.kind.${r.kind}`), r.priority ? T(`req.pr.${r.priority}`) : '', T(`req.st.${r.status}`), cov(r), res(r)]) }];
       rs.filter(r => r.detail || r.source).forEach(r => blocks.push({ k: 'text', label: `${r.id} · ${r.title}${r.source ? ` (${T('req.f.source')}: ${r.source})` : ''}`, t: r.detail || '' }));
       sec('requirements', blocks);
+    }
+    if (want('raid')) {
+      // Resumen, mapa de calor (riesgos con puntaje) y una tabla por tipo; la columna de detalle solo aparece si algún item la trae
+      const rd = m.raid, now = today(), sm = raidSummary(m, now), tone = lv => `sev-${lv}`;
+      const lk = l => [...(l?.decisions || []), ...(l?.requirements || []), ...(l?.nodes || []).map(nm), ...(l?.edges || []).map(id => { const e = m.edges.find(x => x.id === id); return e ? edgeName(e) : id; }), ...(l?.groups || []).map(id => groupById(id)?.label || id)].join(', ');
+      const parts = [sm.risks && T('raid.sum.risks', sm), sm.toValidate && T('raid.sum.validate', sm.toValidate), sm.overdue && T('raid.sum.overdue', sm.overdue)].filter(Boolean);
+      const blocks = parts.length ? [{ k: 'p', t: parts.join(' · ') }] : [];
+      const g = raidHeat(rd);
+      if (rd.some(x => raidScore(x))) {
+        blocks.push({ k: 'h3', t: T('raid.heat') });
+        blocks.push({ k: 'table', cls: 'compact', head: [`${T('raid.f.impact')} ↓ / ${T('raid.f.prob')} →`, 1, 2, 3, 4, 5].map(String), rows: [5, 4, 3, 2, 1].map(i => [`${i} · ${T(`raid.scale.${i}`)}`, ...[1, 2, 3, 4, 5].map(p => { const n = g[i - 1][p - 1]; return n ? { t: String(n), tone: tone(raidLevel(p * i)) } : ''; })]) });
+      }
+      RAID_TYPES.forEach(t => {
+        const l = rd.filter(x => x.type === t);
+        if (!l.length) return;
+        const dt = l.some(x => x.detail), late = x => (raidLate(x) ? 'sev-high' : '');
+        blocks.push({ k: 'h3', t: `${T(`raid.type.${t}`)} (${l.length})` });
+        const base = x => [x.id, x.title, x.owner || ''], tail = x => [lk(x.links), ...(dt ? [x.detail || ''] : [])], dtH = dt ? [T('raid.f.detail')] : [];
+        if (t === 'risk') blocks.push({ k: 'table', cls: 'wide', head: [T('raid.f.id'), T('raid.f.title'), T('raid.f.owner'), T('raid.f.prob'), T('raid.f.impact'), T('raid.f.score'), T('raid.f.status'), T('raid.f.mit'), T('raid.f.links'), ...dtH],
+          rows: l.map(x => { const sc = raidScore(x); return [...base(x), x.probability ? String(x.probability) : '', x.impact ? String(x.impact) : '', sc ? { t: String(sc), tone: tone(raidLevel(sc)) } : '', T(`raid.st.${x.status}`), x.mitigation || '', ...tail(x)]; }) });
+        else if (t === 'assumption') blocks.push({ k: 'table', cls: 'wide', head: [T('raid.f.id'), T('raid.f.title'), T('raid.f.owner'), T('raid.f.validation'), T('raid.f.due.a'), T('raid.hist'), T('raid.f.links'), ...dtH],
+          rows: l.map(x => { const h = (x.history || [])[(x.history || []).length - 1]; return [...base(x), { t: T(`raid.st.${x.validation}`), tone: x.validation === 'invalidated' ? 'sev-high' : x.validation === 'validated' ? 'sev-low' : '' }, { t: fmtDay(x.due), tone: late(x) }, h ? [fmtDay(h.date), h.by].filter(Boolean).join(' · ') : '', ...tail(x)]; }) });
+        else blocks.push({ k: 'table', cls: 'wide', head: [T('raid.f.id'), T('raid.f.title'), T('raid.f.owner'), T('raid.f.status'), T('raid.f.due.n'), T('raid.f.links'), ...dtH],
+          rows: l.map(x => [...base(x), T(`raid.st.${x.status}`), { t: fmtDay(x.due), tone: late(x) }, ...tail(x)]) });
+      });
+      sec('raid', blocks);
     }
 
     if (want('versions')) {
@@ -7239,6 +7398,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
   const INV_OWNER = [['team'], ['owners'], ['stewards'], ['components', 'int'], ['monthly', 'money']];
   const INV_ADR = [['id'], ['title'], ['status'], ['date'], ['links']];
   const INV_REQ = [['id'], ['title'], ['kind'], ['priority'], ['status'], ['source'], ['coveredBy'], ['check'], ['result']];
+  const INV_RAID = [['id'], ['type'], ['title'], ['status'], ['owner'], ['probability'], ['impact'], ['score'], ['mitigation'], ['due'], ['raised'], ['links'], ['detail']];
   const INV_FIND = [['severity'], ['source'], ['rule'], ['title'], ['target'], ['dismissed'], ['reason']];
   const INV_VER = [['name'], ['env'], ['status'], ['author'], ['created'], ['updated'], ['decidedOn']];
   const invYN = v => T(v ? 'sec.yes' : 'sec.no');
@@ -7319,6 +7479,11 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     }
     if (m.requirements?.length) {   // Requisitos: cubierto por, control y su resultado
       out.push(mk('requirements', INV_REQ, m.requirements.map(r => { const c = r.check && reqCheck(r, m); return [r.id, r.title, T(`req.kind.${r.kind}`), r.priority ? T(`req.pr.${r.priority}`) : '', T(`req.st.${r.status}`), r.source || '', reqCoveredBy(r, m), r.check ? reqCheckText(r) : '', c ? `${T(`req.chk.${c.state}`)}${c.detail ? ` · ${c.detail}` : ''}` : '']; })));
+    }
+    // Registro RAID
+    if (m.raid?.length) {
+      const rl = l => [...(l?.decisions || []), ...(l?.requirements || []), links(l)].filter(Boolean).join('; ');
+      out.push(mk('raid', INV_RAID, m.raid.map(x => [x.id, T(`raid.type1.${x.type}`), x.title, T(`raid.st.${raidState(x)}`), x.owner || '', x.probability ?? '', x.impact ?? '', raidScore(x) || '', x.mitigation || '', x.due || '', x.raised || '', rl(x.links), x.detail || ''])));
     }
     // Hallazgos (abiertos y descartados)
     const tl = t => { const o = (t.kind === 'node' ? m.nodes : t.kind === 'edge' ? m.edges : t.kind === 'group' ? m.groups : t.kind === 'zone' ? m.zones || [] : []).find(x => x.id === t.id); return !o ? t.id : t.kind === 'edge' ? `${nm(o.from)} → ${nm(o.to)}` : o.label || t.id; };
@@ -8061,6 +8226,8 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
       ${adrMark(d, cmp)}
       ${reqChipsFor(d.id)}
       ${!on && links.length ? `<div class="adr-links">${links.map(l => goChip(l, false)).join('')}</div>` : ''}
+      ${raidBanner(d)}
+      ${raidChipsFor(d.id)}
       ${form}
     </div>`;
   }
@@ -8177,6 +8344,238 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     }
     if (d0.adr === 'del' && await confirmBox({ title: T('adr.cf.title', d.id), text: T('adr.cf.text', adrTitle(d)), ok: T('adr.delete'), cancel: T('ver.cf.cancel'), danger: true })) removeDecision(d.id);
   });
+
+  /* ---------- registro RAID: crear/cambiar/borrar, pestaña, enlaces, inspector y ficha de ADR ---------- */
+  const RAID = { open: null, type: 'all', st: '', q: '', cell: null };   // ficha abierta, filtros por tipo, estado y búsqueda, celda del mapa de calor ({ p, i })
+  const raidTitle = it => it.title || it.id;
+  const raidStateLabel = it => T(`raid.st.${raidState(it)}`);
+  const raidKinds = ['decisions', 'requirements', 'nodes', 'edges', 'groups'];
+  const raidLate = it => !!it.due && it.due < today() && (it.type === 'assumption' ? it.validation === 'pending' : it.type !== 'risk' && it.status === 'open');
+  function raidLinkLabel(kind, id) {
+    if (kind === 'decisions') { const d = adrById(id); return d ? `${d.id} · ${adrTitle(d)}` : id; }
+    if (kind === 'requirements') { const r = (S.model.requirements || []).find(x => x.id === id); return r ? [r.id, r.title].filter(Boolean).join(' · ') : id; }
+    return adrLinkLabel(kind, id);
+  }
+  const raidLinkList = it => raidKinds.flatMap(k => (it.links?.[k] || []).map(id => ({ kind: k, id, label: raidLinkLabel(k, id) || id })));
+  const raidChips = list => (list.length ? `<div class="raid-chips">${list.map(x => `<button type="button" class="raid-chip" data-raid-open="${esc(x.id)}" style="--s:${RAID_TYPE_COLOR[x.type]}" title="${esc(`${x.id} · ${raidTitle(x)} · ${raidStateLabel(x)}`)}"><b>${esc(x.id)}</b> ${esc(x.title)}</button>`).join('')}</div>` : '');
+  // Ficha de ADR: items del registro que enlazan a la decisión, y aviso rojo si la sostiene un supuesto invalidado
+  const raidChipsFor = did => { const l = raidOf('decisions', did); return l.length ? `<div class="raid-row"><span>${esc(T('raid.chips'))}</span>${raidChips(l)}</div>` : ''; };
+  function raidBanner(d) {
+    if (d.status !== 'accepted' && d.status !== 'proposed') return '';
+    const bad = raidOf('decisions', d.id).filter(x => x.type === 'assumption' && x.validation === 'invalidated').map(x => x.id);
+    return bad.length ? `<div class="raid-warn" role="alert"><span>${esc(T('raid.banner', bad.join(', ')))}</span>${d.status === 'accepted' ? `<button type="button" class="btn small" data-raid-reopen="${esc(bad.join(', '))}">${esc(T('raid.reopen'))}</button>` : ''}</div>` : '';
+  }
+  // Inspector del nodo, conexión o grupo: una fila compacta, solo si hay items enlazados
+  const raidField = t => { const kind = adrKindOfSel(), l = kind ? raidOf(kind, t.id) : []; return l.length ? `<div class="field raid-field">${T('raid.field')}${raidChips(l)}</div>` : ''; };
+
+  // Crear, cambiar y borrar: todo pasa por cleanRaid, así tipo, campos y enlaces siempre quedan coherentes
+  function addRaid(p = {}) {
+    p = p && typeof p === 'object' ? p : {};
+    if ((S.model.raid || []).length >= RAID_MAX) { toast(T('adr.max', RAID_MAX)); return ''; }
+    const type = raidType(p.type) || 'risk';
+    pushHistory();
+    const list = cleanRaid([...(S.model.raid || []), { raised: today(), ...p, type, title: p.title || T(`raid.new.${type}`) }], S.model), nd = list[list.length - 1];
+    S.model.raid = list;
+    changed(true); renderInspector(); renderAdr(true); renderRaid(true);
+    return nd.id;
+  }
+  function updateRaid(id, patch) {
+    const it = raidById(id);
+    if (!it || !patch || typeof patch !== 'object') return false;
+    pushHistory();
+    const list = cleanRaid(S.model.raid.map(x => (x === it ? { ...it, ...patch, id: it.id, type: it.type } : x)), S.model), nd = list.find(x => x.id === it.id);
+    if (nd && nd.type === 'assumption' && nd.validation !== it.validation) {   // cambió la validación: se anota con la fecha de hoy y el autor
+      const e = { validation: nd.validation, date: today() }, by = adrAuthor();
+      if (by) e.by = by;
+      nd.history = [...(nd.history || []), e].slice(-100);
+    }
+    S.model.raid = list;
+    changed(true); renderInspector(); renderAdr(true); renderRaid(true);
+    return true;
+  }
+  function removeRaid(id) {
+    if (!raidById(id)) return false;
+    pushHistory();
+    S.model.raid = cleanRaid(S.model.raid.filter(x => x.id !== id), S.model);
+    if (RAID.open === id) RAID.open = null;
+    changed(true); renderInspector(); renderAdr(true); renderRaid(true);
+    return true;
+  }
+  const validateAssumption = (id, ok) => (raidById(id)?.type === 'assumption' ? updateRaid(id, { validation: ok ? 'validated' : 'invalidated' }) : false);
+  // «Reabrir decisión»: vuelve a «propuesta» con una nota en su historial
+  function raidReopen(did, ids) {
+    const d = adrById(did);
+    if (!d || d.status !== 'accepted') return false;
+    updateDecision(did, { status: 'proposed' });
+    const nd = adrById(did), h = nd?.history?.[nd.history.length - 1];
+    if (h) { h.note = T('raid.reopen.note', ids); syncEditor(); save(); renderAdr(true); }
+    return true;
+  }
+  // Enlaces de la selección actual (como adrSelLinks) y alta de enlaces
+  const raidAddLinks = (it, add) => { const l = {}; raidKinds.forEach(k => { const v = [...(it.links?.[k] || []), ...(add[k] || [])]; if (v.length) l[k] = v; }); return l; };
+
+  /* pestaña */
+  const raidPanel = $('#raid-panel');
+  const raidFilterQ = it => !RAID.q || [it.id, it.title, it.detail, it.owner, it.mitigation].some(x => String(x || '').toLowerCase().includes(RAID.q.toLowerCase()));
+  const raidMatches = (it, noCell) => (RAID.type === 'all' || it.type === RAID.type) && (!RAID.st || raidState(it) === RAID.st) && raidFilterQ(it)
+    && (noCell || !RAID.cell || (it.type === 'risk' && it.probability === RAID.cell.p && it.impact === RAID.cell.i));
+  function raidHeatHtml() {
+    const g = raidHeat((S.model.raid || []).filter(x => raidMatches(x, true))), cell = (p, i) => {
+      const n = g[i - 1][p - 1], lv = raidLevel(p * i), on = RAID.cell && RAID.cell.p === p && RAID.cell.i === i;
+      return `<button type="button" class="raid-cell${n ? ' has' : ''}${on ? ' on' : ''}" data-raid-cell="${p},${i}" style="--s:${RAID_LEVEL_COLOR[lv]}" aria-pressed="${on}" aria-label="${esc(T('raid.heat.cell', { p, i, n }))}" title="${esc(T('raid.heat.cell', { p, i, n }))}">${n || ''}</button>`;
+    };
+    const rows = [5, 4, 3, 2, 1].map(i => `<span class="raid-ax">${i}</span>${[1, 2, 3, 4, 5].map(p => cell(p, i)).join('')}`).join('');
+    return `<div class="raid-heat" role="group" aria-label="${esc(T('raid.heat'))}"><div class="raid-heat-t">${esc(T('raid.heat'))} <small>${esc(T('raid.heat.axes'))}</small></div><div class="raid-heat-g">${rows}<span></span>${[1, 2, 3, 4, 5].map(p => `<span class="raid-ax">${p}</span>`).join('')}</div></div>`;
+  }
+  function renderRaidBar() {
+    const all = S.model.raid || [], now = today(), sm = raidSummary(S.model, now);
+    const n = t => all.filter(x => x.type === t).length;
+    const chip = (attr, k, on, label, c, color) => `<button class="fnd-chip${on ? ' on' : ''}" ${attr}="${k}" aria-pressed="${on}" style="--s:${color}">${esc(label)} <b>${c}</b></button>`;
+    const parts = [];
+    if (sm.risks) parts.push(`<span>${esc(T('raid.sum.risks', sm))}</span>`);
+    if (sm.toValidate) parts.push(`<span>${esc(T('raid.sum.validate', sm.toValidate))}</span>`);
+    if (sm.overdue) parts.push(`<span class="raid-late">${esc(T('raid.sum.overdue', sm.overdue))}</span>`);
+    const states = [...new Set(all.filter(x => RAID.type === 'all' || x.type === RAID.type).map(raidState))];
+    if (RAID.st && !states.includes(RAID.st)) RAID.st = '';
+    if (RAID.cell && RAID.type !== 'risk') RAID.cell = null;
+    $('#raid-bar').innerHTML = `<div class="raid-tools">${RAID_TYPES.map(t => `<button class="btn small${t === 'risk' ? ' primary' : ''}" data-raid-add="${t}" title="${esc(T(`raid.new.${t}`))}">+ ${esc(T(`raid.type1.${t}`))}</button>`).join('')}</div>
+      ${all.length ? `<div class="raid-sum" aria-live="polite">${parts.length ? parts.join(' · ') : esc(T('raid.sum.none'))}</div>
+      <div class="fnd-chips raid-types" role="group" aria-label="${esc(T('raid.filter'))}">${chip('data-raid-type', 'all', RAID.type === 'all', T('raid.type.all'), all.length, 'var(--accent)')}${RAID_TYPES.filter(t => n(t) || RAID.type === t).map(t => chip('data-raid-type', t, RAID.type === t, T(`raid.type.${t}`), n(t), RAID_TYPE_COLOR[t])).join('')}</div>
+      ${RAID.type === 'risk' ? raidHeatHtml() : ''}
+      ${states.length > 1 ? `<div class="fnd-chips" role="group" aria-label="${esc(T('raid.f.status'))}">${states.map(s => chip('data-raid-st', s, RAID.st === s, T(`raid.st.${s}`), all.filter(x => (RAID.type === 'all' || x.type === RAID.type) && raidState(x) === s).length, RAID_COLOR[s])).join('')}</div>` : ''}
+      <input class="search" id="raid-q" style="padding-left:10px;margin-bottom:6px" value="${esc(RAID.q)}" placeholder="${esc(T('raid.search'))}" aria-label="${esc(T('raid.search'))}" autocomplete="off">` : ''}`;
+  }
+  function renderRaid(force) {
+    if (!raidPanel || !S.model || !$('.pane[data-pane="raid"]')?.classList.contains('on')) return;
+    const a = document.activeElement;
+    if (!force && a && raidPanel.contains(a) && a.matches('input, textarea, select')) return;   // no pisar lo que se está escribiendo
+    if (RAID.open && !raidById(RAID.open)) RAID.open = null;
+    renderRaidBar();
+    renderRaidList();
+  }
+  const raidSel = (attrs, cur, items, label) => `<select ${attrs} aria-label="${esc(label)}">${items.map(([v, t]) => `<option value="${esc(v)}"${String(v) === String(cur ?? '') ? ' selected' : ''}>${esc(t)}</option>`).join('')}</select>`;
+  const raidScaleOpts = () => [['', '–'], ...[1, 2, 3, 4, 5].map(n => [n, `${n} · ${T(`raid.scale.${n}`)}`])];
+  const raidDueLabel = it => T(it.type === 'assumption' ? 'raid.f.due.a' : 'raid.f.due.n');
+  const raidMeta = it => [it.owner, it.due ? `${raidDueLabel(it)}: ${fmtDay(it.due)}` : '', it.raised ? `${T('raid.f.raised')}: ${fmtDay(it.raised)}` : ''].filter(Boolean).join(' · ');
+  const raidScoreBadge = it => { const s = raidScore(it); return s ? `<span class="raid-score" style="--s:${RAID_LEVEL_COLOR[raidLevel(s)]}" title="${esc(T('raid.f.score'))}: ${s} · ${esc(T(`raid.lvl.${raidLevel(s)}`))}">${s}</span>` : ''; };
+  function raidTimeline(it) {
+    const hs = it.history || [];
+    return hs.length ? `<ol class="raid-hist">${hs.map(h => `<li style="--s:${RAID_COLOR[h.validation]}"><time>${esc(fmtDay(h.date))}</time><span class="raid-pill">${esc(T(`raid.st.${h.validation}`))}</span>${h.by ? `<span class="raid-by">${esc(h.by)}</span>` : ''}${h.note ? `<span>${esc(h.note)}</span>` : ''}</li>`).join('')}</ol>` : `<p class="raid-hint">${esc(T('raid.hist.empty'))}</p>`;
+  }
+  function raidCard(it) {
+    const on = RAID.open === it.id, links = raidLinkList(it), st = raidState(it), late = raidLate(it);
+    const goChip = (l, rm) => `<span class="raid-link"><button type="button" data-raid-go="${l.kind}:${esc(l.id)}" title="${esc(T('raid.go'))}">${esc(T(`raid.kind.${l.kind}`))}: ${esc(l.label)}</button>${rm ? `<button type="button" class="raid-x" data-raid-unlink="${l.kind}:${esc(l.id)}" title="${esc(T('raid.unlink'))}" aria-label="${esc(T('raid.unlink'))}">×</button>` : ''}</span>`;
+    let form = '';
+    if (on) {
+      const freeD = (S.model.decisions || []).filter(d => !it.links?.decisions?.includes(d.id)), freeR = (S.model.requirements || []).filter(r => !it.links?.requirements?.includes(r.id));
+      form = `<div class="raid-form">
+        <label>${esc(T('raid.f.id'))}<input value="${esc(it.id)}" readonly></label>
+        <label>${esc(T('raid.f.title'))}<input data-rf="title" value="${esc(it.title)}" maxlength="200" autocomplete="off"></label>
+        <label>${esc(T('raid.f.detail'))}<textarea data-rf="detail" rows="3" placeholder="${esc(T('raid.f.detail.ph'))}">${esc(it.detail || '')}</textarea></label>
+        <div class="raid-two"><label>${esc(T('raid.f.owner'))}<input data-rf="owner" value="${esc(it.owner || '')}" placeholder="${esc(T('raid.f.owner.ph'))}" maxlength="120" autocomplete="off"></label>
+          <label>${esc(T(it.type === 'assumption' ? 'raid.f.validation' : 'raid.f.status'))}${it.type === 'assumption' ? raidSel('data-rs="validation"', it.validation, RAID_VAL.map(v => [v, T(`raid.st.${v}`)]), T('raid.f.validation')) : raidSel('data-rs="status"', it.status, RAID_STATUS.map(v => [v, T(`raid.st.${v}`)]), T('raid.f.status'))}</label></div>
+        ${it.type === 'risk' ? `<div class="raid-two"><label>${esc(T('raid.f.prob'))}${raidSel('data-rs="probability"', it.probability, raidScaleOpts(), T('raid.f.prob'))}</label><label>${esc(T('raid.f.impact'))}${raidSel('data-rs="impact"', it.impact, raidScaleOpts(), T('raid.f.impact'))}</label></div>
+          ${raidScore(it) ? `<div class="raid-scoreline">${esc(T('raid.f.score'))} ${raidScoreBadge(it)} <span>${esc(T(`raid.lvl.${raidLevel(raidScore(it))}`))}</span></div>` : ''}
+          <label>${esc(T('raid.f.mit'))}<textarea data-rf="mitigation" rows="3" placeholder="${esc(T('raid.f.mit.ph'))}">${esc(it.mitigation || '')}</textarea></label>
+          <label>${esc(T('raid.f.raised'))}<input type="date" data-rf="raised" value="${esc(it.raised || '')}"></label>`
+        : `<div class="raid-two"><label>${esc(raidDueLabel(it))}<input type="date" data-rf="due" value="${esc(it.due || '')}"></label><label>${esc(T('raid.f.raised'))}<input type="date" data-rf="raised" value="${esc(it.raised || '')}"></label></div>`}
+        ${it.type === 'assumption' ? `<div class="raid-row"><button type="button" class="btn small${it.validation === 'validated' ? ' primary' : ''}" data-raid-validate="1" aria-pressed="${it.validation === 'validated'}">✓ ${esc(T('raid.st.validated'))}</button><button type="button" class="btn small${it.validation === 'invalidated' ? ' danger' : ''}" data-raid-validate="0" aria-pressed="${it.validation === 'invalidated'}">✗ ${esc(T('raid.st.invalidated'))}</button></div>
+          <div class="raid-histbox"><span>${esc(T('raid.hist'))}</span>${raidTimeline(it)}</div>` : ''}
+        <div class="raid-links-edit"><span>${esc(T('raid.f.links'))}</span>${links.length ? links.map(l => goChip(l, true)).join('') : `<em>${esc(T('raid.noLinks'))}</em>`}
+          <div class="raid-row"><button class="btn small" data-raid-linksel>${esc(T('raid.linkSel'))}</button>
+          ${freeD.length ? `<select data-raid-linkdec aria-label="${esc(T('raid.linkDec'))}"><option value="">${esc(T('raid.linkDec'))}</option>${freeD.map(d => `<option value="${esc(d.id)}">${esc(`${d.id} · ${adrTitle(d)}`)}</option>`).join('')}</select>` : ''}
+          ${freeR.length ? `<select data-raid-linkreq aria-label="${esc(T('raid.linkReq'))}"><option value="">${esc(T('raid.linkReq'))}</option>${freeR.map(r => `<option value="${esc(r.id)}">${esc([r.id, r.title].filter(Boolean).join(' · '))}</option>`).join('')}</select>` : ''}</div></div>
+        <button class="btn small danger" data-raid-del>${esc(T('raid.delete'))}</button>
+      </div>`;
+    }
+    return `<div class="raid${on ? ' on' : ''}" data-id="${esc(it.id)}" style="--s:${RAID_TYPE_COLOR[it.type]}">
+      <button type="button" class="raid-head" data-raid-toggle aria-expanded="${on}"><b class="raid-id">${esc(it.id)}</b><span class="raid-title">${esc(raidTitle(it))}</span>${raidScoreBadge(it)}<span class="raid-pill" style="--s:${RAID_COLOR[st]}">${esc(raidStateLabel(it))}</span></button>
+      <div class="raid-meta${late ? ' late' : ''}">${esc(raidMeta(it))}</div>
+      ${!on && links.length ? `<div class="raid-links">${links.map(l => goChip(l, false)).join('')}</div>` : ''}
+      ${form}
+    </div>`;
+  }
+  function renderRaidList() {
+    const box = $('#raid-list');
+    if (!box || !S.model) return;
+    const all = S.model.raid || [], shown = all.filter(x => raidMatches(x)), keep = box.parentElement?.scrollTop || 0;
+    box.innerHTML = !all.length ? `<p class="fnd-empty">${esc(T('raid.empty'))}</p>` : shown.length ? shown.map(raidCard).join('') : `<p class="fnd-empty">${esc(T('raid.noMatch'))}</p>`;
+    if (box.parentElement) box.parentElement.scrollTop = keep;
+  }
+  // Abre un item en la pestaña RAID (quita los filtros que lo esconderían)
+  function raidOpen(id) {
+    const it = raidById(id);
+    if (!it) return;
+    RAID.open = id;
+    if (RAID.type !== 'all' && RAID.type !== it.type) RAID.type = 'all';
+    if (RAID.st && RAID.st !== raidState(it)) RAID.st = '';
+    RAID.cell = null; RAID.q = '';
+    $('.tab[data-tab="raid"]')?.click();
+    renderRaid(true);
+    $(`#raid-list .raid[data-id="${CSS.escape(id)}"]`)?.scrollIntoView({ block: 'nearest' });
+    if (matchMedia('(max-width: 760px)').matches) $('#main').classList.add('open');
+  }
+  function raidGo(kind, id) {
+    if (kind === 'decisions') return adrOpen(id);
+    if (kind === 'requirements') return reqOpen(id);
+    focusTarget(kind === 'nodes' ? 'node' : kind === 'edges' ? 'edge' : 'group', id);
+  }
+  // Actualiza la cabecera de una ficha sin repintarla (para no perder el foco al escribir)
+  function raidRefreshHead(card, it) {
+    card.querySelector('.raid-title').textContent = raidTitle(it);
+    card.querySelector('.raid-meta').textContent = raidMeta(it);
+    card.querySelector('.raid-meta').classList.toggle('late', raidLate(it));
+  }
+  raidPanel?.addEventListener('focusin', ev => { if (ev.target.dataset?.rf && ev.target.tagName !== 'SELECT') beginEdit(); });
+  raidPanel?.addEventListener('focusout', ev => { if (ev.target.dataset?.rf) endEdit(); });
+  raidPanel?.addEventListener('input', ev => {
+    const f = ev.target;
+    if (f.id === 'raid-q') { RAID.q = f.value; return renderRaidList(); }
+    const k = f.dataset?.rf, card = f.closest('.raid'), it = k && f.tagName !== 'SELECT' && card && raidById(card.dataset.id);
+    if (!it) return;
+    if ((k === 'due' || k === 'raised') && f.value && !isDay(f.value)) return;
+    markEdit();
+    if (f.value.trim() || k === 'title') it[k] = f.value; else delete it[k];
+    syncEditor(); save();
+    raidRefreshHead(card, it);
+  });
+  raidPanel?.addEventListener('change', ev => {
+    const f = ev.target, card = f.closest('.raid'), it = card && raidById(card.dataset.id);
+    if (!it) return;
+    if (f.dataset.raidLinkdec != null || f.dataset.raidLinkreq != null) { if (f.value) updateRaid(it.id, { links: raidAddLinks(it, f.dataset.raidLinkdec != null ? { decisions: [f.value] } : { requirements: [f.value] }) }); return; }
+    if (f.dataset.rs) return void updateRaid(it.id, { [f.dataset.rs]: f.value });
+    if (f.dataset.rf) { changed(true); renderInspector(); renderRaidBar(); }
+  });
+  raidPanel?.addEventListener('click', async ev => {
+    const b = ev.target.closest('button');
+    if (!b) return;
+    const d0 = b.dataset, card = b.closest('.raid'), it = card && raidById(card.dataset.id);
+    if (d0.raidAdd) { RAID.q = ''; RAID.st = ''; RAID.cell = null; if (RAID.type !== 'all') RAID.type = d0.raidAdd; const id = addRaid({ type: d0.raidAdd }); return id ? raidOpen(id) : undefined; }
+    if (d0.raidType != null) { RAID.type = d0.raidType; RAID.cell = null; return renderRaid(true); }
+    if (d0.raidSt != null) { RAID.st = RAID.st === d0.raidSt ? '' : d0.raidSt; return renderRaid(true); }
+    if (d0.raidCell != null) { const [p, i] = d0.raidCell.split(',').map(Number); RAID.cell = RAID.cell && RAID.cell.p === p && RAID.cell.i === i ? null : { p, i }; return renderRaid(true); }
+    if (d0.raidOpen) return raidOpen(d0.raidOpen);
+    if (d0.raidGo) { const [k, ...r] = d0.raidGo.split(':'); return raidGo(k, r.join(':')); }
+    if (d0.raidToggle != null && it) { RAID.open = RAID.open === it.id ? null : it.id; return renderRaid(true); }
+    if (!it) return;
+    if (d0.raidValidate != null) return void validateAssumption(it.id, d0.raidValidate === '1');
+    if (d0.raidUnlink) { const [k, ...r] = d0.raidUnlink.split(':'), id = r.join(':'); return void updateRaid(it.id, { links: { ...it.links, [k]: (it.links?.[k] || []).filter(x => x !== id) } }); }
+    if (d0.raidLinksel != null) {
+      const s = S.sel, l = !s ? null : s.kind === 'node' ? { nodes: [s.id] } : s.kind === 'multi' ? { nodes: [...s.ids] } : s.kind === 'edge' ? { edges: [s.id] } : s.kind === 'group' ? { groups: [s.id] } : null;
+      if (!l) return toast(T('adr.noSel'));
+      return void updateRaid(it.id, { links: raidAddLinks(it, l) });
+    }
+    if (d0.raidDel != null && await confirmBox({ title: T('raid.cf.title', it.id), text: T('raid.cf.text', raidTitle(it)), ok: T('raid.delete'), cancel: T('ver.cf.cancel'), danger: true })) removeRaid(it.id);
+  });
+  // Chips de RAID en la ficha de ADR (abrir el item, reabrir la decisión) y en el inspector
+  adrPanel?.addEventListener('click', ev => {
+    const b = ev.target.closest('[data-raid-open], [data-raid-reopen]');
+    if (!b) return;
+    if (b.dataset.raidOpen) return raidOpen(b.dataset.raidOpen);
+    const did = b.closest('.adr')?.dataset.id;
+    if (did) raidReopen(did, b.dataset.raidReopen);
+  });
+  $('#inspector').addEventListener('click', ev => { const b = ev.target.closest('[data-raid-open]'); if (b) raidOpen(b.dataset.raidOpen); });
 
   /* inspector (nodo, conexión y grupo) y filas de versiones */
   const adrKindOfSel = () => ({ node: 'nodes', edge: 'edges', group: 'groups' })[S.sel?.kind];
@@ -8657,6 +9056,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     inventory: () => inventoryRows(S.model).map(r => ({ ...r })), exportInventory: (kind = 'xlsx') => exportInventory(['csv', 'csv-all'].includes(kind) ? kind : 'xlsx'),
     decisions: () => clone(S.model.decisions || []), compareDecisions: id => { const v = S.model.versions.find(x => x.id === id); return v && Array.isArray(v.decisions) ? diffDecisions(v.decisions, S.model.decisions || []) : null; }, addDecision, updateDecision, removeDecision, exportDecisions,
     addDecisionKit: id => addDecisionKit(id), decisionKits: () => adrKits().map(k => ({ id: k.id, name: loc(k.name), desc: loc(k.desc), decisions: k.decisions.length })),
+    raid: () => clone(S.model.raid || []), addRaid, updateRaid, removeRaid, validateAssumption,
     adrScore: id => { const d = adrById(id); return d ? { options: Object.fromEntries((d.options || []).map(o => [o.id, adrScore(d, o)])), leader: adrLeader(d) || null, chosen: d.chosen || null } : null; },
     requirements: () => clone(S.model.requirements || []), addRequirement, updateRequirement, removeRequirement, checkRequirement,
     setScope: id => setScope(id), get scope() { return S.scope; }, scopes: () => scopeList().map(x => ({ ...x, path: [...x.path] })), exportLevels,

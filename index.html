@@ -770,6 +770,61 @@
   .req-mx-box.wide { position: fixed; inset: 6vh 4vw; z-index: 60; overflow: auto; align-content: start; grid-auto-rows: max-content; padding: 16px; border-radius: 12px; background: var(--surface); box-shadow: 0 24px 70px rgba(0,0,0,.45); }
   .req-mx-box.wide .req-mx { width: 100%; font-size: 13px; } .req-mx-box.wide .req-mx-r { min-width: 200px; max-width: 320px; }
   .req-back { position: fixed; inset: 0; z-index: 59; background: rgba(0,0,0,.45); }
+  /* Registro RAID (riesgos, supuestos, problemas, dependencias): pestaña, mapa de calor, fichas y chips (ADR e inspector) */
+  .raid-tools { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+  .raid-tools .btn { flex: none; }
+  .raid-sum { margin: 0 0 8px; font-size: 11.5px; font-weight: 650; color: var(--muted); }
+  .raid-late { color: var(--p-coral); }
+  .raid-types { margin-bottom: 6px; }
+  .raid-heat { margin: 2px 0 8px; padding: 8px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
+  .raid-heat-t { margin-bottom: 5px; font-size: 11.5px; font-weight: 700; } .raid-heat-t small { font-weight: 500; color: var(--muted); }
+  .raid-heat-g { display: grid; grid-template-columns: 16px repeat(5, minmax(0, 1fr)); gap: 3px; align-items: center; }
+  .raid-ax { text-align: center; font-size: 10px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .raid-cell { height: 28px; min-width: 0; padding: 0; border-radius: 6px; font: 700 11.5px var(--font); color: var(--text); cursor: pointer; background: color-mix(in srgb, var(--s) 14%, transparent); border: 1px solid color-mix(in srgb, var(--s) 35%, transparent); }
+  .raid-cell.has { background: color-mix(in srgb, var(--s) 42%, transparent); }
+  .raid-cell:hover { border-color: var(--s); }
+  .raid-cell.on { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .raid { margin-bottom: 8px; padding: 9px 11px 9px 15px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); position: relative; overflow: hidden; }
+  .raid::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 4px; background: var(--s, var(--muted)); }
+  .raid.on { border-color: color-mix(in srgb, var(--s) 55%, var(--border)); }
+  .raid-head { display: flex; align-items: center; gap: 7px; width: 100%; padding: 0; border: 0; background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+  .raid-id { font-size: 11.5px; font-variant-numeric: tabular-nums; color: var(--muted); flex: none; }
+  .raid-title { flex: 1; min-width: 0; font-size: 13px; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .raid.on .raid-title { white-space: normal; }
+  .raid-pill { flex: none; padding: 1px 8px; border-radius: 999px; font-size: 10.5px; font-weight: 750; color: var(--s); background: color-mix(in srgb, var(--s) 14%, transparent); border: 1px solid color-mix(in srgb, var(--s) 40%, transparent); }
+  .raid-score { flex: none; min-width: 20px; padding: 1px 5px; border-radius: 6px; text-align: center; font-size: 10.5px; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--text); background: color-mix(in srgb, var(--s) 40%, transparent); }
+  .raid-scoreline { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--muted); }
+  .raid-meta { margin-top: 2px; font-size: 11.5px; color: var(--muted); } .raid-meta:empty { display: none; } .raid-meta.late { color: var(--p-coral); }
+  .raid-links, .raid-chips, .raid-links-edit { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+  .raid-links-edit > span { flex: 0 0 100%; font-size: 11px; font-weight: 650; color: var(--muted); }
+  .raid-links-edit > em { font-size: 11.5px; color: var(--muted); }
+  .raid-link { display: inline-flex; max-width: 100%; border: 1px solid var(--border); border-radius: 999px; background: var(--surface2); overflow: hidden; }
+  .raid-link button { padding: 1px 9px; border: 0; background: none; color: var(--text); font: inherit; font-size: 11.5px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .raid-link button:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+  .raid-link .raid-x { padding: 1px 7px 1px 4px; color: var(--muted); } .raid-link .raid-x:hover { color: var(--p-coral); background: none; }
+  .raid-chip { max-width: 100%; padding: 1px 9px; border-radius: 999px; font: inherit; font-size: 11.5px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); background: color-mix(in srgb, var(--s, var(--muted)) 12%, transparent); border: 1px solid color-mix(in srgb, var(--s, var(--muted)) 45%, transparent); }
+  .raid-chip:hover { background: color-mix(in srgb, var(--s, var(--muted)) 24%, transparent); }
+  .raid-chip b { color: var(--s, var(--muted)); font-variant-numeric: tabular-nums; }
+  .raid-field .raid-chips { margin: 5px 0 6px; }
+  .raid-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; flex: 0 0 100%; min-width: 0; }
+  .raid-row > span { flex: 0 0 100%; font-size: 11px; font-weight: 650; color: var(--muted); }
+  .raid-row .raid-chips { margin-top: 0; }
+  .raid-row select { flex: 1; min-width: 0; max-width: 100%; height: 28px; padding: 0 6px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface2); color: var(--text); font: 12px var(--font); }
+  .adr > .raid-row { margin-top: 6px; }
+  .raid-warn { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 6px; padding: 6px 9px; border-radius: 8px; font-size: 11.5px; font-weight: 650; color: var(--p-coral); background: color-mix(in srgb, var(--p-coral) 12%, transparent); border: 1px solid color-mix(in srgb, var(--p-coral) 50%, transparent); }
+  .raid-warn span { flex: 1; min-width: 0; }
+  .raid-form { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; margin-top: 9px; padding-top: 9px; border-top: 1px dashed var(--border); }
+  .raid-form label { display: grid; gap: 4px; font-size: 11px; font-weight: 650; color: var(--muted); }
+  .raid-form input, .raid-form select, .raid-form textarea { width: 100%; min-width: 0; box-sizing: border-box; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface2); color: var(--text); font: 12.5px var(--font); }
+  .raid-form input[readonly] { opacity: .65; }
+  .raid-form input:focus, .raid-form select:focus, .raid-form textarea:focus { outline: none; border-color: var(--s); }
+  .raid-form .raid-row select { width: auto; }
+  .raid-two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .raid-hint { margin: 0; font-size: 11.5px; color: var(--muted); }
+  .raid-histbox > span { font-size: 11.5px; color: var(--muted); }
+  .raid-hist { list-style: none; margin: 4px 0; padding: 0; display: flex; flex-direction: column; gap: 3px; font-size: 11.5px; }
+  .raid-hist li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+  .raid-hist time { color: var(--muted); font-variant-numeric: tabular-nums; } .raid-by { color: var(--muted); }
 </style>
 
 <!-- Estilos del diagrama. También se incrustan al exportar SVG/PNG. -->
@@ -1236,6 +1291,7 @@
         <button class="tab" data-tab="review"><span data-i18n="tab.review"></span><b class="tab-badge" id="review-badge" hidden></b></button>
         <button class="tab" data-tab="adr" data-i18n="tab.adr" data-i18n-title="tab.adr.tip"></button>
         <button class="tab" data-tab="req" data-i18n="tab.req" data-i18n-title="tab.req.tip"></button>
+        <button class="tab" data-tab="raid" data-i18n="tab.raid" data-i18n-title="tab.raid.tip"></button>
         <button class="tab" data-tab="text" data-i18n="tab.text"></button>
         <button class="tab" data-tab="code" data-i18n="tab.json"></button>
       </div>
@@ -1256,6 +1312,7 @@
       <div class="pane" data-pane="review"><div id="review-panel"></div></div>
       <div class="pane" data-pane="adr"><div id="adr-panel"><div id="adr-bar"></div><div id="adr-list"></div></div></div>
       <div class="pane" data-pane="req"><div id="req-panel"><div id="req-bar"></div><div id="req-list"></div></div></div>
+      <div class="pane" data-pane="raid"><div id="raid-panel"><div id="raid-bar"></div><div id="raid-list"></div></div></div>
       <div class="pane pane-code" data-pane="text">
         <details class="help"><summary data-i18n="text.help"></summary><pre data-i18n-html="text.guide"></pre></details>
         <div class="code"><div class="gutter" aria-hidden="true"></div><textarea id="text-src" class="code-input" spellcheck="false" data-i18n-aria="text.aria"></textarea></div>
