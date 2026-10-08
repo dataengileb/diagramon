@@ -72,7 +72,14 @@
              que la app evalúa con lo que ya calcula (solo en requisitos acordados): availability|disponibilidad from= to= target=99.9 (es desde= hasta= objetivo=), rpo|rto from= to=
              target=horas, cost|costo target=mensual, encryption|cifrado cls=pii, residency|residencia cls=pii jur=eu. links= lista ids de decisiones, nodos, grupos y conexiones (`origen->destino`).
              El campo opcional va en la línea siguiente:   detail: "…"   (es: detalle:)
-   El texto es la fuente de verdad de notas, zonas, fronteras, notas STRIDE, descartados, decisiones (ADR) y requisitos: borrarlos del texto los borra del diagrama.
+   Registro RAID: risk R-001: "Falta la licencia CDC" p=3 i=4 owner="PMO" status=open raised=2026-10-07 links=ADR-007,erp
+             assumption A-001: "Volumen ≤ 2 TB/día" validation=pending due=2026-11-15 owner="Dueño del dato" links=ADR-002,REQ-003
+             issue I-001: "…" status=open due=2026-11-01 · dependency D-001: "…" status=open due=2026-11-30
+             (es: riesgo/supuesto/problema/dependencia, dueño=, estado=abierto|cerrado, validación=pendiente|validado|invalidado, fecha= (límite), registrado=, enlaces=;
+             p= es la probabilidad y i= el impacto, de 1 a 5, solo en riesgos). Los ids son R-, A-, I- o D- más un número. Líneas de campo justo después:
+               detail: "…"  mitigation: "…" (riesgos)  history: validated 2026-11-02 by="Ana" note="…"; invalidated 2026-12-01 (supuestos)
+             (es: detalle: mitigación: historial: validado… invalidado… por= nota=). links= lista ids de decisiones (ADR-001), requisitos (REQ-001), nodos, grupos y conexiones (`origen->destino`, `#2` si hay varias iguales).
+   El texto es la fuente de verdad de notas, zonas, fronteras, notas STRIDE, descartados, decisiones (ADR), requisitos y registro RAID: borrarlos del texto los borra del diagrama.
    Comentario: líneas que empiezan por # o //
 
    Acepta las palabras clave en inglés y en español (title/título, group/grupo,
@@ -183,6 +190,18 @@
   const REQ_W = { en: { kind: 'kind', priority: 'priority', status: 'status', source: 'source', check: 'check', from: 'from', to: 'to', target: 'target', cls: 'cls', jur: 'jur', links: 'links', detail: 'detail' },
     es: { kind: 'tipo', priority: 'prioridad', status: 'estado', source: 'fuente', check: 'control', from: 'desde', to: 'hasta', target: 'objetivo', cls: 'clase', jur: 'jurisdicción', links: 'enlaces', detail: 'detalle' } };
   const adrText = v => { const t = v.trim(); return /^"(?:[^"\\]|\\.)*"$/.test(t) ? unquote(t) : t.replace(/\\n/g, '\n'); };
+  /* ---------- registro RAID: risk|assumption|issue|dependency ID: "título" p= i= owner= status= validation= due= raised= links= + líneas detail/mitigation/history ---------- */
+  const RAID_RE = /^(risk|riesgo|assumption|supuesto|issue|problema|dependency|dependencia)\s+([^\s:]+)\s*:\s*(.*)$/i;
+  const RAID_FIELD_RE = /^(detail|detalle|mitigation|mitigaci[oó]n|history|historial)\s*:\s*(.*)$/i;
+  const RAID_KEYS = ['p', 'i', 'owner', 'dueño', 'dueno', 'status', 'estado', 'validation', 'validación', 'validacion', 'due', 'fecha', 'raised', 'registrado', 'links', 'enlaces'];
+  const RAID_PFX = { risk: 'R', assumption: 'A', issue: 'I', dependency: 'D' };
+  const RAID_TYPE_IN = { risk: 'risk', riesgo: 'risk', assumption: 'assumption', supuesto: 'assumption', issue: 'issue', problema: 'issue', dependency: 'dependency', dependencia: 'dependency' };
+  const RAID_ST_IN = { open: 'open', abierto: 'open', abierta: 'open', closed: 'closed', cerrado: 'closed', cerrada: 'closed' };
+  const RAID_VAL_IN = { pending: 'pending', pendiente: 'pending', validated: 'validated', validado: 'validated', validada: 'validated', invalidated: 'invalidated', invalidado: 'invalidated', invalidada: 'invalidated' };
+  const RAID_FIELD = { detail: 'detail', detalle: 'detail', mitigation: 'mitigation', mitigación: 'mitigation', mitigacion: 'mitigation', history: 'history', historial: 'history' };
+  const RAID_ST_OUT = { en: {}, es: { open: 'abierto', closed: 'cerrado' } }, RAID_VAL_OUT = { en: {}, es: { pending: 'pendiente', validated: 'validado', invalidated: 'invalidado' } };
+  const RAID_W = { en: { risk: 'risk', assumption: 'assumption', issue: 'issue', dependency: 'dependency', owner: 'owner', status: 'status', validation: 'validation', due: 'due', raised: 'raised', links: 'links', detail: 'detail', mitigation: 'mitigation', history: 'history', by: 'by', note: 'note' },
+    es: { risk: 'riesgo', assumption: 'supuesto', issue: 'problema', dependency: 'dependencia', owner: 'dueño', status: 'estado', validation: 'validación', due: 'fecha', raised: 'registrado', links: 'enlaces', detail: 'detalle', mitigation: 'mitigación', history: 'historial', by: 'por', note: 'nota' } };
   // Divide por `;` ignorando los de dentro de comillas
   const splitSemi = v => { const out = []; let cur = '', q = false; for (let i = 0; i < v.length; i++) { const c = v[i]; if (c === '\\' && q) { cur += c + (v[++i] ?? ''); continue; } if (c === '"') q = !q; if (c === ';' && !q) { out.push(cur); cur = ''; } else cur += c; } out.push(cur); return out; };
   const hv = v => (/[\s";[\]{}]/.test(String(v)) || String(v) === '' ? quote(v) : String(v));
@@ -230,6 +249,10 @@
       reqStatus: v => `unknown requirement status “${v}” (use draft, agreed or dropped)`, reqMetric: v => `unknown check “${v}” (use availability, rpo, rto, cost, encryption or residency)`, reqNum: v => `invalid target “${v}” (a number, 0 or more)`,
       reqNode: v => `“${v}” is not a node (use a component id in from= and to=)`, reqLink: v => `“${v}” is not a decision, node, group or connection (use ids or source->target)`, reqNoCheck: 'from=, to=, target=, cls= and jur= need check=… on the same line',
       adrHist: v => `invalid history entry “${v}” (use status YYYY-MM-DD by="…" note="…"; separate entries with ;)`,
+      raidDup: id => `item “${id}” is declared twice`, raidId: (id, p) => `invalid id “${id}” (use ${p}-001, ${p}-002…)`, raidNum: (k, v) => `invalid ${k} “${v}” (use a whole number from 1 to 5)`,
+      raidSt: v => `invalid status “${v}” (use open or closed)`, raidVal: v => `invalid validation “${v}” (use pending, validated or invalidated)`,
+      raidLink: v => `“${v}” is not a node, group, connection, decision or requirement (use ids, source->target, ADR-001 or REQ-001)`,
+      raidHist: v => `invalid history entry “${v}” (use pending|validated|invalidated YYYY-MM-DD by="…" note="…"; separate entries with ;)`,
       adrCritId: v => `invalid criterion id “${v}” (use a-z, 0-9 and -, up to 30 characters)`, adrCritDup: v => `criterion “${v}” is declared twice in this decision`, adrWeight: v => `invalid weight “${v}” (use a whole number from 1 to 5)`,
       adrOptId: v => `invalid option id “${v}” (use letters, digits and -, up to 20 characters)`, adrOptDup: v => `option “${v}” is declared twice in this decision`, adrChosen: v => `only one option can be chosen (“${v}” is already)`,
       adrCost: v => `invalid cost “${v}” (a number, 0 or more)`, adrRisk: v => `invalid risk “${v}” (use low, medium or high)`, adrScore: v => `invalid score “${v}” (use criterion:1..5, e.g. scores=cost:4,skills:5)`, adrScoreCrit: v => `score for “${v}”, which is not a criterion of this decision`,
@@ -259,6 +282,10 @@
       reqStatus: v => `estado de requisito desconocido «${v}» (usa borrador, acordado o descartado)`, reqMetric: v => `control desconocido «${v}» (usa disponibilidad, rpo, rto, costo, cifrado o residencia)`, reqNum: v => `objetivo no válido «${v}» (un número, 0 o más)`,
       reqNode: v => `«${v}» no es un nodo (usa el id de un componente en desde= y hasta=)`, reqLink: v => `«${v}» no es una decisión, nodo, grupo ni conexión (usa ids u origen->destino)`, reqNoCheck: 'desde=, hasta=, objetivo=, clase= y jurisdicción= necesitan control=… en la misma línea',
       adrHist: v => `entrada de historial no válida «${v}» (usa estado AAAA-MM-DD por="…" nota="…"; separa las entradas con ;)`,
+      raidDup: id => `el item «${id}» está declarado dos veces`, raidId: (id, p) => `id no válido «${id}» (usa ${p}-001, ${p}-002…)`, raidNum: (k, v) => `${k} no válido «${v}» (usa un número entero de 1 a 5)`,
+      raidSt: v => `estado no válido «${v}» (usa abierto o cerrado)`, raidVal: v => `validación no válida «${v}» (usa pendiente, validado o invalidado)`,
+      raidLink: v => `«${v}» no es un nodo, grupo, conexión, decisión ni requisito (usa ids, origen->destino, ADR-001 o REQ-001)`,
+      raidHist: v => `entrada de historial no válida «${v}» (usa pendiente|validado|invalidado AAAA-MM-DD por="…" nota="…"; separa las entradas con ;)`,
       adrCritId: v => `id de criterio no válido «${v}» (usa a-z, 0-9 y -, hasta 30 caracteres)`, adrCritDup: v => `el criterio «${v}» está declarado dos veces en esta decisión`, adrWeight: v => `peso no válido «${v}» (usa un número entero de 1 a 5)`,
       adrOptId: v => `id de opción no válido «${v}» (usa letras, dígitos y -, hasta 20 caracteres)`, adrOptDup: v => `la opción «${v}» está declarada dos veces en esta decisión`, adrChosen: v => `solo una opción puede ser la elegida («${v}» ya lo es)`,
       adrCost: v => `costo no válido «${v}» (un número, 0 o más)`, adrRisk: v => `riesgo no válido «${v}» (usa bajo, medio o alto)`, adrScore: v => `puntaje no válido «${v}» (usa criterio:1..5, p. ej. puntos=costo:4,habilidades:5)`, adrScoreCrit: v => `puntaje para «${v}», que no es un criterio de esta decisión`,
@@ -321,6 +348,8 @@
     model.notes = []; model.zones = []; model.dismissed = {}; model.edgeTypes = []; model.decisions = []; model.requirements = [];
     const adrSeen = new Set(), adrRefs = [], adrScores = []; let adrCur = null, adrOpen = false;
     const reqSeen = new Set(), reqRefs = [], reqNodes = []; let reqCur = null, reqOpen = false;
+    model.raid = [];
+    const raidSeen = new Set(), raidRefs = []; let raidCur = null, raidOpen = false;
     // Tipos propios declarados en cualquier línea (una conexión puede usarlos antes de que se declaren)
     const customIds = new Set();
     String(src).split(/\r?\n/).forEach(l => { const q = l.trim().match(TYPE_RE); if (q) customIds.add(q[2].toLowerCase()); });
@@ -377,7 +406,43 @@
       if (!line || line.startsWith('#') || line.startsWith('//')) return;
 
       const inAdr = adrOpen, inReq = reqOpen; adrOpen = false; reqOpen = false;
+      const inRaid = raidOpen; raidOpen = false;
       let m;
+      if (inRaid && raidCur && (m = line.match(RAID_FIELD_RE))) {   // campo del item RAID: detail: / mitigation: / history:
+        raidOpen = true;
+        const f = RAID_FIELD[m[1].toLowerCase()];
+        if (f !== 'history') { raidCur[f] = adrText(m[2]); return; }
+        splitSemi(m[2]).map(x => x.trim()).filter(Boolean).forEach(ent => {
+          const tk = tokens(ent, ADR_HKEYS), v = RAID_VAL_IN[foldK(tk.words[0] || '')], h = { validation: v, date: tk.words[1] };
+          if (!v || tk.words.length !== 2 || !isDay(h.date) || tk.quotes.length) return err(ln, msg.raidHist(ent));
+          const by = (tk.kv.by ?? tk.kv.por)?.trim(), nt = (tk.kv.note ?? tk.kv.nota)?.trim();
+          if (by) h.by = by;
+          if (nt) h.note = nt;
+          (raidCur.history ||= []).push(h);
+        });
+        return;
+      }
+      if ((m = line.match(RAID_RE))) {   // risk R-001: "título" p=3 i=4 owner= status= validation= due= raised= links=
+        raidOpen = true;
+        const type = RAID_TYPE_IN[m[1].toLowerCase()], id = m[2], tk = tokens(m[3], RAID_KEYS), it = { id, type, title: (tk.quotes[0] ?? tk.words.join(' ')).trim() }, kv = tk.kv;
+        if (!new RegExp(`^${RAID_PFX[type]}-\\d+$`).test(id)) err(ln, msg.raidId(id, RAID_PFX[type]));
+        if (raidSeen.has(id)) err(ln, msg.raidDup(id)); else raidSeen.add(id);
+        [['p', 'probability'], ['i', 'impact']].forEach(([k, f]) => { if (kv[k] != null) { const n = Number(kv[k]); if (kv[k].trim() !== '' && Number.isInteger(n) && n >= 1 && n <= 5) it[f] = n; else err(ln, msg.raidNum(k, kv[k])); } });
+        const ow = (kv.owner ?? kv.dueño ?? kv.dueno)?.trim();
+        if (ow) it.owner = ow;
+        const sv = kv.status ?? kv.estado;
+        if (sv != null) { const s = RAID_ST_IN[foldK(sv)]; if (s) it.status = s; else err(ln, msg.raidSt(sv)); }
+        const vv = kv.validation ?? kv.validación ?? kv.validacion;
+        if (vv != null) { const s = RAID_VAL_IN[foldK(vv)]; if (s) it.validation = s; else err(ln, msg.raidVal(vv)); }
+        const du = kv.due ?? kv.fecha;
+        if (du != null) { if (isDay(du)) it.due = du; else err(ln, msg.day(du)); }
+        const ra = kv.raised ?? kv.registrado;
+        if (ra != null) { if (isDay(ra)) it.raised = ra; else err(ln, msg.day(ra)); }
+        const lk = kv.links ?? kv.enlaces;
+        if (lk != null) raidRefs.push({ it, ln, refs: String(lk).split(',').map(x => x.trim()).filter(Boolean) });
+        model.raid.push(it); raidCur = it;
+        return;
+      }
       if (inAdr && adrCur && (m = line.match(ADR_CRIT_RE))) {   // criterio de la decisión: criterion id: "Etiqueta" weight=3
         adrOpen = true;
         const id = m[2], tk = tokens(m[3], ADR_CKEYS), c = { id, label: (tk.quotes[0] ?? tk.words.join(' ')).trim() || id, weight: 3 }, wv = tk.kv.weight ?? tk.kv.peso;
@@ -731,6 +796,22 @@
       });
       if (Object.keys(l).length) r.links = l;
     });
+    // Enlaces del registro RAID: decisión (ADR-001), requisito (REQ-001; si el modelo no los trae, basta la forma), nodo, grupo o conexión (origen->destino[#n])
+    raidRefs.forEach(({ it, ln, refs }) => {
+      const l = {}, add = (k, id) => { if (!(l[k] ||= []).includes(id)) l[k].push(id); }, decs = new Set(model.decisions.map(d => d.id)), reqs = new Set((model.requirements || []).map(r => r.id));
+      refs.forEach(r => {
+        let x;
+        if (nodes.has(r)) add('nodes', r);
+        else if (groups.has(r)) add('groups', r);
+        else if (decs.has(r)) add('decisions', r);
+        else if (reqs.has(r) || /^REQ-\d+$/i.test(r)) add('requirements', r);
+        else if ((x = r.match(/^(.+?)->(.+?)(?:#(\d+))?$/))) {
+          const e = model.edges.filter(q => q.from === x[1] && q.to === x[2])[(x[3] ? +x[3] : 1) - 1];
+          if (e) { e.id ||= `e${model.edges.indexOf(e) + 1}`; add('edges', e.id); } else err(ln, msg.raidLink(r));
+        } else err(ln, msg.raidLink(r));
+      });
+      if (Object.keys(l).length) it.links = l;
+    });
     return { model, errors };
   }
 
@@ -859,6 +940,18 @@
         c ? `${rw.check}=${rv(c.metric)}` : '', c?.from != null ? `${rw.from}=${bare(c.from)}` : '', c?.to != null ? `${rw.to}=${bare(c.to)}` : '', c?.target != null ? `${rw.target}=${+c.target}` : '',
         c?.cls ? `${rw.cls}=${bare(c.cls)}` : '', c?.jur ? `${rw.jur}=${bare(c.jur)}` : '', refs.length ? `${rw.links}=${bare(refs.join(','))}` : ''].filter(Boolean).join(' '));
       if (r.detail) out.push(`  ${rw.detail}: ${quote(r.detail)}`);
+    });
+    // Registro RAID: después de las decisiones (y de los requisitos); una línea por item y, debajo, detalle, mitigación e historial
+    const xw = RAID_W[lang] || RAID_W.en;
+    (m.raid || []).forEach(it => {
+      const l = it.links || {}, same = e => m.edges.filter(x => x.from === e.from && x.to === e.to);
+      const refs = [...(l.decisions || []), ...(l.requirements || []), ...(l.nodes || []), ...(l.groups || []),
+        ...(l.edges || []).map(id => m.edges.find(e => e.id === id)).filter(Boolean).map(e => `${e.from}->${e.to}${same(e).length > 1 ? `#${same(e).indexOf(e) + 1}` : ''}`)];
+      out.push('', [`${xw[it.type]} ${it.id}: ${quote(it.title ?? '')}`, it.probability ? `p=${it.probability}` : '', it.impact ? `i=${it.impact}` : '', it.owner ? `${xw.owner}=${bare(it.owner)}` : '',
+        it.status ? `${xw.status}=${(RAID_ST_OUT[lang] || {})[it.status] || it.status}` : '', it.validation ? `${xw.validation}=${(RAID_VAL_OUT[lang] || {})[it.validation] || it.validation}` : '',
+        it.due ? `${xw.due}=${it.due}` : '', it.raised ? `${xw.raised}=${it.raised}` : '', refs.length ? `${xw.links}=${bare(refs.join(','))}` : ''].filter(Boolean).join(' '));
+      ['detail', 'mitigation'].forEach(k => { if (it[k]) out.push(`  ${xw[k]}: ${quote(it[k])}`); });
+      if (it.history?.length) out.push(`  ${xw.history}: ${it.history.map(h => `${(RAID_VAL_OUT[lang] || {})[h.validation] || h.validation} ${h.date}${h.by ? ` ${xw.by}=${hv(h.by)}` : ''}${h.note ? ` ${xw.note}=${hv(h.note)}` : ''}`).join('; ')}`);
     });
     return out.join('\n') + '\n';
   }
