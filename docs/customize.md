@@ -25,6 +25,40 @@ Everything you can customize is in **`src/config.js`**. Save and reload `index.h
 - **Animation**: speed, entrance and step duration in `animation`.
 - **Costs**: `cost.currency`, `cost.hoursPerMonth` (730 = hours in a month) and `cost.defaultYears`.
 - **Templates**: add your own in `src/examples.js`.
+- **Decision kits**: ready-made backlogs of architecture decisions (ADR), listed under **Add decision kit…** in the ADR tab. They live in `src/adr-kits.js` (see below). The *Lakehouse greenfield · decision kit* template shows a kit applied to a starter diagram.
+
+### Decision kits
+
+`src/adr-kits.js` defines `window.DIAGRAMON_ADR_KITS`, an array of kits. To add your own, append an object (or edit the `lakehouse` one) and reload `index.html`:
+
+```js
+window.DIAGRAMON_ADR_KITS.push({
+  id: 'my-kit',                                        // unique key
+  name: { en: 'My kit', es: 'Mi kit' },                // shown in the kit menu
+  desc: { en: 'What it covers', es: 'Qué cubre' },
+  criteria: [                                          // default criteria, copied into every decision without its own
+    { id: 'cost', label: { en: 'Total cost', es: 'Costo total' }, weight: 3 }   // id: a-z 0-9 -, weight 1..5
+  ],
+  decisions: [{
+    area: { en: 'Storage', es: 'Almacenamiento' },     // groups decisions in the ADR tab
+    title: { en: 'Which table format?', es: '¿Qué formato de tabla?' },
+    context: { en: 'Why it matters and what to ask the client.', es: 'Por qué importa y qué preguntar al cliente.' },
+    criteria: [],                                      // optional: replaces the kit criteria for this decision
+    options: [{                                        // 2 to 4 options is usual (up to 12)
+      id: 'A', title: 'Delta Lake',                    // plain text or { en, es }
+      summary: { en: 'One sentence.', es: 'Una frase.' },
+      pros: { en: '• First\n• Second', es: '• Primero\n• Segundo' },
+      cons: { en: '• First\n• Second', es: '• Primero\n• Segundo' }
+    }],
+    links: { nodes: ['bronze', 'silver'] }             // node ids; ids missing from the current diagram are dropped
+  }]
+});
+```
+
+- Every text can be a plain string or `{ en, es }`; the active language is used.
+- Decisions are added as *proposed* with new `ADR-###` ids and no scores: the consultant scores them with the client. A decision whose title already exists in the diagram is skipped.
+- Write `pros` and `cons` as short lines starting with `• ` and joined with `\n`. Keep them factual and vendor-neutral; avoid prices.
+- A template can build its decisions from a kit (see the end of the *Lakehouse greenfield* template in `src/examples.js`), so the `links` point at that template's node ids. `src/adr-kits.js` must be loaded before `src/examples.js`.
 
 <details>
 <summary><b>Update or add official icons</b></summary>
