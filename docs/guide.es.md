@@ -243,6 +243,24 @@ Abre la pestaña **ADR** para registrar *por qué* la arquitectura es como es, a
 - Las decisiones son del documento, no de una versión: abrir una versión no las toca, la pestaña *Texto* las escribe como bloques `adr` (borrar un bloque ahí borra la decisión) y se guardan en **Exportar › JSON** bajo `decisions`. Todo se puede deshacer con **`⌘Z`**.
 - Desde la consola: `Diagramon.decisions()`, `Diagramon.addDecision({ title, status, context, decision, consequences, links: { nodes: [...] } })`, `Diagramon.updateDecision(id, cambios)`, `Diagramon.removeDecision(id)` y `Diagramon.exportDecisions()`.
 
+### Requisitos y trazabilidad
+
+La pestaña **Requisitos** registra *lo que necesita el cliente*, para que cada decisión y componente pueda rastrearse hasta una razón. Los requisitos son del documento, como las decisiones: abrir una versión no los toca, la pestaña *Texto* los escribe como líneas `req` y **Exportar › JSON** los guarda bajo `requirements` (la clave no existe mientras no haya ninguno).
+
+- **+ Nuevo requisito** agrega una ficha (`REQ-001`, `REQ-002`…) con **título**, **tipo** (*Impulsor*, *Calidad (RNF)*, *Restricción*, *Principio*), **prioridad** (*Debe*, *Debería*, *Podría*), **estado** (*Borrador*, *Acordado*, *Descartado*), **fuente** (quién lo pidió) y **detalle**. Fichas por tipo, estado y prioridad, y un buscador, filtran la lista. La cabecera muestra **N acordados · X cubiertos · Y controles cumplen**.
+- **Vincúlalo** a lo que lo cumple: **Vincular selección** (componentes, una conexión o un grupo) y **Vincular decisión…**. Un requisito está **cubierto** cuando enlaza una decisión *aceptada* o al menos un componente, conexión o grupo; cada ficha lo dice (*Cubierto por ADR-003 (aceptada), 2 componentes*). Las fichas ADR listan *Aborda: REQ-001 …* y los paneles de componente, conexión y grupo listan sus requisitos; haz clic en una ficha para abrirlo en su pestaña.
+- **Controles** (funciones de aptitud). Dale a un requisito un **Control** y la aplicación lo evalúa con lo que ya calcula, pero solo mientras el requisito está *Acordado*. La insignia muestra ✓ cumple, ✗ no cumple o ? desconocido; pasa el cursor para ver el valor real frente al objetivo.
+  - *Disponibilidad*: la disponibilidad compuesta de la ruta **desde** un componente **hasta** otro alcanza el porcentaje objetivo (define antes los SLA de los componentes).
+  - *RPO* / *RTO*: el peor RPO / RTO de esa ruta no supera el objetivo, en horas.
+  - *Costo*: el costo mensual total del diagrama no supera el objetivo.
+  - *Cifrado*: toda conexión que lleva una clase de datos está marcada como cifrada; se listan las que fallan.
+  - *Residencia*: ninguna conexión que cruza fronteras sin aprobar lleva una clase de datos sensible fuera de una jurisdicción (define antes las regiones de los componentes).
+  Si faltan parámetros o no son válidos, el resultado es *desconocido* con el motivo.
+- **Hallazgos de revisión** (fuente *Requisitos*): un requisito *Acordado* **Debe** (medio) o **Debería** (bajo) sin decisión aceptada ni componente vinculado, y un requisito *Acordado* cuyo control falla (alto si es *Debe*, medio en los demás casos).
+- **Matriz** cambia la pestaña a una **matriz de trazabilidad**: una fila por requisito, una columna por decisión, ✓ donde están vinculados y las decisiones *aceptadas* resaltadas en verde. Haz clic en una celda para vincular o desvincular; **⤢ Ampliar** la abre en grande sobre el lienzo (**Cerrar** o Esc vuelve).
+- El **informe** tiene una sección *Requisitos y trazabilidad* (id, título, tipo, prioridad, estado, cubierto por, resultado del control) y el inventario de **Excel** una hoja *Requisitos*. La plantilla *Lakehouse greenfield* arranca con ocho requisitos en *Borrador*, vinculados a sus decisiones y componentes, para afinar y acordar con el cliente.
+- Desde la consola: `Diagramon.requirements()`, `Diagramon.addRequirement({ title, kind, priority, status, check: { metric: 'residency', cls: 'pii', jur: 'eu' }, links: { decisions: ['ADR-005'] } })`, `Diagramon.updateRequirement(id, cambios)`, `Diagramon.removeRequirement(id)` y `Diagramon.checkRequirement(id)` (devuelve `{ state, actual, detail }`). Todo se puede deshacer con **`⌘Z`**.
+
 ## 9. Notas adhesivas y zonas de riesgo
 
 Usa los dos botones junto al zoom (abajo a la derecha del lienzo).

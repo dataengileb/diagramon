@@ -59,7 +59,7 @@ api ~> cola : eventos
 | `# …` o `// …` | Comentario |
 
 Las palabras clave funcionan en los dos idiomas: `title`/`título`, `group`/`grupo`, `cost`/`costo`, `/month`/`/mes`, `/hour`/`/hora`, `/year`/`/año`, `/3years`/`/3años`.
-El texto es la fuente de verdad de notas, zonas, fronteras de confianza, notas STRIDE, hallazgos descartados y decisiones de arquitectura (ADR): borrarlos del texto los borra del diagrama. Las versiones se conservan.
+El texto es la fuente de verdad de notas, zonas, fronteras de confianza, notas STRIDE, hallazgos descartados, decisiones de arquitectura (ADR) y requisitos: borrarlos del texto los borra del diagrama. Las versiones se conservan.
 ### Decisiones de arquitectura (ADR)
 
 Una línea `adr` abre una decisión; los campos van en las líneas siguientes, cada uno con su texto entre comillas (`\n` = salto de línea). Las decisiones se escriben al final del texto.
@@ -91,6 +91,30 @@ adr ADR-003: "Formato de tabla abierto" estado=propuesta área="Almacenamiento"
 
 Los colores también aceptan su nombre en inglés (`peach`, `sky`, `mint`…).
 
+### Requisitos
+
+Una línea `req` registra un requisito; su detalle opcional va en la línea siguiente. Los requisitos se escriben después de las decisiones.
+
+```
+req REQ-001: "Los datos personales se quedan en la UE" tipo=restricción prioridad=debe estado=acordado fuente="CISO" control=residencia clase=pii jurisdicción=eu enlaces=ADR-005,raw,raw->bi
+  detalle: "Ninguna copia de datos personales puede almacenarse ni procesarse fuera de la UE."
+req REQ-002: "Capa de consumo disponible al 99,9 %" tipo=rnf prioridad=debería estado=borrador control=disponibilidad desde=gold hasta=bi objetivo=99.9 enlaces=ADR-012,sqlwh
+```
+
+- Claves de la cabecera (en inglés entre paréntesis): `tipo=` (`kind=`) con `impulsor`, `rnf`, `restricción` o `principio` (`driver`, `nfr`, `constraint`, `principle`); `prioridad=` (`priority=`) con `debe`, `debería` o `podría` (`must`, `should`, `could`); `estado=` (`status=`) con `borrador`, `acordado` o `descartado` (`draft`, `agreed`, `dropped`); `fuente=` (`source=`, quién lo pidió, hasta 120 caracteres). Sin `tipo=` el requisito es un `impulsor`; sin `estado=`, un `borrador`.
+- `enlaces=` (`links=`) es una lista separada por comas de ids de decisiones, de componentes, de grupos y conexiones escritas `origen->destino` (`#2` elige la segunda de varias conexiones idénticas).
+- `control=` (`check=`) añade un control que la aplicación evalúa con lo que ya calcula; solo corre en requisitos `acordado`. La métrica decide qué parámetros se usan:
+
+| `control=` (inglés) | Parámetros | Cumple cuando |
+|---|---|---|
+| `disponibilidad` (`availability`) | `desde=` `hasta=` (`from=` `to=`) ids de componentes, `objetivo=` (`target=`) porcentaje, p. ej. `99.9` | la disponibilidad compuesta de la ruta alcanza el objetivo |
+| `rpo`, `rto` | `desde=` `hasta=`, `objetivo=` en horas | el peor RPO / RTO de la ruta no supera el objetivo |
+| `costo` (`cost`) | `objetivo=` costo mensual en la moneda de la aplicación | el costo mensual total no supera el objetivo |
+| `cifrado` (`encryption`) | `clase=` (`cls=`) id de clase de datos, p. ej. `pii` | toda conexión que lleva esa clase está marcada como cifrada |
+| `residencia` (`residency`) | `clase=`, `jurisdicción=` (`jur=`) id de jurisdicción, p. ej. `eu` | ninguna conexión que cruza fronteras sin aprobar lleva esa clase fuera de esa jurisdicción |
+
+- La línea de campo es `detalle:` (`detail:`) y solo vale justo después de su línea `req`. Al leer se aceptan los dos idiomas; el texto se escribe en el idioma activo, así que el viaje de ida y vuelta es exacto. Parámetros sin `control=`, valores desconocidos, un `desde=` / `hasta=` que no es un componente y enlaces a cosas que no existen se señalan con su número de línea. Borrar un bloque `req` del texto borra el requisito.
+
 Un nodo que solo aparece en una conexión se crea solo. Los errores salen en rojo con su número de línea.
 El texto no guarda posiciones: los nodos que ya existían no se mueven y los nuevos se colocan junto a sus vecinos.
 
@@ -115,6 +139,7 @@ El texto no guarda posiciones: los nodos que ya existían no se mueven y los nue
 - `routing: "elbow"` pone líneas en ángulo recto en todo el diagrama; `route` (`curved` o `elbow`) lo cambia en una conexión. `meta` guarda `author` y `version`.
 - `review` en un nodo: `{ "status": "open" | "resolved", "note", "by", "raised", "due", "closed" }`, con fechas `AAAA-MM-DD`.
 - `data` es la lista de clasificaciones (`["pii", "pci"]`) en nodos y conexiones. `encrypted` (`true` o `false`) es el cifrado en tránsito de una conexión.
+- `requirements` (opcional, solo se escribe si hay alguno) lista los requisitos: `id`, `title`, `kind`, `status` y, opcionalmente, `detail`, `priority`, `source`, `check` (`{ metric, from, to, target, cls, jur }`) y `links` (`decisions`, `nodes`, `edges`, `groups`).
 - El archivo exportado también lleva `versions` (cada una con `kind`: `version` o `env`, y su propio `diagram`) y `active`.
 - `color` acepta una clave de la paleta o cualquier color CSS.
 

@@ -244,6 +244,24 @@ Open the **ADR** tab to record *why* the architecture is the way it is, in the M
 - Decisions belong to the document, not to a version: opening a version keeps them, the *Text* tab writes them as `adr` blocks (deleting a block there deletes the decision), and they are saved in **Export › JSON** under `decisions`. Everything can be undone with **`⌘Z`**.
 - From the console: `Diagramon.decisions()`, `Diagramon.addDecision({ title, status, context, decision, consequences, links: { nodes: [...] } })`, `Diagramon.updateDecision(id, patch)`, `Diagramon.removeDecision(id)` and `Diagramon.exportDecisions()`.
 
+### Requirements and traceability
+
+The **Requirements** tab records *what the client needs*, so each decision and component can be traced back to a reason. Requirements belong to the document, like decisions: opening a version keeps them, the *Text* tab writes them as `req` lines, and **Export › JSON** saves them under `requirements` (the key does not exist while there are none).
+
+- **+ New requirement** adds a card (`REQ-001`, `REQ-002`…) with a **title**, **kind** (*Driver*, *Quality (NFR)*, *Constraint*, *Principle*), **priority** (*Must*, *Should*, *Could*), **status** (*Draft*, *Agreed*, *Dropped*), **source** (who asked for it) and **detail**. Chips by kind, status and priority, and a search box, filter the list. The header shows **N agreed · X covered · Y checks passing**.
+- **Link it** to what satisfies it: **Link selection** (components, a connection or a group) and **Link decision…**. A requirement is **covered** when it links to an *accepted* decision or to at least one component, connection or group; each card says so (*Covered by ADR-003 (accepted), 2 components*). The ADR cards list *Addresses: REQ-001 …* and the component, connection and group panels list their requirements; click a chip to open it in its tab.
+- **Checks** (fitness functions). Give a requirement a **Check** and the app evaluates it with what it already computes, but only while the requirement is *Agreed*. The badge shows ✓ passing, ✗ failing or ? unknown; hover it for the actual value against the target.
+  - *Availability*: the composite availability of the route **from** one component **to** another reaches the target percent (set component SLAs first).
+  - *RPO* / *RTO*: the worst RPO / RTO on that route is at most the target, in hours.
+  - *Cost*: the total monthly cost of the diagram is at most the target.
+  - *Encryption*: every connection carrying a data class is marked encrypted; the failing connections are listed.
+  - *Residency*: no unapproved cross-border connection carries a sensitive data class out of a jurisdiction (set component regions first).
+  Missing or invalid parameters give *unknown* with the reason.
+- **Review findings** (source *Requirements*): an *Agreed* **Must** (medium) or **Should** (low) requirement with no accepted decision and no linked component, and an *Agreed* requirement whose check fails (high for *Must*, medium otherwise).
+- **Matrix** switches the tab to a **traceability matrix**: one row per requirement, one column per decision, ✓ where they are linked and *accepted* decisions highlighted in green. Click a cell to link or unlink; **⤢ Expand** opens it large over the canvas (**Close** or Esc returns).
+- The **report** has a *Requirements and traceability* section (id, title, kind, priority, status, covered by, check result) and the **Excel** inventory a *Requirements* sheet. The *Lakehouse greenfield* template starts with eight requirements in *Draft*, linked to its decisions and components, to refine and agree with the client.
+- From the console: `Diagramon.requirements()`, `Diagramon.addRequirement({ title, kind, priority, status, check: { metric: 'residency', cls: 'pii', jur: 'eu' }, links: { decisions: ['ADR-005'] } })`, `Diagramon.updateRequirement(id, patch)`, `Diagramon.removeRequirement(id)` and `Diagramon.checkRequirement(id)` (returns `{ state, actual, detail }`). Everything can be undone with **`⌘Z`**.
+
 ## 9. Sticky notes and risk zones
 
 Use the two buttons next to the zoom controls (bottom right of the canvas).

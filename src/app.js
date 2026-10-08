@@ -8428,8 +8428,8 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
       </div>`;
     }
     return `<div class="adr req${on ? ' on' : ''}${r.status === 'dropped' ? ' dropped' : ''}" data-id="${esc(r.id)}" style="--s:${col}">
-      <button type="button" class="adr-head" data-req-toggle aria-expanded="${on}"><b class="adr-id">${esc(r.id)}</b><span class="adr-title">${esc(reqTitle(r))}</span>${reqBadge(r, chk)}<span class="adr-pill" style="--s:${REQ_ST_COLOR[r.status]}">${esc(T(`req.st.${r.status}`))}</span></button>
-      <div class="adr-meta">${esc(reqMeta(r))}</div>
+      <button type="button" class="adr-head" data-req-toggle aria-expanded="${on}"><b class="adr-id">${esc(r.id)}</b><span class="adr-title">${esc(reqTitle(r))}</span><span class="adr-pill" style="--s:${REQ_ST_COLOR[r.status]}">${esc(T(`req.st.${r.status}`))}</span></button>
+      <div class="adr-meta req-meta"><span class="req-meta-t">${esc(reqMeta(r))}</span>${reqBadge(r, chk)}</div>
       <div class="req-cov ${cov.cls}">${esc(cov.text)}</div>
       ${!on && r.detail ? `<div class="req-detail">${esc(r.detail)}</div>` : ''}
       ${form}
@@ -8458,7 +8458,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     if ((k === 'source' || k === 'detail') && !f.value.trim()) delete r[k]; else r[k] = f.value;
     syncEditor(); save();
     if (k === 'title') card.querySelector('.adr-title').textContent = reqTitle(r);
-    if (k === 'source') card.querySelector('.adr-meta').textContent = reqMeta(r);
+    if (k === 'source') card.querySelector('.req-meta-t').textContent = reqMeta(r);
   });
   reqPanel?.addEventListener('change', ev => {
     const f = ev.target, card = f.closest('.req'), r = card && reqById(card.dataset.id);
@@ -8466,7 +8466,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     if (f.dataset.reqLinkdec != null) { if (f.value) updateRequirement(r.id, { links: reqAddLinks(r, { decisions: [f.value] }) }); return; }
     const rc = f.dataset.rc;
     if (rc) {
-      if (rc === 'metric') return void updateRequirement(r.id, { check: f.value ? { ...r.check, metric: f.value } : null });
+      if (rc === 'metric') return void updateRequirement(r.id, { check: f.value ? { ...r.check, metric: f.value, target: undefined } : null });   // el objetivo cambia de unidad con la métrica: se vuelve a escribir
       return void updateRequirement(r.id, { check: { ...r.check, [rc]: f.value } });
     }
     const k = f.dataset.rf;
