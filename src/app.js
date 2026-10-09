@@ -4689,9 +4689,9 @@
     const m = scopeModel();
     let h = m.title, sub = '', desc = '', notes = [];
     if (sl.kind === 'phase') {
-      const ph = m.phases[sl.i], d = phaseDiff(S.model, sl.i);
+      const ph = m.phases[sl.i], d = phaseDiff(S.model, sl.i), pm = phaseModel(S.model, sl.i);
       h = ph.name;
-      sub = [ph.date ? fmtPhaseDate(ph.date) : '', T('phase.present.step', { i: sl.i + 1, n: P.slides.length }), T('present.counts', { n: m.nodes.length, g: m.groups.length }), T('phase.counts', { a: d.added.length, r: d.retired.length })].filter(Boolean).join(' · ');
+      sub = [ph.date ? fmtPhaseDate(ph.date) : '', T('phase.present.step', { i: sl.i + 1, n: P.slides.length }), T('present.counts', { n: pm.nodes.length, g: pm.groups.length }), T('phase.counts', { a: d.added.length, r: d.retired.length })].filter(Boolean).join(' · ');
       desc = ph.goal || '';
     } else if (sl.kind === 'view') {
       sub = viewLabel(sl.key);
@@ -7597,7 +7597,7 @@
     if (want('phases')) {
       // Tabla comparativa y, por fase: nombre, fecha, objetivo, altas y bajas (nombres) y la imagen de la arquitectura en esa fase
       const rows = phaseRows(m, phaseHelpers), names = ids => ids.map(nm).join(', ');
-      const blocks = [{ k: 'table', cls: 'wide', head: [repT('h.phase'), repT('h.date'), T('phase.cmp.nodes.tip'), T('phase.cmp.added'), T('phase.cmp.retired'), T('phase.cmp.cost'), T('phase.cmp.delta'), `${T('phase.cmp.findings')} (${SEVERITY.slice().reverse().filter(s => s !== 'critical').map(sevLabel).join(' / ')})`],
+      const blocks = [{ k: 'table', cls: 'wide', head: [repT('h.phase'), repT('h.date'), repT('k.components'), T('phase.cmp.added'), T('phase.cmp.retired'), T('phase.cmp.cost'), T('phase.cmp.delta'), `${T('phase.cmp.findings')} (${SEVERITY.slice().reverse().filter(s => s !== 'critical').map(sevLabel).join(' / ')})`],
         rows: rows.map(r => [r.name, r.date ? fmtPhaseDate(r.date) : '', String(r.nodes), String(r.added), String(r.retired), phaseCostText(r), phaseCostText(r, 'dCost'), `${r.findings.high} / ${r.findings.medium} / ${r.findings.low}`]) }];
       rows.forEach((r, i) => {
         blocks.push({ k: 'h3', t: [r.name, r.date ? fmtPhaseDate(r.date) : ''].filter(Boolean).join(' · ') });
