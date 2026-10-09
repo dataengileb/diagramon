@@ -909,6 +909,15 @@
     assert(/cleanPhaseRefs\(\[\.\.\.m\.groups, \.\.\.m\.nodes, \.\.\.m\.edges\], m\.phases\)/.test(app), 'normalize cleans the element fields'); assert(/if \(m\.phases\?\.length\) head\.push\(arr\('phases'/.test(app), 'JSON only writes the key when there are phases');
   });
 
+  test('canvas wiring: API, keyboard, inspector fields, bar and manager exist; every phase key is in en and es', () => {
+    ['phases:', 'addPhase', 'updatePhase', 'removePhase', 'setPhase', 'get phase()', 'phaseModel: i =>', 'phaseStats: i =>'].forEach(k => assert(app.includes(k), `API ${k}`));
+    assert(/ev\.key === '\[' \|\| ev\.key === '\]'/.test(app), 'keys [ and ]'); assert((app.match(/\$\{phaseField\(t\)\}/g) || []).length === 4, 'phase field in the node, edge, group and multi-selection panels');
+    const idx = read('index.html'); assert(/id="phase-bar"/.test(idx) && /id="phases-box"/.test(idx), 'bar and manager in the page');
+    const used = [...new Set([...app.matchAll(/T\('(phase\.[\w.]+)'/g)].map(m => m[1]))];
+    const i18n = read('src/i18n.js');
+    used.forEach(k => assert(i18n.split(`'${k}':`).length === 3, `${k} is defined once in en and once in es`));
+  });
+
   /* ---------- resumen ---------- */
   print(`\n${pass} passed, ${fail} failed`);
   return finish(fail === 0);

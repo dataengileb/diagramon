@@ -69,12 +69,13 @@
     compare: null, verNote: '', verEdit: null,
     viewKey: viewKey(store.get('view')),  // vista activa (S.view es la cámara); viewChosen: el usuario ya eligió una en esta sesión
     viewChosen: false, flow: null,        // flow: conexión agregada elegida en la vista Contexto
-    scope: null                           // nivel C4 abierto: id del nodo cuyo diagrama interno se ve (null = nivel superior)
+    scope: null,                          // nivel C4 abierto: id del nodo cuyo diagrama interno se ve (null = nivel superior)
+    phase: -1, phaseGhosts: store.get('phaseGhosts', true)   // fase elegida en la barra de fases (-1 = todas; no se guarda en el modelo) y si lo futuro se ve atenuado
   };
   // Referencias a elementos SVG y medidas calculadas (nunca se guardan en el modelo)
   const R = { nodes: new Map(), edges: new Map(), groups: new Map(), width: new Map(), gbox: new Map(), notes: new Map(), zones: new Map() };
   // Lo que la vista activa oculta o resume (se recalcula en applyViewMode / updateContext) y el último resaltado
-  const VW = { dimNodes: 0, dimEdges: 0, hideNodes: new Set(), hideEdges: new Set(), hideGroups: new Set(), flows: new Map(), ctxBoxes: new Map(), ctxEdges: new Map(), gcost: null, sc: { nodes: new Set(), edges: new Set(), groups: new Set() }, xs: null };
+  const VW = { dimNodes: 0, dimEdges: 0, hideNodes: new Set(), hideEdges: new Set(), hideGroups: new Set(), flows: new Map(), ctxBoxes: new Map(), ctxEdges: new Map(), gcost: null, sc: { nodes: new Set(), edges: new Set(), groups: new Set() }, xs: null, ph: null };
   const HL = { f: null, fr: null };
 
   const svg = $('#canvas'), viewport = $('#viewport'), stage = $('#stage');
@@ -2457,6 +2458,12 @@
       el('rect', { width: rw, height: 20, rx: 10 }, rgx);
       el('text', { x: rw / 2, y: 14, 'text-anchor': 'middle' }, rgx).textContent = rt;
     }
+    if (n.phase && S.model.phases?.length) { // «NUEVO»: abajo a la izquierda, a caballo del borde; solo se ve si el nodo aparece justo en la fase elegida (clase ph-new)
+      const tx = T('phase.new'), pw = Math.ceil(textW(tx, FONT.badge)) + 12, pg = el('g', { class: 'node-phase', transform: `translate(10 ${H - 9})` }, b);
+      el('title', null, pg).textContent = T('phase.new.tip');
+      el('rect', { width: pw, height: 18, rx: 9 }, pg);
+      el('text', { x: pw / 2, y: 12.5, 'text-anchor': 'middle' }, pg).textContent = tx;
+    }
     if (li) drawNodeLayer(b, li);
     if (inn) {
       const cg = el('g', { class: 'node-inner', transform: `translate(${w - 8 - cw} ${(H - 20) / 2})` }, b);
@@ -2976,6 +2983,10 @@
     m.edges.forEach(e => { if (sc.nodes.has(e.from) || sc.nodes.has(e.to)) sc.edges.add(e.id); });
     sc.nodes.forEach(id => hideN.add(id)); sc.edges.forEach(id => hideE.add(id)); sc.groups.forEach(id => hideG.add(id));
     VW.sc = sc;
+    // Fases: lo que aún no existe en la fase elegida es un fantasma (se oculta si se apagan los fantasmas) y lo retirado se oculta; las conexiones siguen a sus extremos
+    const pv = phaseView();
+    pv.hide.nodes.forEach(id => hideN.add(id)); pv.hide.edges.forEach(id => hideE.add(id)); pv.hide.groups.forEach(id => hideG.add(id));
+    VW.ph = pv;
 
     if (emph === 'security') {
       m.nodes.forEach(n => nodeCls.set(n.id, isSensitive(n) ? 'v-hl' : 'v-dim'));
@@ -3031,6 +3042,9 @@
     R.nodes.forEach((g, id) => { g.style.removeProperty('--own'); if (ownVar.has(id) && !hideN.has(id)) g.style.setProperty('--own', ownVar.get(id)); });
     R.edges.forEach((r, id) => paint(r.g, id, hideE, edgeCls, edgeVar, '--vc'));
     R.groups.forEach((r, id) => r.g.classList.toggle('v-hide', hideG.has(id) || top.has(id)));
+    R.nodes.forEach((g, id) => { g.classList.toggle('pghost', pv.ghost.nodes.has(id)); g.classList.toggle('ph-new', pv.fresh.has(id)); });
+    R.edges.forEach((r, id) => r.g.classList.toggle('pghost', pv.ghost.edges.has(id)));
+    R.groups.forEach((r, id) => r.g.classList.toggle('pghost', pv.ghost.groups.has(id)));
     VW.hideNodes = hideN; VW.hideEdges = hideE; VW.hideGroups = hideG;
     // Atenuados (no ocultos): los muestra la pastilla de la vista
     const dim = cls => [...cls].filter(([id, c]) => /\bv-dim\b/.test(c)).length;
@@ -3407,7 +3421,7 @@
     const topOf = gid => { let g = gmap.get(gid), i = 0; while (g?.parent && gmap.has(g.parent) && i++ < 50) g = gmap.get(g.parent); return g; };
     // Representante visible de cada nodo: la caja cerrada de su grupo de primer nivel, o él mismo
     const reps = new Map(), repOf = new Map();
-    scopeModel().nodes.forEach(n => {
+    scopeModel().nodes.filter(n => !VW.hideNodes.has(n.id)).forEach(n => {
       const tg = n.group && topOf(n.group), b = tg && R.gbox.get(tg.id), k = b ? `g:${tg.id}` : `n:${n.id}`;
       // La caja cerrada es una tarjeta compacta centrada en el centro del grupo (no del tamaño del grupo)
       const card = b && { w: Math.min(b.w, 300), h: Math.min(b.h, 128) };
@@ -3753,6 +3767,7 @@
     }
     S.model = normalize(raw);
     ensurePositions(S.model);
+    if (opts.animate) S.phase = -1;   // otro diagrama: se ve todo (la fase elegida es de la vista, no del modelo)
     if (opts.animate && !opts.keepScope) S.scope = null;  // otro diagrama: nivel superior; deshacer, versiones y editores conservan el nivel si sigue existiendo
     if (S.scope && !S.model.nodes.some(n => n.id === S.scope)) S.scope = null;
     store.set('scope', S.scope);
@@ -3799,7 +3814,9 @@
     refreshFindings();
     const nFind = FC.open.filter(f => f.source === 'rule').length;
     const sm = scopeModel(m);
-    $('#stage-meta').textContent = [T('meta.nodes', sm.nodes.length), T('meta.edges', sm.edges.length), sm.groups.length ? T('meta.groups', sm.groups.length) : '', costs, insecure ? T('meta.insecure', insecure) : '', xb ? T('meta.xborder', xb) : '', zones, reviews, nFind ? T('meta.findings', nFind) : ''].filter(Boolean).join(' · ');
+    const pi = phaseNow(), pst = pi >= 0 ? phaseStats(m, pi, { monthly: x => monthlyTotal(x.nodes), findings: () => [] }) : null, psm = pst ? scopeModel(phaseModel(m, pi)) : null;
+    const head = pst ? [T('phase.summary', { name: m.phases[pi].name, n: psm.nodes.length, cost: pst.cost ? `≈ ${money(round2(pst.cost))}${T('cost.mo')}` : '' }), T('meta.edges', psm.edges.length)] : [T('meta.nodes', sm.nodes.length), T('meta.edges', sm.edges.length), sm.groups.length ? T('meta.groups', sm.groups.length) : '', costs];
+    $('#stage-meta').textContent = [...head, insecure ? T('meta.insecure', insecure) : '', xb ? T('meta.xborder', xb) : '', zones, reviews, nFind ? T('meta.findings', nFind) : ''].filter(Boolean).join(' · ');
     const t = $('#title');
     if (document.activeElement !== t) t.value = m.title;
     $('#empty').hidden = !!S.scope || sm.nodes.length > 0;
@@ -3812,6 +3829,7 @@
     }
     document.title = `${m.title} · ${C.app.name}`;
     renderDocbar();
+    renderPhaseBar();
   }
 
   /* ---------- ficha del documento al pie del lienzo (misma fuente que el cajetín exportado) ---------- */
@@ -3987,6 +4005,180 @@
   });
   fltPill.addEventListener('click', ev => { if (ev.target.closest('[data-flt="clear"]')) clearFilter(); });
 
+  /* ---------- fases: barra del lienzo, qué se ve en cada fase y gestor (pestaña Versiones) ---------- */
+  // S.phase = fase elegida (-1 = todas): es de la vista, no del modelo. Los fantasmas (lo que aún no existe) se pueden seleccionar y editar, para poder asignarles una fase desde el lienzo.
+  const phaseNow = () => (S.model?.phases?.length && S.phase >= 0 ? Math.min(S.phase, S.model.phases.length - 1) : -1);
+  // Qué atenúa (fantasma) y qué oculta la fase elegida; fresh = nodos que aparecen justo en ella (insignia NUEVO)
+  function phaseView() {
+    const out = { i: phaseNow(), ghost: { nodes: new Set(), edges: new Set(), groups: new Set() }, hide: { nodes: new Set(), edges: new Set(), groups: new Set() }, fresh: new Set() };
+    if (out.i < 0) return out;
+    const st = phaseStates(S.model, out.i);
+    for (const k of ['nodes', 'edges', 'groups']) st[k].forEach((v, id) => { if (v === -1 || (v === 1 && !S.phaseGhosts)) out.hide[k].add(id); else if (v === 1) out.ghost[k].add(id); });
+    phaseDiff(S.model, out.i).added.forEach(id => out.fresh.add(id));
+    return out;
+  }
+  // 'AAAA-MM' → «dic 2026»; 'AAAA-MM-DD' → fecha corta
+  const fmtPhaseDate = d => {
+    const r = /^(\d{4})-(\d{2})$/.exec(d || '');
+    if (!r) return fmtDay(d);
+    try { return new Intl.DateTimeFormat(I.lang, { month: 'short', year: 'numeric', timeZone: 'UTC' }).format(new Date(Date.UTC(+r[1], +r[2] - 1, 1))); } catch { return d; }
+  };
+  const phaseBar = $('#phase-bar');
+  function renderPhaseBar() {
+    const ph = S.model?.phases || [], cur = phaseNow();
+    phaseBar.hidden = !ph.length;
+    if (!ph.length) return;
+    const sig = JSON.stringify([ph, cur, S.phaseGhosts, I.lang]);
+    if (phaseBar._sig === sig) return;
+    phaseBar._sig = sig;
+    const had = phaseBar.contains(document.activeElement) ? document.activeElement.dataset?.p : null;
+    const chip = (i, name, date, tip) => `<button class="ph-chip${cur === i ? ' on' : ''}" data-p="${i}" aria-pressed="${cur === i}"${tip ? ` title="${esc(tip)}"` : ''}><b>${esc(name)}</b>${date ? `<small>${esc(fmtPhaseDate(date))}</small>` : ''}</button>`;
+    $('#phase-chips').innerHTML = chip(-1, T('phase.all'), '', '') + ph.map((p, i) => chip(i, p.name, p.date, p.goal)).join('');
+    const g = $('#phase-ghosts');
+    g.checked = !!S.phaseGhosts; g.disabled = cur < 0;
+    if (had != null) phaseBar.querySelector(`[data-p="${had}"]`)?.focus();
+    phaseBar.querySelector('.ph-chip.on')?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+  }
+  // i (índice) | id | null (todas); devuelve el índice resultante
+  function setPhase(v) {
+    const ph = S.model.phases || [];
+    let i = v == null ? -1 : typeof v === 'number' ? Math.floor(v) : ph.findIndex(p => p.id === String(v));
+    i = Number.isFinite(i) && i >= 0 && i < ph.length ? i : -1;
+    if (i !== S.phase) {
+      S.phase = i;
+      stopPlay(); clearPath();
+      refreshView();
+      updateMeta();
+    }
+    renderPhaseBar();
+    return S.phase;
+  }
+  const stepPhase = d => { const n = S.model.phases?.length || 0; if (n) setPhase(clamp(phaseNow() + d, -1, n - 1)); };
+  phaseBar.addEventListener('click', ev => { const b = ev.target.closest('[data-p]'); if (b) setPhase(+b.dataset.p); });
+  $('#phase-ghosts').addEventListener('change', ev => { S.phaseGhosts = ev.target.checked; store.set('phaseGhosts', S.phaseGhosts); refreshView(); renderPhaseBar(); });
+
+  // Campo «Fase» y «Se retira en» del inspector (nodos, conexiones, grupos y selección múltiple)
+  const phaseField = items => {
+    const m = S.model, ph = m.phases || [], list = [].concat(items);
+    if (!ph.length) return '';
+    const pick = k => { const v = new Set(list.map(x => x[k] || '')); return v.size === 1 ? [...v][0] : null; };
+    const a = pick('phase'), b = pick('until'), lo = Math.max(0, ...list.map(x => (x.phase ? phaseIndex(m, x.phase) : 0)));
+    const sel = (k, cur, empty, opts) => `<select data-phs="${k}">${cur === null ? `<option value="__mixed" selected>${T('insp.mixed')}</option>` : ''}<option value=""${cur === '' ? ' selected' : ''}>${esc(empty)}</option>${opts.map(p => `<option value="${esc(p.id)}"${cur === p.id ? ' selected' : ''}>${esc(p.name)}</option>`).join('')}</select>`;
+    return `<div class="field phase-field"><div class="row2">
+      <label title="${esc(T('phase.hint'))}">${T('phase.label')}${sel('phase', a, T('phase.always'), ph)}</label>
+      <label title="${esc(T('phase.untilHint'))}">${T('phase.until')}${sel('until', b, T('phase.notRetired'), ph.filter((p, i) => i > lo))}</label></div></div>`;
+  };
+  // Cambia fase / hasta de lo elegido; until siempre va después de phase (cleanPhaseRefs lo descarta si no)
+  $('#inspector').addEventListener('change', ev => {
+    const f = ev.target, k = f.dataset?.phs, t = selTarget();
+    if (!k || !t || f.value === '__mixed') return;
+    pushHistory();
+    const list = Array.isArray(t) ? t : [t];
+    list.forEach(x => { if (f.value) x[k] = f.value; else delete x[k]; });
+    cleanPhaseRefs(list, S.model.phases);
+    changed(true); renderInspector();
+  });
+
+  /* ---- gestor de fases ---- */
+  const phaseBox = $('#phases-box');
+  function renderPhases() {
+    if (!phaseBox || !S.model) return;
+    const act = document.activeElement;
+    if (phaseBox.contains(act) && act.matches('input, textarea')) return;   // se está escribiendo: el modelo ya tiene el valor
+    const ph = S.model.phases || [];
+    const row = (p, i) => {
+      const d = phaseDiff(S.model, i), n = ph.length;
+      return `<div class="ph-row" data-id="${esc(p.id)}">
+        <div class="ph-head"><span class="ph-n">${i + 1}</span><input data-phf="name" value="${esc(p.name)}" maxlength="60" aria-label="${esc(T('phase.name'))}" autocomplete="off">
+          <span class="ph-cnt" title="${esc(T('phase.counts.tip', { a: d.added.length, r: d.retired.length }))}">${esc(T('phase.counts', { a: d.added.length, r: d.retired.length }))}</span>
+          <span class="ver-tools">
+            <button class="btn small icon" data-phb="up" title="${esc(T('phase.up'))}" aria-label="${esc(T('phase.up'))}"${i === 0 ? ' disabled' : ''}>↑</button>
+            <button class="btn small icon" data-phb="down" title="${esc(T('phase.down'))}" aria-label="${esc(T('phase.down'))}"${i === n - 1 ? ' disabled' : ''}>↓</button>
+            <button class="btn small danger icon" data-phb="del" title="${esc(T('phase.delete'))}" aria-label="${esc(T('phase.delete'))}">${ICON.x}</button></span></div>
+        <div class="ph-body"><label>${T('phase.date')}<input data-phf="date" value="${esc(p.date || '')}" maxlength="10" placeholder="2026-12" title="${esc(T('phase.date.tip'))}" autocomplete="off"></label>
+          <label>${T('phase.goal')}<textarea data-phf="goal" rows="2" placeholder="${esc(T('phase.goal.ph'))}">${esc(p.goal || '')}</textarea></label></div></div>`;
+    };
+    phaseBox.innerHTML = `<div class="ph-man"><div class="ph-title"><div class="cat">${esc(T('phase.title'))}</div><button class="btn small" data-phb="add">${esc(T('phase.add'))}</button></div>
+      ${ph.length ? ph.map(row).join('') : `<p class="empty-list">${esc(T('phase.empty'))}</p>`}</div>`;
+  }
+  const phaseSlug = s => fold(String(s ?? '')).replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 24) || 'phase';
+  // Edición ligera (sin reconstruir el lienzo): el nombre, la fecha y el objetivo no cambian lo que se dibuja
+  function phasesTouched() { syncEditor(); save(); updateUndoButtons(); updateMeta(); renderPhaseBar(); }
+  function addPhase(p = {}) {
+    p = p && typeof p === 'object' ? p : {};
+    const ph = S.model.phases || [];
+    if (ph.length >= PHASE_MAX) { toast(T('phase.max', PHASE_MAX)); return ''; }
+    const base = PHASE_ID.test(String(p.id ?? '').trim()) ? String(p.id).trim() : phaseSlug(p.name);
+    let id = base, k = 2;
+    while (ph.some(x => x.id === id)) id = `${base.slice(0, 26)}-${k++}`;
+    pushHistory();
+    S.model.phases = cleanPhases([...ph, { ...p, id, name: p.name || T('phase.new.name', ph.length + 1) }]);
+    changed(true); renderInspector(); renderPhases(); renderPhaseBar();
+    return id;
+  }
+  function updatePhase(id, patch, o = {}) {
+    const ph = S.model.phases || [], i = phaseIndex(S.model, id);
+    if (i < 0 || !patch || typeof patch !== 'object') return false;
+    if (o.typing) markEdit(); else pushHistory();
+    S.model.phases = cleanPhases(ph.map((x, k) => (k === i ? { ...x, ...patch, id } : x)));
+    if (o.typing) phasesTouched(); else { changed(true); renderInspector(); renderPhases(); renderPhaseBar(); }
+    return true;
+  }
+  // Sus elementos pasan a la fase anterior (o a «siempre» si era la primera); los que se retiraban en ella se retiran en la siguiente (o ya no se retiran)
+  function removePhase(id) {
+    const ph = S.model.phases || [], i = phaseIndex(S.model, id);
+    if (i < 0) return false;
+    pushHistory();
+    const prev = ph[i - 1]?.id, next = ph[i + 1]?.id, all = [...S.model.groups, ...S.model.nodes, ...S.model.edges];
+    all.forEach(x => {
+      if (x.phase === id) { if (prev) x.phase = prev; else delete x.phase; }
+      if (x.until === id) { if (next) x.until = next; else delete x.until; }
+    });
+    const rest = ph.filter(p => p.id !== id);
+    if (rest.length) S.model.phases = rest; else delete S.model.phases;
+    cleanPhaseRefs(all, rest);
+    S.phase = !rest.length ? -1 : S.phase > i ? S.phase - 1 : S.phase === i ? Math.max(0, i - 1) : S.phase;
+    changed(true); renderInspector(); renderPhases(); renderPhaseBar();
+    return true;
+  }
+  function movePhase(id, d) {
+    const ph = [...(S.model.phases || [])], i = phaseIndex(S.model, id), j = i + d;
+    if (i < 0 || j < 0 || j >= ph.length) return false;
+    pushHistory();
+    [ph[i], ph[j]] = [ph[j], ph[i]];
+    S.model.phases = ph;
+    cleanPhaseRefs([...S.model.groups, ...S.model.nodes, ...S.model.edges], ph);   // un until que queda antes de su phase se descarta
+    if (S.phase === i) S.phase = j; else if (S.phase === j) S.phase = i;
+    changed(true); renderInspector(); renderPhases(); renderPhaseBar();
+    return true;
+  }
+  async function deletePhase(id) {
+    const ph = S.model.phases || [], i = phaseIndex(S.model, id), p = ph[i];
+    if (!p) return;
+    const n = [...S.model.groups, ...S.model.nodes, ...S.model.edges].filter(x => x.phase === id || x.until === id).length, prev = ph[i - 1];
+    const text = !n ? T('phase.cf.none') : prev ? T('phase.cf.to', { n, to: prev.name }) : T('phase.cf.always', { n });
+    if (!(await confirmBox({ title: T('phase.cf.title', { name: p.name }), text, ok: T('phase.cf.ok'), cancel: T('ver.cf.cancel'), danger: true }))) return;
+    if (removePhase(id)) toast(T('phase.deleted', { name: p.name }));
+  }
+  phaseBox.addEventListener('focusin', ev => { if (ev.target.dataset?.phf) beginEdit(); });
+  phaseBox.addEventListener('focusout', ev => { if (ev.target.dataset?.phf) endEdit(); });
+  phaseBox.addEventListener('input', ev => {
+    const f = ev.target, k = f.dataset?.phf, id = f.closest('.ph-row')?.dataset.id;
+    if (!k || !id) return;
+    const v = k === 'goal' ? f.value : f.value.trim();
+    if (k === 'date') { const bad = !!v && !phaseDay(v); f.setAttribute('aria-invalid', bad); if (bad) return; }
+    updatePhase(id, { [k]: v }, { typing: true });
+  });
+  phaseBox.addEventListener('click', ev => {
+    const b = ev.target.closest('[data-phb]');
+    if (!b) return;
+    const id = b.closest('.ph-row')?.dataset.id, a = b.dataset.phb;
+    if (a === 'add') { const nid = addPhase(); phaseBox.querySelector(`.ph-row[data-id="${CSS.escape(nid)}"] [data-phf="name"]`)?.select(); }
+    else if (a === 'up') movePhase(id, -1);
+    else if (a === 'down') movePhase(id, 1);
+    else if (a === 'del') deletePhase(id);
+  });
+
   /* ---------- acciones ---------- */
   // Selección: { kind: 'node' | 'edge' | 'group' | 'note' | 'zone', id } o { kind: 'multi', ids: [nodos] }
   function selTarget() {
@@ -4035,6 +4227,7 @@
     if (extra.icon) n.icon = extra.icon;
     if (extra.sub) n.sub = extra.sub;
     if (S.scope) { n.in = S.scope; const k = c4Default(S.scope); if (k) n.c4 = k; } // lo nuevo nace en el nivel abierto (con el tipo C4 que toca)
+    { const pi = phaseNow(); if (pi > 0) n.phase = S.model.phases[pi].id; }   // y en la fase elegida (en la primera no hace falta: ya está desde el inicio)
     n.x = snap(wx - nodeWidth(n) / 2);
     n.y = snap(wy - H / 2);
     // Si cae dentro de un grupo, entra en el más profundo
@@ -4811,6 +5004,7 @@
   function renderVersions() {
     const box = $('#versions');
     if (!box || !S.model) return;
+    renderPhases();
     const vs = S.model.versions, envs = Object.entries(C.environments || {});
     const nextN = Math.max(0, ...vs.filter(v => v.kind === 'version').map(v => v.n)) + 1;
     // Conserva el foco (y el cursor) si se estaba escribiendo en un campo del panel
@@ -4886,7 +5080,7 @@
     if (!(d.count.a + d.count.r + d.count.c + d.typeN)) return `<p class="ver-sum">${esc(T('ver.same'))}</p>`;
     const FIELD = { label: 'insp.name', sub: 'insp.detail', type: 'insp.type', icon: 'insp.icon', group: 'insp.group', color: 'insp.color', badge: 'field.badge',
       cost: 'cost.label', costPeriod: 'cost.period', costYears: 'cost.yearsAria', desc: 'insp.desc', style: 'insp.style', weight: 'wt.label', parent: 'insp.parent',
-      data: 'data.label', encrypted: 'enc.label', route: 'insp.route', both: 'insp.dir', review: 'rev.label', kind: 'gkind.label', exposure: 'sec.expo.label', backup: 'sec.backup.label', controls: 'cmp.title', in: 'c4.in', c4: 'c4.label', sla: 'res.sla', rpo: 'res.rpo', rto: 'res.rto', replicas: 'res.replicas', dash: 'et.dash', width: 'et.width', particles: 'et.particles' };
+      data: 'data.label', encrypted: 'enc.label', route: 'insp.route', both: 'insp.dir', review: 'rev.label', kind: 'gkind.label', phase: 'phase.label', until: 'phase.until', exposure: 'sec.expo.label', backup: 'sec.backup.label', controls: 'cmp.title', in: 'c4.in', c4: 'c4.label', sla: 'res.sla', rpo: 'res.rpo', rto: 'res.rto', replicas: 'res.replicas', dash: 'et.dash', width: 'et.width', particles: 'et.particles' };
     const fields = (fs, kind) => fs.map(f => T(kind === 'edge' && f === 'label' ? 'insp.label' : kind === 'type' && f === 'label' ? 'et.label' : FIELD[f] || f).toLowerCase()).join(', ');
     const names = new Map([...S.compare.base.nodes, ...S.model.nodes].map(n => [n.id, n.label]));
     const edgeName = e => `${names.get(e.from) || e.from} ${e.both ? '↔' : '→'} ${names.get(e.to) || e.to}`;
@@ -5667,6 +5861,7 @@
         <div class="field">${T('insp.color')}${swatches(colorsOf.size === 1 ? [...colorsOf][0] : '__mixed')}</div>
         ${t.length === 2 ? pathField() : ''}
         ${c4Field(t)}
+        ${phaseField(t)}
         ${dataField(t)}
         ${govField(t, 'multi')}
         ${resField(t)}
@@ -5697,6 +5892,7 @@
         ${Object.keys(ICONS).length ? iconPicker(t) : ''}
         <div class="field">${T('insp.color')}${swatches(t.color)}</div>
         ${c4Field(t)}
+        ${phaseField(t)}
         ${costField(t)}
         ${dataField(t)}
         ${govField(t, 'node')}
@@ -5732,6 +5928,7 @@
         ${customTypes().length ? `<div class="field"><button class="btn small" data-act="edgetypes">${T('et.manage')}</button></div>` : ''}
         <div class="field">${T('insp.dir')}<div class="seg">${[['', 'dir.one'], ['both', 'dir.both']].map(([k, l]) =>
           `<button data-dir="${k}" class="${(t.both ? 'both' : '') === k ? 'on' : ''}">${T(l)}</button>`).join('')}</div></div>
+        ${phaseField(t)}
         ${encField(t)}
         ${dataField(t, true)}
         ${dsField(t)}
@@ -5779,6 +5976,7 @@
         <label>${T('insp.name')}<input data-field="label" value="${esc(t.label)}"></label>
         ${allIcons().some(i => i.group) ? iconPicker(t, true) : ''}
         <label>${T('gkind.label')}<select data-field="kind"><option value=""${t.kind ? '' : ' selected'}>${esc(T('gkind.auto', { k: T(`gkind.${groupKindAuto(t)}`) }))}</option>${['logical', 'physical'].map(k => `<option value="${k}"${t.kind === k ? ' selected' : ''}>${T(`gkind.${k}`)}</option>`).join('')}</select></label>
+        ${phaseField(t)}
         ${regionField(t)}
         ${layerField(t)}
         <label>${T('insp.parent')}<select data-field="parent"><option value="">${T('insp.none')}</option>${m.groups.filter(g => !blocked.has(g.id) && (g.in || null) === (t.in || null)).map(g => `<option value="${esc(g.id)}"${g.id === t.parent ? ' selected' : ''}>${esc(g.label)}</option>`).join('')}</select></label>
@@ -8007,6 +8205,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     else if (ev.altKey && ev.key === 'ArrowUp') { ev.preventDefault(); scopeUp(); }  // sube un nivel C4
     else if (ev.key === 'Enter' && S.sel?.kind === 'node' && innerCount(S.sel.id) && !ev.target.closest?.('button, a, summary')) { ev.preventDefault(); setScope(S.sel.id); }  // abre el diagrama interno
     else if (/^[1-9]$/.test(k) && VIEW_KEYS[+k - 1]) setView(VIEW_KEYS[+k - 1]);
+    else if (ev.key === '[' || ev.key === ']') stepPhase(ev.key === ']' ? 1 : -1);   // fase anterior / siguiente
     else if (k === 'f') fitView();
     else if (k === 'p') togglePlay();
     else if (k === 'r' && selIds().length === 2) showPath(...selIds());
@@ -9500,6 +9699,8 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     signoff: (kind, id, sid, verdict, note) => signOff(kind, id, sid, verdict, note), approval: (kind, id) => apprInfo(kind, id),
     decisions: () => clone(S.model.decisions || []), compareDecisions: id => { const v = S.model.versions.find(x => x.id === id); return v && Array.isArray(v.decisions) ? diffDecisions(v.decisions, S.model.decisions || []) : null; }, addDecision, updateDecision, removeDecision, exportDecisions,
     addDecisionKit: id => addDecisionKit(id), decisionKits: () => adrKits().map(k => ({ id: k.id, name: loc(k.name), desc: loc(k.desc), decisions: k.decisions.length })),
+    phases: () => clone(S.model.phases || []), addPhase, updatePhase: (id, patch) => updatePhase(id, patch), removePhase, setPhase, get phase() { return S.phase; },
+    phaseModel: i => clone(phaseModel(S.model, +i)), phaseStats: i => phaseStats(S.model, +i, { monthly: m => monthlyTotal(m.nodes), findings: m => findingsOf(m).filter(f => !f.dismissed) }),
     raid: () => clone(S.model.raid || []), addRaid, updateRaid, removeRaid, validateAssumption,
     stakeholders: () => clone(S.model.stakeholders || []), addStakeholder, updateStakeholder, removeStakeholder,
     adrScore: id => { const d = adrById(id); return d ? { options: Object.fromEntries((d.options || []).map(o => [o.id, adrScore(d, o)])), leader: adrLeader(d) || null, chosen: d.chosen || null } : null; },
