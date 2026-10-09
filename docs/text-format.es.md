@@ -33,7 +33,9 @@ api ~> cola : eventos
 | `a -> b : TLS cifrado=sí` | Cifrado en tránsito (`sí` o `no`) |
 | `dueño="Ana Pérez" responsable=… equipo="Ing. de datos" centro=CC-100` | Responsables de un nodo o grupo (en inglés: `owner=` `steward=` `team=` `costcenter=`); los nodos heredan del grupo |
 | `a -> b : SQL tablas=pedidos,clientes` | Conjuntos de datos de una conexión (también `datasets=` o `conjuntos=`); con espacios, entre comillas: `tablas="ventas pedidos,crm.clientes"` |
+| `a -> b : x latencia=1h` | Tiempo que tarda el dato en esa conexión, p. ej. `15m`, `1h`, `1d` (en inglés: `latency=`); alimenta la frescura de extremo a extremo de los conjuntos que lleva |
 | `región=eu-west-1` | Región de un nodo o grupo (también `region=`, `país=`, `country=`); los nodos la heredan del grupo |
+| `conjunto DS-001 orders: capa=plata frescura=1d …` | Conjunto del catálogo (en inglés: `dataset`), con sus líneas `columna`, `regla` y `contrato`; ver *Conjuntos de datos* más abajo |
 | `a -> b : x datos=pii transferencia=ok` | Transferencia entre jurisdicciones autorizada (`transfer=ok` en inglés) |
 | `fase mvp: "MVP" fecha=2026-12 objetivo="…"` | Fase del plan, en orden de línea de tiempo (en inglés: `phase mvp: "MVP" date=2026-12 goal="…"`); ver *Fases* abajo |
 | `a: A fase=mvp hasta=ola2` · `a -> b : x fase=ola1` · `grupo g "G" fase=mvp {` | Fase en la que aparece un nodo, conexión o grupo (en inglés: `phase=`) y, si es temporal, la fase en la que se retira (`hasta=`, en inglés `until=`) |
@@ -115,6 +117,7 @@ req REQ-002: "Capa de consumo disponible al 99,9 %" tipo=rnf prioridad=debería 
 | `costo` (`cost`) | `objetivo=` costo mensual en la moneda de la aplicación | el costo mensual total no supera el objetivo |
 | `cifrado` (`encryption`) | `clase=` (`cls=`) id de clase de datos, p. ej. `pii` | toda conexión que lleva esa clase está marcada como cifrada |
 | `residencia` (`residency`) | `clase=`, `jurisdicción=` (`jur=`) id de jurisdicción, p. ej. `eu` | ninguna conexión que cruza fronteras sin aprobar lleva esa clase fuera de esa jurisdicción |
+| `frescura` (`freshness`) | `conjunto=` (`ds=`) nombre del conjunto, `objetivo=` (`target=`) horas, p. ej. `4` | la frescura de extremo a extremo del conjunto (suma de las latencias de su camino más lento) no supera el objetivo |
 
 - La línea de campo es `detalle:` (`detail:`) y solo vale justo después de su línea `req`. Al leer se aceptan los dos idiomas; el texto se escribe en el idioma activo, así que el viaje de ida y vuelta es exacto. Parámetros sin `control=`, valores desconocidos, un `desde=` / `hasta=` que no es un componente y enlaces a cosas que no existen se señalan con su número de línea. Borrar un bloque `req` del texto borra el requisito.
 
@@ -177,6 +180,40 @@ erp -> subida : extracción fase=mvp
 - Un id de fase desconocido, o un `hasta` que no va después de su fase, es un error con su número de línea. Borrar una línea `fase` mientras hay elementos que la usan también es un error: cambia o borra antes esas referencias.
 - Al leer se aceptan ambos idiomas; el texto se escribe en el idioma activo (`phase mvp: "MVP" date=… goal=…` y `phase=wave1 until=wave2`), así que hace el viaje de ida y vuelta exacto.
 
+### Conjuntos de datos
+
+Las líneas `conjunto` declaran los conjuntos del catálogo de datos. Escríbelas después de los interesados. Un nombre en una conexión (`tablas=`) se une con el conjunto del mismo nombre (sin distinguir mayúsculas), y un nombre que solo aparece en conexiones está *sin documentar* hasta que se declara. Cada línea de conjunto va seguida de líneas de campo con sangría: `columna`, `regla` y `contrato`, que deben ir justo debajo de una línea `conjunto`.
+
+```
+fase ola1: "Ola 1" fecha=2027-03
+
+erp: ERP [db]
+lake: Lakehouse [storage] capa=plata
+bi: BI dashboards [user]
+
+conjunto DS-001 orders: capa=plata dominio=Ventas dueño="Plataforma de datos" producto=sí clases=pii formato=delta frescura=2d por_dia=2 retencion=365 responsable="Ana Pérez" desc="Pedidos del ERP"
+  columna order_id: string clave nulo=no
+  columna email: string pii desc="Correo del cliente"
+  columna amount: decimal
+  regla not_null order_id severidad=alta
+  regla range amount param="0..1000000"
+  contrato 1.0.0 estado=acordado consumidores=bi terminos="Diario antes de las 06:00"
+conjunto DS-002 customers: capa=plata clases=pii fase=ola1
+  columna customer_id: string clave
+  regla unique customer_id severidad=alta
+  contrato 0.1.0 estado=borrador
+
+erp -> lake : carga nocturna tablas=orders,customers latencia=1d
+lake -> bi : JDBC tablas=orders latencia=15m
+```
+
+- **Línea de conjunto**: `conjunto DS-001 orders: …`. El id es `DS-` y un número (único); el nombre es la clave que se une con `tablas=` (entre comillas si lleva espacios o `:`). Claves (en inglés entre corchetes): `capa=` (`layer=`) `bronce`, `plata` u `oro` (también `crudo`, `curado`, `consumo`…); `dominio=` (`domain=`); `dueño=` (`owner=`), id de un interesado o texto libre; `responsable=` (`steward=`); `producto=sí` (`product=yes`) marca un producto de datos; `clases=` (`classes=`) clases de datos, p. ej. `pii`; `formato=` (`format=`) `delta`, `iceberg`, `hudi`, `parquet`, `avro`, `json`, `csv` u `other`; `frescura=` (`freshness=`) el SLA, como `15m`, `4h` o `1d`; `por_dia=` (`per_day=`) el volumen en GB por día; `retencion=` (`retention=`) la retención en días; `fase=` (`phase=`) la fase desde la que existe el conjunto; `desc=` la descripción.
+- **Línea de columna**: `columna <nombre> <tipo> clave pii nulo=no desc="…"` (en inglés `column … key pii nullable=no desc=`). `clave` marca una clave primaria y `pii` una columna de datos personales; el tipo puede llevar espacios si va entre comillas.
+- **Línea de regla**: `regla <regla> <columna> param="…" severidad=baja|media|alta` (`rule … severity=`). Las reglas son `not_null`, `unique`, `range`, `regex`, `accepted_values`, `freshness` y `custom`; la columna y `param=` son opcionales.
+- **Línea de contrato**: `contrato <versión> estado=borrador|acordado|obsoleto consumidores=<ids de componente> terminos="…"` (`contract … status= consumers= terms=`). Los consumidores son ids de componente, separados por comas.
+- La **latencia** va en una conexión: `a -> b : carga latencia=1h` (`latency=1h`), el tiempo que tarda el dato en ese salto. Para cómo se calcula la frescura, ver la sección *Catálogo de datos y contratos de datos* de la guía.
+- Un nivel, clase de datos, fase, regla, severidad, estado, formato o duración desconocidos, un id de conjunto no válido o repetido, un nombre usado dos veces, un consumidor que no es un componente, y una línea de campo que no va justo debajo de un conjunto son errores, con su número de línea. Borrar las líneas `conjunto` borra los conjuntos.
+
 <details>
 <summary><b>Formato JSON</b></summary>
 
@@ -198,6 +235,7 @@ erp -> subida : extracción fase=mvp
 - `routing: "elbow"` pone líneas en ángulo recto en todo el diagrama; `route` (`curved` o `elbow`) lo cambia en una conexión. `meta` guarda `author` y `version`.
 - `review` en un nodo: `{ "status": "open" | "resolved", "note", "by", "raised", "due", "closed" }`, con fechas `AAAA-MM-DD`.
 - `data` es la lista de clasificaciones (`["pii", "pci"]`) en nodos y conexiones. `encrypted` (`true` o `false`) es el cifrado en tránsito de una conexión.
+- `datasets` (opcional, solo se escribe si hay alguno) lista el catálogo: `id`, `name` y, opcionalmente, `domain`, `layer`, `owner`, `steward`, `product`, `classes`, `format`, `freshness`, `volume` (`perDay`, `retentionDays`), `schema`, `quality`, `contract` (`version`, `status`, `consumers`, `terms`) y `phase`. Una conexión con `latency` (`"1h"`) es el tiempo que tarda su dato en ese salto.
 - `requirements` (opcional, solo se escribe si hay alguno) lista los requisitos: `id`, `title`, `kind`, `status` y, opcionalmente, `detail`, `priority`, `source`, `check` (`{ metric, from, to, target, cls, jur }`) y `links` (`decisions`, `nodes`, `edges`, `groups`).
 - El archivo exportado también lleva `versions` (cada una con `kind`: `version` o `env`, y su propio `diagram`) y `active`.
 - `color` acepta una clave de la paleta o cualquier color CSS.

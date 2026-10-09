@@ -940,6 +940,23 @@
       eq(r.model.nodes.filter(n => n.until).map(n => [n.id, n.phase, n.until]), [[lang === 'en' ? 'upload' : 'subida', 'mvp', lang === 'en' ? 'wave1' : 'ola1']], `until (${lang})`);
     });
   });
+  test('the dataset examples of the text-format docs parse and keep their datasets, columns, rules, contracts and latencies · en and es', () => {
+    // El bloque de ejemplo es el único bloque entre ``` que empieza una línea `dataset DS-…` (o `conjunto DS-…`)
+    const blocks = md => md.split('```').filter((s, i) => i % 2 === 1 && /^(dataset|conjunto) DS-/m.test(s));
+    [['en', 'docs/text-format.md'], ['es', 'docs/text-format.es.md']].forEach(([lang, file]) => {
+      const bs = blocks(read(file));
+      eq(bs.length, 1, `one dataset example in ${file}`);
+      const r = TXT.parse(bs[0], textCtx(lang));
+      eq(r.errors, [], `parse errors (${lang})`);
+      const ds = r.model.datasets || [];
+      eq(ds.map(d => d.name), ['orders', 'customers'], `dataset names (${lang})`);
+      eq(ds.map(d => (d.schema || []).length), [3, 1], `column count (${lang})`);
+      eq(ds.map(d => (d.quality || []).length), [2, 1], `rule count (${lang})`);
+      eq(ds.map(d => d.contract?.status), ['agreed', 'draft'], `contract status (${lang})`);
+      eq(ds[1].phase, lang === 'en' ? 'wave1' : 'ola1', `phase of customers (${lang})`);
+      eq(r.model.edges.map(e => e.latency), ['1d', '15m'], `latencies (${lang})`);
+    });
+  });
   test('the phase model stays out of the old paths: markers, ORDER, API-facing helpers exist', () => {
     ['ORDER.phase = [\'id\', \'name\', \'date\', \'goal\']'].forEach(x => assert(app.includes(x), x));
     assert(/cleanPhaseRefs\(\[\.\.\.m\.groups, \.\.\.m\.nodes, \.\.\.m\.edges\], m\.phases\)/.test(app), 'normalize cleans the element fields'); assert(/if \(m\.phases\?\.length\) head\.push\(arr\('phases'/.test(app), 'JSON only writes the key when there are phases');

@@ -12,6 +12,7 @@
 | `src/examples.js` | Templates |
 | `src/export/mermaid.js`, `src/export/plantuml.js`, `src/export/drawio.js` | Exporters to Mermaid, PlantUML and draw.io |
 | `src/export/xlsx.js` | Minimal ZIP and Excel (`.xlsx`) writer, no libraries (used by the inventory export) |
+| `src/export/datacontract.js` | Data contracts (Open Data Contract Standard, ODCS v3.2.0 YAML, one file per dataset or all in one), written by hand with no libraries |
 | `src/share.js` | Encrypted, self-contained HTML viewer for sharing |
 | `src/iac.js` | Infrastructure-as-code import (Terraform, CloudFormation, Kubernetes, Compose) |
 | `samples/` | Sample IaC files to try the import |
