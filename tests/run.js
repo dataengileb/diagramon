@@ -980,6 +980,8 @@
     tabs.forEach(x => assert(groups.includes(x.split('"')[0]) && x.includes('data-tab="'), 'tab in a known group'));
     ['tabg.label', 'tabg.design', 'tabg.gov', 'tabg.data'].forEach(k => assert(i18n.split(`'${k}':`).length === 3, `${k} defined once in en and once in es`));
     assert(idx.includes('id="review-badge-g"'), 'review badge mirrored on the group button');
+    const body = idx.split('<body')[1]; assert(body.split('<div').length === body.split('</div>').length, 'every div in the page body is closed once');
+    assert(/<aside class="sidebar">[\s\S]*data-pane="components"[\s\S]*<\/aside>/.test(idx) && !/<\/div>\s*<\/div>\s*<div class="pane on"/.test(idx), 'panes stay inside the side panel');
   });
 
   /* ======================================================================

@@ -93,10 +93,10 @@
   @keyframes pop-in { from { opacity: 0; transform: translateY(-6px) scale(.98); } }
 
   /* Zona principal */
-  .main { position: relative; display: grid; grid-template-columns: var(--side, 296px) 1fr; min-height: 0; transition: grid-template-columns .3s ease; }
+  .main { position: relative; display: grid; grid-template-columns: var(--side, 320px) 1fr; min-height: 0; transition: grid-template-columns .3s ease; }
   .main.collapsed { grid-template-columns: 0 1fr; }
   .main.resizing { transition: none; user-select: none; cursor: col-resize; }
-  .resizer { position: absolute; top: 0; bottom: 0; left: calc(var(--side, 296px) - 3px); width: 6px; z-index: 6; cursor: col-resize; transition: background-color .2s; }
+  .resizer { position: absolute; top: 0; bottom: 0; left: calc(var(--side, 320px) - 3px); width: 6px; z-index: 6; cursor: col-resize; transition: background-color .2s; }
   .resizer:hover, .main.resizing .resizer { background: color-mix(in srgb, var(--accent) 45%, transparent); }
   .main.collapsed .resizer { display: none; }
   .sidebar {
@@ -1386,7 +1386,6 @@
         <button data-group="gov" class="tab" data-tab="req" data-i18n="tab.req" data-i18n-title="tab.req.tip"></button>
         <button data-group="gov" class="tab" data-tab="raid" data-i18n="tab.raid" data-i18n-title="tab.raid.tip"></button>
         <button data-group="gov" class="tab" data-tab="people" data-i18n="tab.people" data-i18n-title="tab.people.tip"></button>
-      </div>
       </div>
       <div class="pane on" data-pane="components">
         <label class="provider" id="provider-wrap" hidden>
