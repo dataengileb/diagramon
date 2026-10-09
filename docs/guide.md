@@ -4,6 +4,7 @@
 
 **Contents**
 
+- [The side panel](#the-side-panel)
 - [1. Your first diagram](#1-your-first-diagram)
 - [2. Connect](#2-connect)
 - [3. Edit and group](#3-edit-and-group)
@@ -15,6 +16,7 @@
   - [Data lineage](#data-lineage)
   - [Data residency](#data-residency)
   - [Data lake layers](#data-lake-layers)
+  - [Data catalog and data contracts](#data-catalog-and-data-contracts)
 - [7. Review findings](#7-review-findings)
   - [Automatic security review](#automatic-security-review)
   - [Compliance mapping](#compliance-mapping)
@@ -30,6 +32,10 @@
 - [Views](#views)
 - [C4 levels (drill-down)](#c4-levels-drill-down)
 - [Keyboard shortcuts](#keyboard-shortcuts)
+
+## The side panel
+
+The right-hand panel has its tabs in two rows. The first row holds three groups: **Design** (*Components*, *Templates*, *Versions*, *Text*, *JSON*), **Governance** (*Review*, *ADR*, *Requirements*, *RAID*, *Stakeholders*) and **Data** (*Catalog*). Click a group to open the tab you last used in it. The count of open findings also shows on the **Governance** group, so you see it while another group is open. In a row, the arrow keys move between the tabs (and between the groups in the first row), **Home** goes to the first one and **End** to the last. The panel is 320 px wide by default; drag its edge to resize it.
 
 ## 1. Your first diagram
 
@@ -138,6 +144,49 @@ A layered component gets a colored band on its left edge and a small layer label
 The **Layers** legend (exports and the document card, key **I**) lists the layers in use; click a row in the document card to filter by it. The **Filters** menu has a *Layer* section, and the **Data** view highlights layered components.
 The *Context* and *Cost* views hide layer marks. Scripts can read `Diagramon.layers()` and call `Diagramon.setLayerNames('zones')`.
 
+### Data catalog and data contracts
+
+Declare the datasets your architecture moves, with their columns, quality rules and contract, and check that they arrive within their freshness SLA. A **declared dataset** is an entry of the catalog. A name typed on a connection is only a name: until a dataset with that name is declared, it is **undocumented**.
+
+- Open the **Catalog** tab (group **Data**). **+ Dataset** adds one. The summary line counts the declared datasets, the data products, the undocumented names and the SLA breaches. Filter by layer, by **★ Products** or **Not products**, by domain and by contract, or type in the search box.
+- Each card has a header with the ID, the name, the layer, a freshness badge (**✓** meets its SLA, **✗** does not, **?** unknown) and a **★** that marks a data product (click to mark or unmark). Under it: the domain and owner, the real freshness against the SLA, and the storage estimate. Click the header to open the card. Its sections are:
+  - **General**: description, domain, layer, **Owner** (a stakeholder, or *Other (free text)…*), steward, data classes, format, **Freshness SLA**, volume per day and retention, and the phase.
+  - **Schema**: one row per column (name, type, **Key**, **PII**, **Null**, description). **+ Column**, the ▲ ▼ and × buttons, and **⤢ Expand** for a large window.
+  - **Quality**: **+ Rule** adds a rule with its column, parameter and severity (not null, unique, range, pattern, accepted values, freshness or custom).
+  - **Contract**: version, status (**Draft**, **Agreed** or **Deprecated**), consumers (components) and terms. **Create contract**, **Export contract** and **Remove contract**.
+  - **Lineage**: the slowest path with the latency of each hop, and **Show on canvas**, which highlights the dataset's lineage.
+  - **Delete dataset** at the bottom asks first (you can undo).
+- Renaming a dataset in its **Name** field also renames it on every connection that carries it, as one undo step. A name that another dataset already uses is refused.
+- The **Undocumented** list at the bottom names the connections' names with no entry. Click one to see its lineage, or press **Document** to create the dataset; its layer is the layer of the target of its first connection.
+- A **data product** should have an owner and a contract; the Review tab says so when it does not.
+
+**Latency** is a field of each connection (**Latency**, `15m`, `1h`, `1d`): the time the data takes on that hop, such as a batch window or a micro-batch interval. The **end-to-end freshness** of a dataset is the sum of the latencies along its **slowest path**, from an origin of its lineage to a consumer. A hop without latency counts as zero and is shown as **?** (the total then reads *≥*). It is **unknown** when the dataset has no SLA or no path has a latency. The card and the **Freshness** requirement check (below) use it.
+
+**Storage estimate**: volume per day × retention (365 days when not given), priced per GB-month by layer with the indicative rates of `src/config.js › datasets.storagePrice` (see *Customize*). It is an estimate, shown on the card, in the report and in the phase comparison (*Storage/mo*), and it is kept apart from the cost of the components.
+
+**Phases**: a dataset with a phase exists from that phase on, and the comparison table of the phases gets the *Datasets* and *Storage/mo* columns when the diagram has datasets.
+
+**Review findings** (group *Data catalog* in the **Review** tab):
+
+| Finding | Severity | Fires when |
+|---|---|---|
+| Undocumented dataset | low | A name on connections has no entry (only once the diagram declares a dataset) |
+| Data product without owner or contract | medium | A data product has no owner, no contract, or neither |
+| Freshness SLA not met | high | The end-to-end freshness is above the dataset's SLA |
+| PII columns not classified as PII | medium | A column is marked PII but the dataset has no *pii* class |
+| Sensitive dataset on an unencrypted connection | high | A dataset with a sensitive class travels on a connection marked *Not encrypted* |
+| Consumer outside the lineage | low | A consumer in the contract is not reached by the dataset's lineage |
+| No quality rules | low | A data product or a gold dataset has no quality rules |
+
+**Export and the console**
+
+- **Export › Data contracts (ODCS YAML)** (shown only when the diagram declares datasets) writes one YAML document per dataset, separated by `---`. The card's **Export contract** writes one file for that dataset (`<name>.odcs.yaml`). The YAML follows the Open Data Contract Standard **v3.2.0** and is written by hand, with no libraries. Diagramon fields map to it as: name to name and to the schema; version and status (*draft*, *agreed* as *active*, *deprecated*); domain; description to the purpose and terms to the usage; data classes to tags; columns to the schema properties (type, key, required, classification, description); quality rules to the quality checks; the freshness SLA to the latency and the retention to the retention of the SLA; owner and steward to the team members. Data that the standard has no field for, such as the Diagramon id, the layer, the format, the consumers, the phase, the daily volume and the product flag (as `dataProduct`), goes to `customProperties`.
+- The **report** has a section *Data catalog and contracts*: a summary, one table of the datasets (domain, layer, owner, product, freshness, contract and storage), the undocumented names, and for each data product its schema and quality rules. The **Excel** inventory gets a *Datasets* sheet, and *Columns* and *Quality* sheets when they have rows; the *Connections* sheet gets a *Latency* column when some connection has one.
+- From the console: `Diagramon.catalog()` (declared and undocumented names, with their connections and nodes), `Diagramon.dataset(idOrName)`, `Diagramon.addDataset({ name, … })` (returns the new id, or an empty string when refused), `Diagramon.updateDataset(id, patch)`, `Diagramon.removeDataset(id)`, `Diagramon.renameDataset(id, name)`, `Diagramon.freshness(name)` (`{ worst, path, hops, unknownHops, sla, state }`, times in milliseconds), `Diagramon.storage(id)`, `Diagramon.contractYaml(idOrName)` and `Diagramon.contractsYaml()`. Changes can be undone with **`⌘Z`**.
+- Diagrams without datasets and without latencies export exactly as before.
+
+The *Lakehouse greenfield* template comes with ten datasets: five raw ones in bronze, *orders*, *customers* and *products* in silver, and *sales_daily* and *customer_360* in gold as data products. *sales_daily* is set up to miss its freshness SLA, so the **Review** tab shows a high finding to look at.
+
 ## 7. Review findings
 
 1. Select a component and click **⚑ Raise a review finding**.
@@ -150,7 +199,7 @@ Diagramon remembers the last reviewer name. Exports with the legend list the ope
 
 ### Automatic security review
 
-Diagramon checks the diagram for common security problems and **only warns, it never blocks anything**. The **Review** tab (next to *Versions*) lists every finding, grouped by source and severity, and its label shows the number of open findings in the color of the worst one. The same number appears in the line above the canvas (*⚑ N findings*), and in the **Security** view each component with findings gets a small *⚠ n* pill.
+Diagramon checks the diagram for common security problems and **only warns, it never blocks anything**. The **Review** tab (in the **Governance** group) lists every finding, grouped by source and severity, and its label shows the number of open findings in the color of the worst one. The same number appears in the line above the canvas (*⚑ N findings*), and in the **Security** view each component with findings gets a small *⚠ n* pill.
 
 | Rule | Severity | Fires when |
 |---|---|---|
@@ -256,6 +305,7 @@ The **Requirements** tab records *what the client needs*, so each decision and c
   - *Cost*: the total monthly cost of the diagram is at most the target.
   - *Encryption*: every connection carrying a data class is marked encrypted; the failing connections are listed.
   - *Residency*: no unapproved cross-border connection carries a sensitive data class out of a jurisdiction (set component regions first).
+  - *Freshness*: the end-to-end freshness of a dataset (the sum of the connection latencies along its slowest path, see *Data catalog and data contracts*) is at most the target hours.
   Missing or invalid parameters give *unknown* with the reason.
 - **Review findings** (source *Requirements*): an *Agreed* **Must** (medium) or **Should** (low) requirement with no accepted decision and no linked component, and an *Agreed* requirement whose check fails (high for *Must*, medium otherwise).
 - **Matrix** switches the tab to a **traceability matrix**: one row per requirement, one column per decision, ✓ where they are linked and *accepted* decisions highlighted in green. Click a cell to link or unlink; **⤢ Expand** opens it large over the canvas (**Close** or Esc returns).
@@ -278,7 +328,7 @@ Open the **RAID** tab to record *what could go wrong and what we are assuming*, 
 
 ### Stakeholders, RACI and approvals
 
-Open the **Stakeholders** tab (after Versions) to record the people who decide on the project (architect, CISO, data owner, FinOps…) and who approves what. Each stakeholder is a card with a name, a role and an **organisation** (*Client*, *Partner* or *Internal*), shown as a coloured pill. Use **+ Stakeholder**, click a card to edit it, and the summary counts the stakeholders and the decision areas that have no approver.
+Open the **Stakeholders** tab (in the **Governance** group) to record the people who decide on the project (architect, CISO, data owner, FinOps…) and who approves what. Each stakeholder is a card with a name, a role and an **organisation** (*Client*, *Partner* or *Internal*), shown as a coloured pill. Use **+ Stakeholder**, click a card to edit it, and the summary counts the stakeholders and the decision areas that have no approver.
 
 - **Flags on the card**: **Approves versions** makes the stakeholder a required approver of every saved version. **Inactive** (*left the project*) means they are never required again, but their sign-offs stay in the history.
 - **Delete** asks for confirmation. A stakeholder with sign-offs cannot be deleted, so the approval history stays intact: the dialog offers **Mark inactive** instead.
