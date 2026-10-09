@@ -163,7 +163,7 @@ Declara los conjuntos de datos que mueve tu arquitectura, con sus columnas, regl
 
 **Estimación de almacenamiento**: volumen por día × retención (365 días si no se indica), con el precio por GB-mes de su capa, según las tarifas orientativas de `src/config.js › datasets.storagePrice` (ver *Personalizar*). Es una estimación: aparece en la ficha, en el informe y en la comparación por fases (*Almac./mes*), y se mantiene aparte del costo de los componentes.
 
-**Fases**: un conjunto con fase existe desde esa fase en adelante, y la tabla de comparación de fases gana las columnas *Conjuntos* y *Almac./mes* cuando el diagrama tiene conjuntos.
+**Fases**: un conjunto con fase existe desde esa fase en adelante, y la tabla de comparación de fases gana una columna *Conjuntos* cuando el diagrama tiene conjuntos, y una columna *Almac./mes* cuando algún conjunto tiene volumen.
 
 **Observaciones de revisión** (grupo *Catálogo de datos* de la pestaña **Revisión**):
 

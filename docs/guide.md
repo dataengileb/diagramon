@@ -164,7 +164,7 @@ Declare the datasets your architecture moves, with their columns, quality rules 
 
 **Storage estimate**: volume per day × retention (365 days when not given), priced per GB-month by layer with the indicative rates of `src/config.js › datasets.storagePrice` (see *Customize*). It is an estimate, shown on the card, in the report and in the phase comparison (*Storage/mo*), and it is kept apart from the cost of the components.
 
-**Phases**: a dataset with a phase exists from that phase on, and the comparison table of the phases gets the *Datasets* and *Storage/mo* columns when the diagram has datasets.
+**Phases**: a dataset with a phase exists from that phase on, and the comparison table of the phases gets a *Datasets* column when the diagram has datasets, and a *Storage/mo* column when some dataset has a volume.
 
 **Review findings** (group *Data catalog* in the **Review** tab):
 
