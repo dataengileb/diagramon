@@ -976,7 +976,7 @@
     const idx = read('index.html'), i18n = read('src/i18n.js');
     const groups = idx.split('<button class="tabg').slice(1).map(x => x.split('data-g="')[1].split('"')[0]);
     assert(groups.join() === 'design,gov,data', 'groups design, gov, data');
-    const tabs = idx.split('<button data-group="').slice(1); assert(tabs.length === 10, 'ten tabs carry data-group'); assert(tabs.filter(x => x.startsWith('design')).length === 5 && tabs.filter(x => x.startsWith('gov')).length === 5, 'five tabs per group'); assert(idx.includes('data-group="design" class="tab" data-tab="versions"'), 'versions in design');
+    const tabs = idx.split('<button data-group="').slice(1); assert(tabs.length === 11, 'eleven tabs carry data-group'); assert(tabs.filter(x => x.startsWith('design')).length === 5 && tabs.filter(x => x.startsWith('gov')).length === 5 && tabs.filter(x => x.startsWith('data')).length === 1, 'five tabs in design and gov, one in data'); assert(idx.includes('data-group="design" class="tab" data-tab="versions"'), 'versions in design');
     tabs.forEach(x => assert(groups.includes(x.split('"')[0]) && x.includes('data-tab="'), 'tab in a known group'));
     ['tabg.label', 'tabg.design', 'tabg.gov', 'tabg.data'].forEach(k => assert(i18n.split(`'${k}':`).length === 3, `${k} defined once in en and once in es`));
     assert(idx.includes('id="review-badge-g"'), 'review badge mirrored on the group button');
@@ -1146,6 +1146,19 @@
     const i18n = read('src/i18n.js'), used = [...new Set([...app.matchAll(/T\('(ds\.[\w.]+)'/g)].map(m => m[1]))];
     ['find.src.data', ...used, 'ds.find.noOwner', 'ds.find.noContract', 'ds.find.ownerContract'].forEach(k => assert(i18n.split(`'${k}':`).length === 3, `${k} is defined once in en and once in es`));
     const keys = [...i18n.matchAll(/'(ds\.[\w.]+)':/g)].map(m => m[1]); assert(keys.every(k => keys.filter(x => x === k).length === 2), 'every ds.* key is defined exactly once per language');
+  });
+
+  test('Data tab wiring: tab in group data, pane inside the side panel, every ds.* key used by the UI defined once per language', () => {
+    const idx = read('index.html'), i18n = read('src/i18n.js');
+    assert(idx.includes('<button data-group="data" class="tab" data-tab="data"'), 'the data tab is in group data');
+    const side = idx.split('<aside class="sidebar">')[1].split('</aside>')[0];
+    assert(side.includes('data-pane="data"') && side.includes('id="ds-panel"') && side.includes('id="ds-bar"') && side.includes('id="ds-list"'), 'the data pane and its containers live inside the side panel');
+    ['renderDs', "t.dataset.tab === 'data'", 'dsDocument', 'renameDatasetApi(ds.id', 'data-ds-open', 'typeof exportContract'].forEach(k => assert(app.includes(k), `app has ${k}`));
+    const used = new Set([...app.matchAll(/T\(\s*'(ds\.[\w.]+)'/g)].map(m => m[1]));
+    ['ds.cst.draft', 'ds.cst.agreed', 'ds.cst.deprecated', 'ds.rule.not_null', 'ds.rule.unique', 'ds.rule.range', 'ds.rule.regex', 'ds.rule.accepted_values', 'ds.rule.freshness', 'ds.rule.custom', 'ds.sec.general', 'ds.sec.schema', 'ds.sec.quality', 'ds.sec.contract', 'ds.sec.lineage', 'tab.data', 'tab.data.tip'].forEach(k => used.add(k));
+    used.forEach(k => assert(i18n.split(`'${k}':`).length === 3, `${k} is defined once in en and once in es`));
+    const keys = [...i18n.matchAll(/'((?:ds|tab\.data)[\w.]*)':/g)].map(m => m[1]); assert(keys.every(k => keys.filter(x => x === k).length === 2), 'no duplicated ds.* key');
+    assert(used.size > 60, 'the UI uses the new keys');
   });
 
   /* ---------- resumen ---------- */
