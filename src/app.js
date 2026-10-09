@@ -7926,6 +7926,9 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
   const INV_REQ = [['id'], ['title'], ['kind'], ['priority'], ['status'], ['source'], ['coveredBy'], ['check'], ['result']];
   const INV_RAID = [['id'], ['type'], ['title'], ['status'], ['owner'], ['probability'], ['impact'], ['score'], ['mitigation'], ['due'], ['raised'], ['links'], ['detail']];
   const INV_SH = [['id'], ['name'], ['role'], ['org'], ['raci'], ['versions'], ['inactive']];
+  const INV_PH = [['phase'], ['until']];   // columnas de fase de componentes y conexiones (solo si el diagrama tiene fases)
+  const INV_PHASE = [['id'], ['name'], ['date'], ['goal'], ['components', 'int'], ['added', 'int'], ['retired', 'int'], ['monthly', 'money']];
+  const phNm = (m, id) => (id ? m.phases?.find(p => p.id === id)?.name || '' : '');   // nombre de la fase («» si no hay)
   const INV_SIGN = [['kind'], ['object'], ['by'], ['stakeholder'], ['verdict'], ['date'], ['note']];
   const INV_FIND = [['severity'], ['source'], ['rule'], ['title'], ['target'], ['dismissed'], ['reason']];
   const INV_VER = [['name'], ['env'], ['status'], ['author'], ['created'], ['updated'], ['decidedOn']];
@@ -7966,7 +7969,8 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
         sla: invNum(n.sla), rpo: n.rpo == null ? '' : String(n.rpo), rto: n.rto == null ? '' : String(n.rto), replicas: invNum(n.replicas),
         cost: hasCost(n) ? +n.cost : '', period: pc ? T(PERIODS[pc].label) + (pc === 'multi' ? ` · ${T('cost.years', yearsOf(n))}` : '') : '', perMonth: pm, perYear: pm === '' ? '' : round2(perMonth(n) * 12),
         review: n.review ? T(`rev.tag.${reviewState(n.review)}`) : '', findings: my,
-        adrs: (m.decisions || []).filter(d => d.links?.nodes?.includes(n.id)).map(d => d.id).join(', '), compliance: comp, desc: n.desc || ''
+        adrs: (m.decisions || []).filter(d => d.links?.nodes?.includes(n.id)).map(d => d.id).join(', '), compliance: comp, desc: n.desc || '',
+        ...(m.phases?.length ? { phase: phNm(m, n.phase), until: phNm(m, n.until) } : {})   // fase en la que aparece y en la que se retira (sin fases no hay claves)
       };
     });
   }
@@ -7975,16 +7979,22 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     const m = model, byId = new Map(m.nodes.map(n => [n.id, n])), nm = id => byId.get(id)?.label || id;
     const mk = (key, cols, rows) => ({ key, name: T(`inv.sheet.${key}`), head: cols.map(([k]) => T(`inv.c.${k}`)), keys: cols.map(([k]) => k), fmt: cols.map(([, f]) => f || null), rows });
     const out = [], comp = inventoryRows(m);
-    out.push(mk('components', INV_COMP, comp.map(r => INV_COMP.map(([k]) => r[k]))));
+    // Fases (solo si el diagrama las tiene): columnas Fase y Se retira en en componentes y conexiones
+    const ph = !!m.phases?.length, cc = [...INV_COMP, ...(ph ? INV_PH : [])];
+    out.push(mk('components', cc, comp.map(r => cc.map(([k]) => r[k]))));
+    // Una fila por fase: lo que hay en ella y lo que entra y sale respecto de la anterior
+    if (ph) out.push(mk('phases', INV_PHASE, m.phases.map((p, i) => { const s = phaseStats(m, i, { monthly: x => monthlyTotal(x.nodes), findings: () => [] }), d = phaseDiff(m, i); return [p.id, p.name, p.date || '', p.goal || '', s.nodes, d.added.length, d.retired.length, round2(s.cost)]; })));
     // Conexiones
     const open = typeof strideAll === 'function' ? (() => { try { return strideAll(m).filter(t => t.status === 'open'); } catch { return []; } })() : [];
     const ets = Array.isArray(m.edgeTypes) ? m.edgeTypes : [], etOf = id => ets.find(t => t.id === id); // del modelo que se exporta, no del lienzo
     const conn = m.edges.map(e => {
       const cb = typeof crossBorder === 'function' ? crossBorder(e, byId) : null, ct = etOf(e.style);
       return [e.id || '', nm(e.from), nm(e.to), String(e.label || '').replace(/\s*\n\s*/g, ' '), ct ? loc(ct.label) : edgeStyleLabel(e.style), T(EDGE_W[e.weight] ? `wt.${e.weight}` : 'wt.normal'), invYN(!!ct), e.encrypted === true ? T('enc.yes') : e.encrypted === false ? T('enc.no') : T('enc.unset'),
-        (e.data || []).map(k => loc(DATA[k]?.short) || String(k).toUpperCase()).join(' '), (e.datasets || []).join('; '), invYN(!!cb), cb ? invYN(cb.approved) : '', open.filter(t => t.e === e || t.e.id === e.id).length];
+        (e.data || []).map(k => loc(DATA[k]?.short) || String(k).toUpperCase()).join(' '), (e.datasets || []).join('; '), invYN(!!cb), cb ? invYN(cb.approved) : '', open.filter(t => t.e === e || t.e.id === e.id).length,
+        ...(ph ? [phNm(m, e.phase), phNm(m, e.until)] : [])];
     });
-    if (conn.length) out.push(mk('connections', INV_CONN, conn));
+    const cn = [...INV_CONN, ...(ph ? INV_PH : [])];
+    if (conn.length) out.push(mk('connections', cn, conn));
     // Tipos de conexión propios (solo si el diagrama los tiene)
     if (ets.length) out.push(mk('types', INV_TYPE, ets.map(t => [t.id, loc(t.label), t.dash || '', t.color || '', t.width ?? '', t.particles ?? '', m.edges.filter(e => e.style === t.id).length])));
     // Grupos
