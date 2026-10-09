@@ -80,9 +80,9 @@
              p= es la probabilidad y i= el impacto, de 1 a 5, solo en riesgos). Los ids son R-, A-, I- o D- más un número. Líneas de campo justo después:
                detail: "…"  mitigation: "…" (riesgos)  history: validated 2026-11-02 by="Ana" note="…"; invalidated 2026-12-01 (supuestos)
              (es: detalle: mitigación: historial: validado… invalidado… por= nota=). links= lista ids de decisiones (ADR-001), requisitos (REQ-001), nodos, grupos y conexiones (`origen->destino`, `#2` si hay varias iguales).
-   Interesados: stakeholder SH-001: "Ana Pérez" role="CISO" org=client raci=*:C,Seguridad:A,"Data Platform":R versions inactive
+   Interesados: stakeholder SH-001: "Ana Pérez" role="CISO" org=client raci="*:C,Seguridad:A,Data Platform:R" versions inactive
              (es: interesado … rol= org=cliente|socio|interno raci= versiones inactivo). raci= lista área:letra (R responsable, A aprueba, C consultado, I informado);
-             `*` vale para todas las áreas; las áreas son las de las decisiones (ADR) y no pueden llevar comas. `versions` = aprueba versiones; `inactive` = ya no participa.
+             `*` vale para todas las áreas; las áreas son las de las decisiones (ADR) y no pueden llevar comas; si alguna lleva espacios, la lista entera va entre comillas. `versions` = aprueba versiones; `inactive` = ya no participa.
    El texto es la fuente de verdad de notas, zonas, fronteras, notas STRIDE, descartados, decisiones (ADR), requisitos, registro RAID e interesados: borrarlos del texto los borra del diagrama.
    Comentario: líneas que empiezan por # o //
 

@@ -635,6 +635,11 @@
     { id: 'SH-002', name: 'Luis "El Jefe" Gómez', org: 'partner', raci: { platform: 'A' } },
     { id: 'SH-003', name: 'Marta', role: 'FinOps', org: 'internal', raci: { Operations: 'A' }, inactive: true }
   ];
+  test('a quoted raci list accepts areas with spaces', () => {
+    const { model: m, errors } = TXT.parse('stakeholder SH-001: "Ana" raci="*:C,Data Platform:R"', textCtx('en'));
+    eq(errors.length, 0, 'no errors');
+    eq(m.stakeholders?.[0]?.raci?.['Data Platform'], 'R', 'area with a space');
+  });
   test('cleanStakeholders keeps valid entries in canonical key order and applies the limits', () => {
     const r = SHM.cleanStakeholders(shSet(), {});
     eq(r.map(x => x.id), ['SH-001', 'SH-002', 'SH-003'], 'ids');
