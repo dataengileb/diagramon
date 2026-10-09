@@ -157,7 +157,7 @@ window.DIAGRAMON_CONFIG = {
   },
 
   /* Conjuntos de datos (catálogo de datasets: formato, capa, contratos y reglas de calidad de cada uno).
-     formats: formatos que se ofrecen en el selector (un formato fuera de la lista se acepta igualmente al leer JSON y texto).
+     formats: formatos que se ofrecen en el selector (un formato fuera de la lista se descarta al leer el JSON y da error en la pestaña Texto).
      qualityRules: tipos de regla de calidad que se ofrecen (not_null, unique, range, regex, accepted_values, freshness, custom).
      storagePrice: precio ORIENTATIVO de almacenamiento por GB-mes, por capa (bronze, silver, gold); `default` para el resto.
        Son estimaciones para calcular el almacenamiento de un conjunto (volumen × retención), separadas de los costos
