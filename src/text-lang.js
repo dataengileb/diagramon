@@ -80,10 +80,13 @@
              p= es la probabilidad y i= el impacto, de 1 a 5, solo en riesgos). Los ids son R-, A-, I- o D- más un número. Líneas de campo justo después:
                detail: "…"  mitigation: "…" (riesgos)  history: validated 2026-11-02 by="Ana" note="…"; invalidated 2026-12-01 (supuestos)
              (es: detalle: mitigación: historial: validado… invalidado… por= nota=). links= lista ids de decisiones (ADR-001), requisitos (REQ-001), nodos, grupos y conexiones (`origen->destino`, `#2` si hay varias iguales).
+   Fases:    phase mvp: "MVP" date=2026-12 goal="Ingesta por lotes y primer BI" (es: fase mvp: "MVP" fecha=2026-12 objetivo="…"); el orden de las líneas es la línea de tiempo
+             (máx. 12; fecha AAAA-MM o AAAA-MM-DD, opcional). Se escriben antes de los nodos. Nodo, grupo o conexión … phase=mvp until=wave2 (es: fase=mvp hasta=wave2):
+             aparece en esa fase y se retira en la otra (hasta debe ir después de fase); sin phase, ya estaba en la primera. Una fase que no existe es un error con su línea.
    Interesados: stakeholder SH-001: "Ana Pérez" role="CISO" org=client raci="*:C,Seguridad:A,Data Platform:R" versions inactive
              (es: interesado … rol= org=cliente|socio|interno raci= versiones inactivo). raci= lista área:letra (R responsable, A aprueba, C consultado, I informado);
              `*` vale para todas las áreas; las áreas son las de las decisiones (ADR) y no pueden llevar comas; si alguna lleva espacios, la lista entera va entre comillas. `versions` = aprueba versiones; `inactive` = ya no participa.
-   El texto es la fuente de verdad de notas, zonas, fronteras, notas STRIDE, descartados, decisiones (ADR), requisitos, registro RAID e interesados: borrarlos del texto los borra del diagrama.
+   El texto es la fuente de verdad de notas, zonas, fronteras, notas STRIDE, descartados, decisiones (ADR), requisitos, registro RAID, fases e interesados: borrarlos del texto los borra del diagrama.
    Comentario: líneas que empiezan por # o //
 
    Acepta las palabras clave en inglés y en español (title/título, group/grupo,
@@ -107,7 +110,13 @@
   const ARROW_SPLIT = /\s*(\.\.>|~>|=>|->)\s*/;
   const HAS_ARROW = /\.\.>|~>|=>|->/;
   const ID = /^[^\s:[\]"{}]+$/;
-  const NODE_KEYS = ['color', 'badge', 'desc', 'sub', 'x', 'y', 'costo', 'cost', 'data', 'datos', 'region', 'región', 'country', 'pais', 'país', 'layer', 'capa', 'exposure', 'exposición', 'exposicion', 'backup', 'respaldo', 'controls', 'controles', 'in', 'dentro', 'c4', 'sla', 'rpo', 'rto', 'replicas', 'réplicas'];
+  /* ---------- fases: phase id: "nombre" date= goal= · y phase= until= en nodos, grupos y conexiones ---------- */
+  const PHASE_RE = /^(phase|fase)\s+([^\s:]+)\s*:\s*(.*)$/i;
+  const PHASE_KEYS = ['phase', 'fase', 'until', 'hasta'];
+  const PHASE_LINE_KEYS = ['date', 'fecha', 'goal', 'objetivo'];
+  const PHASE_ID = /^[A-Za-z0-9_-]{1,30}$/, PHASE_MAX = 12;
+  const isPhaseDay = v => { const r = /^(\d{4})-(\d{2})(?:-(\d{2}))?$/.exec(v); if (!r) return false; const mo = +r[2], d = r[3] == null ? 1 : +r[3]; return mo >= 1 && mo <= 12 && d >= 1 && d <= new Date(Date.UTC(+r[1], mo, 0)).getUTCDate(); };
+  const NODE_KEYS = ['color', 'badge', 'desc', 'sub', 'x', 'y', 'costo', 'cost', 'data', 'datos', 'region', 'región', 'country', 'pais', 'país', 'layer', 'capa', 'exposure', 'exposición', 'exposicion', 'backup', 'respaldo', 'controls', 'controles', 'in', 'dentro', 'c4', 'sla', 'rpo', 'rto', 'replicas', 'réplicas', ...PHASE_KEYS];
   /* ---------- gobierno: dueño, responsable, equipo, centro de costo ---------- */
   const GOV_KEYS = { owner: 'owner', dueño: 'owner', dueno: 'owner', steward: 'steward', responsable: 'steward', team: 'team', equipo: 'team',
     costcenter: 'costCenter', centro: 'costCenter', centrocosto: 'costCenter', centrodecosto: 'costCenter' };
@@ -135,7 +144,7 @@
   const isDay = v => /^\d{4}-\d{2}-\d{2}$/.test(v) && !isNaN(new Date(`${v}T12:00Z`)) && new Date(`${v}T12:00Z`).toISOString().slice(0, 10) === v;
   // Opciones al final de una conexión: a -> b : etiqueta color=… data=pii encrypted=yes
   // (el valor puede ir entre comillas: datasets="sales orders,crm.customers")
-  const EDGE_OPT = /(?:^|\s)(color|style|estilo|weight|peso|data|datos|encrypted|cifrado|both|ambos|line|linea|línea|datasets|tablas|conjuntos|transfer|transferencia|threats|amenazas)=("(?:[^"\\]|\\.)*"|\S+)\s*$/i;
+  const EDGE_OPT = /(?:^|\s)(color|style|estilo|weight|peso|data|datos|encrypted|cifrado|both|ambos|line|linea|línea|datasets|tablas|conjuntos|transfer|transferencia|threats|amenazas|phase|fase|until|hasta)=("(?:[^"\\]|\\.)*"|\S+)\s*$/i;
   /* ---------- amenazas STRIDE: threats="T=mitigated,I=accepted" ---------- */
   const TH_KEY = { en: 'threats', es: 'amenazas' };
   const TH_ST = { en: { mitigated: 'mitigated', accepted: 'accepted', na: 'na' }, es: { mitigated: 'mitigada', accepted: 'aceptada', na: 'na' } };
@@ -232,12 +241,12 @@
       review: 'review', by: 'by', raised: 'raised', due: 'due', status: 'status', closed: 'closed', resolved: 'resolved', layer: 'layer', layers: 'layers', zones: 'zones',
       owner: 'owner', steward: 'steward', team: 'team', costCenter: 'costcenter',
       in: 'in', layerOf: { bronze: 'bronze', silver: 'silver', gold: 'gold' }, exposure: 'exposure', backup: 'backup', expoOf: { public: 'public', internal: 'internal' },
-      note: 'note', zone: 'zone', trust: 'trust', threat: 'threat', dismiss: 'dismiss', at: 'at', size: 'size', severity: 'severity', date: 'date', inside: 'inside', sevOf: { low: 'low', medium: 'medium', high: 'high', critical: 'critical' } },
+      note: 'note', zone: 'zone', trust: 'trust', threat: 'threat', dismiss: 'dismiss', phase: 'phase', until: 'until', goal: 'goal', at: 'at', size: 'size', severity: 'severity', date: 'date', inside: 'inside', sevOf: { low: 'low', medium: 'medium', high: 'high', critical: 'critical' } },
     es: { title: 'título', direction: 'dirección', group: 'grupo', cost: 'costo', hour: 'hora', month: 'mes', year: 'año', years: 'años', data: 'datos', encrypted: 'cifrado', both: 'ambos', yes: 'sí', no: 'no', lines: 'líneas', line: 'línea', region: 'región', transfer: 'transferencia', ok: 'ok', elbow: 'codos', curved: 'curvas', elbowOne: 'codo', curvedOne: 'curva', author: 'autor', version: 'versión', view: 'vista', kind: 'tipo', physical: 'físico', logical: 'lógico',
       review: 'revisión', by: 'por', raised: 'levantada', due: 'compromiso', status: 'estado', closed: 'cerrada', resolved: 'resuelta', layer: 'capa', layers: 'capas', zones: 'zonas',
       owner: 'dueño', steward: 'responsable', team: 'equipo', costCenter: 'centro',
       in: 'dentro', layerOf: { bronze: 'bronce', silver: 'plata', gold: 'oro' }, exposure: 'exposición', backup: 'respaldo', expoOf: { public: 'pública', internal: 'interna' },
-      note: 'nota', zone: 'zona', trust: 'confianza', threat: 'amenaza', dismiss: 'descartar', at: 'en', size: 'tamaño', severity: 'severidad', date: 'fecha', inside: 'dentro', sevOf: { low: 'baja', medium: 'media', high: 'alta', critical: 'crítica' } }
+      note: 'nota', zone: 'zona', trust: 'confianza', threat: 'amenaza', dismiss: 'descartar', phase: 'fase', until: 'hasta', goal: 'objetivo', at: 'en', size: 'tamaño', severity: 'severidad', date: 'fecha', inside: 'dentro', sevOf: { low: 'baja', medium: 'media', high: 'alta', critical: 'crítica' } }
   };
   const MSG = {
     en: {
@@ -273,6 +282,8 @@
       adrCritId: v => `invalid criterion id “${v}” (use a-z, 0-9 and -, up to 30 characters)`, adrCritDup: v => `criterion “${v}” is declared twice in this decision`, adrWeight: v => `invalid weight “${v}” (use a whole number from 1 to 5)`,
       adrOptId: v => `invalid option id “${v}” (use letters, digits and -, up to 20 characters)`, adrOptDup: v => `option “${v}” is declared twice in this decision`, adrChosen: v => `only one option can be chosen (“${v}” is already)`,
       adrCost: v => `invalid cost “${v}” (a number, 0 or more)`, adrRisk: v => `invalid risk “${v}” (use low, medium or high)`, adrScore: v => `invalid score “${v}” (use criterion:1..5, e.g. scores=cost:4,skills:5)`, adrScoreCrit: v => `score for “${v}”, which is not a criterion of this decision`,
+      phaseId: id => `invalid phase id “${id}” (use letters, digits, - or _, up to 30 characters)`, phaseDup: id => `phase “${id}” is declared twice`, phaseDate: v => `invalid phase date “${v}” (use YYYY-MM or YYYY-MM-DD)`,
+      phaseMax: n => `too many phases (at most ${n})`, phaseUnknown: id => `unknown phase “${id}” (declare it first with: phase ${id}: "Name")`, phaseOrder: (a, b) => `“until=${b}” must come after “phase=${a}” in the phase order`,
       thEdge: (a, b) => `no connection ${a} -> ${b} for this threat note`, thNone: (a, b, k) => `${a} -> ${b} has no decided ${k} threat (add it with threats="${k}=mitigated")`
     },
     es: {
@@ -308,6 +319,8 @@
       adrCritId: v => `id de criterio no válido «${v}» (usa a-z, 0-9 y -, hasta 30 caracteres)`, adrCritDup: v => `el criterio «${v}» está declarado dos veces en esta decisión`, adrWeight: v => `peso no válido «${v}» (usa un número entero de 1 a 5)`,
       adrOptId: v => `id de opción no válido «${v}» (usa letras, dígitos y -, hasta 20 caracteres)`, adrOptDup: v => `la opción «${v}» está declarada dos veces en esta decisión`, adrChosen: v => `solo una opción puede ser la elegida («${v}» ya lo es)`,
       adrCost: v => `costo no válido «${v}» (un número, 0 o más)`, adrRisk: v => `riesgo no válido «${v}» (usa bajo, medio o alto)`, adrScore: v => `puntaje no válido «${v}» (usa criterio:1..5, p. ej. puntos=costo:4,habilidades:5)`, adrScoreCrit: v => `puntaje para «${v}», que no es un criterio de esta decisión`,
+      phaseId: id => `id de fase no válido «${id}» (usa letras, dígitos, - o _, hasta 30 caracteres)`, phaseDup: id => `la fase «${id}» está declarada dos veces`, phaseDate: v => `fecha de fase no válida «${v}» (usa AAAA-MM o AAAA-MM-DD)`,
+      phaseMax: n => `demasiadas fases (máximo ${n})`, phaseUnknown: id => `fase desconocida «${id}» (decláralo antes con: fase ${id}: "Nombre")`, phaseOrder: (a, b) => `«hasta=${b}» debe ir después de «fase=${a}» en el orden de las fases`,
       thEdge: (a, b) => `no hay conexión ${a} -> ${b} para esta nota de amenaza`, thNone: (a, b, k) => `${a} -> ${b} no tiene decidida la amenaza ${k} (añádela con amenazas="${k}=mitigada")`
     }
   };
@@ -371,6 +384,9 @@
     const raidSeen = new Set(), raidRefs = []; let raidCur = null, raidOpen = false;
     model.stakeholders = [];
     const shSeen = new Set();
+    model.phases = [];
+    const phRefs = [];   // phase= / until= de nodos, grupos y conexiones: se validan al final, cuando ya están todas las fases
+    const phaseOf = (o, kv, ln) => { const a = (kv.phase ?? kv.fase)?.trim(), b = (kv.until ?? kv.hasta)?.trim(); if (a || b) phRefs.push({ o, a, b, ln }); };
     // Tipos propios declarados en cualquier línea (una conexión puede usarlos antes de que se declaren)
     const customIds = new Set();
     String(src).split(/\r?\n/).forEach(l => { const q = l.trim().match(TYPE_RE); if (q) customIds.add(q[2].toLowerCase()); });
@@ -441,6 +457,18 @@
           if (nt) h.note = nt;
           (raidCur.history ||= []).push(h);
         });
+        return;
+      }
+      if ((m = line.match(PHASE_RE))) {   // phase mvp: "MVP" date=2026-12 goal="…"
+        const id = m[2], tk = tokens(m[3], PHASE_LINE_KEYS), ph = { id, name: (tk.quotes[0] ?? tk.words.join(' ')).trim() || id }, kv = tk.kv;
+        if (!PHASE_ID.test(id)) return err(ln, msg.phaseId(id));
+        if (model.phases.some(x => x.id === id)) return err(ln, msg.phaseDup(id));
+        if (model.phases.length >= PHASE_MAX) return err(ln, msg.phaseMax(PHASE_MAX));
+        const dv = (kv.date ?? kv.fecha)?.trim();
+        if (dv) { if (isPhaseDay(dv)) ph.date = dv; else err(ln, msg.phaseDate(dv)); }
+        const gv = (kv.goal ?? kv.objetivo)?.trim();
+        if (gv) ph.goal = gv;
+        model.phases.push(ph);
         return;
       }
       if ((m = line.match(RAID_RE))) {   // risk R-001: "título" p=3 i=4 owner= status= validation= due= raised= links=
@@ -688,7 +716,7 @@
         const id = m[2];
         if (!ID.test(id)) return err(ln, msg.groupId(id));
         if (groups.has(id)) return err(ln, msg.groupDup(id));
-        const tk = tokens(m[3], ['color', 'icon', 'icono', 'kind', 'tipo', ...Object.keys(GOV_KEYS), ...REGION_KEYS, 'layer', 'capa', 'controls', 'controles', 'in', 'dentro']);
+        const tk = tokens(m[3], ['color', 'icon', 'icono', 'kind', 'tipo', ...Object.keys(GOV_KEYS), ...REGION_KEYS, 'layer', 'capa', 'controls', 'controles', 'in', 'dentro', ...PHASE_KEYS]);
         const g = { id, label: tk.quotes[0] ?? (tk.words.join(' ') || id) };
         if (tk.kv.color) g.color = tk.kv.color;
         applyGov(g, tk.kv);
@@ -704,6 +732,7 @@
         const gl = tk.kv.layer ?? tk.kv.capa;
         if (gl != null) { const l = checkLayer(gl, ln); if (l) g.layer = l; }
         applyCtl(g, tk.kv, ln);
+        phaseOf(g, tk.kv, ln);
         if (curGroup()) g.parent = curGroup();
         const gin = resolveIn((tk.kv.in ?? tk.kv.dentro)?.trim(), ln);
         if (gin) g.in = gin;
@@ -740,6 +769,7 @@
         const trV = kv.transfer ?? kv.transferencia, tr = trV == null ? null : /^(ok|yes|y|true|si|sí|1|on)$/i.test(trV);
         if (trV != null && !tr) err(ln, msg.transfer(trV));
         const thV = kv.threats ?? kv.amenazas, th = thV == null ? null : parseThreats(thV);
+
         if (th) th.bad.forEach(b => err(ln, msg.threats(b)));
         // Etiqueta entre comillas (JSON) o con \n escapado = varias líneas
         if (/^".*"$/.test(label)) label = unquote(label); else label = label.replace(/\\n/g, '\n');
@@ -759,6 +789,7 @@
           if (both) e.both = true;
           if (tr) e.transferOk = true;
           if (th && Object.keys(th.threats).length) e.threats = JSON.parse(JSON.stringify(th.threats));
+          phaseOf(e, kv, ln);
           model.edges.push(e);
         }
         return;
@@ -794,6 +825,7 @@
         const bv = tk.kv.backup ?? tk.kv.respaldo;
         if (bv != null) { const b = parseBool(bv.trim()); if (b == null) err(ln, msg.backup(bv)); else n.backup = b; }
         applyCtl(n, tk.kv, ln);
+        phaseOf(n, tk.kv, ln);
         ['sla', 'rpo', 'rto'].forEach(k => { if (tk.kv[k] != null && tk.kv[k].trim()) n[k] = tk.kv[k].trim(); }); // se limpian en sanitize
         { const rv = tk.kv.replicas ?? tk.kv.réplicas; if (rv != null && rv.trim()) n.replicas = rv.trim(); }
         const c4v = tk.kv.c4;
@@ -809,6 +841,13 @@
     if (stack.length) err(String(src).split(/\r?\n/).length, msg.open(stack.length, stack.some(f => f.kind === 'level')));
     inRefs.forEach(r => { if (!nodes.has(r.id)) err(r.ln, msg.inRef(r.id)); });
     nests.forEach(r => { if (nodes.has(r.id) && nodes.get(r.id).in !== r.outer) err(r.ln, msg.lvNest(r.id, r.outer)); });
+    // Fases de los elementos: deben existir y until debe ir después de phase (si no, se avisa y no se aplica)
+    { const ix = new Map(model.phases.map((p, i) => [p.id, i]));
+      phRefs.forEach(({ o, a, b, ln }) => {
+        let ia = -1;
+        if (a) { if (ix.has(a)) { o.phase = a; ia = ix.get(a); } else err(ln, msg.phaseUnknown(a)); }
+        if (b) { if (!ix.has(b)) err(ln, msg.phaseUnknown(b)); else if (ix.get(b) > Math.max(ia, 0)) o.until = b; else err(ln, msg.phaseOrder(a || model.phases[0].id, b)); }
+      }); }
     // Notas de decisiones STRIDE: la conexión se busca por origen -> destino (la n-ésima si hay varias); la amenaza ya debe tener estado
     thLines.forEach(t => {
       const es = model.edges.filter(e => e.from === t.from && e.to === t.to), e = es[t.nth - 1];
@@ -881,6 +920,7 @@
     if (m.meta?.version) out.push(`${w.version}: ${m.meta.version}`);
     if (m.meta?.view) out.push(`${w.view}: ${m.meta.view}`);
     (m.edgeTypes || []).forEach(t => out.push(`${w.type} ${t.id}: ${quote(t.label ?? t.id)}${t.dash ? ` ${w.dash}=${bare(t.dash)}` : ''}${t.color ? ` color=${bare(t.color)}` : ''}${t.width != null ? ` ${w.width}=${t.width}` : ''}${t.particles != null ? ` ${w.particles}=${t.particles}` : ''}`));
+    (m.phases || []).forEach(p => out.push(`${w.phase} ${p.id}: ${quote(p.name ?? p.id)}${p.date ? ` ${w.date}=${p.date}` : ''}${p.goal ? ` ${w.goal}=${quote(p.goal)}` : ''}`));
     out.push('');
     const ctlText = o => `${CTL_KEY[lang] || CTL_KEY.en}=${bare(Object.entries(o.controls).map(([k, v]) => `${k}=${(CTL_OUT[lang] || CTL_OUT.en)[v] || v}`).join(','))}`;
     // Lo que vive en un nivel C4 se escribe dentro de un bloque `inside`, sin `in=`; `inBlock` evita repetirlo
@@ -907,6 +947,8 @@
       if (n.controls) p.push(ctlText(n));
       if (n.c4) p.push(`c4=${(C4_OUT[lang] || C4_OUT.en)[n.c4] || n.c4}`);
       if (n.in && !inBlock) p.push(`${w.in}=${bare(n.in)}`);
+      if (n.phase) p.push(`${w.phase}=${bare(n.phase)}`);
+      if (n.until) p.push(`${w.until}=${bare(n.until)}`);
       if (n.desc) p.push(`desc=${quote(n.desc)}`);
       return p.join(' ');
     };
@@ -914,7 +956,7 @@
     const nodeIds = new Set(m.nodes.map(n => n.id)), notes = m.notes || [], zones = m.zones || [];
     const scopeOf = x => (x.in && nodeIds.has(x.in) ? x.in : null); // nivel C4 donde vive (null = superior)
     const writeGroup = (g, ind) => {
-      out.push(`${ind}${w.group} ${g.id} ${quote(g.label)}${g.icon ? ` icon=${bare(g.icon)}` : ''}${g.color ? ` color=${bare(g.color)}` : ''}${g.kind ? ` ${w.kind}=${w[g.kind]}` : ''}${GOV_WORDS.filter(k => g[k]).map(k => ` ${w[k]}=${bare(g[k])}`).join('')}${g.region ? ` ${w.region}=${bare(g.region)}` : ''}${g.layer ? ` ${w.layer}=${w.layerOf[g.layer] || g.layer}` : ''}${g.controls ? ` ${ctlText(g)}` : ''}${g.in && !inBlock ? ` ${w.in}=${bare(g.in)}` : ''} {`);
+      out.push(`${ind}${w.group} ${g.id} ${quote(g.label)}${g.icon ? ` icon=${bare(g.icon)}` : ''}${g.color ? ` color=${bare(g.color)}` : ''}${g.kind ? ` ${w.kind}=${w[g.kind]}` : ''}${GOV_WORDS.filter(k => g[k]).map(k => ` ${w[k]}=${bare(g[k])}`).join('')}${g.region ? ` ${w.region}=${bare(g.region)}` : ''}${g.layer ? ` ${w.layer}=${w.layerOf[g.layer] || g.layer}` : ''}${g.controls ? ` ${ctlText(g)}` : ''}${g.in && !inBlock ? ` ${w.in}=${bare(g.in)}` : ''}${g.phase ? ` ${w.phase}=${bare(g.phase)}` : ''}${g.until ? ` ${w.until}=${bare(g.until)}` : ''} {`);
       m.nodes.filter(n => n.group === g.id).forEach(n => out.push(`${ind}  ${nodeLine(n)}`));
       m.groups.filter(c => c.parent === g.id).forEach(c => writeGroup(c, ind + '  '));
       out.push(`${ind}}`);
@@ -946,7 +988,7 @@
       const tail = [e.label ? (EDGE_OPT.test(e.label) || /^".*"$/.test(e.label) || /[\n\\]/.test(e.label) ? quote(e.label) : e.label) : '', e.color ? `color=${bare(e.color)}` : '',
         e.style && !ARROW_OF[e.style] ? `${lang === 'es' ? 'estilo' : 'style'}=${bare((STYLE_OUT[lang] || {})[e.style] || e.style)}` : '', WEIGHT_OUT.en[e.weight] ? `${lang === 'es' ? 'peso' : 'weight'}=${(WEIGHT_OUT[lang] || WEIGHT_OUT.en)[e.weight]}` : '',
         e.data?.length ? `${w.data}=${e.data.join(',')}` : '', e.datasets?.length ? `${DS_KEY[lang] || DS_KEY.en}=${bare(e.datasets.join(','))}` : '', e.encrypted != null ? `${w.encrypted}=${e.encrypted ? w.yes : w.no}` : '',
-        e.both ? `${w.both}=${w.yes}` : '', e.transferOk ? `${w.transfer}=${w.ok}` : '', e.threats && Object.keys(e.threats).length ? `${TH_KEY[lang] || TH_KEY.en}=${Object.entries(e.threats).map(([k, d]) => `${k}=${(TH_ST[lang] || TH_ST.en)[d.status] || d.status}`).join(',')}` : '', e.route ? `${w.line}=${e.route === 'elbow' ? w.elbowOne : w.curvedOne}` : ''].filter(Boolean).join(' ');
+        e.both ? `${w.both}=${w.yes}` : '', e.transferOk ? `${w.transfer}=${w.ok}` : '', e.threats && Object.keys(e.threats).length ? `${TH_KEY[lang] || TH_KEY.en}=${Object.entries(e.threats).map(([k, d]) => `${k}=${(TH_ST[lang] || TH_ST.en)[d.status] || d.status}`).join(',')}` : '', e.route ? `${w.line}=${e.route === 'elbow' ? w.elbowOne : w.curvedOne}` : '', e.phase ? `${w.phase}=${bare(e.phase)}` : '', e.until ? `${w.until}=${bare(e.until)}` : ''].filter(Boolean).join(' ');
       out.push(`${e.from} ${arrow} ${e.to}${tail ? ` : ${tail}` : ''}`);
     });
     const reviewed = m.nodes.filter(n => n.review);

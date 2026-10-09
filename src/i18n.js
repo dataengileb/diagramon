@@ -510,6 +510,20 @@ review db: "DB in a public subnet" by=Ana raised=2026-10-01 due=2026-11-15
       'rep.h.types': 'Connection types', 'rep.h.dash': 'Line pattern', 'rep.h.color': 'Color', 'rep.h.width': 'Width', 'rep.h.particles': 'Moving dots',
       'ver.type': 'connection type', 'ver.types.bar': ({ a, r, c }) => `Types +${a} −${r} ~${c}`,
       'inv.c.weight': 'Importance', 'inv.c.custom': 'Custom type', 'inv.c.dash': 'Line pattern', 'inv.c.color': 'Color', 'inv.c.width': 'Width', 'inv.c.particles': 'Moving dots', 'inv.c.uses': 'Connections using it', 'inv.sheet.types': 'Connection types',
+      /* fases (hoja de ruta) */
+      'phase.label': 'Phase', 'phase.until': 'Retired in', 'phase.always': '— always (from the start)', 'phase.notRetired': '— not retired',
+      'phase.hint': 'The phase where it first appears. Empty: it is there from the first phase.', 'phase.untilHint': 'The phase from which it is no longer there (a temporary component).',
+      'phase.bar': 'Phases', 'phase.all': 'All', 'phase.ghosts': 'Show future as ghosts', 'phase.ghosts.tip': 'Draw what is not there yet dimmed and dashed instead of hiding it',
+      'phase.prev': 'Previous phase ([)', 'phase.next': 'Next phase (])', 'phase.new': 'NEW', 'phase.new.tip': 'Appears in this phase',
+      'phase.summary': ({ name, n, cost }) => `Phase: ${name} · ${n} ${n === 1 ? 'component' : 'components'}${cost ? ` · ${cost}` : ''}`,
+      'phase.title': 'Phases', 'phase.sub': 'The order is the timeline. Each component says in which phase it appears (and, if temporary, in which it is retired).',
+      'phase.add': '+ Add phase', 'phase.name': 'Name', 'phase.date': 'Date', 'phase.goal': 'Goal', 'phase.goal.ph': 'What the client has at the end of this phase',
+      'phase.date.tip': 'YYYY-MM or YYYY-MM-DD', 'phase.up': 'Move earlier', 'phase.down': 'Move later', 'phase.delete': 'Delete phase',
+      'phase.counts': ({ a, r }) => `+${a} · −${r}`, 'phase.counts.tip': ({ a, r }) => `${a} added · ${r} retired in this phase`,
+      'phase.new.name': n => `Phase ${n}`, 'phase.max': n => `At most ${n} phases`, 'phase.empty': 'No phases yet. Add the first one to plan the build in steps.',
+      'phase.cf.title': ({ name }) => `Delete phase “${name}”?`, 'phase.cf.ok': 'Delete phase',
+      'phase.cf.to': ({ n, to }) => `${n} ${n === 1 ? 'element moves' : 'elements move'} to “${to}”.`, 'phase.cf.always': ({ n }) => `${n} ${n === 1 ? 'element becomes' : 'elements become'} “always present”.`, 'phase.cf.none': 'No element uses this phase.',
+      'phase.deleted': ({ name }) => `Phase “${name}” deleted`, 'phase.now': ({ name }) => `Phase: ${name}`, 'phase.nowAll': 'Phase: all', 'phase.ro': 'Not there yet in this phase',
     },
 
     es: {
@@ -1008,6 +1022,20 @@ revisión db: "BD en subred pública" por=Ana levantada=2026-10-01 compromiso=20
       'rep.h.types': 'Tipos de conexión', 'rep.h.dash': 'Patrón de línea', 'rep.h.color': 'Color', 'rep.h.width': 'Grosor', 'rep.h.particles': 'Puntos en movimiento',
       'ver.type': 'tipo de conexión', 'ver.types.bar': ({ a, r, c }) => `Tipos +${a} −${r} ~${c}`,
       'inv.c.weight': 'Importancia', 'inv.c.custom': 'Tipo propio', 'inv.c.dash': 'Patrón de línea', 'inv.c.color': 'Color', 'inv.c.width': 'Grosor', 'inv.c.particles': 'Puntos en movimiento', 'inv.c.uses': 'Conexiones que lo usan', 'inv.sheet.types': 'Tipos de conexión',
+      /* fases (hoja de ruta) */
+      'phase.label': 'Fase', 'phase.until': 'Se retira en', 'phase.always': '— siempre (desde el inicio)', 'phase.notRetired': '— no se retira',
+      'phase.hint': 'La fase en la que aparece por primera vez. Vacío: está desde la primera fase.', 'phase.untilHint': 'La fase desde la cual ya no está (un componente temporal).',
+      'phase.bar': 'Fases', 'phase.all': 'Todas', 'phase.ghosts': 'Mostrar lo futuro atenuado', 'phase.ghosts.tip': 'Dibuja lo que aún no existe atenuado y punteado en vez de ocultarlo',
+      'phase.prev': 'Fase anterior ([)', 'phase.next': 'Fase siguiente (])', 'phase.new': 'NUEVO', 'phase.new.tip': 'Aparece en esta fase',
+      'phase.summary': ({ name, n, cost }) => `Fase: ${name} · ${n} ${n === 1 ? 'componente' : 'componentes'}${cost ? ` · ${cost}` : ''}`,
+      'phase.title': 'Fases', 'phase.sub': 'El orden es la línea de tiempo. Cada componente dice en qué fase aparece (y, si es temporal, en cuál se retira).',
+      'phase.add': '+ Añadir fase', 'phase.name': 'Nombre', 'phase.date': 'Fecha', 'phase.goal': 'Objetivo', 'phase.goal.ph': 'Qué tiene el cliente al terminar esta fase',
+      'phase.date.tip': 'AAAA-MM o AAAA-MM-DD', 'phase.up': 'Mover antes', 'phase.down': 'Mover después', 'phase.delete': 'Eliminar fase',
+      'phase.counts': ({ a, r }) => `+${a} · −${r}`, 'phase.counts.tip': ({ a, r }) => `${a} ${a === 1 ? 'nuevo' : 'nuevos'} · ${r} ${r === 1 ? 'retirado' : 'retirados'} en esta fase`,
+      'phase.new.name': n => `Fase ${n}`, 'phase.max': n => `Máximo ${n} fases`, 'phase.empty': 'Aún no hay fases. Añade la primera para planificar la construcción por etapas.',
+      'phase.cf.title': ({ name }) => `¿Eliminar la fase «${name}»?`, 'phase.cf.ok': 'Eliminar fase',
+      'phase.cf.to': ({ n, to }) => `${n} ${n === 1 ? 'elemento pasa' : 'elementos pasan'} a «${to}».`, 'phase.cf.always': ({ n }) => `${n} ${n === 1 ? 'elemento queda' : 'elementos quedan'} «siempre presentes».`, 'phase.cf.none': 'Ningún elemento usa esta fase.',
+      'phase.deleted': ({ name }) => `Fase «${name}» eliminada`, 'phase.now': ({ name }) => `Fase: ${name}`, 'phase.nowAll': 'Fase: todas', 'phase.ro': 'Aún no existe en esta fase',
     }
   };
 

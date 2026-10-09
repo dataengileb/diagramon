@@ -578,6 +578,7 @@
     if (raw.direction === 'LR' || raw.direction === 'TB') m.direction = raw.direction;
     if (raw.routing === 'elbow') m.routing = 'elbow';
     if (raw.layerNames === 'zones') m.layerNames = 'zones';
+    { const ph = cleanPhases(raw.phases); if (ph.length) m.phases = ph; }   // sin fases no hay clave: JSON y exportaciones idénticos
     { const et = cleanEdgeTypes(raw.edgeTypes); if (et.length) m.edgeTypes = et; }
     { const dm = cleanDismissed(raw.dismissed); if (dm) m.dismissed = dm; }
     if (raw.meta && typeof raw.meta === 'object') {
@@ -657,6 +658,7 @@
       { const th = cleanThreats(o.threats); if (th) o.threats = th; else delete o.threats; }
       m.edges.push(o);
     });
+    cleanPhaseRefs([...m.groups, ...m.nodes, ...m.edges], m.phases);   // phase / until de cada elemento: solo fases que existen, until después de phase
     m.notes = []; m.zones = [];
     list(raw.notes).forEach((n, i) => {
       const o = { id: take(n.id, 'note', i), ...cleanBox(n, 180, 110), text: String(n.text ?? '') };
@@ -1515,6 +1517,87 @@
       ? { id: `req:uncovered:${r.id}`, source: 'req', rule, severity, target, title: T('req.find.uncovered', { id: r.id, t: r.title }), detail: T(`req.pr.${r.priority}`), fix: T('req.find.uncovered.fix') }
       : { id: `req:fail:${r.id}`, source: 'req', rule, severity, target, title: T('req.find.fail', { id: r.id, t: r.title }), detail, fix: T('req.find.fail.fix') };
   }));
+
+  /* ---------- fases (hoja de ruta de la arquitectura): modelo ---------- */
+  // m.phases = [{ id: 'mvp', name, date?: 'AAAA-MM' | 'AAAA-MM-DD', goal? }]: el orden del arreglo ES la línea de tiempo (máx. 12).
+  // En nodos, conexiones y grupos: phase = fase en la que aparece (sin él, ya estaba en la primera) y until = fase en la que se retira (ya no está desde ella; debe ir después de phase).
+  // Es del diagrama (entra en las fotos de versiones). Sin fases, el JSON y las exportaciones quedan idénticos. Un id desconocido se descarta: el elemento queda «siempre presente».
+  /* phaseModel:start */
+  const PHASE_MAX = 12, PHASE_ID = /^[A-Za-z0-9_-]{1,30}$/;
+  const phaseDay = v => { const r = /^(\d{4})-(\d{2})(?:-(\d{2}))?$/.exec(String(v ?? '').trim()); if (!r) return ''; const mo = +r[2], d = r[3] == null ? 1 : +r[3]; return mo >= 1 && mo <= 12 && d >= 1 && d <= new Date(Date.UTC(+r[1], mo, 0)).getUTCDate() ? String(v).trim() : ''; };
+  function cleanPhases(raw) {
+    const seen = new Set(), out = [];
+    (Array.isArray(raw) ? raw : []).forEach(p => {
+      if (!p || typeof p !== 'object' || Array.isArray(p)) return;
+      const id = String(p.id ?? '').trim();
+      if (!PHASE_ID.test(id) || seen.has(id)) return;
+      seen.add(id);
+      const o = { id, name: String(p.name ?? '').replace(/\s+/g, ' ').trim().slice(0, 60) || id };
+      const date = phaseDay(p.date), goal = String(p.goal ?? '').replace(/\r\n?/g, '\n').trim().slice(0, 500);
+      if (date) o.date = date;
+      if (goal) o.goal = goal;
+      out.push(o);
+    });
+    return out.slice(0, PHASE_MAX);
+  }
+  const phaseIndex = (m, id) => (m.phases || []).findIndex(p => p.id === id);
+  // Deja en nodos, conexiones y grupos solo fases que existen; until debe ir después de phase (sin phase, después de la primera fase)
+  function cleanPhaseRefs(els, phases) {
+    const idx = new Map((phases || []).map((p, i) => [p.id, i]));
+    els.forEach(x => {
+      const a = x.phase == null ? -1 : idx.has(String(x.phase)) ? idx.get(String(x.phase)) : -2, b = x.until == null ? -1 : idx.has(String(x.until)) ? idx.get(String(x.until)) : -2;
+      if (a >= 0) x.phase = String(x.phase); else delete x.phase;
+      if (b >= 0 && b > Math.max(a, 0)) x.until = String(x.until); else delete x.until;
+    });
+  }
+  // Estado del elemento en la fase i: 0 presente, 1 futuro (aún no aparece), -1 retirado. i < 0 («Todas») = todo presente
+  const phaseState = (el, i, m) => {
+    if (i < 0) return 0;
+    const a = el.phase ? phaseIndex(m, el.phase) : -1, b = el.until ? phaseIndex(m, el.until) : -1;
+    return b >= 0 && b <= i ? -1 : a > i ? 1 : 0;
+  };
+  const inPhase = (el, i, m) => phaseState(el, i, m) === 0;
+  // Estado de todos los elementos en la fase i: { nodes, edges, groups } (Map id → 0 | 1 | -1).
+  // Un grupo sin campos propios existe si algún nodo suyo (o de sus subgrupos) existe; si todos son futuros es futuro; si ya no queda ninguno es retirado; vacío = presente.
+  // Una conexión sigue a sus extremos: retirada si cualquiera lo está, futura si cualquiera es futuro
+  function phaseStates(m, i) {
+    const nodes = new Map(m.nodes.map(n => [n.id, phaseState(n, i, m)])), gm = new Map(m.groups.map(g => [g.id, g]));
+    const below = new Map(m.groups.map(g => [g.id, []]));
+    m.nodes.forEach(n => { let g = n.group, k = 0; while (g && gm.has(g) && k++ < 50) { below.get(g).push(nodes.get(n.id)); g = gm.get(g).parent; } });
+    const groups = new Map(m.groups.map(g => {
+      const own = g.phase || g.until, s = below.get(g.id);
+      return [g.id, own || !s.length ? phaseState(g, i, m) : s.includes(0) ? 0 : s.includes(1) ? 1 : -1];
+    }));
+    const edges = new Map(m.edges.map(e => { const s = [phaseState(e, i, m), nodes.get(e.from) ?? 0, nodes.get(e.to) ?? 0]; return [e.id, s.includes(-1) ? -1 : s.includes(1) ? 1 : 0]; }));
+    return { nodes, edges, groups };
+  }
+  // Un modelo nuevo con solo lo que existe en la fase i (lo demás de m queda igual); i = -1 o sin fases = el propio m
+  function phaseModel(m, i) {
+    if (i < 0 || !(m.phases || []).length) return m;
+    const st = phaseStates(m, i), gm = new Map(m.groups.map(g => [g.id, g]));
+    const up = id => { let k = 0; while (id && k++ < 50 && !(gm.has(id) && st.groups.get(id) === 0)) id = gm.get(id)?.parent; return gm.has(id) && st.groups.get(id) === 0 ? id : undefined; };   // grupo presente más cercano
+    const fix = (x, key) => { const o = { ...x }, g = up(x[key]); if (g) o[key] = g; else delete o[key]; return o; };
+    return {
+      ...m,
+      groups: m.groups.filter(g => st.groups.get(g.id) === 0).map(g => fix(g, 'parent')),
+      nodes: m.nodes.filter(n => st.nodes.get(n.id) === 0).map(n => fix(n, 'group')),
+      edges: m.edges.filter(e => st.edges.get(e.id) === 0).map(e => ({ ...e }))
+    };
+  }
+  // Nodos que entran y salen en la fase i respecto de la anterior (en la primera: los que declaran esa fase)
+  function phaseDiff(m, i) {
+    if (i < 0 || i >= (m.phases || []).length) return { added: [], retired: [] };
+    if (i === 0) return { added: m.nodes.filter(n => n.phase === m.phases[0].id).map(n => n.id), retired: [] };
+    const here = phaseStates(m, i).nodes, before = phaseStates(m, i - 1).nodes;
+    return { added: m.nodes.filter(n => here.get(n.id) === 0 && before.get(n.id) !== 0).map(n => n.id), retired: m.nodes.filter(n => before.get(n.id) === 0 && here.get(n.id) !== 0).map(n => n.id) };
+  }
+  // Cifras de la fase i; h = { monthly(modelo) → costo mensual, findings(modelo) → hallazgos abiertos [{ severity }] }
+  function phaseStats(m, i, h) {
+    const pm = phaseModel(m, i), f = { high: 0, medium: 0, low: 0 };
+    (h.findings(pm) || []).forEach(x => { const k = x.severity === 'critical' || x.severity === 'high' ? 'high' : x.severity === 'medium' ? 'medium' : 'low'; f[k]++; });
+    return { nodes: pm.nodes.length, edges: pm.edges.length, cost: h.monthly(pm), findings: f };
+  }
+  /* phaseModel:end */
 
   /* ---------- disponibilidad (SLA), RPO/RTO, réplicas y puntos únicos de fallo ---------- */
   const RSL = { entryTypes: ['user', 'web', 'mobile', 'external', 'client'], dataStoreTypes: ['db', 'nosql', 'storage'], dataStoreIconCategories: ['Bases de datos', 'Almacenamiento'],
@@ -3578,15 +3661,16 @@
   const save = debounce(() => { store.set('model', S.model); updateMeta(); renderVersions(); renderAdr(); renderReq(); renderRaid(); }, 250);
 
   const ORDER = {
-    group: ['id', 'label', 'icon', 'color', 'parent', 'kind', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'controls', 'in'],
-    node: ['id', 'label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'x', 'y', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'exposure', 'backup', 'controls', 'in', 'c4', 'sla', 'rpo', 'rto', 'replicas'],
-    edge: ['id', 'from', 'to', 'label', 'style', 'weight', 'route', 'both', 'color', 'data', 'encrypted', 'datasets', 'transferOk', 'threats'],
+    group: ['id', 'label', 'icon', 'color', 'parent', 'kind', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'controls', 'in', 'phase', 'until'],
+    node: ['id', 'label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'x', 'y', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'exposure', 'backup', 'controls', 'in', 'c4', 'sla', 'rpo', 'rto', 'replicas', 'phase', 'until'],
+    edge: ['id', 'from', 'to', 'label', 'style', 'weight', 'route', 'both', 'color', 'data', 'encrypted', 'datasets', 'transferOk', 'threats', 'phase', 'until'],
     note: ['id', 'x', 'y', 'w', 'h', 'text', 'color', 'in'],
     zone: ['id', 'x', 'y', 'w', 'h', 'label', 'severity', 'desc', 'kind', 'trust', 'in'],
     requirement: ['id', 'title', 'kind', 'detail', 'priority', 'status', 'source', 'check', 'links'],
     decision: ['id', 'title', 'status', 'date', 'deciders', 'context', 'decision', 'consequences', 'supersededBy', 'area', 'criteria', 'options', 'chosen', 'links', 'history', 'signoffs'],
     raid: ['id', 'type', 'title', 'detail', 'owner', 'status', 'probability', 'impact', 'mitigation', 'validation', 'due', 'raised', 'links', 'history']
   };
+  ORDER.phase = ['id', 'name', 'date', 'goal'];
   ORDER.stakeholder = ['id', 'name', 'role', 'org', 'raci', 'versions', 'inactive'];
   function serialize(m, full = false) {
     const ordered = (o, keys) => { const r = {}; keys.forEach(k => k in o && (r[k] = o[k])); Object.keys(o).forEach(k => k in r || (r[k] = o[k])); return r; };
@@ -3601,6 +3685,7 @@
     if (m.direction) head.push(`  "direction": ${JSON.stringify(m.direction)}`);
     if (m.routing) head.push(`  "routing": ${JSON.stringify(m.routing)}`);
     if (m.layerNames === 'zones') head.push(`  "layerNames": "zones"`);
+    if (m.phases?.length) head.push(arr('phases', m.phases, ORDER.phase));
     if (m.edgeTypes?.length) head.push(`  "edgeTypes": ${JSON.stringify(m.edgeTypes)}`);
     if (m.dismissed && Object.keys(m.dismissed).length) head.push(`  "dismissed": ${JSON.stringify(m.dismissed)}`);
     if (m.meta) head.push(`  "meta": ${JSON.stringify(m.meta)}`);
@@ -4511,7 +4596,7 @@
   const findVersion = id => S.model.versions.find(v => v.id === id);
   // Solo lo que se dibuja: sin versiones y con posiciones redondeadas
   const snapshotOf = m => {
-    const d = clone({ title: m.title, ...(m.direction ? { direction: m.direction } : {}), ...(m.routing ? { routing: m.routing } : {}), ...(m.layerNames ? { layerNames: m.layerNames } : {}), ...(m.edgeTypes?.length ? { edgeTypes: m.edgeTypes } : {}), ...(m.dismissed ? { dismissed: m.dismissed } : {}), groups: m.groups, nodes: m.nodes, edges: m.edges, ...(m.notes?.length ? { notes: m.notes } : {}), ...(m.zones?.length ? { zones: m.zones } : {}) });
+    const d = clone({ title: m.title, ...(m.direction ? { direction: m.direction } : {}), ...(m.routing ? { routing: m.routing } : {}), ...(m.layerNames ? { layerNames: m.layerNames } : {}), ...(m.phases?.length ? { phases: m.phases } : {}), ...(m.edgeTypes?.length ? { edgeTypes: m.edgeTypes } : {}), ...(m.dismissed ? { dismissed: m.dismissed } : {}), groups: m.groups, nodes: m.nodes, edges: m.edges, ...(m.notes?.length ? { notes: m.notes } : {}), ...(m.zones?.length ? { zones: m.zones } : {}) });
     d.nodes.forEach(n => { n.x = Math.round(n.x); n.y = Math.round(n.y); });
     return d;
   };
@@ -4625,9 +4710,9 @@
 
   // Diferencias entre lo guardado (a) y el lienzo (b). La posición no cuenta como cambio.
   const DIFF_FIELDS = {
-    node: ['label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'exposure', 'backup', 'controls', 'in', 'c4', 'sla', 'rpo', 'rto', 'replicas'],
-    edge: ['label', 'style', 'weight', 'route', 'both', 'color', 'data', 'encrypted', 'datasets', 'transferOk', 'threats'],
-    group: ['label', 'icon', 'color', 'parent', 'kind', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'controls', 'in'],
+    node: ['label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'exposure', 'backup', 'controls', 'in', 'c4', 'sla', 'rpo', 'rto', 'replicas', 'phase', 'until'],
+    edge: ['label', 'style', 'weight', 'route', 'both', 'color', 'data', 'encrypted', 'datasets', 'transferOk', 'threats', 'phase', 'until'],
+    group: ['label', 'icon', 'color', 'parent', 'kind', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'controls', 'in', 'phase', 'until'],
     type: ['label', 'dash', 'color', 'width', 'particles'] // tipos de conexión propios (model.edgeTypes), por id
   };
   function diffModels(a, b) {
