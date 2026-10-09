@@ -1168,7 +1168,7 @@
     assert(idx.includes('<button data-group="data" class="tab" data-tab="data"'), 'the data tab is in group data');
     const side = idx.split('<aside class="sidebar">')[1].split('</aside>')[0];
     assert(side.includes('data-pane="data"') && side.includes('id="ds-panel"') && side.includes('id="ds-bar"') && side.includes('id="ds-list"'), 'the data pane and its containers live inside the side panel');
-    ['renderDs', "t.dataset.tab === 'data'", 'dsDocument', 'renameDatasetApi(ds.id', 'data-ds-open', 'typeof exportContract'].forEach(k => assert(app.includes(k), `app has ${k}`));
+    ['renderDs', "t.dataset.tab === 'data'", 'dsDocument', 'renameDatasetApi(ds.id', 'data-ds-open', 'return void exportContract(ds.id)'].forEach(k => assert(app.includes(k), `app has ${k}`));
     const used = new Set([...app.matchAll(/T\(\s*'(ds\.[\w.]+)'/g)].map(m => m[1]));
     ['ds.cst.draft', 'ds.cst.agreed', 'ds.cst.deprecated', 'ds.rule.not_null', 'ds.rule.unique', 'ds.rule.range', 'ds.rule.regex', 'ds.rule.accepted_values', 'ds.rule.freshness', 'ds.rule.custom', 'ds.sec.general', 'ds.sec.schema', 'ds.sec.quality', 'ds.sec.contract', 'ds.sec.lineage', 'tab.data', 'tab.data.tip'].forEach(k => used.add(k));
     used.forEach(k => assert(i18n.split(`'${k}':`).length === 3, `${k} is defined once in en and once in es`));
@@ -1186,8 +1186,8 @@
       contract: { version: '2.1.0', status: 'agreed', consumers: ['bi', 'ml'], terms: 'Internal use only\nNo resale' }, phase: 'mvp' }, { id: 'DS-002', name: 'bare' }] });
   test('toODCS: ODCS v3.2.0 field names and order on a full fixture', () => {
     const m = dcModel(), y = DC.toODCS(m.datasets[0], m), top = y.split('\n').filter(l => /^[a-zA-Z]/.test(l)).map(l => l.split(':')[0]);
-    eq(top, ['apiVersion', 'kind', 'id', 'name', 'version', 'status', 'domain', 'dataProduct', 'description', 'tags', 'schema', 'slaProperties', 'team', 'customProperties'], 'top-level keys in order');
-    ['apiVersion: v3.2.0', 'kind: DataContract', 'name: orders', 'version: 2.1.0', 'status: active', 'domain: sales', 'dataProduct: orders', '  purpose: "Orders: one per line # 1"', '  usage: "Internal use only\\nNo resale"', 'tags: [pii, finance]',
+    eq(top, ['apiVersion', 'kind', 'id', 'name', 'version', 'status', 'domain', 'description', 'tags', 'schema', 'slaProperties', 'team', 'customProperties'], 'top-level keys in order');
+    ['apiVersion: v3.2.0', 'kind: DataContract', 'name: orders', 'version: 2.1.0', 'status: active', 'domain: sales', '  purpose: "Orders: one per line # 1"', '  usage: "Internal use only\\nNo resale"', 'tags: [pii, finance]',
       '  - name: orders\n    physicalType: table', '      - name: order_id\n        physicalType: bigint\n        logicalType: integer\n        primaryKey: true\n        primaryKeyPosition: 1\n        required: true\n        description: Primary key',
       '        classification: pii\n        tags: [pii]\n', '        physicalType: weird\n', '          - metric: nullValues\n            mustBe: 0\n            unit: rows\n            dimension: completeness\n            severity: error',
       'metric: duplicateValues', 'metric: invalidValues\n            mustBe: 0\n            arguments:\n              pattern: "^.+@.+$"', 'validValues: [a, b, c]', '            severity: info',

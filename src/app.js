@@ -9715,10 +9715,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     if (d0.dsKdel != null) { if (!await confirmBox({ title: T('ds.k.cf.title', ds.id), text: T('ds.k.cf.text'), ok: T('ds.k.del'), cancel: T('ver.cf.cancel'), danger: true })) return; return set({ contract: null }); }
     if (d0.dsKrm) return set({ contract: { ...ds.contract, consumers: (ds.contract.consumers || []).filter(x => x !== d0.dsKrm) } });
     if (d0.dsFocus) return focusTarget('node', d0.dsFocus);
-    if (d0.dsExport != null) {
-      if (typeof exportContract === 'function') return void exportContract(ds.id);   // TEMP: exportContract lo escribe S3 (ODCS); mientras no exista se avisa
-      return void toast(T('ds.k.noexport'));
-    }
+    if (d0.dsExport != null) return void exportContract(ds.id);
     if (d0.dsLin != null) return void showLineage(ds.name);
     if (d0.dsDel != null && await confirmBox({ title: T('ds.cf.title', ds.id), text: T('ds.cf.text', ds.name), ok: T('ds.del'), cancel: T('ver.cf.cancel'), danger: true })) { removeDataset(ds.id); renderDs(true); }
   });
