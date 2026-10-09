@@ -44,6 +44,8 @@ api ~> queue : events
 | `group id "Name" color=… { … }` | Group; groups can be nested |
 | `in=shop` (Spanish: `dentro=shop`) · `c4=container` | C4 levels: the node or group lives in the internal diagram of `shop`; C4 type `person`, `system`, `container`, `component` or `external` (Spanish: `persona`, `sistema`, `contenedor`, `componente`, `externo`). Nodes inside the braces of a group with `in=` inherit its level |
 | `inside shop { … }` | C4 level block (Spanish: `dentro tienda { … }`): everything declared inside (nodes, groups, notes, zones) lives in the internal diagram of `shop`, without writing `in=` on each. Blocks nest (`inside api { … }` inside `inside shop { … }` requires `api` to be a node of `shop`); groups work inside a block, but a block cannot be opened inside a group. `in=` still works |
+| `phase mvp: "MVP" date=2026-12 goal="…"` | Phase of the plan, in timeline order (Spanish: `fase mvp: "MVP" fecha=2026-12 objetivo="…"`); see *Phases* below |
+| `a: A phase=mvp until=wave2` · `a -> b : x phase=wave1` · `group g "G" phase=mvp {` | Phase in which a node, connection or group appears (Spanish: `fase=`) and, if temporary, the phase in which it is retired (`until=`, Spanish `hasta=`) |
 | `layer=gold` (`bronze`, `silver`, `gold`; also `raw`, `curated`, `serving`) | Data lake layer of a node or group (Spanish: `capa=oro`); nodes inherit it from their group |
 | `layers: zones` | Show Raw / Curated / Serving instead of Bronze / Silver / Gold (Spanish: `capas: zonas`) |
 | `exposure=public` (`internal`) · `backup=yes` (`no`) | Override the deduced exposure and backup of a node (Spanish: `exposición=pública` / `interna`, `respaldo=sí` / `no`) |
@@ -59,7 +61,7 @@ api ~> queue : events
 | `# …` or `// …` | Comment |
 
 Keywords work in English and Spanish (`title`/`título`, `group`/`grupo`, `cost`/`costo`, `/month`/`/mes`…).
-The text is the source of truth for notes, zones, trust boundaries, STRIDE notes, dismissed findings, architecture decisions (ADR), requirements and the RAID log: deleting them from the text deletes them from the diagram. Versions are kept.
+The text is the source of truth for notes, zones, trust boundaries, STRIDE notes, dismissed findings, phases, architecture decisions (ADR), requirements and the RAID log: deleting them from the text deletes them from the diagram. Versions are kept.
 ### Architecture decisions (ADR)
 
 An `adr` line starts a decision; the fields follow on the next lines, each with its text in quotes (`\n` = line break). Decisions are written at the end of the text.
@@ -149,6 +151,29 @@ stakeholder SH-002: "Luis Gómez" role="Data owner" org=partner raci=Consumption
 - Keys (Spanish in brackets): `role=` (`rol=`); `org=` with `client`, `partner` or `internal` (`cliente`, `socio`, `interno`); `raci=` is a comma-separated list of `area:letter`, with `R` (responsible), `A` (accountable: approves), `C` (consulted) or `I` (informed). `*` means every area. Areas are decision areas and cannot contain commas.
 - Bare words: `versions` (`versiones`) makes the stakeholder an approver of versions; `inactive` (`inactivo`) marks someone who left the project: never required, history kept.
 - Both languages are accepted when reading; the text is written in the active language (`interesado … rol= org=cliente raci= versiones inactivo`). A duplicate id, an invalid id or org, or an invalid RACI letter is an error with its line number. Deleting a `stakeholder` line deletes the stakeholder and its RACI row.
+
+### Phases
+
+`phase` lines describe the build in steps. Write them before the nodes, in timeline order (the first line is the first phase). Each has an id, a quoted name and, optionally, a date and a goal:
+
+```
+phase mvp: "MVP" date=2026-12 goal="Batch ingestion of ERP and CRM files, first BI"
+phase wave1: "Wave 1" date=2027-03 goal="Change data capture and the gold layer"
+phase wave2: "Wave 2" date=2027-06
+
+erp: ERP [db]
+crm: CRM [db]
+upload: Manual file upload phase=mvp until=wave1
+cdc: CDC replication phase=wave1
+stream: Event stream phase=wave2
+erp -> cdc : changes phase=wave1
+erp -> upload : extract phase=mvp
+```
+
+- Keys (Spanish in brackets): `date=` (`fecha=`), `YYYY-MM` or `YYYY-MM-DD`; `goal=` (`objetivo=`), free text in quotes. Up to 12 phases; ids are letters, digits, `-` and `_` (up to 30 characters).
+- Nodes, connections and groups take `phase=<id>` (`fase=`): the phase in which they appear. Without it they are there from the first phase. `until=<id>` (`hasta=`) is the phase from which they are no longer there (a temporary component). `until` must come after `phase` in the order (after the first phase when there is no `phase`).
+- An unknown phase id, or an `until` that does not come after its phase, is an error with its line number. Deleting a `phase` line while elements still use it is an error too: change or delete those references first.
+- Both languages are accepted when reading; the text is written in the active language (`fase mvp: "MVP" fecha=2026-12 objetivo="…"` and `fase=wave1 hasta=wave2`), so it round-trips exactly.
 
 <details>
 <summary><b>JSON format</b></summary>

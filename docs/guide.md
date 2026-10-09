@@ -293,6 +293,22 @@ Open the **Stakeholders** tab (after Versions) to record the people who decide o
 - The stakeholders belong to the document, not to a version: opening a version keeps them, and the sign-offs stay with the decisions and versions they were given on. Everything can be undone with **`⌘Z`**.
 - From the console: `Diagramon.stakeholders()`, `Diagramon.addStakeholder({ name, role, org, raci: { '*': 'C', Security: 'A' }, versions: true })`, `Diagramon.updateStakeholder(id, patch)`, `Diagramon.removeStakeholder(id)` (refused when the stakeholder has sign-offs), `Diagramon.signoff(kind, id, stakeholderId, verdict, note?)` (kind `decision` or `version`, verdict `approve` or `reject`, today's date) and `Diagramon.approval(kind, id)` (returns the required, approved, rejected and pending ids, `complete` and the sign-offs).
 
+### Architecture by phases
+
+A greenfield is not built at once. Plan the build in **phases**: an ordered list of steps (*MVP*, *Wave 1*, *Wave 2*…), each with a name, an optional **date** (`2026-12` or `2026-12-15`) and an optional **goal** (*What the client has at the end of this phase*). The order of the list is the timeline; up to 12 phases.
+
+- **Phases manager**: at the top of the **Versions** tab, above the version list. **+ Add phase** adds one (named *Phase N*; rename it in place). Each row has the name, the date, the goal, **↑** and **↓** (*Move earlier* / *Move later*) and **✕** (*Delete phase*). The **+a · −r** counter shows how many components enter and leave in that phase, compared with the previous one.
+- **Delete** asks first and moves the phase's elements to the previous phase (or to *always present* when it was the first). A component that was retired in the deleted phase is retired in the next one, or no longer retires.
+- **Phase and Retired in**: every component, connection and group can say in which phase it **appears** (**Phase**) and, if it is temporary, the phase from which it is **retired** (**Retired in**). An empty *Phase* means *always (from the start)*; *Retired in* offers only the phases after the chosen one. Several selected elements can be changed at once; with different values the select shows *Mixed*.
+- **New components** created while a phase is selected get that phase (in the first phase they are simply there from the start).
+- **Phase bar** (bottom left of the canvas, shown when the diagram has phases): **All** and one chip per phase, with its date. Click a chip, or press **`[`** and **`]`** for the previous and next phase (not while typing). **All** shows everything.
+- **Show future as ghosts** (on by default): what does not exist yet in the selected phase is drawn dimmed and dashed instead of hidden; turn it off to hide it. Elements retired by the selected phase are hidden. Ghosts can be selected and edited, so you can give them a phase from the canvas.
+- A **NEW** badge marks the components that appear exactly in the selected phase.
+- The canvas summary line gives the phase, for example *Phase: Wave 1 · 14 components · ≈ $4,200/mo* (the cost only when there is one).
+- **Versions** keep the phases with the elements, so each saved version carries its own plan. **SVG** and **PNG** exports show the selected phase as it is on screen (ghosts or hidden elements included); the **JSON** export keeps `phases`, and the Text tab writes them (see the text format guide).
+- **Excel**: the Components and Connections sheets get **Phase** and **Retired in** columns, and a **Phases** sheet has one row per phase: ID, name, date, goal, components, added, retired and monthly total. Only diagrams with phases get them.
+- From the console: `Diagramon.phases()`, `addPhase({ name, date, goal })` (returns the new id), `updatePhase(id, patch)`, `removePhase(id)`, `setPhase(i | id | null)` (the phase shown; `null` = All), `Diagramon.phase` (the index shown, `-1` = All), `phaseModel(i)` (a copy of the diagram as it is in phase `i`) and `phaseStats(i)` (components, connections, monthly cost and open findings of that phase).
+
 ## 9. Sticky notes and risk zones
 
 Use the two buttons next to the zoom controls (bottom right of the canvas).
