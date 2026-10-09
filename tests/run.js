@@ -139,6 +139,19 @@
     const m = templates('en').find(x => /Lakehouse greenfield/.test(x.name)).model;
     eq({ nodes: m.nodes.length, edges: m.edges.length }, { nodes: 24, edges: 25 }, 'counts');
   });
+  test('lakehouse greenfield template has three ordered phases, and every phase field points to one of them', () => {
+    const m = templates('en').find(x => /Lakehouse greenfield/.test(x.name)).model;
+    const es = templates('es').find(x => /Lakehouse greenfield/.test(x.name)).model;
+    eq(m.phases.map(p => p.id), ['mvp', 'wave1', 'wave2'], 'phases in timeline order');
+    assert(m.phases.every(p => p.name && p.goal && p.date), 'every phase has name, date and goal');
+    assert(es.phases.every(p => p.name && p.goal && p.goal !== m.phases.find(x => x.id === p.id).goal), 'goals are translated');
+    const idx = id => m.phases.findIndex(p => p.id === id);
+    m.nodes.concat(m.edges, m.groups || []).forEach(el => {
+      if (el.phase) assert(idx(el.phase) >= 0, `${el.id || el.from} phase ${el.phase} exists`);
+      if (el.until) assert(idx(el.until) > (el.phase ? idx(el.phase) : -1), `${el.id || el.from} until ${el.until} comes after its phase`);
+    });
+    m.phases.forEach(p => assert(m.nodes.some(n => n.phase === p.id), `at least one node appears in ${p.id}`));
+  });
   test('every documented line kind parses (notes, zones, trust, threat, dismiss, levels, types, weight)', () => {
     const src = [
       'title: Syntax check',
@@ -804,6 +817,141 @@
       eq(r.errors, [], `parse errors (${lang})`);
       eq(r.model.stakeholders.map(x => x.id), ['SH-001', 'SH-002'], `stakeholders (${lang})`);
     });
+  });
+
+  /* ======================================================================
+     9. Fases: hoja de ruta de la arquitectura (phase / until en nodos, conexiones y grupos)
+     ====================================================================== */
+  section('Phases');
+  const PHM = new Function(`${between('/* phaseModel:start */', '/* phaseModel:end */')}; return { cleanPhases, cleanPhaseRefs, phaseIndex, inPhase, phaseState, phaseStates, phaseModel, phaseDiff, phaseStats, phaseRows };`)();
+  const snapshotM = new Function('clone', `${app.slice(app.indexOf('  const snapshotOf = m => {'), app.indexOf('  const prepared = v =>'))}; return snapshotOf;`)(o => JSON.parse(JSON.stringify(o)));
+  const phList = () => [{ id: 'mvp', name: 'MVP', date: '2026-12', goal: 'Batch ingestion' }, { id: 'wave1', name: 'Wave 1', date: '2027-03-15' }, { id: 'wave2', name: 'Wave 2' }];
+  // g1 (sin campos) tiene src (siempre), cdc (wave1), upload (mvp, se retira en wave1); g2 solo tiene stream (wave2); lone no tiene nodos
+  const phDoc = () => ({ title: 'Plan', phases: phList(),
+    groups: [{ id: 'g1', label: 'G1' }, { id: 'g2', label: 'G2' }, { id: 'g3', label: 'G3', parent: 'g1' }, { id: 'lone', label: 'Lone' }],
+    nodes: [{ id: 'src', label: 'Src', group: 'g1', cost: 100 }, { id: 'upload', label: 'Upload', group: 'g3', phase: 'mvp', until: 'wave1', cost: 10 }, { id: 'cdc', label: 'CDC', group: 'g1', phase: 'wave1', cost: 200 }, { id: 'stream', label: 'Stream', group: 'g2', phase: 'wave2', cost: 300 }, { id: 'bi', label: 'BI', phase: 'mvp' }],
+    edges: [{ id: 'e1', from: 'src', to: 'upload' }, { id: 'e2', from: 'src', to: 'cdc' }, { id: 'e3', from: 'cdc', to: 'stream' }, { id: 'e4', from: 'src', to: 'bi', phase: 'wave1' }] });
+  test('cleanPhases: ids, names, dates, goals and the limit of 12', () => {
+    const r = PHM.cleanPhases([{ id: ' mvp ', name: '  The   MVP ', date: '2026-12', goal: ' g\r\nh ' }, { id: 'mvp', name: 'dup' }, { id: 'bad id' }, { id: 'x'.repeat(31) }, { id: 'w1' }, { id: 'w2', name: 'n'.repeat(90), date: '2026-13', goal: '' }, { id: 'w3', date: '2027-02-30' }, { id: 'w4', date: '2028-02-29' }, null, 'x', []]);
+    eq(r.map(p => p.id), ['mvp', 'w1', 'w2', 'w3', 'w4'], 'ids'); eq(Object.keys(r[0]), ['id', 'name', 'date', 'goal'], 'key order');
+    eq([r[0].name, r[0].goal, r[1].name], ['The MVP', 'g\nh', 'w1'], 'normalized text, name falls back to the id');
+    eq([r[2].name.length, r[2].date, r[2].goal, r[3].date, r[4].date], [60, undefined, undefined, undefined, '2028-02-29'], 'name capped, invalid dates and empty goal dropped');
+    eq(PHM.cleanPhases(Array.from({ length: 20 }, (_, i) => ({ id: `p${i}` }))).length, 12, 'at most 12'); eq(PHM.cleanPhases(undefined), [], 'no key');
+  });
+  test('cleanPhaseRefs drops unknown ids and an until that does not come after phase', () => {
+    const ph = PHM.cleanPhases(phList()), els = [{ phase: 'wave1', until: 'wave2' }, { phase: 'wave1', until: 'mvp' }, { phase: 'wave1', until: 'wave1' }, { phase: 'nope', until: 'wave2' }, { until: 'mvp' }, { until: 'wave1' }, { phase: 'mvp', until: 'ghost' }, {}];
+    PHM.cleanPhaseRefs(els, ph);
+    eq(els, [{ phase: 'wave1', until: 'wave2' }, { phase: 'wave1' }, { phase: 'wave1' }, { until: 'wave2' }, {}, { until: 'wave1' }, { phase: 'mvp' }, {}], 'each element');
+    const none = [{ phase: 'mvp', until: 'wave1' }]; PHM.cleanPhaseRefs(none, []); eq(none, [{}], 'without phases every reference goes');
+  });
+  test('inPhase / phaseState: present, future and retired', () => {
+    const m = phDoc();
+    eq([0, 1, 2].map(i => PHM.inPhase(m.nodes[1], i, m)), [true, false, false], 'upload: mvp only');
+    eq([0, 1, 2].map(i => PHM.phaseState(m.nodes[1], i, m)), [0, -1, -1], 'upload retired from wave1');
+    eq([0, 1, 2].map(i => PHM.phaseState(m.nodes[2], i, m)), [1, 0, 0], 'cdc future in mvp');
+    eq([0, 1, 2].map(i => PHM.inPhase(m.nodes[0], i, m)), [true, true, true], 'no phase = from the start');
+    eq(PHM.inPhase(m.nodes[2], -1, m), true, 'All shows everything');
+  });
+  test('phaseModel keeps what exists in the phase, regroups, follows the ends of edges and leaves the rest alone', () => {
+    const m = phDoc(); m.decisions = [{ id: 'ADR-001' }]; m.notes = [{ id: 'n' }];
+    const p0 = PHM.phaseModel(m, 0), p1 = PHM.phaseModel(m, 1), p2 = PHM.phaseModel(m, 2);
+    eq(p0.nodes.map(n => n.id), ['src', 'upload', 'bi'], 'mvp nodes'); eq(p1.nodes.map(n => n.id), ['src', 'cdc', 'bi'], 'wave1 nodes'); eq(p2.nodes.map(n => n.id), ['src', 'cdc', 'stream', 'bi'], 'wave2 nodes');
+    eq(p0.edges.map(e => e.id), ['e1'], 'edges need both ends and their own phase'); eq(p1.edges.map(e => e.id), ['e2', 'e4'], 'wave1 edges'); eq(p2.edges.map(e => e.id), ['e2', 'e3', 'e4'], 'wave2 edges');
+    eq(p0.groups.map(g => g.id), ['g1', 'g3', 'lone'], 'g2 has no node yet; lone has no node at all and stays'); eq(p1.groups.map(g => g.id), ['g1', 'lone'], 'g3 lost its only node'); eq(p2.groups.map(g => g.id), ['g1', 'g2', 'lone'], 'g2 appears with stream');
+    eq(PHM.phaseModel(m, -1), m, 'All = the same model'); assert(PHM.phaseModel({ nodes: [], edges: [], groups: [] }, 1).nodes.length === 0, 'no phases = the same model');
+    assert(p0.decisions === m.decisions && p0.notes === m.notes && p0.title === 'Plan' && p0.phases === m.phases, 'everything else untouched'); assert(p0.nodes[0] !== m.nodes[0], 'a new model, not the original');
+    eq(m.nodes.length, 5, 'the original is not changed');
+    const n = { phases: phList(), groups: [{ id: 'a', label: 'A', phase: 'wave1' }, { id: 'b', label: 'B', parent: 'a' }, { id: 'c', label: 'C', phase: 'wave1' }], nodes: [{ id: 'x', group: 'b' }, { id: 'z', group: 'c' }], edges: [] };
+    const q = PHM.phaseModel(n, 0); eq([q.groups.map(g => [g.id, g.parent]), q.nodes.map(x => x.group)], [[['b', undefined]], ['b', undefined]], 'a subgroup of a group that is not there yet loses its parent, and a node whose group is not there yet leaves it');
+    eq(PHM.phaseModel({ phases: phList(), groups: [{ id: 'a', label: 'A', phase: 'mvp', until: 'wave1' }, { id: 'b', label: 'B', parent: 'a' }], nodes: [{ id: 'x', group: 'b' }], edges: [] }, 1).groups.map(g => g.parent), [undefined], 'a subgroup of a retired group loses its parent');
+  });
+  test('phaseDiff: what enters and what leaves, versus the previous phase', () => {
+    const m = phDoc();
+    eq(PHM.phaseDiff(m, 0), { added: ['upload', 'bi'], retired: [] }, 'phase 0: nodes that declare it');
+    eq(PHM.phaseDiff(m, 1), { added: ['cdc'], retired: ['upload'] }, 'wave1'); eq(PHM.phaseDiff(m, 2), { added: ['stream'], retired: [] }, 'wave2');
+    eq([PHM.phaseDiff(m, -1), PHM.phaseDiff(m, 9)], [{ added: [], retired: [] }, { added: [], retired: [] }], 'out of range');
+  });
+  test('phaseStats: nodes, edges, cost and findings of the phase model', () => {
+    const m = phDoc(), seen = [], h = { monthly: pm => pm.nodes.reduce((s, n) => s + (n.cost || 0), 0), findings: pm => { seen.push(pm.nodes.length); return [{ severity: 'critical' }, { severity: 'high' }, { severity: 'medium' }, { severity: 'low' }, { severity: 'low' }]; } };
+    eq(PHM.phaseStats(m, 1, h), { nodes: 3, edges: 2, cost: 300, findings: { high: 2, medium: 1, low: 2 } }, 'wave1'); eq(seen, [3], 'helpers get the phase model');
+    eq(PHM.phaseStats(m, 0, h).cost, 110, 'mvp cost'); eq(PHM.phaseStats(m, 2, h).cost, 600, 'wave2 cost');
+  });
+  test('phaseRows: one row per phase with counts, cost, cost delta and findings; no cost shows null', () => {
+    const m = phDoc(), h = { monthly: pm => pm.nodes.reduce((s, n) => s + (n.cost || 0), 0), hasCost: pm => pm.nodes.some(n => n.cost != null), findings: pm => (pm.nodes.length > 3 ? [{ severity: 'high' }, { severity: 'low' }] : []) };
+    const r = PHM.phaseRows(m, h);
+    eq(r.map(x => [x.id, x.nodes, x.added, x.retired, x.cost, x.dCost]), [['mvp', 3, 2, 0, 110, null], ['wave1', 3, 1, 1, 300, 190], ['wave2', 4, 1, 0, 600, 300]], 'rows'); eq(r[2].findings, { high: 1, medium: 0, low: 1 }, 'findings'); eq(r[1].retiredIds, ['upload'], 'ids');
+    const none = PHM.phaseRows({ ...phDoc(), nodes: phDoc().nodes.map(n => ({ ...n, cost: undefined })) }, h);
+    eq(none.map(x => [x.cost, x.dCost]), [[null, null], [null, null], [null, null]], 'no cost anywhere'); eq(PHM.phaseRows({ nodes: [], edges: [], groups: [] }, h), [], 'no phases');
+  });
+  test('report and presentation wiring for phases', () => {
+    assert(/REP_SECS = \[[^\]]*'approvals', 'phases', 'versions'/.test(app), 'section after approvals'); assert(/phases: !!m\.phases\?\.length/.test(app), 'available with phases'); assert(app.includes("want('phases')") && app.includes('presentPhases'), 'section and API');
+    const i18n = read('src/i18n.js'); ['rep.s.phases', 'rep.k.phases', 'rep.h.phase', 'phase.present.tip', 'phase.present.step', 'phase.cmp.title', 'phase.cmp.cost'].forEach(k => assert(i18n.split(`'${k}'`).length - 1 === 2, `${k} in en and es`));
+  });
+  test('without phases the JSON, the snapshot and the text stay byte-identical', () => {
+    const base = withPositions({ title: 'Plain', nodes: [{ id: 'a', label: 'A' }, { id: 'b', label: 'B' }], edges: [{ from: 'a', to: 'b' }] });
+    eq(serializeM(base), serializeM({ ...base, phases: [] }), 'JSON'); assert(!/"phases"|"phase"|"until"/.test(serializeM(base)), 'no key in the JSON');
+    eq(JSON.stringify(snapshotM(base)), JSON.stringify(snapshotM({ ...base, phases: [] })), 'snapshot'); assert(!('phases' in snapshotM(base)), 'no phases in the snapshot');
+    ['en', 'es'].forEach(l => { const t = TXT.stringify(base, l); eq(TXT.stringify({ ...base, phases: [] }, l), t, 'same text'); assert(!/phase|fase|until|hasta/i.test(t.replace(/^t[ií]tulo: .*$/m, '')), `no phase words (${l})`); const p = TXT.parse(t, textCtx(l)); eq([p.errors, p.model.phases], [[], []], 'parse'); });
+  });
+  test('JSON writes phases after layerNames/routing and node fields in the canonical order; snapshots keep phases and element fields', () => {
+    const m = withPositions(phDoc()), j = serializeM(m);
+    assert(j.indexOf('"phases"') > j.indexOf('"title"') && j.indexOf('"phases"') < j.indexOf('"groups"'), 'phases before groups');
+    assert(/\{ "id": "mvp", "name": "MVP", "date": "2026-12", "goal": "Batch ingestion" \}/.test(j), 'phase key order');
+    assert(/"label": "Upload", "group": "g3"[^}]*"phase": "mvp", "until": "wave1" \}/.test(j), 'node phase and until at the end');
+    assert(/"to": "bi", "phase": "wave1" \}/.test(j), 'edge phase');
+    const s = snapshotM(m); eq(s.phases, phList(), 'phases in the snapshot'); eq(s.nodes[1].until, 'wave1', 'element fields in the snapshot'); assert(s.phases !== m.phases, 'a copy');
+    assert(/phase: 'wave1'|'phase', 'until'/.test(app) && /DIFF_FIELDS = \{[\s\S]*?'phase', 'until'/.test(app), 'version comparison sees phase and until');
+  });
+  test('phases text round trip · en and es', () => {
+    ['en', 'es'].forEach(lang => {
+      const m = withPositions(phDoc()); m.groups = m.groups.filter(g => g.id !== 'lone'); m.groups[0].phase = 'mvp'; m.groups[1].phase = 'wave2'; m.groups[1].until = undefined; m.edges[3].until = 'wave2';
+      m.phases[0].goal = 'Batch "ingestion" of ERP'; const t1 = TXT.stringify(m, lang), r = TXT.parse(t1, textCtx(lang));
+      eq(r.errors, [], `parse errors (${lang})`); eq(r.model.phases, m.phases, 'phases');
+      const f = x => ({ phase: x.phase, until: x.until });
+      const byId = (l, g) => l.map(n => [n.id, JSON.parse(JSON.stringify(g(n)))]).sort((x, y) => (x[0] < y[0] ? -1 : 1));
+      eq(byId(r.model.nodes, f), byId(m.nodes, f), 'node phase / until');
+      eq(byId(r.model.groups, g => g.phase ?? null), byId(m.groups, g => g.phase ?? null), 'group phase'); eq(r.model.edges.map(e => [e.from, e.to, e.phase, e.until]).map(x => JSON.stringify(x)), m.edges.map(e => [e.from, e.to, e.phase, e.until]).map(x => JSON.stringify(x)), 'edge phase / until');
+      assert(TXT.stringify({ ...r.model, meta: m.meta }, lang) === t1, `text is stable (${lang})`);
+      if (lang === 'es') assert(/^fase mvp: "MVP" fecha=2026-12 objetivo="Batch \\"ingestion\\" of ERP"$/m.test(t1) && /fase=wave1 hasta=wave2$/m.test(t1) && /^grupo g1 "G1" fase=mvp \{$/m.test(t1), `Spanish words:\n${t1}`);
+      else assert(/^phase mvp: "MVP" date=2026-12 goal="Batch \\"ingestion\\" of ERP"$/m.test(t1) && /phase=wave1 until=wave2$/m.test(t1) && /^group g1 "G1" phase=mvp \{$/m.test(t1), `English words:\n${t1}`);
+      assert(t1.indexOf('phase ') < t1.indexOf('src:') || t1.indexOf('fase ') < t1.indexOf('src:'), 'phase lines come before the nodes');
+    });
+  });
+  test('phases text: both languages parse, and unknown, misordered or malformed phases report their line', () => {
+    const ok = TXT.parse(['phase mvp: "MVP" fecha=2026-12 goal="G"', 'fase w1: Ola 1', 'a: A fase=mvp', 'b: B phase=w1 hasta=w1x'].join('\n'), textCtx('en'));
+    eq(ok.model.phases, [{ id: 'mvp', name: 'MVP', date: '2026-12', goal: 'G' }, { id: 'w1', name: 'Ola 1' }], 'mixed-language phase lines'); eq(ok.model.nodes[0].phase, 'mvp', 'fase=');
+    eq(ok.errors.map(e => e.line), [4], 'unknown until reported on its line');
+    const bad = TXT.parse(['phase mvp: "MVP"', 'phase w1: "W1" date=2026-13', 'phase mvp: "dup"', 'phase bad id: "x"', 'a: A phase=nope', 'b: B phase=w1 until=mvp', 'a -> b : x until=zzz', 'group g "G" phase=ghost {', '}'].join('\n'), textCtx('en'));
+    eq(bad.errors.map(e => e.line).sort((x, y) => x - y), [2, 3, 5, 6, 7, 8].concat(4).sort((x, y) => x - y), 'one error per problem, with its line');
+    const many = TXT.parse(Array.from({ length: 14 }, (_, i) => `phase p${i}: "P${i}"`).join('\n'), textCtx('en'));
+    eq([many.model.phases.length, many.errors.map(e => e.line)], [12, [13, 14]], 'at most 12 phases');
+    const ex = ['phase mvp: "MVP" date=2026-12 goal="Batch ingestion and first BI"', 'phase wave1: "Wave 1" date=2027-03', 'src: Source', 'cdc: CDC phase=wave1', 'tmp: Upload phase=mvp until=wave1', 'src -> cdc : x phase=wave1'].join('\n');
+    eq(TXT.parse(ex, textCtx('en')).errors, [], 'the example of the text-format header parses');
+  });
+  test('the phase examples of the text-format docs parse without errors · en and es', () => {
+    const ex = { en: ['phase mvp: "MVP" date=2026-12 goal="Batch ingestion of ERP and CRM files, first BI"', 'phase wave1: "Wave 1" date=2027-03 goal="Change data capture and the gold layer"', 'phase wave2: "Wave 2" date=2027-06', '',
+      'erp: ERP [db]', 'crm: CRM [db]', 'upload: Manual file upload phase=mvp until=wave1', 'cdc: CDC replication phase=wave1', 'stream: Event stream phase=wave2', 'erp -> cdc : changes phase=wave1', 'erp -> upload : extract phase=mvp'],
+    es: ['fase mvp: "MVP" fecha=2026-12 objetivo="Ingesta por lotes de archivos del ERP y el CRM, primer BI"', 'fase ola1: "Ola 1" fecha=2027-03 objetivo="Captura de cambios y la capa oro"', 'fase ola2: "Ola 2" fecha=2027-06', '',
+      'erp: ERP [db]', 'crm: CRM [db]', 'subida: Carga manual de archivos fase=mvp hasta=ola1', 'cdc: Replicación CDC fase=ola1', 'flujo: Flujo de eventos fase=ola2', 'erp -> cdc : cambios fase=ola1', 'erp -> subida : extracción fase=mvp'] };
+    ['en', 'es'].forEach(lang => {
+      const r = TXT.parse(ex[lang].join('\n'), textCtx(lang));
+      eq(r.errors, [], `parse errors (${lang})`);
+      eq(r.model.phases.length, 3, `phases (${lang})`);
+      eq(r.model.nodes.filter(n => n.until).map(n => [n.id, n.phase, n.until]), [[lang === 'en' ? 'upload' : 'subida', 'mvp', lang === 'en' ? 'wave1' : 'ola1']], `until (${lang})`);
+    });
+  });
+  test('the phase model stays out of the old paths: markers, ORDER, API-facing helpers exist', () => {
+    ['ORDER.phase = [\'id\', \'name\', \'date\', \'goal\']'].forEach(x => assert(app.includes(x), x));
+    assert(/cleanPhaseRefs\(\[\.\.\.m\.groups, \.\.\.m\.nodes, \.\.\.m\.edges\], m\.phases\)/.test(app), 'normalize cleans the element fields'); assert(/if \(m\.phases\?\.length\) head\.push\(arr\('phases'/.test(app), 'JSON only writes the key when there are phases');
+  });
+
+  test('canvas wiring: API, keyboard, inspector fields, bar and manager exist; every phase key is in en and es', () => {
+    ['phases:', 'addPhase', 'updatePhase', 'removePhase', 'setPhase', 'get phase()', 'phaseModel: i =>', 'phaseStats: i =>'].forEach(k => assert(app.includes(k), `API ${k}`));
+    assert(/ev\.key === '\[' \|\| ev\.key === '\]'/.test(app), 'keys [ and ]'); assert((app.match(/\$\{phaseField\(t\)\}/g) || []).length === 4, 'phase field in the node, edge, group and multi-selection panels');
+    const idx = read('index.html'); assert(/id="phase-bar"/.test(idx) && /id="phases-box"/.test(idx), 'bar and manager in the page');
+    const used = [...new Set([...app.matchAll(/T\('(phase\.[\w.]+)'/g)].map(m => m[1]))];
+    const i18n = read('src/i18n.js');
+    used.forEach(k => assert(i18n.split(`'${k}':`).length === 3, `${k} is defined once in en and once in es`));
   });
 
   /* ---------- resumen ---------- */

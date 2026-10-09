@@ -35,6 +35,8 @@ api ~> cola : eventos
 | `a -> b : SQL tablas=pedidos,clientes` | Conjuntos de datos de una conexión (también `datasets=` o `conjuntos=`); con espacios, entre comillas: `tablas="ventas pedidos,crm.clientes"` |
 | `región=eu-west-1` | Región de un nodo o grupo (también `region=`, `país=`, `country=`); los nodos la heredan del grupo |
 | `a -> b : x datos=pii transferencia=ok` | Transferencia entre jurisdicciones autorizada (`transfer=ok` en inglés) |
+| `fase mvp: "MVP" fecha=2026-12 objetivo="…"` | Fase del plan, en orden de línea de tiempo (en inglés: `phase mvp: "MVP" date=2026-12 goal="…"`); ver *Fases* abajo |
+| `a: A fase=mvp hasta=ola2` · `a -> b : x fase=ola1` · `grupo g "G" fase=mvp {` | Fase en la que aparece un nodo, conexión o grupo (en inglés: `phase=`) y, si es temporal, la fase en la que se retira (`hasta=`, en inglés `until=`) |
 | `capa=oro` (`bronce`, `plata`, `oro`; también `crudo`, `curado`, `consumo` y los nombres en inglés) | Capa del data lake de un nodo o grupo (en inglés: `layer=gold`); los nodos la heredan del grupo |
 | `capas: zonas` | Muestra Crudo / Curado / Consumo en vez de Bronce / Plata / Oro (en inglés: `layers: zones`) |
 | `exposición=pública` (`interna`) · `respaldo=sí` (`no`) | Anula la exposición y el respaldo deducidos de un nodo (en inglés: `exposure=public` / `internal`, `backup=yes` / `no`) |
@@ -59,7 +61,7 @@ api ~> cola : eventos
 | `# …` o `// …` | Comentario |
 
 Las palabras clave funcionan en los dos idiomas: `title`/`título`, `group`/`grupo`, `cost`/`costo`, `/month`/`/mes`, `/hour`/`/hora`, `/year`/`/año`, `/3years`/`/3años`.
-El texto es la fuente de verdad de notas, zonas, fronteras de confianza, notas STRIDE, hallazgos descartados, decisiones de arquitectura (ADR), requisitos y el registro RAID: borrarlos del texto los borra del diagrama. Las versiones se conservan.
+El texto es la fuente de verdad de notas, zonas, fronteras de confianza, notas STRIDE, hallazgos descartados, fases, decisiones de arquitectura (ADR), requisitos y el registro RAID: borrarlos del texto los borra del diagrama. Las versiones se conservan.
 ### Decisiones de arquitectura (ADR)
 
 Una línea `adr` abre una decisión; los campos van en las líneas siguientes, cada uno con su texto entre comillas (`\n` = salto de línea). Las decisiones se escriben al final del texto.
@@ -151,6 +153,29 @@ interesado SH-002: "Luis Gómez" rol="Dueño del dato" org=socio raci=Consumo:A,
 - Claves (en inglés entre corchetes): `rol=` (`role=`); `org=` con `cliente`, `socio` o `interno` (`client`, `partner`, `internal`); `raci=` es una lista separada por comas de `área:letra`, con `R` (responsable), `A` (aprueba), `C` (consultado) o `I` (informado). `*` vale para todas las áreas. Las áreas son las de decisión y no pueden llevar comas.
 - Palabras sueltas: `versiones` (`versions`) hace al interesado aprobador de versiones; `inactivo` (`inactive`) marca a quien dejó el proyecto: nunca se exige, el historial se conserva.
 - Al leer se aceptan ambos idiomas; el texto se escribe en el idioma activo (`stakeholder … role= org=client raci= versions inactive`). Un id repetido, un id o org no válido, o una letra de RACI no válida es un error con su número de línea. Borrar una línea `interesado` borra al interesado y su fila RACI.
+
+### Fases
+
+Las líneas `fase` describen la construcción por etapas. Escríbelas antes de los nodos, en orden de línea de tiempo (la primera línea es la primera fase). Cada una tiene un id, un nombre entre comillas y, opcionalmente, una fecha y un objetivo:
+
+```
+fase mvp: "MVP" fecha=2026-12 objetivo="Ingesta por lotes de archivos del ERP y el CRM, primer BI"
+fase ola1: "Ola 1" fecha=2027-03 objetivo="Captura de cambios y la capa oro"
+fase ola2: "Ola 2" fecha=2027-06
+
+erp: ERP [db]
+crm: CRM [db]
+subida: Carga manual de archivos fase=mvp hasta=ola1
+cdc: Replicación CDC fase=ola1
+flujo: Flujo de eventos fase=ola2
+erp -> cdc : cambios fase=ola1
+erp -> subida : extracción fase=mvp
+```
+
+- Claves (en inglés entre corchetes): `fecha=` (`date=`), `AAAA-MM` o `AAAA-MM-DD`; `objetivo=` (`goal=`), texto libre entre comillas. Hasta 12 fases; los ids son letras, dígitos, `-` y `_` (hasta 30 caracteres).
+- Los nodos, conexiones y grupos llevan `fase=<id>` (`phase=`): la fase en la que aparecen. Sin ella, están desde la primera fase. `hasta=<id>` (`until=`) es la fase desde la que ya no están (un componente temporal). `hasta` debe ir después de `fase` en el orden (después de la primera fase si no hay `fase`).
+- Un id de fase desconocido, o un `hasta` que no va después de su fase, es un error con su número de línea. Borrar una línea `fase` mientras hay elementos que la usan también es un error: cambia o borra antes esas referencias.
+- Al leer se aceptan ambos idiomas; el texto se escribe en el idioma activo (`phase mvp: "MVP" date=… goal=…` y `phase=wave1 until=wave2`), así que hace el viaje de ida y vuelta exacto.
 
 <details>
 <summary><b>Formato JSON</b></summary>

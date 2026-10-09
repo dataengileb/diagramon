@@ -69,12 +69,13 @@
     compare: null, verNote: '', verEdit: null,
     viewKey: viewKey(store.get('view')),  // vista activa (S.view es la cámara); viewChosen: el usuario ya eligió una en esta sesión
     viewChosen: false, flow: null,        // flow: conexión agregada elegida en la vista Contexto
-    scope: null                           // nivel C4 abierto: id del nodo cuyo diagrama interno se ve (null = nivel superior)
+    scope: null,                          // nivel C4 abierto: id del nodo cuyo diagrama interno se ve (null = nivel superior)
+    phase: -1, phaseGhosts: store.get('phaseGhosts', true)   // fase elegida en la barra de fases (-1 = todas; no se guarda en el modelo) y si lo futuro se ve atenuado
   };
   // Referencias a elementos SVG y medidas calculadas (nunca se guardan en el modelo)
   const R = { nodes: new Map(), edges: new Map(), groups: new Map(), width: new Map(), gbox: new Map(), notes: new Map(), zones: new Map() };
   // Lo que la vista activa oculta o resume (se recalcula en applyViewMode / updateContext) y el último resaltado
-  const VW = { dimNodes: 0, dimEdges: 0, hideNodes: new Set(), hideEdges: new Set(), hideGroups: new Set(), flows: new Map(), ctxBoxes: new Map(), ctxEdges: new Map(), gcost: null, sc: { nodes: new Set(), edges: new Set(), groups: new Set() }, xs: null };
+  const VW = { dimNodes: 0, dimEdges: 0, hideNodes: new Set(), hideEdges: new Set(), hideGroups: new Set(), flows: new Map(), ctxBoxes: new Map(), ctxEdges: new Map(), gcost: null, sc: { nodes: new Set(), edges: new Set(), groups: new Set() }, xs: null, ph: null };
   const HL = { f: null, fr: null };
 
   const svg = $('#canvas'), viewport = $('#viewport'), stage = $('#stage');
@@ -578,6 +579,7 @@
     if (raw.direction === 'LR' || raw.direction === 'TB') m.direction = raw.direction;
     if (raw.routing === 'elbow') m.routing = 'elbow';
     if (raw.layerNames === 'zones') m.layerNames = 'zones';
+    { const ph = cleanPhases(raw.phases); if (ph.length) m.phases = ph; }   // sin fases no hay clave: JSON y exportaciones idénticos
     { const et = cleanEdgeTypes(raw.edgeTypes); if (et.length) m.edgeTypes = et; }
     { const dm = cleanDismissed(raw.dismissed); if (dm) m.dismissed = dm; }
     if (raw.meta && typeof raw.meta === 'object') {
@@ -657,6 +659,7 @@
       { const th = cleanThreats(o.threats); if (th) o.threats = th; else delete o.threats; }
       m.edges.push(o);
     });
+    cleanPhaseRefs([...m.groups, ...m.nodes, ...m.edges], m.phases);   // phase / until de cada elemento: solo fases que existen, until después de phase
     m.notes = []; m.zones = [];
     list(raw.notes).forEach((n, i) => {
       const o = { id: take(n.id, 'note', i), ...cleanBox(n, 180, 110), text: String(n.text ?? '') };
@@ -1516,6 +1519,99 @@
       : { id: `req:fail:${r.id}`, source: 'req', rule, severity, target, title: T('req.find.fail', { id: r.id, t: r.title }), detail, fix: T('req.find.fail.fix') };
   }));
 
+  /* ---------- fases (hoja de ruta de la arquitectura): modelo ---------- */
+  // m.phases = [{ id: 'mvp', name, date?: 'AAAA-MM' | 'AAAA-MM-DD', goal? }]: el orden del arreglo ES la línea de tiempo (máx. 12).
+  // En nodos, conexiones y grupos: phase = fase en la que aparece (sin él, ya estaba en la primera) y until = fase en la que se retira (ya no está desde ella; debe ir después de phase).
+  // Es del diagrama (entra en las fotos de versiones). Sin fases, el JSON y las exportaciones quedan idénticos. Un id desconocido se descarta: el elemento queda «siempre presente».
+  /* phaseModel:start */
+  const PHASE_MAX = 12, PHASE_ID = /^[A-Za-z0-9_-]{1,30}$/;
+  const phaseDay = v => { const r = /^(\d{4})-(\d{2})(?:-(\d{2}))?$/.exec(String(v ?? '').trim()); if (!r) return ''; const mo = +r[2], d = r[3] == null ? 1 : +r[3]; return mo >= 1 && mo <= 12 && d >= 1 && d <= new Date(Date.UTC(+r[1], mo, 0)).getUTCDate() ? String(v).trim() : ''; };
+  function cleanPhases(raw) {
+    const seen = new Set(), out = [];
+    (Array.isArray(raw) ? raw : []).forEach(p => {
+      if (!p || typeof p !== 'object' || Array.isArray(p)) return;
+      const id = String(p.id ?? '').trim();
+      if (!PHASE_ID.test(id) || seen.has(id)) return;
+      seen.add(id);
+      const o = { id, name: String(p.name ?? '').replace(/\s+/g, ' ').trim().slice(0, 60) || id };
+      const date = phaseDay(p.date), goal = String(p.goal ?? '').replace(/\r\n?/g, '\n').trim().slice(0, 500);
+      if (date) o.date = date;
+      if (goal) o.goal = goal;
+      out.push(o);
+    });
+    return out.slice(0, PHASE_MAX);
+  }
+  const phaseIndex = (m, id) => (m.phases || []).findIndex(p => p.id === id);
+  // Deja en nodos, conexiones y grupos solo fases que existen; until debe ir después de phase (sin phase, después de la primera fase)
+  function cleanPhaseRefs(els, phases) {
+    const idx = new Map((phases || []).map((p, i) => [p.id, i]));
+    els.forEach(x => {
+      const a = x.phase == null ? -1 : idx.has(String(x.phase)) ? idx.get(String(x.phase)) : -2, b = x.until == null ? -1 : idx.has(String(x.until)) ? idx.get(String(x.until)) : -2;
+      if (a >= 0) x.phase = String(x.phase); else delete x.phase;
+      if (b >= 0 && b > Math.max(a, 0)) x.until = String(x.until); else delete x.until;
+    });
+  }
+  // Estado del elemento en la fase i: 0 presente, 1 futuro (aún no aparece), -1 retirado. i < 0 («Todas») = todo presente
+  const phaseState = (el, i, m) => {
+    if (i < 0) return 0;
+    const a = el.phase ? phaseIndex(m, el.phase) : -1, b = el.until ? phaseIndex(m, el.until) : -1;
+    return b >= 0 && b <= i ? -1 : a > i ? 1 : 0;
+  };
+  const inPhase = (el, i, m) => phaseState(el, i, m) === 0;
+  // Estado de todos los elementos en la fase i: { nodes, edges, groups } (Map id → 0 | 1 | -1).
+  // Un grupo sin campos propios existe si algún nodo suyo (o de sus subgrupos) existe; si todos son futuros es futuro; si ya no queda ninguno es retirado; vacío = presente.
+  // Una conexión sigue a sus extremos: retirada si cualquiera lo está, futura si cualquiera es futuro
+  function phaseStates(m, i) {
+    const nodes = new Map(m.nodes.map(n => [n.id, phaseState(n, i, m)])), gm = new Map(m.groups.map(g => [g.id, g]));
+    const below = new Map(m.groups.map(g => [g.id, []]));
+    m.nodes.forEach(n => { let g = n.group, k = 0; while (g && gm.has(g) && k++ < 50) { below.get(g).push(nodes.get(n.id)); g = gm.get(g).parent; } });
+    const groups = new Map(m.groups.map(g => {
+      const own = g.phase || g.until, s = below.get(g.id);
+      return [g.id, own || !s.length ? phaseState(g, i, m) : s.includes(0) ? 0 : s.includes(1) ? 1 : -1];
+    }));
+    const edges = new Map(m.edges.map(e => { const s = [phaseState(e, i, m), nodes.get(e.from) ?? 0, nodes.get(e.to) ?? 0]; return [e.id, s.includes(-1) ? -1 : s.includes(1) ? 1 : 0]; }));
+    return { nodes, edges, groups };
+  }
+  // Un modelo nuevo con solo lo que existe en la fase i (lo demás de m queda igual); i = -1 o sin fases = el propio m
+  function phaseModel(m, i) {
+    if (i < 0 || !(m.phases || []).length) return m;
+    const st = phaseStates(m, i), gm = new Map(m.groups.map(g => [g.id, g]));
+    const up = id => { let k = 0; while (id && k++ < 50 && !(gm.has(id) && st.groups.get(id) === 0)) id = gm.get(id)?.parent; return gm.has(id) && st.groups.get(id) === 0 ? id : undefined; };   // grupo presente más cercano
+    const fix = (x, key) => { const o = { ...x }, g = up(x[key]); if (g) o[key] = g; else delete o[key]; return o; };
+    return {
+      ...m,
+      groups: m.groups.filter(g => st.groups.get(g.id) === 0).map(g => fix(g, 'parent')),
+      nodes: m.nodes.filter(n => st.nodes.get(n.id) === 0).map(n => fix(n, 'group')),
+      edges: m.edges.filter(e => st.edges.get(e.id) === 0).map(e => ({ ...e }))
+    };
+  }
+  // Nodos que entran y salen en la fase i respecto de la anterior (en la primera: los que declaran esa fase)
+  function phaseDiff(m, i) {
+    if (i < 0 || i >= (m.phases || []).length) return { added: [], retired: [] };
+    if (i === 0) return { added: m.nodes.filter(n => n.phase === m.phases[0].id).map(n => n.id), retired: [] };
+    const here = phaseStates(m, i).nodes, before = phaseStates(m, i - 1).nodes;
+    return { added: m.nodes.filter(n => here.get(n.id) === 0 && before.get(n.id) !== 0).map(n => n.id), retired: m.nodes.filter(n => before.get(n.id) === 0 && here.get(n.id) !== 0).map(n => n.id) };
+  }
+  // Cifras de la fase i; h = { monthly(modelo) → costo mensual, findings(modelo) → hallazgos abiertos [{ severity }] }
+  function phaseStats(m, i, h) {
+    const pm = phaseModel(m, i), f = { high: 0, medium: 0, low: 0 };
+    (h.findings(pm) || []).forEach(x => { const k = x.severity === 'critical' || x.severity === 'high' ? 'high' : x.severity === 'medium' ? 'medium' : 'low'; f[k]++; });
+    return { nodes: pm.nodes.length, edges: pm.edges.length, cost: h.monthly(pm), findings: f };
+  }
+  // Tabla comparativa: una fila por fase (orden = línea de tiempo). cost = null si ningún componente de la fase tiene costo (h.hasCost(modelo)); dCost = cambio respecto de la fase anterior
+  function phaseRows(m, h) {
+    let prev = null;
+    return (m.phases || []).map((p, i) => {
+      const st = phaseStats(m, i, h), d = phaseDiff(m, i), cost = h.hasCost && !h.hasCost(phaseModel(m, i)) ? null : st.cost;
+      const dCost = i > 0 && (cost != null || prev != null) ? (cost || 0) - (prev || 0) : null;
+      prev = cost;
+      return { id: p.id, name: p.name, date: p.date || '', goal: p.goal || '', nodes: st.nodes, edges: st.edges, added: d.added.length, retired: d.retired.length, addedIds: d.added, retiredIds: d.retired, cost, dCost, findings: st.findings };
+    });
+  }
+  /* phaseModel:end */
+  const phaseHelpers = { monthly: m => monthlyTotal(m.nodes), hasCost: m => m.nodes.some(hasCost), findings: m => findingsOf(m).filter(f => !f.dismissed) };
+  const phaseCostText = (r, k = 'cost') => (r[k] == null ? '—' : k === 'cost' ? money(round2(r.cost)) : r.dCost === 0 ? money(0) : `${r.dCost > 0 ? '+' : '−'}${money(round2(Math.abs(r.dCost)))}`);
+
   /* ---------- disponibilidad (SLA), RPO/RTO, réplicas y puntos únicos de fallo ---------- */
   const RSL = { entryTypes: ['user', 'web', 'mobile', 'external', 'client'], dataStoreTypes: ['db', 'nosql', 'storage'], dataStoreIconCategories: ['Bases de datos', 'Almacenamiento'],
     spofSeverity: 'high', singleStoreSeverity: 'medium', defaultTarget: 99.9, ...C.resilience };
@@ -2374,6 +2470,12 @@
       el('rect', { width: rw, height: 20, rx: 10 }, rgx);
       el('text', { x: rw / 2, y: 14, 'text-anchor': 'middle' }, rgx).textContent = rt;
     }
+    if (n.phase && S.model.phases?.length) { // «NUEVO»: abajo a la izquierda, a caballo del borde; solo se ve si el nodo aparece justo en la fase elegida (clase ph-new)
+      const tx = T('phase.new'), pw = Math.ceil(textW(tx, FONT.badge)) + 12, pg = el('g', { class: 'node-phase', transform: `translate(10 ${H - 9})` }, b);
+      el('title', null, pg).textContent = T('phase.new.tip');
+      el('rect', { width: pw, height: 18, rx: 9 }, pg);
+      el('text', { x: pw / 2, y: 12.5, 'text-anchor': 'middle' }, pg).textContent = tx;
+    }
     if (li) drawNodeLayer(b, li);
     if (inn) {
       const cg = el('g', { class: 'node-inner', transform: `translate(${w - 8 - cw} ${(H - 20) / 2})` }, b);
@@ -2893,6 +2995,10 @@
     m.edges.forEach(e => { if (sc.nodes.has(e.from) || sc.nodes.has(e.to)) sc.edges.add(e.id); });
     sc.nodes.forEach(id => hideN.add(id)); sc.edges.forEach(id => hideE.add(id)); sc.groups.forEach(id => hideG.add(id));
     VW.sc = sc;
+    // Fases: lo que aún no existe en la fase elegida es un fantasma (se oculta si se apagan los fantasmas) y lo retirado se oculta; las conexiones siguen a sus extremos
+    const pv = phaseView();
+    pv.hide.nodes.forEach(id => hideN.add(id)); pv.hide.edges.forEach(id => hideE.add(id)); pv.hide.groups.forEach(id => hideG.add(id));
+    VW.ph = pv;
 
     if (emph === 'security') {
       m.nodes.forEach(n => nodeCls.set(n.id, isSensitive(n) ? 'v-hl' : 'v-dim'));
@@ -2948,6 +3054,9 @@
     R.nodes.forEach((g, id) => { g.style.removeProperty('--own'); if (ownVar.has(id) && !hideN.has(id)) g.style.setProperty('--own', ownVar.get(id)); });
     R.edges.forEach((r, id) => paint(r.g, id, hideE, edgeCls, edgeVar, '--vc'));
     R.groups.forEach((r, id) => r.g.classList.toggle('v-hide', hideG.has(id) || top.has(id)));
+    R.nodes.forEach((g, id) => { g.classList.toggle('pghost', pv.ghost.nodes.has(id)); g.classList.toggle('ph-new', pv.fresh.has(id)); });
+    R.edges.forEach((r, id) => r.g.classList.toggle('pghost', pv.ghost.edges.has(id)));
+    R.groups.forEach((r, id) => r.g.classList.toggle('pghost', pv.ghost.groups.has(id)));
     VW.hideNodes = hideN; VW.hideEdges = hideE; VW.hideGroups = hideG;
     // Atenuados (no ocultos): los muestra la pastilla de la vista
     const dim = cls => [...cls].filter(([id, c]) => /\bv-dim\b/.test(c)).length;
@@ -3324,7 +3433,7 @@
     const topOf = gid => { let g = gmap.get(gid), i = 0; while (g?.parent && gmap.has(g.parent) && i++ < 50) g = gmap.get(g.parent); return g; };
     // Representante visible de cada nodo: la caja cerrada de su grupo de primer nivel, o él mismo
     const reps = new Map(), repOf = new Map();
-    scopeModel().nodes.forEach(n => {
+    scopeModel().nodes.filter(n => !VW.hideNodes.has(n.id)).forEach(n => {
       const tg = n.group && topOf(n.group), b = tg && R.gbox.get(tg.id), k = b ? `g:${tg.id}` : `n:${n.id}`;
       // La caja cerrada es una tarjeta compacta centrada en el centro del grupo (no del tamaño del grupo)
       const card = b && { w: Math.min(b.w, 300), h: Math.min(b.h, 128) };
@@ -3578,15 +3687,16 @@
   const save = debounce(() => { store.set('model', S.model); updateMeta(); renderVersions(); renderAdr(); renderReq(); renderRaid(); }, 250);
 
   const ORDER = {
-    group: ['id', 'label', 'icon', 'color', 'parent', 'kind', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'controls', 'in'],
-    node: ['id', 'label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'x', 'y', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'exposure', 'backup', 'controls', 'in', 'c4', 'sla', 'rpo', 'rto', 'replicas'],
-    edge: ['id', 'from', 'to', 'label', 'style', 'weight', 'route', 'both', 'color', 'data', 'encrypted', 'datasets', 'transferOk', 'threats'],
+    group: ['id', 'label', 'icon', 'color', 'parent', 'kind', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'controls', 'in', 'phase', 'until'],
+    node: ['id', 'label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'x', 'y', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'exposure', 'backup', 'controls', 'in', 'c4', 'sla', 'rpo', 'rto', 'replicas', 'phase', 'until'],
+    edge: ['id', 'from', 'to', 'label', 'style', 'weight', 'route', 'both', 'color', 'data', 'encrypted', 'datasets', 'transferOk', 'threats', 'phase', 'until'],
     note: ['id', 'x', 'y', 'w', 'h', 'text', 'color', 'in'],
     zone: ['id', 'x', 'y', 'w', 'h', 'label', 'severity', 'desc', 'kind', 'trust', 'in'],
     requirement: ['id', 'title', 'kind', 'detail', 'priority', 'status', 'source', 'check', 'links'],
     decision: ['id', 'title', 'status', 'date', 'deciders', 'context', 'decision', 'consequences', 'supersededBy', 'area', 'criteria', 'options', 'chosen', 'links', 'history', 'signoffs'],
     raid: ['id', 'type', 'title', 'detail', 'owner', 'status', 'probability', 'impact', 'mitigation', 'validation', 'due', 'raised', 'links', 'history']
   };
+  ORDER.phase = ['id', 'name', 'date', 'goal'];
   ORDER.stakeholder = ['id', 'name', 'role', 'org', 'raci', 'versions', 'inactive'];
   function serialize(m, full = false) {
     const ordered = (o, keys) => { const r = {}; keys.forEach(k => k in o && (r[k] = o[k])); Object.keys(o).forEach(k => k in r || (r[k] = o[k])); return r; };
@@ -3601,6 +3711,7 @@
     if (m.direction) head.push(`  "direction": ${JSON.stringify(m.direction)}`);
     if (m.routing) head.push(`  "routing": ${JSON.stringify(m.routing)}`);
     if (m.layerNames === 'zones') head.push(`  "layerNames": "zones"`);
+    if (m.phases?.length) head.push(arr('phases', m.phases, ORDER.phase));
     if (m.edgeTypes?.length) head.push(`  "edgeTypes": ${JSON.stringify(m.edgeTypes)}`);
     if (m.dismissed && Object.keys(m.dismissed).length) head.push(`  "dismissed": ${JSON.stringify(m.dismissed)}`);
     if (m.meta) head.push(`  "meta": ${JSON.stringify(m.meta)}`);
@@ -3668,6 +3779,7 @@
     }
     S.model = normalize(raw);
     ensurePositions(S.model);
+    if (opts.animate) S.phase = -1;   // otro diagrama: se ve todo (la fase elegida es de la vista, no del modelo)
     if (opts.animate && !opts.keepScope) S.scope = null;  // otro diagrama: nivel superior; deshacer, versiones y editores conservan el nivel si sigue existiendo
     if (S.scope && !S.model.nodes.some(n => n.id === S.scope)) S.scope = null;
     store.set('scope', S.scope);
@@ -3714,7 +3826,9 @@
     refreshFindings();
     const nFind = FC.open.filter(f => f.source === 'rule').length;
     const sm = scopeModel(m);
-    $('#stage-meta').textContent = [T('meta.nodes', sm.nodes.length), T('meta.edges', sm.edges.length), sm.groups.length ? T('meta.groups', sm.groups.length) : '', costs, insecure ? T('meta.insecure', insecure) : '', xb ? T('meta.xborder', xb) : '', zones, reviews, nFind ? T('meta.findings', nFind) : ''].filter(Boolean).join(' · ');
+    const pi = phaseNow(), pst = pi >= 0 ? phaseStats(m, pi, { monthly: x => monthlyTotal(x.nodes), findings: () => [] }) : null, psm = pst ? scopeModel(phaseModel(m, pi)) : null;
+    const head = pst ? [T('phase.summary', { name: m.phases[pi].name, n: psm.nodes.length, cost: pst.cost ? `≈ ${money(round2(pst.cost))}${T('cost.mo')}` : '' }), T('meta.edges', psm.edges.length)] : [T('meta.nodes', sm.nodes.length), T('meta.edges', sm.edges.length), sm.groups.length ? T('meta.groups', sm.groups.length) : '', costs];
+    $('#stage-meta').textContent = [...head, insecure ? T('meta.insecure', insecure) : '', xb ? T('meta.xborder', xb) : '', zones, reviews, nFind ? T('meta.findings', nFind) : ''].filter(Boolean).join(' · ');
     const t = $('#title');
     if (document.activeElement !== t) t.value = m.title;
     $('#empty').hidden = !!S.scope || sm.nodes.length > 0;
@@ -3727,6 +3841,7 @@
     }
     document.title = `${m.title} · ${C.app.name}`;
     renderDocbar();
+    renderPhaseBar();
   }
 
   /* ---------- ficha del documento al pie del lienzo (misma fuente que el cajetín exportado) ---------- */
@@ -3902,6 +4017,192 @@
   });
   fltPill.addEventListener('click', ev => { if (ev.target.closest('[data-flt="clear"]')) clearFilter(); });
 
+  /* ---------- fases: barra del lienzo, qué se ve en cada fase y gestor (pestaña Versiones) ---------- */
+  // S.phase = fase elegida (-1 = todas): es de la vista, no del modelo. Los fantasmas (lo que aún no existe) se pueden seleccionar y editar, para poder asignarles una fase desde el lienzo.
+  const phaseNow = () => (S.model?.phases?.length && S.phase >= 0 ? Math.min(S.phase, S.model.phases.length - 1) : -1);
+  // Qué atenúa (fantasma) y qué oculta la fase elegida; fresh = nodos que aparecen justo en ella (insignia NUEVO)
+  function phaseView() {
+    const out = { i: phaseNow(), ghost: { nodes: new Set(), edges: new Set(), groups: new Set() }, hide: { nodes: new Set(), edges: new Set(), groups: new Set() }, fresh: new Set() };
+    if (out.i < 0) return out;
+    const st = phaseStates(S.model, out.i);
+    for (const k of ['nodes', 'edges', 'groups']) st[k].forEach((v, id) => { if (v === -1 || (v === 1 && !S.phaseGhosts)) out.hide[k].add(id); else if (v === 1) out.ghost[k].add(id); });
+    phaseDiff(S.model, out.i).added.forEach(id => out.fresh.add(id));
+    return out;
+  }
+  // 'AAAA-MM' → «dic 2026»; 'AAAA-MM-DD' → fecha corta
+  const fmtPhaseDate = d => {
+    const r = /^(\d{4})-(\d{2})$/.exec(d || '');
+    if (!r) return fmtDay(d);
+    try { return new Intl.DateTimeFormat(I.lang, { month: 'short', year: 'numeric', timeZone: 'UTC' }).format(new Date(Date.UTC(+r[1], +r[2] - 1, 1))); } catch { return d; }
+  };
+  const phaseBar = $('#phase-bar');
+  function renderPhaseBar() {
+    const ph = S.model?.phases || [], cur = phaseNow();
+    phaseBar.hidden = !ph.length;
+    if (!ph.length) return;
+    const sig = JSON.stringify([ph, cur, S.phaseGhosts, I.lang]);
+    if (phaseBar._sig === sig) return;
+    phaseBar._sig = sig;
+    const had = phaseBar.contains(document.activeElement) ? document.activeElement.dataset?.p : null;
+    const chip = (i, name, date, tip) => `<button class="ph-chip${cur === i ? ' on' : ''}" data-p="${i}" aria-pressed="${cur === i}"${tip ? ` title="${esc(tip)}"` : ''}><b>${esc(name)}</b>${date ? `<small>${esc(fmtPhaseDate(date))}</small>` : ''}</button>`;
+    $('#phase-chips').innerHTML = chip(-1, T('phase.all'), '', '') + ph.map((p, i) => chip(i, p.name, p.date, p.goal)).join('');
+    const g = $('#phase-ghosts');
+    g.checked = !!S.phaseGhosts; g.disabled = cur < 0;
+    if (had != null) phaseBar.querySelector(`[data-p="${had}"]`)?.focus();
+    phaseBar.querySelector('.ph-chip.on')?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+  }
+  // i (índice) | id | null (todas); devuelve el índice resultante
+  function setPhase(v) {
+    const ph = S.model.phases || [];
+    let i = v == null ? -1 : typeof v === 'number' ? Math.floor(v) : ph.findIndex(p => p.id === String(v));
+    i = Number.isFinite(i) && i >= 0 && i < ph.length ? i : -1;
+    if (i !== S.phase) {
+      S.phase = i;
+      stopPlay(); clearPath();
+      refreshView();
+      updateMeta();
+    }
+    renderPhaseBar(); markPhaseCmp();
+    return S.phase;
+  }
+  const stepPhase = d => { const n = S.model.phases?.length || 0; if (n) setPhase(clamp(phaseNow() + d, -1, n - 1)); };
+  phaseBar.addEventListener('click', ev => { const b = ev.target.closest('[data-p]'); if (b) setPhase(+b.dataset.p); });
+  $('#phase-present').addEventListener('click', () => present({ phases: true }));
+  $('#phase-ghosts').addEventListener('change', ev => { S.phaseGhosts = ev.target.checked; store.set('phaseGhosts', S.phaseGhosts); refreshView(); renderPhaseBar(); });
+
+  // Campo «Fase» y «Se retira en» del inspector (nodos, conexiones, grupos y selección múltiple)
+  const phaseField = items => {
+    const m = S.model, ph = m.phases || [], list = [].concat(items);
+    if (!ph.length) return '';
+    const pick = k => { const v = new Set(list.map(x => x[k] || '')); return v.size === 1 ? [...v][0] : null; };
+    const a = pick('phase'), b = pick('until'), lo = Math.max(0, ...list.map(x => (x.phase ? phaseIndex(m, x.phase) : 0)));
+    const sel = (k, cur, empty, opts) => `<select data-phs="${k}">${cur === null ? `<option value="__mixed" selected>${T('insp.mixed')}</option>` : ''}<option value=""${cur === '' ? ' selected' : ''}>${esc(empty)}</option>${opts.map(p => `<option value="${esc(p.id)}"${cur === p.id ? ' selected' : ''}>${esc(p.name)}</option>`).join('')}</select>`;
+    return `<div class="field phase-field"><div class="row2">
+      <label title="${esc(T('phase.hint'))}">${T('phase.label')}${sel('phase', a, T('phase.always'), ph)}</label>
+      <label title="${esc(T('phase.untilHint'))}">${T('phase.until')}${sel('until', b, T('phase.notRetired'), ph.filter((p, i) => i > lo))}</label></div></div>`;
+  };
+  // Cambia fase / hasta de lo elegido; until siempre va después de phase (cleanPhaseRefs lo descarta si no)
+  $('#inspector').addEventListener('change', ev => {
+    const f = ev.target, k = f.dataset?.phs, t = selTarget();
+    if (!k || !t || f.value === '__mixed') return;
+    pushHistory();
+    const list = Array.isArray(t) ? t : [t];
+    list.forEach(x => { if (f.value) x[k] = f.value; else delete x[k]; });
+    cleanPhaseRefs(list, S.model.phases);
+    changed(true); renderInspector();
+  });
+
+  /* ---- gestor de fases ---- */
+  const phaseBox = $('#phases-box');
+  function renderPhases() {
+    if (!phaseBox || !S.model) return;
+    const act = document.activeElement;
+    if (phaseBox.contains(act) && act.matches('input, textarea')) return;   // se está escribiendo: el modelo ya tiene el valor
+    const ph = S.model.phases || [];
+    const row = (p, i) => {
+      const d = phaseDiff(S.model, i), n = ph.length;
+      return `<div class="ph-row" data-id="${esc(p.id)}">
+        <div class="ph-head"><span class="ph-n">${i + 1}</span><input data-phf="name" value="${esc(p.name)}" maxlength="60" aria-label="${esc(T('phase.name'))}" autocomplete="off">
+          <span class="ph-cnt" title="${esc(T('phase.counts.tip', { a: d.added.length, r: d.retired.length }))}">${esc(T('phase.counts', { a: d.added.length, r: d.retired.length }))}</span>
+          <span class="ver-tools">
+            <button class="btn small icon" data-phb="up" title="${esc(T('phase.up'))}" aria-label="${esc(T('phase.up'))}"${i === 0 ? ' disabled' : ''}>↑</button>
+            <button class="btn small icon" data-phb="down" title="${esc(T('phase.down'))}" aria-label="${esc(T('phase.down'))}"${i === n - 1 ? ' disabled' : ''}>↓</button>
+            <button class="btn small danger icon" data-phb="del" title="${esc(T('phase.delete'))}" aria-label="${esc(T('phase.delete'))}">${ICON.x}</button></span></div>
+        <div class="ph-body"><label>${T('phase.date')}<input data-phf="date" value="${esc(p.date || '')}" maxlength="10" placeholder="2026-12" title="${esc(T('phase.date.tip'))}" autocomplete="off"></label>
+          <label>${T('phase.goal')}<textarea data-phf="goal" rows="2" placeholder="${esc(T('phase.goal.ph'))}">${esc(p.goal || '')}</textarea></label></div></div>`;
+    };
+    phaseBox.innerHTML = `<div class="ph-man"><div class="ph-title"><div class="cat">${esc(T('phase.title'))}</div><button class="btn small" data-phb="add">${esc(T('phase.add'))}</button></div>
+      ${ph.length ? ph.map(row).join('') : `<p class="empty-list">${esc(T('phase.empty'))}</p>`}${ph.length ? phaseCompare() : ''}</div>`;
+    markPhaseCmp();
+  }
+  // Comparación de fases bajo la lista: componentes, altas, bajas, costo mensual, cambio de costo y hallazgos abiertos; clic en una fila = elegir esa fase en el lienzo
+  function phaseCompare() {
+    const rows = phaseRows(S.model, phaseHelpers), f = (n, k) => `<span class="ph-f sev-${k}${n ? '' : ' zero'}" title="${esc(sevLabel(k))}">${n}</span>`;
+    const body = rows.map((r, i) => `<tr data-pc="${i}" tabindex="0" role="button" title="${esc(T('phase.cmp.pick'))}"><th scope="row">${esc(r.name)}${r.date ? `<small>${esc(fmtPhaseDate(r.date))}</small>` : ''}</th><td>${r.nodes}</td><td class="up">${r.added ? '+' + r.added : '0'}</td><td class="dn">${r.retired ? '−' + r.retired : '0'}</td>
+      <td>${esc(phaseCostText(r))}</td><td class="${r.dCost > 0 ? 'dn' : r.dCost < 0 ? 'up' : ''}">${esc(phaseCostText(r, 'dCost'))}</td><td class="ph-fs">${f(r.findings.high, 'high')}${f(r.findings.medium, 'medium')}${f(r.findings.low, 'low')}</td></tr>`).join('');
+    return `<div class="ph-cmp"><div class="cat">${esc(T('phase.cmp.title'))}</div><div class="ph-cmp-box"><table><thead><tr><th>${esc(T('phase.cmp.phase'))}</th><th title="${esc(T('phase.cmp.nodes.tip'))}">${esc(T('phase.cmp.nodes'))}</th><th>${esc(T('phase.cmp.added'))}</th><th>${esc(T('phase.cmp.retired'))}</th><th>${esc(T('phase.cmp.cost'))}</th><th title="${esc(T('phase.cmp.delta.tip'))}">${esc(T('phase.cmp.delta'))}</th><th>${esc(T('phase.cmp.findings'))}</th></tr></thead><tbody>${body}</tbody></table></div></div>`;
+  }
+  function markPhaseCmp() { const cur = phaseNow(); phaseBox.querySelectorAll('tr[data-pc]').forEach(tr => { const on = +tr.dataset.pc === cur; tr.classList.toggle('on', on); tr.setAttribute('aria-pressed', on); }); }
+  const phaseSlug = s => fold(String(s ?? '')).replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 24) || 'phase';
+  // Edición ligera (sin reconstruir el lienzo): el nombre, la fecha y el objetivo no cambian lo que se dibuja
+  function phasesTouched() { syncEditor(); save(); updateUndoButtons(); updateMeta(); renderPhaseBar(); }
+  function addPhase(p = {}) {
+    p = p && typeof p === 'object' ? p : {};
+    const ph = S.model.phases || [];
+    if (ph.length >= PHASE_MAX) { toast(T('phase.max', PHASE_MAX)); return ''; }
+    const base = PHASE_ID.test(String(p.id ?? '').trim()) ? String(p.id).trim() : phaseSlug(p.name);
+    let id = base, k = 2;
+    while (ph.some(x => x.id === id)) id = `${base.slice(0, 26)}-${k++}`;
+    pushHistory();
+    S.model.phases = cleanPhases([...ph, { ...p, id, name: p.name || T('phase.new.name', ph.length + 1) }]);
+    changed(true); renderInspector(); renderPhases(); renderPhaseBar();
+    return id;
+  }
+  function updatePhase(id, patch, o = {}) {
+    const ph = S.model.phases || [], i = phaseIndex(S.model, id);
+    if (i < 0 || !patch || typeof patch !== 'object') return false;
+    if (o.typing) markEdit(); else pushHistory();
+    S.model.phases = cleanPhases(ph.map((x, k) => (k === i ? { ...x, ...patch, id } : x)));
+    if (o.typing) phasesTouched(); else { changed(true); renderInspector(); renderPhases(); renderPhaseBar(); }
+    return true;
+  }
+  // Sus elementos pasan a la fase anterior (o a «siempre» si era la primera); los que se retiraban en ella se retiran en la siguiente (o ya no se retiran)
+  function removePhase(id) {
+    const ph = S.model.phases || [], i = phaseIndex(S.model, id);
+    if (i < 0) return false;
+    pushHistory();
+    const prev = ph[i - 1]?.id, next = ph[i + 1]?.id, all = [...S.model.groups, ...S.model.nodes, ...S.model.edges];
+    all.forEach(x => {
+      if (x.phase === id) { if (prev) x.phase = prev; else delete x.phase; }
+      if (x.until === id) { if (next) x.until = next; else delete x.until; }
+    });
+    const rest = ph.filter(p => p.id !== id);
+    if (rest.length) S.model.phases = rest; else delete S.model.phases;
+    cleanPhaseRefs(all, rest);
+    S.phase = !rest.length ? -1 : S.phase > i ? S.phase - 1 : S.phase === i ? Math.max(0, i - 1) : S.phase;
+    changed(true); renderInspector(); renderPhases(); renderPhaseBar();
+    return true;
+  }
+  function movePhase(id, d) {
+    const ph = [...(S.model.phases || [])], i = phaseIndex(S.model, id), j = i + d;
+    if (i < 0 || j < 0 || j >= ph.length) return false;
+    pushHistory();
+    [ph[i], ph[j]] = [ph[j], ph[i]];
+    S.model.phases = ph;
+    cleanPhaseRefs([...S.model.groups, ...S.model.nodes, ...S.model.edges], ph);   // un until que queda antes de su phase se descarta
+    if (S.phase === i) S.phase = j; else if (S.phase === j) S.phase = i;
+    changed(true); renderInspector(); renderPhases(); renderPhaseBar();
+    return true;
+  }
+  async function deletePhase(id) {
+    const ph = S.model.phases || [], i = phaseIndex(S.model, id), p = ph[i];
+    if (!p) return;
+    const n = [...S.model.groups, ...S.model.nodes, ...S.model.edges].filter(x => x.phase === id || x.until === id).length, prev = ph[i - 1];
+    const text = !n ? T('phase.cf.none') : prev ? T('phase.cf.to', { n, to: prev.name }) : T('phase.cf.always', { n });
+    if (!(await confirmBox({ title: T('phase.cf.title', { name: p.name }), text, ok: T('phase.cf.ok'), cancel: T('ver.cf.cancel'), danger: true }))) return;
+    if (removePhase(id)) toast(T('phase.deleted', { name: p.name }));
+  }
+  phaseBox.addEventListener('focusin', ev => { if (ev.target.dataset?.phf) beginEdit(); });
+  phaseBox.addEventListener('focusout', ev => { if (ev.target.dataset?.phf) endEdit(); });
+  phaseBox.addEventListener('input', ev => {
+    const f = ev.target, k = f.dataset?.phf, id = f.closest('.ph-row')?.dataset.id;
+    if (!k || !id) return;
+    const v = k === 'goal' ? f.value : f.value.trim();
+    if (k === 'date') { const bad = !!v && !phaseDay(v); f.setAttribute('aria-invalid', bad); if (bad) return; }
+    updatePhase(id, { [k]: v }, { typing: true });
+  });
+  phaseBox.addEventListener('click', ev => { const tr = ev.target.closest('tr[data-pc]'); if (tr) setPhase(+tr.dataset.pc); });
+  phaseBox.addEventListener('keydown', ev => { const tr = ev.target.closest?.('tr[data-pc]'); if (tr && (ev.key === 'Enter' || ev.key === ' ')) { ev.preventDefault(); setPhase(+tr.dataset.pc); } });
+  phaseBox.addEventListener('click', ev => {
+    const b = ev.target.closest('[data-phb]');
+    if (!b) return;
+    const id = b.closest('.ph-row')?.dataset.id, a = b.dataset.phb;
+    if (a === 'add') { const nid = addPhase(); phaseBox.querySelector(`.ph-row[data-id="${CSS.escape(nid)}"] [data-phf="name"]`)?.select(); }
+    else if (a === 'up') movePhase(id, -1);
+    else if (a === 'down') movePhase(id, 1);
+    else if (a === 'del') deletePhase(id);
+  });
+
   /* ---------- acciones ---------- */
   // Selección: { kind: 'node' | 'edge' | 'group' | 'note' | 'zone', id } o { kind: 'multi', ids: [nodos] }
   function selTarget() {
@@ -3950,6 +4251,7 @@
     if (extra.icon) n.icon = extra.icon;
     if (extra.sub) n.sub = extra.sub;
     if (S.scope) { n.in = S.scope; const k = c4Default(S.scope); if (k) n.c4 = k; } // lo nuevo nace en el nivel abierto (con el tipo C4 que toca)
+    { const pi = phaseNow(); if (pi > 0) n.phase = S.model.phases[pi].id; }   // y en la fase elegida (en la primera no hace falta: ya está desde el inicio)
     n.x = snap(wx - nodeWidth(n) / 2);
     n.y = snap(wy - H / 2);
     // Si cae dentro de un grupo, entra en el más profundo
@@ -4386,7 +4688,12 @@
   function presentCaption(sl) {
     const m = scopeModel();
     let h = m.title, sub = '', desc = '', notes = [];
-    if (sl.kind === 'view') {
+    if (sl.kind === 'phase') {
+      const ph = m.phases[sl.i], d = phaseDiff(S.model, sl.i), pm = phaseModel(S.model, sl.i);
+      h = ph.name;
+      sub = [ph.date ? fmtPhaseDate(ph.date) : '', T('phase.present.step', { i: sl.i + 1, n: P.slides.length }), T('present.counts', { n: pm.nodes.length, g: pm.groups.length }), T('phase.counts', { a: d.added.length, r: d.retired.length })].filter(Boolean).join(' · ');
+      desc = ph.goal || '';
+    } else if (sl.kind === 'view') {
       sub = viewLabel(sl.key);
       desc = T('present.counts', { n: m.nodes.length, g: m.groups.length });
     } else if (sl.kind === 'overview') {
@@ -4410,7 +4717,9 @@
     if (!P) return;
     stopPlay();
     P.i = clamp(i, 0, P.slides.length - 1);
-    const sl = P.slides[P.i], m = scopeModel();
+    const sl = P.slides[P.i];
+    if (sl.kind === 'phase') setPhase(sl.i);
+    const m = scopeModel();
     let box = null, lit = null, gin = null;
     if (sl.kind === 'view' && sl.key !== S.viewKey) setView(sl.key, { toast: false });  // recalcula el estado derivado de la vista
     if (sl.kind === 'group') {
@@ -4439,11 +4748,13 @@
   // "Presentar vistas" (⇧V): una diapositiva por vista que aporta algo, aparte de la presentación por grupos
   // (esa recorre UNA vista; mezclarlas haría una secuencia sin hilo). Mismo encuadre, atajos y barra.
   const presentViewSlides = () => worthViews().map(key => ({ kind: 'view', key }));
+  // "Presentar fases": una diapositiva por fase (nombre, fecha y objetivo como pie); mismo encuadre, atajos y barra
+  const presentPhaseSlides = () => (S.model.phases || []).map((_, i) => ({ kind: 'phase', i }));
   function present(opts = {}) {
-    if (P || viewBusy || !S.model.nodes.length) return;
+    if (P || viewBusy || !S.model.nodes.length || (opts.phases && !S.model.phases?.length)) return;
     cancelConnect();
     stopPlay();
-    P = { slides: [], i: 0, views: !!opts.views, saved: { view: { ...S.view }, sel: S.sel, key: S.viewKey, flow: S.flow, chosen: S.viewChosen, stored: store.get('view') }, fs: false, idle: 0 };
+    P = { slides: [], i: 0, views: !!opts.views, phases: !!opts.phases, saved: { phase: S.phase, ghosts: S.phaseGhosts, view: { ...S.view }, sel: S.sel, key: S.viewKey, flow: S.flow, chosen: S.viewChosen, stored: store.get('view') }, fs: false, idle: 0 };
     document.body.classList.add('presenting');
     svg.classList.add('presenting');
     $('#present-bar').hidden = false;
@@ -4452,7 +4763,7 @@
     // Esperar a que el lienzo tome su nuevo tamaño
     requestAnimationFrame(() => requestAnimationFrame(() => {
       if (!P) return;
-      P.slides = P.views ? presentViewSlides() : presentSlides();
+      P.slides = P.phases ? presentPhaseSlides() : P.views ? presentViewSlides() : presentSlides();
       presentShow(0, true);
     }));
     presentWake();
@@ -4474,6 +4785,7 @@
       if (saved.stored == null) { try { localStorage.removeItem(`${C.app.storageKey}.view`); } catch { /* sin almacenamiento */ } } else store.set('view', saved.stored);
     }
     if (document.fullscreenElement) document.exitFullscreen?.().catch?.(() => {});
+    if (S.phase !== saved.phase) setPhase(saved.phase);   // se recorrieron fases: vuelve a la que había
     select(saved.sel);
     requestAnimationFrame(() => animateView(saved.view, 0));
   }
@@ -4511,7 +4823,7 @@
   const findVersion = id => S.model.versions.find(v => v.id === id);
   // Solo lo que se dibuja: sin versiones y con posiciones redondeadas
   const snapshotOf = m => {
-    const d = clone({ title: m.title, ...(m.direction ? { direction: m.direction } : {}), ...(m.routing ? { routing: m.routing } : {}), ...(m.layerNames ? { layerNames: m.layerNames } : {}), ...(m.edgeTypes?.length ? { edgeTypes: m.edgeTypes } : {}), ...(m.dismissed ? { dismissed: m.dismissed } : {}), groups: m.groups, nodes: m.nodes, edges: m.edges, ...(m.notes?.length ? { notes: m.notes } : {}), ...(m.zones?.length ? { zones: m.zones } : {}) });
+    const d = clone({ title: m.title, ...(m.direction ? { direction: m.direction } : {}), ...(m.routing ? { routing: m.routing } : {}), ...(m.layerNames ? { layerNames: m.layerNames } : {}), ...(m.phases?.length ? { phases: m.phases } : {}), ...(m.edgeTypes?.length ? { edgeTypes: m.edgeTypes } : {}), ...(m.dismissed ? { dismissed: m.dismissed } : {}), groups: m.groups, nodes: m.nodes, edges: m.edges, ...(m.notes?.length ? { notes: m.notes } : {}), ...(m.zones?.length ? { zones: m.zones } : {}) });
     d.nodes.forEach(n => { n.x = Math.round(n.x); n.y = Math.round(n.y); });
     return d;
   };
@@ -4625,9 +4937,9 @@
 
   // Diferencias entre lo guardado (a) y el lienzo (b). La posición no cuenta como cambio.
   const DIFF_FIELDS = {
-    node: ['label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'exposure', 'backup', 'controls', 'in', 'c4', 'sla', 'rpo', 'rto', 'replicas'],
-    edge: ['label', 'style', 'weight', 'route', 'both', 'color', 'data', 'encrypted', 'datasets', 'transferOk', 'threats'],
-    group: ['label', 'icon', 'color', 'parent', 'kind', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'controls', 'in'],
+    node: ['label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'exposure', 'backup', 'controls', 'in', 'c4', 'sla', 'rpo', 'rto', 'replicas', 'phase', 'until'],
+    edge: ['label', 'style', 'weight', 'route', 'both', 'color', 'data', 'encrypted', 'datasets', 'transferOk', 'threats', 'phase', 'until'],
+    group: ['label', 'icon', 'color', 'parent', 'kind', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'controls', 'in', 'phase', 'until'],
     type: ['label', 'dash', 'color', 'width', 'particles'] // tipos de conexión propios (model.edgeTypes), por id
   };
   function diffModels(a, b) {
@@ -4726,6 +5038,7 @@
   function renderVersions() {
     const box = $('#versions');
     if (!box || !S.model) return;
+    renderPhases();
     const vs = S.model.versions, envs = Object.entries(C.environments || {});
     const nextN = Math.max(0, ...vs.filter(v => v.kind === 'version').map(v => v.n)) + 1;
     // Conserva el foco (y el cursor) si se estaba escribiendo en un campo del panel
@@ -4801,7 +5114,7 @@
     if (!(d.count.a + d.count.r + d.count.c + d.typeN)) return `<p class="ver-sum">${esc(T('ver.same'))}</p>`;
     const FIELD = { label: 'insp.name', sub: 'insp.detail', type: 'insp.type', icon: 'insp.icon', group: 'insp.group', color: 'insp.color', badge: 'field.badge',
       cost: 'cost.label', costPeriod: 'cost.period', costYears: 'cost.yearsAria', desc: 'insp.desc', style: 'insp.style', weight: 'wt.label', parent: 'insp.parent',
-      data: 'data.label', encrypted: 'enc.label', route: 'insp.route', both: 'insp.dir', review: 'rev.label', kind: 'gkind.label', exposure: 'sec.expo.label', backup: 'sec.backup.label', controls: 'cmp.title', in: 'c4.in', c4: 'c4.label', sla: 'res.sla', rpo: 'res.rpo', rto: 'res.rto', replicas: 'res.replicas', dash: 'et.dash', width: 'et.width', particles: 'et.particles' };
+      data: 'data.label', encrypted: 'enc.label', route: 'insp.route', both: 'insp.dir', review: 'rev.label', kind: 'gkind.label', phase: 'phase.label', until: 'phase.until', exposure: 'sec.expo.label', backup: 'sec.backup.label', controls: 'cmp.title', in: 'c4.in', c4: 'c4.label', sla: 'res.sla', rpo: 'res.rpo', rto: 'res.rto', replicas: 'res.replicas', dash: 'et.dash', width: 'et.width', particles: 'et.particles' };
     const fields = (fs, kind) => fs.map(f => T(kind === 'edge' && f === 'label' ? 'insp.label' : kind === 'type' && f === 'label' ? 'et.label' : FIELD[f] || f).toLowerCase()).join(', ');
     const names = new Map([...S.compare.base.nodes, ...S.model.nodes].map(n => [n.id, n.label]));
     const edgeName = e => `${names.get(e.from) || e.from} ${e.both ? '↔' : '→'} ${names.get(e.to) || e.to}`;
@@ -5582,6 +5895,7 @@
         <div class="field">${T('insp.color')}${swatches(colorsOf.size === 1 ? [...colorsOf][0] : '__mixed')}</div>
         ${t.length === 2 ? pathField() : ''}
         ${c4Field(t)}
+        ${phaseField(t)}
         ${dataField(t)}
         ${govField(t, 'multi')}
         ${resField(t)}
@@ -5612,6 +5926,7 @@
         ${Object.keys(ICONS).length ? iconPicker(t) : ''}
         <div class="field">${T('insp.color')}${swatches(t.color)}</div>
         ${c4Field(t)}
+        ${phaseField(t)}
         ${costField(t)}
         ${dataField(t)}
         ${govField(t, 'node')}
@@ -5647,6 +5962,7 @@
         ${customTypes().length ? `<div class="field"><button class="btn small" data-act="edgetypes">${T('et.manage')}</button></div>` : ''}
         <div class="field">${T('insp.dir')}<div class="seg">${[['', 'dir.one'], ['both', 'dir.both']].map(([k, l]) =>
           `<button data-dir="${k}" class="${(t.both ? 'both' : '') === k ? 'on' : ''}">${T(l)}</button>`).join('')}</div></div>
+        ${phaseField(t)}
         ${encField(t)}
         ${dataField(t, true)}
         ${dsField(t)}
@@ -5694,6 +6010,7 @@
         <label>${T('insp.name')}<input data-field="label" value="${esc(t.label)}"></label>
         ${allIcons().some(i => i.group) ? iconPicker(t, true) : ''}
         <label>${T('gkind.label')}<select data-field="kind"><option value=""${t.kind ? '' : ' selected'}>${esc(T('gkind.auto', { k: T(`gkind.${groupKindAuto(t)}`) }))}</option>${['logical', 'physical'].map(k => `<option value="${k}"${t.kind === k ? ' selected' : ''}>${T(`gkind.${k}`)}</option>`).join('')}</select></label>
+        ${phaseField(t)}
         ${regionField(t)}
         ${layerField(t)}
         <label>${T('insp.parent')}<select data-field="parent"><option value="">${T('insp.none')}</option>${m.groups.filter(g => !blocked.has(g.id) && (g.in || null) === (t.in || null)).map(g => `<option value="${esc(g.id)}"${g.id === t.parent ? ' selected' : ''}>${esc(g.label)}</option>`).join('')}</select></label>
@@ -6962,7 +7279,7 @@
   // reportData() arma un modelo plano (secciones de bloques) y dos dibujantes lo pintan: reportMarkdown y reportHTML, así que los dos formatos no se desincronizan.
   // Bloques: { k: 'h3', t } · { k: 'p', t, muted? } · { k: 'kv', items: [[k, v]] } · { k: 'cards', items: [{ label, value, tone? }] }
   //          { k: 'table', head: [], rows: [[celda]], cls? } (celda = texto | { t, tone }) · { k: 'text', label, t } · { k: 'ul', items } · { k: 'img', alt, caption, svg?, uri?, file? }
-  const REP_SECS = ['summary', 'diagram', 'components', 'connections', 'data', 'owners', 'layers', 'costs', 'resilience', 'findings', 'compliance', 'threats', 'decisions', 'requirements', 'raid', 'approvals', 'versions', 'notes'];
+  const REP_SECS = ['summary', 'diagram', 'components', 'connections', 'data', 'owners', 'layers', 'costs', 'resilience', 'findings', 'compliance', 'threats', 'decisions', 'requirements', 'raid', 'approvals', 'phases', 'versions', 'notes'];
   const REP_PAGE = ['diagram', 'components', 'findings', 'decisions']; // secciones que empiezan página al imprimir
   const repT = (k, v) => T(`rep.${k}`, v);
   const repSleep = ms => new Promise(r => setTimeout(r, ms));
@@ -6983,7 +7300,7 @@
       data: m.nodes.some(n => dataClassesOf(n, m).length || regionOf(n, m).value), owners: govTeamList(m).length > 0,
       layers: m.nodes.some(n => layerOf(n).value), costs: m.nodes.some(hasCost), resilience: m.nodes.some(hasRes) || spofList(m).length > 0, findings: findingsOf(m).length > 0,
       compliance: cmpModel(m).keys.length > 0, threats: strideAll(m).length > 0, decisions: !!m.decisions?.length, requirements: !!m.requirements?.length,
-      raid: !!m.raid?.length, approvals: !!m.stakeholders?.length,
+      raid: !!m.raid?.length, approvals: !!m.stakeholders?.length, phases: !!m.phases?.length,
       versions: m.versions.length > 0, notes: (m.notes || []).length > 0 || (m.zones || []).some(z => z.kind !== 'trust')
     };
   }
@@ -7034,6 +7351,33 @@
       } finally { if (scopes.length > 1) setScope(oldScope ?? null); }
     }
 
+    /* fases: una imagen de la arquitectura en cada fase (futuro oculto, sin fantasmas); se restaura la fase y los fantasmas aunque falle */
+    const phImgs = [];
+    if (want('phases')) {
+      const theme = o.theme === 'current' ? S.theme : 'light', oldTheme = S.theme, np = m.phases.length, base = (o.progressBase || 0);
+      const old = { phase: S.phase, ghosts: S.phaseGhosts };
+      try {
+        await eachView([S.viewKey], async () => {
+          try {
+            for (let i = 0; i < np; i++) {
+              o.progress?.(base + i + 1, base + np, `${repT('s.phases')} · ${m.phases[i].name}`);
+              S.phase = i; S.phaseGhosts = false; refreshView();
+              let out;
+              S.theme = theme; try { out = buildSVG(); } finally { S.theme = oldTheme; }
+              const im = { i, svg: out.str };
+              if (o.format === 'md') {
+                const blob = await pngBlob(out);
+                if (!blob) im.uri = 'data:image/svg+xml;base64,' + repB64(out.str);
+                else if (o.separateImages) { im.file = fileName('png', `report-phase-${String(i + 1).padStart(2, '0')}-${m.phases[i].id}`); D.files.push({ name: im.file, blob }); } else im.uri = await repBlobUri(blob);
+              } else im.uri = 'data:image/svg+xml;base64,' + repB64(out.str);
+              phImgs.push(im);
+              await repSleep(0);
+            }
+          } finally { S.phase = old.phase; S.phaseGhosts = old.ghosts; refreshView(); renderPhaseBar(); }
+        });
+      } catch (e) { if (!phImgs.length) throw e; }
+    }
+
     /* resumen */
     if (want('summary')) {
       const mt = monthlyTotal(m.nodes), cards = [{ label: repT('k.components'), value: m.nodes.length }, { label: repT('k.connections'), value: m.edges.length }, { label: repT('k.groups'), value: m.groups.length },
@@ -7043,6 +7387,7 @@
       if (m.decisions?.length) cards.push({ label: repT('k.decisions'), value: m.decisions.length });
       if (m.requirements?.length) cards.push({ label: repT('k.requirements'), value: m.requirements.length });
       if (m.stakeholders?.length) cards.push({ label: repT('k.approvals'), value: m.stakeholders.length });
+      if (m.phases?.length) cards.push({ label: repT('k.phases'), value: m.phases.length });
       const kv = [[repT('author'), D.author], [repT('version'), D.version], [repT('active'), D.active ? `${D.active.label} · ${D.active.status}` : ''], [repT('date'), D.date]].filter(r => r[1]);
       const blocks = [];
       if (D.desc) blocks.push({ k: 'p', t: D.desc });
@@ -7247,6 +7592,22 @@
           return [verLabel(v), T(`ver.st.${v.status}`), st.required.length ? apprSummary(st) : '', apprNames(st.pending, m), apprNames(st.rejected, m)]; }) });
       }
       sec('approvals', blocks);
+    }
+
+    if (want('phases')) {
+      // Tabla comparativa y, por fase: nombre, fecha, objetivo, altas y bajas (nombres) y la imagen de la arquitectura en esa fase
+      const rows = phaseRows(m, phaseHelpers), names = ids => ids.map(nm).join(', ');
+      const blocks = [{ k: 'table', cls: 'wide', head: [repT('h.phase'), repT('h.date'), repT('k.components'), T('phase.cmp.added'), T('phase.cmp.retired'), T('phase.cmp.cost'), T('phase.cmp.delta'), `${T('phase.cmp.findings')} (${SEVERITY.slice().reverse().filter(s => s !== 'critical').map(sevLabel).join(' / ')})`],
+        rows: rows.map(r => [r.name, r.date ? fmtPhaseDate(r.date) : '', String(r.nodes), String(r.added), String(r.retired), phaseCostText(r), phaseCostText(r, 'dCost'), `${r.findings.high} / ${r.findings.medium} / ${r.findings.low}`]) }];
+      rows.forEach((r, i) => {
+        blocks.push({ k: 'h3', t: [r.name, r.date ? fmtPhaseDate(r.date) : ''].filter(Boolean).join(' · ') });
+        if (r.goal) blocks.push({ k: 'p', t: r.goal });
+        const kv = [[T('phase.cmp.added'), names(r.addedIds)], [T('phase.cmp.retired'), names(r.retiredIds)]].filter(x => x[1]);
+        if (kv.length) blocks.push({ k: 'kv', items: kv });
+        const im = phImgs.find(x => x.i === i);
+        if (im) blocks.push({ k: 'img', alt: `${m.title} — ${r.name}`, svg: im.svg, uri: im.uri, file: im.file });
+      });
+      sec('phases', blocks);
     }
 
     if (want('versions')) {
@@ -7565,6 +7926,9 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
   const INV_REQ = [['id'], ['title'], ['kind'], ['priority'], ['status'], ['source'], ['coveredBy'], ['check'], ['result']];
   const INV_RAID = [['id'], ['type'], ['title'], ['status'], ['owner'], ['probability'], ['impact'], ['score'], ['mitigation'], ['due'], ['raised'], ['links'], ['detail']];
   const INV_SH = [['id'], ['name'], ['role'], ['org'], ['raci'], ['versions'], ['inactive']];
+  const INV_PH = [['phase'], ['until']];   // columnas de fase de componentes y conexiones (solo si el diagrama tiene fases)
+  const INV_PHASE = [['id'], ['name'], ['date'], ['goal'], ['components', 'int'], ['added', 'int'], ['retired', 'int'], ['monthly', 'money']];
+  const phNm = (m, id) => (id ? m.phases?.find(p => p.id === id)?.name || '' : '');   // nombre de la fase («» si no hay)
   const INV_SIGN = [['kind'], ['object'], ['by'], ['stakeholder'], ['verdict'], ['date'], ['note']];
   const INV_FIND = [['severity'], ['source'], ['rule'], ['title'], ['target'], ['dismissed'], ['reason']];
   const INV_VER = [['name'], ['env'], ['status'], ['author'], ['created'], ['updated'], ['decidedOn']];
@@ -7605,7 +7969,8 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
         sla: invNum(n.sla), rpo: n.rpo == null ? '' : String(n.rpo), rto: n.rto == null ? '' : String(n.rto), replicas: invNum(n.replicas),
         cost: hasCost(n) ? +n.cost : '', period: pc ? T(PERIODS[pc].label) + (pc === 'multi' ? ` · ${T('cost.years', yearsOf(n))}` : '') : '', perMonth: pm, perYear: pm === '' ? '' : round2(perMonth(n) * 12),
         review: n.review ? T(`rev.tag.${reviewState(n.review)}`) : '', findings: my,
-        adrs: (m.decisions || []).filter(d => d.links?.nodes?.includes(n.id)).map(d => d.id).join(', '), compliance: comp, desc: n.desc || ''
+        adrs: (m.decisions || []).filter(d => d.links?.nodes?.includes(n.id)).map(d => d.id).join(', '), compliance: comp, desc: n.desc || '',
+        ...(m.phases?.length ? { phase: phNm(m, n.phase), until: phNm(m, n.until) } : {})   // fase en la que aparece y en la que se retira (sin fases no hay claves)
       };
     });
   }
@@ -7614,16 +7979,22 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     const m = model, byId = new Map(m.nodes.map(n => [n.id, n])), nm = id => byId.get(id)?.label || id;
     const mk = (key, cols, rows) => ({ key, name: T(`inv.sheet.${key}`), head: cols.map(([k]) => T(`inv.c.${k}`)), keys: cols.map(([k]) => k), fmt: cols.map(([, f]) => f || null), rows });
     const out = [], comp = inventoryRows(m);
-    out.push(mk('components', INV_COMP, comp.map(r => INV_COMP.map(([k]) => r[k]))));
+    // Fases (solo si el diagrama las tiene): columnas Fase y Se retira en en componentes y conexiones
+    const ph = !!m.phases?.length, cc = [...INV_COMP, ...(ph ? INV_PH : [])];
+    out.push(mk('components', cc, comp.map(r => cc.map(([k]) => r[k]))));
+    // Una fila por fase: lo que hay en ella y lo que entra y sale respecto de la anterior
+    if (ph) out.push(mk('phases', INV_PHASE, m.phases.map((p, i) => { const s = phaseStats(m, i, { monthly: x => monthlyTotal(x.nodes), findings: () => [] }), d = phaseDiff(m, i); return [p.id, p.name, p.date || '', p.goal || '', s.nodes, d.added.length, d.retired.length, round2(s.cost)]; })));
     // Conexiones
     const open = typeof strideAll === 'function' ? (() => { try { return strideAll(m).filter(t => t.status === 'open'); } catch { return []; } })() : [];
     const ets = Array.isArray(m.edgeTypes) ? m.edgeTypes : [], etOf = id => ets.find(t => t.id === id); // del modelo que se exporta, no del lienzo
     const conn = m.edges.map(e => {
       const cb = typeof crossBorder === 'function' ? crossBorder(e, byId) : null, ct = etOf(e.style);
       return [e.id || '', nm(e.from), nm(e.to), String(e.label || '').replace(/\s*\n\s*/g, ' '), ct ? loc(ct.label) : edgeStyleLabel(e.style), T(EDGE_W[e.weight] ? `wt.${e.weight}` : 'wt.normal'), invYN(!!ct), e.encrypted === true ? T('enc.yes') : e.encrypted === false ? T('enc.no') : T('enc.unset'),
-        (e.data || []).map(k => loc(DATA[k]?.short) || String(k).toUpperCase()).join(' '), (e.datasets || []).join('; '), invYN(!!cb), cb ? invYN(cb.approved) : '', open.filter(t => t.e === e || t.e.id === e.id).length];
+        (e.data || []).map(k => loc(DATA[k]?.short) || String(k).toUpperCase()).join(' '), (e.datasets || []).join('; '), invYN(!!cb), cb ? invYN(cb.approved) : '', open.filter(t => t.e === e || t.e.id === e.id).length,
+        ...(ph ? [phNm(m, e.phase), phNm(m, e.until)] : [])];
     });
-    if (conn.length) out.push(mk('connections', INV_CONN, conn));
+    const cn = [...INV_CONN, ...(ph ? INV_PH : [])];
+    if (conn.length) out.push(mk('connections', cn, conn));
     // Tipos de conexión propios (solo si el diagrama los tiene)
     if (ets.length) out.push(mk('types', INV_TYPE, ets.map(t => [t.id, loc(t.label), t.dash || '', t.color || '', t.width ?? '', t.particles ?? '', m.edges.filter(e => e.style === t.id).length])));
     // Grupos
@@ -7922,6 +8293,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     else if (ev.altKey && ev.key === 'ArrowUp') { ev.preventDefault(); scopeUp(); }  // sube un nivel C4
     else if (ev.key === 'Enter' && S.sel?.kind === 'node' && innerCount(S.sel.id) && !ev.target.closest?.('button, a, summary')) { ev.preventDefault(); setScope(S.sel.id); }  // abre el diagrama interno
     else if (/^[1-9]$/.test(k) && VIEW_KEYS[+k - 1]) setView(VIEW_KEYS[+k - 1]);
+    else if (ev.key === '[' || ev.key === ']') stepPhase(ev.key === ']' ? 1 : -1);   // fase anterior / siguiente
     else if (k === 'f') fitView();
     else if (k === 'p') togglePlay();
     else if (k === 'r' && selIds().length === 2) showPath(...selIds());
@@ -9391,7 +9763,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
   window.Diagramon = {
     get model() { return clone(S.model); },
     load: (raw, opts = {}) => setModel(raw, { history: true, animate: true, fit: true, ...opts }),
-    addNode, addEdge, relayout, fitView, togglePlay, present, presentViews: () => present({ views: true }), exitPresent, toggleTheme, toggleLang,
+    addNode, addEdge, relayout, fitView, togglePlay, present, presentViews: () => present({ views: true }), presentPhases: () => present({ phases: true }), exitPresent, toggleTheme, toggleLang,
     get lang() { return I.lang; },
     select: ids => select({ kind: 'multi', ids: [].concat(ids) }), align: alignNodes,
     showPath, clearPath,
@@ -9415,6 +9787,8 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     signoff: (kind, id, sid, verdict, note) => signOff(kind, id, sid, verdict, note), approval: (kind, id) => apprInfo(kind, id),
     decisions: () => clone(S.model.decisions || []), compareDecisions: id => { const v = S.model.versions.find(x => x.id === id); return v && Array.isArray(v.decisions) ? diffDecisions(v.decisions, S.model.decisions || []) : null; }, addDecision, updateDecision, removeDecision, exportDecisions,
     addDecisionKit: id => addDecisionKit(id), decisionKits: () => adrKits().map(k => ({ id: k.id, name: loc(k.name), desc: loc(k.desc), decisions: k.decisions.length })),
+    phases: () => clone(S.model.phases || []), addPhase, updatePhase: (id, patch) => updatePhase(id, patch), removePhase, setPhase, get phase() { return S.phase; },
+    phaseModel: i => clone(phaseModel(S.model, +i)), phaseStats: i => phaseStats(S.model, +i, phaseHelpers), phaseRows: () => phaseRows(S.model, phaseHelpers),
     raid: () => clone(S.model.raid || []), addRaid, updateRaid, removeRaid, validateAssumption,
     stakeholders: () => clone(S.model.stakeholders || []), addStakeholder, updateStakeholder, removeStakeholder,
     adrScore: id => { const d = adrById(id); return d ? { options: Object.fromEntries((d.options || []).map(o => [o.id, adrScore(d, o)])), leader: adrLeader(d) || null, chosen: d.chosen || null } : null; },

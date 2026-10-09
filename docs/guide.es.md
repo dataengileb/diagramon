@@ -292,6 +292,22 @@ Abre la pestaña **Interesados** (después de Versiones) para anotar a quienes d
 - Los interesados pertenecen al documento, no a una versión: abrir una versión los conserva, y las firmas quedan con las decisiones y versiones a las que se dieron. Todo se puede deshacer con **`⌘Z`**.
 - Desde la consola: `Diagramon.stakeholders()`, `Diagramon.addStakeholder({ name, role, org, raci: { '*': 'C', Seguridad: 'A' }, versions: true })`, `Diagramon.updateStakeholder(id, cambios)`, `Diagramon.removeStakeholder(id)` (se rechaza si el interesado tiene firmas), `Diagramon.signoff(kind, id, stakeholderId, verdict, note?)` (kind `decision` o `version`, verdict `approve` o `reject`, con la fecha de hoy) y `Diagramon.approval(kind, id)` (devuelve los ids requeridos, aprobados, rechazados y pendientes, `complete` y las firmas).
 
+### Arquitectura por fases
+
+Un greenfield no se construye de golpe. Planifica la construcción en **fases**: una lista ordenada de etapas (*MVP*, *Ola 1*, *Ola 2*…), cada una con un nombre, una **fecha** opcional (`2026-12` o `2026-12-15`) y un **objetivo** opcional (*Qué tiene el cliente al terminar esta fase*). El orden de la lista es la línea de tiempo; hasta 12 fases.
+
+- **Gestor de fases**: arriba de la pestaña **Versiones**, encima de la lista de versiones. **+ Añadir fase** agrega una (se llama *Fase N*; renómbrala en su lugar). Cada fila tiene el nombre, la fecha, el objetivo, **↑** y **↓** (*Mover antes* / *Mover después*) y **✕** (*Eliminar fase*). El contador **+a · −r** muestra cuántos componentes entran y salen en esa fase, comparado con la anterior.
+- **Eliminar** pide confirmación y pasa los elementos de la fase a la anterior (o a *siempre presentes* si era la primera). Un componente que se retiraba en la fase eliminada se retira en la siguiente, o deja de retirarse.
+- **Fase y Se retira en**: cada componente, conexión y grupo puede decir en qué fase **aparece** (**Fase**) y, si es temporal, desde qué fase se **retira** (**Se retira en**). Una *Fase* vacía significa *siempre (desde el inicio)*; *Se retira en* ofrece solo las fases posteriores a la elegida. Se pueden cambiar varios elementos seleccionados a la vez; con valores distintos, el selector muestra *Varios*.
+- **Componentes nuevos** creados con una fase elegida reciben esa fase (en la primera fase simplemente están desde el inicio).
+- **Barra de fases** (abajo a la izquierda del lienzo, si el diagrama tiene fases): **Todas** y un chip por fase, con su fecha. Haz clic en un chip, o pulsa **`[`** y **`]`** para la fase anterior y la siguiente (no mientras escribes). **Todas** muestra todo.
+- **Mostrar lo futuro atenuado** (activado por defecto): lo que aún no existe en la fase elegida se dibuja atenuado y punteado en vez de ocultarse; desactívalo para ocultarlo. Lo retirado por la fase elegida se oculta. Los fantasmas se pueden seleccionar y editar, así que puedes asignarles una fase desde el lienzo.
+- Una insignia **NUEVO** marca los componentes que aparecen justo en la fase elegida.
+- La línea de resumen del lienzo indica la fase, por ejemplo *Fase: Ola 1 · 14 componentes · ≈ $4,200/mes* (el costo solo si hay).
+- Las **versiones** guardan las fases junto con los elementos, así que cada versión lleva su propio plan. Las exportaciones **SVG** y **PNG** muestran la fase elegida tal como se ve en pantalla (con los fantasmas o los elementos ocultos); la exportación **JSON** conserva `phases`, y la pestaña Texto las escribe (ver la guía del formato de texto).
+- **Excel**: las hojas Componentes y Conexiones reciben las columnas **Fase** y **Se retira en**, y una hoja **Fases** tiene una fila por fase: ID, nombre, fecha, objetivo, componentes, nuevos, retirados y total mensual. Solo los diagramas con fases las tienen.
+- Desde la consola: `Diagramon.phases()`, `addPhase({ name, date, goal })` (devuelve el id nuevo), `updatePhase(id, patch)`, `removePhase(id)`, `setPhase(i | id | null)` (la fase mostrada; `null` = Todas), `Diagramon.phase` (el índice mostrado, `-1` = Todas), `phaseModel(i)` (una copia del diagrama tal como está en la fase `i`) y `phaseStats(i)` (componentes, conexiones, costo mensual y hallazgos abiertos de esa fase).
+
 ## 9. Notas adhesivas y zonas de riesgo
 
 Usa los dos botones junto al zoom (abajo a la derecha del lienzo).
