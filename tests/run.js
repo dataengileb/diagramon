@@ -953,6 +953,24 @@
     const i18n = read('src/i18n.js');
     used.forEach(k => assert(i18n.split(`'${k}':`).length === 3, `${k} is defined once in en and once in es`));
   });
+  test('lakehouse template declares ten datasets: unique ids and names, valid owners, consumers, phases, edge names and latencies', () => {
+    const m = templates('en').find(x => /Lakehouse greenfield/.test(x.name)).model, es = templates('es').find(x => /Lakehouse greenfield/.test(x.name)).model;
+    const ds = m.datasets || [], names = new Set(ds.map(d => d.name));
+    eq(ds.length, 10, 'ten datasets');
+    assert(ds.every(d => /^DS-\d{3}$/.test(d.id)), 'ids are DS-NNN');
+    eq(new Set(ds.map(d => d.id)).size, ds.length, 'ids are unique');
+    eq(names.size, ds.length, 'names are unique');
+    const nodes = new Set(m.nodes.map(n => n.id)), sh = new Set(m.stakeholders.map(s => s.id)), phases = new Set(m.phases.map(p => p.id));
+    ds.forEach(d => {
+      if (typeof d.owner === 'string' && /^SH-/.test(d.owner)) assert(sh.has(d.owner), `${d.name} owner ${d.owner} is a stakeholder`);
+      (d.contract?.consumers || []).forEach(id => assert(nodes.has(id), `${d.name} consumer ${id} is a node`));
+      if (d.phase) assert(phases.has(d.phase), `${d.name} phase ${d.phase} exists`);
+    });
+    assert(ds.some(d => d.product), 'at least one data product');
+    m.edges.forEach(e => (e.datasets || []).forEach(n => assert(names.has(n), `edge ${e.from} -> ${e.to} uses ${n}, declared`)));
+    m.edges.forEach(e => { if (e.latency != null) assert(/^\d+(\.\d+)?\s*(m|min|h|d)$/.test(e.latency), `latency ${e.latency} is a duration`); });
+    eq(es.datasets.map(d => d.name), ds.map(d => d.name), 'the es template has the same dataset names');
+  });
 
   test('tab groups wiring: every tab is in a known group, group keys exist in en and es', () => {
     const idx = read('index.html'), i18n = read('src/i18n.js');
