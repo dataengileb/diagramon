@@ -6962,7 +6962,7 @@
   // reportData() arma un modelo plano (secciones de bloques) y dos dibujantes lo pintan: reportMarkdown y reportHTML, así que los dos formatos no se desincronizan.
   // Bloques: { k: 'h3', t } · { k: 'p', t, muted? } · { k: 'kv', items: [[k, v]] } · { k: 'cards', items: [{ label, value, tone? }] }
   //          { k: 'table', head: [], rows: [[celda]], cls? } (celda = texto | { t, tone }) · { k: 'text', label, t } · { k: 'ul', items } · { k: 'img', alt, caption, svg?, uri?, file? }
-  const REP_SECS = ['summary', 'diagram', 'components', 'connections', 'data', 'owners', 'layers', 'costs', 'resilience', 'findings', 'compliance', 'threats', 'decisions', 'requirements', 'raid', 'versions', 'notes'];
+  const REP_SECS = ['summary', 'diagram', 'components', 'connections', 'data', 'owners', 'layers', 'costs', 'resilience', 'findings', 'compliance', 'threats', 'decisions', 'requirements', 'raid', 'approvals', 'versions', 'notes'];
   const REP_PAGE = ['diagram', 'components', 'findings', 'decisions']; // secciones que empiezan página al imprimir
   const repT = (k, v) => T(`rep.${k}`, v);
   const repSleep = ms => new Promise(r => setTimeout(r, ms));
@@ -6983,7 +6983,7 @@
       data: m.nodes.some(n => dataClassesOf(n, m).length || regionOf(n, m).value), owners: govTeamList(m).length > 0,
       layers: m.nodes.some(n => layerOf(n).value), costs: m.nodes.some(hasCost), resilience: m.nodes.some(hasRes) || spofList(m).length > 0, findings: findingsOf(m).length > 0,
       compliance: cmpModel(m).keys.length > 0, threats: strideAll(m).length > 0, decisions: !!m.decisions?.length, requirements: !!m.requirements?.length,
-      raid: !!m.raid?.length,
+      raid: !!m.raid?.length, approvals: !!m.stakeholders?.length,
       versions: m.versions.length > 0, notes: (m.notes || []).length > 0 || (m.zones || []).some(z => z.kind !== 'trust')
     };
   }
@@ -7042,6 +7042,7 @@
       cards.push({ label: repT('k.findings'), value: open.length, tone: open.some(f => f.severity === 'critical' || f.severity === 'high') ? 'sev-high' : '' });
       if (m.decisions?.length) cards.push({ label: repT('k.decisions'), value: m.decisions.length });
       if (m.requirements?.length) cards.push({ label: repT('k.requirements'), value: m.requirements.length });
+      if (m.stakeholders?.length) cards.push({ label: repT('k.approvals'), value: m.stakeholders.length });
       const kv = [[repT('author'), D.author], [repT('version'), D.version], [repT('active'), D.active ? `${D.active.label} · ${D.active.status}` : ''], [repT('date'), D.date]].filter(r => r[1]);
       const blocks = [];
       if (D.desc) blocks.push({ k: 'p', t: D.desc });
@@ -7222,6 +7223,30 @@
           rows: l.map(x => [...base(x), T(`raid.st.${x.status}`), { t: fmtDay(x.due), tone: late(x) }, ...tail(x)]) });
       });
       sec('raid', blocks);
+    }
+
+    if (want('approvals')) {
+      // Interesados, matriz RACI (filas = interesados; columnas = «Todas las áreas» + áreas de las decisiones) y aprobaciones de decisiones y versiones con aprobadores requeridos o firmas
+      const sh = m.stakeholders, cols = ['*', ...shAreas(m)];
+      const blocks = [{ k: 'h3', t: repT('h.stakeholders') }, { k: 'table', cls: 'wide', head: [repT('h.id'), repT('h.name'), repT('h.role'), repT('h.org'), repT('h.versions'), repT('h.state')],
+        rows: sh.map(s => [s.id, s.name, s.role || '', T(`people.org.${s.org}`), s.versions === true ? '✓' : '', s.inactive ? T('people.inactive') : repT('sh.active')]) }];
+      blocks.push({ k: 'h3', t: T('people.mx.title') }, { k: 'p', t: T('people.mx.legend'), muted: true });
+      blocks.push({ k: 'table', cls: 'compact', head: [repT('h.stakeholder'), ...cols.map(a => (a === '*' ? T('people.all') : a))], rows: sh.map(s => [s.name, ...cols.map(a => (a === '*' ? s.raci?.['*'] : shRaciOf(s, a)) || '')]) });
+      const dec = (m.decisions || []).filter(d => approvalState('decision', d, m).required.length || d.signoffs?.length);
+      if (dec.length) {
+        blocks.push({ k: 'h3', t: repT('h.decApprovals') });
+        blocks.push({ k: 'table', cls: 'wide', head: [repT('h.id'), repT('h.title'), repT('h.status'), repT('h.approvals'), repT('h.pendingNames'), repT('h.rejectedNames')], rows: dec.map(d => {
+          const st = approvalState('decision', d, m);
+          return [d.id, d.title, T(`adr.st.${d.status}`), st.required.length ? apprSummary(st) : '', apprNames(st.pending, m), apprNames(st.rejected, m)]; }) });
+      }
+      const ver = (m.versions || []).filter(v => approvalState('version', v, m).required.length || v.signoffs?.length);
+      if (ver.length) {
+        blocks.push({ k: 'h3', t: repT('h.verApprovals') });
+        blocks.push({ k: 'table', cls: 'wide', head: [repT('h.version'), repT('h.status'), repT('h.approvals'), repT('h.pendingNames'), repT('h.rejectedNames')], rows: ver.map(v => {
+          const st = approvalState('version', v, m);
+          return [verLabel(v), T(`ver.st.${v.status}`), st.required.length ? apprSummary(st) : '', apprNames(st.pending, m), apprNames(st.rejected, m)]; }) });
+      }
+      sec('approvals', blocks);
     }
 
     if (want('versions')) {
@@ -7539,6 +7564,8 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
   const INV_ADR = [['id'], ['title'], ['status'], ['date'], ['links']];
   const INV_REQ = [['id'], ['title'], ['kind'], ['priority'], ['status'], ['source'], ['coveredBy'], ['check'], ['result']];
   const INV_RAID = [['id'], ['type'], ['title'], ['status'], ['owner'], ['probability'], ['impact'], ['score'], ['mitigation'], ['due'], ['raised'], ['links'], ['detail']];
+  const INV_SH = [['id'], ['name'], ['role'], ['org'], ['raci'], ['versions'], ['inactive']];
+  const INV_SIGN = [['kind'], ['object'], ['by'], ['stakeholder'], ['verdict'], ['date'], ['note']];
   const INV_FIND = [['severity'], ['source'], ['rule'], ['title'], ['target'], ['dismissed'], ['reason']];
   const INV_VER = [['name'], ['env'], ['status'], ['author'], ['created'], ['updated'], ['decidedOn']];
   const invYN = v => T(v ? 'sec.yes' : 'sec.no');
@@ -7625,6 +7652,10 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
       const rl = l => [...(l?.decisions || []), ...(l?.requirements || []), links(l)].filter(Boolean).join('; ');
       out.push(mk('raid', INV_RAID, m.raid.map(x => [x.id, T(`raid.type1.${x.type}`), x.title, T(`raid.st.${raidState(x)}`), x.owner || '', x.probability ?? '', x.impact ?? '', raidScore(x) || '', x.mitigation || '', x.due || '', x.raised || '', rl(x.links), x.detail || ''])));
     }
+    // Interesados (una fila por persona, con su RACI como «área:letra») y firmas de decisiones y versiones (una fila por firma); solo si hay datos
+    if (m.stakeholders?.length) out.push(mk('stakeholders', INV_SH, m.stakeholders.map(s => [s.id, s.name, s.role || '', T(`people.org.${s.org}`), Object.entries(s.raci || {}).map(([k, v]) => `${k}:${v}`).join('; '), invYN(s.versions === true), invYN(!!s.inactive)])));
+    const sg = [...(m.decisions || []).map(d => [d, 'decision', d.id]), ...(m.versions || []).map(v => [v, 'version', v.id])].flatMap(([o, kind, id]) => (o.signoffs || []).map(x => [T(`inv.sg.${kind}`), id, x.by, apprWho(x.by, m), T(x.verdict === 'approve' ? 'appr.approved' : 'appr.rejected'), x.date, x.note || '']));
+    if (sg.length) out.push(mk('signoffs', INV_SIGN, sg));
     // Hallazgos (abiertos y descartados)
     const tl = t => { const o = (t.kind === 'node' ? m.nodes : t.kind === 'edge' ? m.edges : t.kind === 'group' ? m.groups : t.kind === 'zone' ? m.zones || [] : []).find(x => x.id === t.id); return !o ? t.id : t.kind === 'edge' ? `${nm(o.from)} → ${nm(o.to)}` : o.label || t.id; };
     const fnd = typeof allFindings === 'function' ? allFindings(m).map(f => { const d = f.source !== 'review' && m.dismissed?.[f.id]; return [sevLabel(f.severity), typeof srcLabel === 'function' ? srcLabel(f.source) : f.source, f.rule, f.title, tl(f.target || {}), invYN(!!d), d?.reason || '']; }) : [];

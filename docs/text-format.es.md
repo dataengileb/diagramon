@@ -75,6 +75,7 @@ adr ADR-002: "Procesar el despacho con una cola" estado=reemplazada reemplazada-
 
 - Claves de la cabecera (en inglés entre paréntesis): `estado=` (`status=`) con `propuesta`, `aceptada`, `rechazada`, `obsoleta` o `reemplazada` (`proposed`, `accepted`, `rejected`, `deprecated`, `superseded`); `fecha=` (`date=`); `decisores=` (`deciders=`); `enlaces=` (`links=`); `reemplazada-por=` (`superseded-by=`, el id de la decisión más nueva).
 - `enlaces=` es una lista separada por comas de ids de componentes, ids de grupos, conexiones escritas `origen->destino` (añade `#2` para elegir la segunda de varias conexiones iguales) y versiones escritas `version:<id>`.
+- `firmas:` (en inglés `signoffs:`) lista las firmas de la decisión, la más antigua primero: `SH-001 aprueba 2026-10-08 nota="…"` separadas por `;` (en inglés `SH-001 approve 2026-10-08 note="…"`; `rechaza` es `reject`). Cada id debe ser un interesado del diagrama, si no se reporta el número de línea. Ver *Interesados (RACI)* más abajo.
 - Campos: `contexto:`, `decisión:`, `consecuencias:` (en inglés: `context:`, `decision:`, `consequences:`) e `historial:` (`history:`): los cambios de estado, el más antiguo primero, `estado AAAA-MM-DD por="…" nota="…"` separados por `;`.
 - Las opciones y los criterios (todo opcional) van en las mismas líneas de campo. Agrega `área="Almacenamiento"` (`area=`) a la línea `adr` y luego:
 
@@ -137,6 +138,19 @@ dependencia D-001: "El equipo de red abre el enlace privado" estado=abierto fech
 
 Un nodo que solo aparece en una conexión se crea solo. Los errores salen en rojo con su número de línea.
 El texto no guarda posiciones: los nodos que ya existían no se mueven y los nuevos se colocan junto a sus vecinos.
+
+### Interesados (RACI)
+
+Una línea `stakeholder` por persona (en español `interesado`), escrita después del registro RAID. El id es `SH-` y un número; el nombre va entre comillas.
+
+```
+interesado SH-001: "Ana Pérez" rol="CISO" org=cliente raci=*:C,Seguridad:A,Platform:R versiones
+interesado SH-002: "Luis Gómez" rol="Dueño del dato" org=socio raci=Consumo:A,*:I inactivo
+```
+
+- Claves (en inglés entre corchetes): `rol=` (`role=`); `org=` con `cliente`, `socio` o `interno` (`client`, `partner`, `internal`); `raci=` es una lista separada por comas de `área:letra`, con `R` (responsable), `A` (aprueba), `C` (consultado) o `I` (informado). `*` vale para todas las áreas. Las áreas son las de decisión y no pueden llevar comas.
+- Palabras sueltas: `versiones` (`versions`) hace al interesado aprobador de versiones; `inactivo` (`inactive`) marca a quien dejó el proyecto: nunca se exige, el historial se conserva.
+- Al leer se aceptan ambos idiomas; el texto se escribe en el idioma activo (`stakeholder … role= org=client raci= versions inactive`). Un id repetido, un id o org no válido, o una letra de RACI no válida es un error con su número de línea. Borrar una línea `interesado` borra al interesado y su fila RACI.
 
 <details>
 <summary><b>Formato JSON</b></summary>

@@ -789,6 +789,18 @@
     assert(!/signoffs/.test(serializeM(m, true)), 'no sign-off key in the JSON');
   });
 
+  test('the stakeholder and sign-off examples of the text-format docs parse without errors · en and es', () => {
+    const ex = { en: ['adr ADR-001: "T" status=accepted area="Security"', '  signoffs: SH-001 approve 2026-10-08 note="ok"; SH-002 reject 2026-10-09',
+      'stakeholder SH-001: "Ana Pérez" role="CISO" org=client raci=*:C,Security:A,Platform:R versions', 'stakeholder SH-002: "Luis Gómez" role="Data owner" org=partner raci=Consumption:A,*:I inactive'],
+    es: ['adr ADR-001: "T" estado=aceptada área="Seguridad"', '  firmas: SH-001 aprueba 2026-10-08 nota="ok"; SH-002 rechaza 2026-10-09',
+      'interesado SH-001: "Ana Pérez" rol="CISO" org=cliente raci=*:C,Seguridad:A,Platform:R versiones', 'interesado SH-002: "Luis Gómez" rol="Dueño del dato" org=socio raci=Consumo:A,*:I inactivo'] };
+    ['en', 'es'].forEach(lang => {
+      const r = TXT.parse(ex[lang].join('\n'), textCtx(lang));
+      eq(r.errors, [], `parse errors (${lang})`);
+      eq(r.model.stakeholders.map(x => x.id), ['SH-001', 'SH-002'], `stakeholders (${lang})`);
+    });
+  });
+
   /* ---------- resumen ---------- */
   print(`\n${pass} passed, ${fail} failed`);
   return finish(fail === 0);

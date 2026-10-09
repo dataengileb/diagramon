@@ -76,6 +76,7 @@ adr ADR-002: "Process fulfilment with a queue" status=superseded superseded-by=A
 - Header keys (Spanish in brackets): `status=` (`estado=`) with `proposed`, `accepted`, `rejected`, `deprecated` or `superseded` (`propuesta`, `aceptada`, `rechazada`, `obsoleta`, `reemplazada`); `date=` (`fecha=`); `deciders=` (`decisores=`); `links=` (`enlaces=`); `superseded-by=` (`reemplazada-por=`, the id of the newer decision).
 - `links=` is a comma-separated list of component ids, group ids, connections written `source->target` (add `#2` to pick the second of several identical connections) and versions written `version:<id>`.
 - Fields: `context:`, `decision:`, `consequences:` (Spanish: `contexto:`, `decisión:`, `consecuencias:`) and `history:` (`historial:`): status changes oldest first, `status YYYY-MM-DD by="…" note="…"` separated by `;`.
+- `signoffs:` (Spanish `firmas:`) lists the sign-offs of the decision, oldest first: `SH-001 approve 2026-10-08 note="…"` separated by `;` (Spanish `SH-001 aprueba 2026-10-08 nota="…"`; `reject` is `rechaza`). Every id must be a stakeholder of the diagram, otherwise the line number is reported. See *Stakeholders (RACI)* below.
 - Options and criteria (all optional) go in the same field lines. Add `area="Storage"` (`área=`) to the `adr` line, then:
 
 ```
@@ -135,6 +136,19 @@ dependency D-001: "Network team opens the private link" status=open due=2026-11-
 
 A node that only appears in a connection is created for you. Errors are shown in red with their line number.
 The text does not store positions: existing nodes stay where they are, and new nodes are placed next to their neighbors.
+
+### Stakeholders (RACI)
+
+One `stakeholder` line per person, written after the RAID log. The id is `SH-` and a number; the name is quoted.
+
+```
+stakeholder SH-001: "Ana Pérez" role="CISO" org=client raci=*:C,Security:A,Platform:R versions
+stakeholder SH-002: "Luis Gómez" role="Data owner" org=partner raci=Consumption:A,*:I inactive
+```
+
+- Keys (Spanish in brackets): `role=` (`rol=`); `org=` with `client`, `partner` or `internal` (`cliente`, `socio`, `interno`); `raci=` is a comma-separated list of `area:letter`, with `R` (responsible), `A` (accountable: approves), `C` (consulted) or `I` (informed). `*` means every area. Areas are decision areas and cannot contain commas.
+- Bare words: `versions` (`versiones`) makes the stakeholder an approver of versions; `inactive` (`inactivo`) marks someone who left the project: never required, history kept.
+- Both languages are accepted when reading; the text is written in the active language (`interesado … rol= org=cliente raci= versiones inactivo`). A duplicate id, an invalid id or org, or an invalid RACI letter is an error with its line number. Deleting a `stakeholder` line deletes the stakeholder and its RACI row.
 
 <details>
 <summary><b>JSON format</b></summary>
