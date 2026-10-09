@@ -441,18 +441,18 @@ window.DIAGRAMON_EXAMPLES = [
       // Comité típico: el RACI por área define quién aprueba cada ADR (A); el arquitecto líder y el patrocinador aprueban las versiones.
       // Las claves de área van en inglés y español porque la plantilla resuelve las áreas de las ADR en el idioma activo.
       stakeholders: [
-        { id: 'SH-001', name: 'Head of Data', role: { en: 'Data leadership', es: 'Liderazgo de datos' }, org: 'client',
-          raci: { Platform: 'A', Plataforma: 'A', Storage: 'A', Almacenamiento: 'A', Processing: 'A', Procesamiento: 'A' } },
+        { id: 'SH-001', name: { en: 'Head of Data', es: 'Responsable de datos' }, role: { en: 'Data leadership', es: 'Liderazgo de datos' }, org: 'client',
+          raci: { en: { Platform: 'A', Storage: 'A', Processing: 'A', Ingestion: 'A' }, es: { Plataforma: 'A', Almacenamiento: 'A', Procesamiento: 'A', Ingesta: 'A' } } },
         { id: 'SH-002', name: 'CISO', role: { en: 'Information security', es: 'Seguridad de la información' }, org: 'client',
-          raci: { Security: 'A', Seguridad: 'A', Governance: 'A', Gobierno: 'A' } },
-        { id: 'SH-003', name: 'Business data owner', role: { en: 'Data owner, business', es: 'Dueño del dato, negocio' }, org: 'client',
-          raci: { Consumption: 'A', Consumo: 'A', '*': 'C' } },
-        { id: 'SH-004', name: 'FinOps lead', role: { en: 'Cloud cost management', es: 'Gestión de costos de nube' }, org: 'client',
-          raci: { Operations: 'A', Operaciones: 'A', Platform: 'C', Plataforma: 'C' } },
-        { id: 'SH-005', name: 'Lead architect', role: { en: 'Architecture', es: 'Arquitectura' }, org: 'partner', versions: true,
-          raci: { '*': 'R', Platform: 'A', Plataforma: 'A' } },
-        { id: 'SH-006', name: 'Client sponsor', role: { en: 'Executive sponsor', es: 'Patrocinador ejecutivo' }, org: 'client', versions: true,
-          raci: { '*': 'I' } }
+          raci: { en: { Security: 'A', Governance: 'A' }, es: { Seguridad: 'A', Gobierno: 'A' } } },
+        { id: 'SH-003', name: { en: 'Business data owner', es: 'Dueño del dato de negocio' }, role: { en: 'Data owner, business', es: 'Dueño del dato, negocio' }, org: 'client',
+          raci: { en: { Consumption: 'A', '*': 'C' }, es: { Consumo: 'A', '*': 'C' } } },
+        { id: 'SH-004', name: { en: 'FinOps lead', es: 'Responsable de FinOps' }, role: { en: 'Cloud cost management', es: 'Gestión de costos de nube' }, org: 'client',
+          raci: { en: { Operations: 'A', Platform: 'C' }, es: { Operaciones: 'A', Plataforma: 'C' } } },
+        { id: 'SH-005', name: { en: 'Lead architect', es: 'Arquitecto líder' }, role: { en: 'Architecture', es: 'Arquitectura' }, org: 'partner', versions: true,
+          raci: { en: { '*': 'R', Platform: 'A' }, es: { '*': 'R', Plataforma: 'A' } } },
+        { id: 'SH-006', name: { en: 'Client sponsor', es: 'Patrocinador del cliente' }, role: { en: 'Executive sponsor', es: 'Patrocinador ejecutivo' }, org: 'client', versions: true,
+          raci: { en: { '*': 'I' }, es: { '*': 'I' } } }
       ]
     }
   }
