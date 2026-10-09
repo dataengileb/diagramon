@@ -823,7 +823,7 @@
      9. Fases: hoja de ruta de la arquitectura (phase / until en nodos, conexiones y grupos)
      ====================================================================== */
   section('Phases');
-  const PHM = new Function(`${between('/* phaseModel:start */', '/* phaseModel:end */')}; return { cleanPhases, cleanPhaseRefs, phaseIndex, inPhase, phaseState, phaseStates, phaseModel, phaseDiff, phaseStats };`)();
+  const PHM = new Function(`${between('/* phaseModel:start */', '/* phaseModel:end */')}; return { cleanPhases, cleanPhaseRefs, phaseIndex, inPhase, phaseState, phaseStates, phaseModel, phaseDiff, phaseStats, phaseRows };`)();
   const snapshotM = new Function('clone', `${app.slice(app.indexOf('  const snapshotOf = m => {'), app.indexOf('  const prepared = v =>'))}; return snapshotOf;`)(o => JSON.parse(JSON.stringify(o)));
   const phList = () => [{ id: 'mvp', name: 'MVP', date: '2026-12', goal: 'Batch ingestion' }, { id: 'wave1', name: 'Wave 1', date: '2027-03-15' }, { id: 'wave2', name: 'Wave 2' }];
   // g1 (sin campos) tiene src (siempre), cdc (wave1), upload (mvp, se retira en wave1); g2 solo tiene stream (wave2); lone no tiene nodos
@@ -875,6 +875,17 @@
     const m = phDoc(), seen = [], h = { monthly: pm => pm.nodes.reduce((s, n) => s + (n.cost || 0), 0), findings: pm => { seen.push(pm.nodes.length); return [{ severity: 'critical' }, { severity: 'high' }, { severity: 'medium' }, { severity: 'low' }, { severity: 'low' }]; } };
     eq(PHM.phaseStats(m, 1, h), { nodes: 3, edges: 2, cost: 300, findings: { high: 2, medium: 1, low: 2 } }, 'wave1'); eq(seen, [3], 'helpers get the phase model');
     eq(PHM.phaseStats(m, 0, h).cost, 110, 'mvp cost'); eq(PHM.phaseStats(m, 2, h).cost, 600, 'wave2 cost');
+  });
+  test('phaseRows: one row per phase with counts, cost, cost delta and findings; no cost shows null', () => {
+    const m = phDoc(), h = { monthly: pm => pm.nodes.reduce((s, n) => s + (n.cost || 0), 0), hasCost: pm => pm.nodes.some(n => n.cost != null), findings: pm => (pm.nodes.length > 3 ? [{ severity: 'high' }, { severity: 'low' }] : []) };
+    const r = PHM.phaseRows(m, h);
+    eq(r.map(x => [x.id, x.nodes, x.added, x.retired, x.cost, x.dCost]), [['mvp', 3, 2, 0, 110, null], ['wave1', 3, 1, 1, 300, 190], ['wave2', 4, 1, 0, 600, 300]], 'rows'); eq(r[2].findings, { high: 1, medium: 0, low: 1 }, 'findings'); eq(r[1].retiredIds, ['upload'], 'ids');
+    const none = PHM.phaseRows({ ...phDoc(), nodes: phDoc().nodes.map(n => ({ ...n, cost: undefined })) }, h);
+    eq(none.map(x => [x.cost, x.dCost]), [[null, null], [null, null], [null, null]], 'no cost anywhere'); eq(PHM.phaseRows({ nodes: [], edges: [], groups: [] }, h), [], 'no phases');
+  });
+  test('report and presentation wiring for phases', () => {
+    assert(/REP_SECS = \[[^\]]*'approvals', 'phases', 'versions'/.test(app), 'section after approvals'); assert(/phases: !!m\.phases\?\.length/.test(app), 'available with phases'); assert(app.includes("want('phases')") && app.includes('presentPhases'), 'section and API');
+    const i18n = read('src/i18n.js'); ['rep.s.phases', 'rep.k.phases', 'rep.h.phase', 'phase.present.tip', 'phase.present.step', 'phase.cmp.title', 'phase.cmp.cost'].forEach(k => assert((i18n.match(new RegExp(`'${k.replace(/\./g, '\\.')}'`, 'g')) || []).length === 2, `${k} in en and es`));
   });
   test('without phases the JSON, the snapshot and the text stay byte-identical', () => {
     const base = withPositions({ title: 'Plain', nodes: [{ id: 'a', label: 'A' }, { id: 'b', label: 'B' }], edges: [{ from: 'a', to: 'b' }] });

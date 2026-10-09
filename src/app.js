@@ -1598,7 +1598,19 @@
     (h.findings(pm) || []).forEach(x => { const k = x.severity === 'critical' || x.severity === 'high' ? 'high' : x.severity === 'medium' ? 'medium' : 'low'; f[k]++; });
     return { nodes: pm.nodes.length, edges: pm.edges.length, cost: h.monthly(pm), findings: f };
   }
+  // Tabla comparativa: una fila por fase (orden = línea de tiempo). cost = null si ningún componente de la fase tiene costo (h.hasCost(modelo)); dCost = cambio respecto de la fase anterior
+  function phaseRows(m, h) {
+    let prev = null;
+    return (m.phases || []).map((p, i) => {
+      const st = phaseStats(m, i, h), d = phaseDiff(m, i), cost = h.hasCost && !h.hasCost(phaseModel(m, i)) ? null : st.cost;
+      const dCost = i > 0 && (cost != null || prev != null) ? (cost || 0) - (prev || 0) : null;
+      prev = cost;
+      return { id: p.id, name: p.name, date: p.date || '', goal: p.goal || '', nodes: st.nodes, edges: st.edges, added: d.added.length, retired: d.retired.length, addedIds: d.added, retiredIds: d.retired, cost, dCost, findings: st.findings };
+    });
+  }
   /* phaseModel:end */
+  const phaseHelpers = { monthly: m => monthlyTotal(m.nodes), hasCost: m => m.nodes.some(hasCost), findings: m => findingsOf(m).filter(f => !f.dismissed) };
+  const phaseCostText = (r, k = 'cost') => (r[k] == null ? '—' : k === 'cost' ? money(round2(r.cost)) : r.dCost === 0 ? money(0) : `${r.dCost > 0 ? '+' : '−'}${money(round2(Math.abs(r.dCost)))}`);
 
   /* ---------- disponibilidad (SLA), RPO/RTO, réplicas y puntos únicos de fallo ---------- */
   const RSL = { entryTypes: ['user', 'web', 'mobile', 'external', 'client'], dataStoreTypes: ['db', 'nosql', 'storage'], dataStoreIconCategories: ['Bases de datos', 'Almacenamiento'],
@@ -4050,11 +4062,12 @@
       refreshView();
       updateMeta();
     }
-    renderPhaseBar();
+    renderPhaseBar(); markPhaseCmp();
     return S.phase;
   }
   const stepPhase = d => { const n = S.model.phases?.length || 0; if (n) setPhase(clamp(phaseNow() + d, -1, n - 1)); };
   phaseBar.addEventListener('click', ev => { const b = ev.target.closest('[data-p]'); if (b) setPhase(+b.dataset.p); });
+  $('#phase-present').addEventListener('click', () => present({ phases: true }));
   $('#phase-ghosts').addEventListener('change', ev => { S.phaseGhosts = ev.target.checked; store.set('phaseGhosts', S.phaseGhosts); refreshView(); renderPhaseBar(); });
 
   // Campo «Fase» y «Se retira en» del inspector (nodos, conexiones, grupos y selección múltiple)
@@ -4099,8 +4112,17 @@
           <label>${T('phase.goal')}<textarea data-phf="goal" rows="2" placeholder="${esc(T('phase.goal.ph'))}">${esc(p.goal || '')}</textarea></label></div></div>`;
     };
     phaseBox.innerHTML = `<div class="ph-man"><div class="ph-title"><div class="cat">${esc(T('phase.title'))}</div><button class="btn small" data-phb="add">${esc(T('phase.add'))}</button></div>
-      ${ph.length ? ph.map(row).join('') : `<p class="empty-list">${esc(T('phase.empty'))}</p>`}</div>`;
+      ${ph.length ? ph.map(row).join('') : `<p class="empty-list">${esc(T('phase.empty'))}</p>`}${ph.length ? phaseCompare() : ''}</div>`;
+    markPhaseCmp();
   }
+  // Comparación de fases bajo la lista: componentes, altas, bajas, costo mensual, cambio de costo y hallazgos abiertos; clic en una fila = elegir esa fase en el lienzo
+  function phaseCompare() {
+    const rows = phaseRows(S.model, phaseHelpers), f = (n, k) => `<span class="ph-f sev-${k}${n ? '' : ' zero'}" title="${esc(sevLabel(k))}">${n}</span>`;
+    const body = rows.map((r, i) => `<tr data-pc="${i}" tabindex="0" role="button" title="${esc(T('phase.cmp.pick'))}"><th scope="row">${esc(r.name)}${r.date ? `<small>${esc(fmtPhaseDate(r.date))}</small>` : ''}</th><td>${r.nodes}</td><td class="up">${r.added ? '+' + r.added : '0'}</td><td class="dn">${r.retired ? '−' + r.retired : '0'}</td>
+      <td>${esc(phaseCostText(r))}</td><td class="${r.dCost > 0 ? 'dn' : r.dCost < 0 ? 'up' : ''}">${esc(phaseCostText(r, 'dCost'))}</td><td class="ph-fs">${f(r.findings.high, 'high')}${f(r.findings.medium, 'medium')}${f(r.findings.low, 'low')}</td></tr>`).join('');
+    return `<div class="ph-cmp"><div class="cat">${esc(T('phase.cmp.title'))}</div><div class="ph-cmp-box"><table><thead><tr><th>${esc(T('phase.cmp.phase'))}</th><th title="${esc(T('phase.cmp.nodes.tip'))}">${esc(T('phase.cmp.nodes'))}</th><th>${esc(T('phase.cmp.added'))}</th><th>${esc(T('phase.cmp.retired'))}</th><th>${esc(T('phase.cmp.cost'))}</th><th title="${esc(T('phase.cmp.delta.tip'))}">${esc(T('phase.cmp.delta'))}</th><th>${esc(T('phase.cmp.findings'))}</th></tr></thead><tbody>${body}</tbody></table></div></div>`;
+  }
+  function markPhaseCmp() { const cur = phaseNow(); phaseBox.querySelectorAll('tr[data-pc]').forEach(tr => { const on = +tr.dataset.pc === cur; tr.classList.toggle('on', on); tr.setAttribute('aria-pressed', on); }); }
   const phaseSlug = s => fold(String(s ?? '')).replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 24) || 'phase';
   // Edición ligera (sin reconstruir el lienzo): el nombre, la fecha y el objetivo no cambian lo que se dibuja
   function phasesTouched() { syncEditor(); save(); updateUndoButtons(); updateMeta(); renderPhaseBar(); }
@@ -4169,6 +4191,8 @@
     if (k === 'date') { const bad = !!v && !phaseDay(v); f.setAttribute('aria-invalid', bad); if (bad) return; }
     updatePhase(id, { [k]: v }, { typing: true });
   });
+  phaseBox.addEventListener('click', ev => { const tr = ev.target.closest('tr[data-pc]'); if (tr) setPhase(+tr.dataset.pc); });
+  phaseBox.addEventListener('keydown', ev => { const tr = ev.target.closest?.('tr[data-pc]'); if (tr && (ev.key === 'Enter' || ev.key === ' ')) { ev.preventDefault(); setPhase(+tr.dataset.pc); } });
   phaseBox.addEventListener('click', ev => {
     const b = ev.target.closest('[data-phb]');
     if (!b) return;
@@ -4664,7 +4688,12 @@
   function presentCaption(sl) {
     const m = scopeModel();
     let h = m.title, sub = '', desc = '', notes = [];
-    if (sl.kind === 'view') {
+    if (sl.kind === 'phase') {
+      const ph = m.phases[sl.i], d = phaseDiff(S.model, sl.i);
+      h = ph.name;
+      sub = [ph.date ? fmtPhaseDate(ph.date) : '', T('phase.present.step', { i: sl.i + 1, n: P.slides.length }), T('present.counts', { n: m.nodes.length, g: m.groups.length }), T('phase.counts', { a: d.added.length, r: d.retired.length })].filter(Boolean).join(' · ');
+      desc = ph.goal || '';
+    } else if (sl.kind === 'view') {
       sub = viewLabel(sl.key);
       desc = T('present.counts', { n: m.nodes.length, g: m.groups.length });
     } else if (sl.kind === 'overview') {
@@ -4688,7 +4717,9 @@
     if (!P) return;
     stopPlay();
     P.i = clamp(i, 0, P.slides.length - 1);
-    const sl = P.slides[P.i], m = scopeModel();
+    const sl = P.slides[P.i];
+    if (sl.kind === 'phase') setPhase(sl.i);
+    const m = scopeModel();
     let box = null, lit = null, gin = null;
     if (sl.kind === 'view' && sl.key !== S.viewKey) setView(sl.key, { toast: false });  // recalcula el estado derivado de la vista
     if (sl.kind === 'group') {
@@ -4717,11 +4748,13 @@
   // "Presentar vistas" (⇧V): una diapositiva por vista que aporta algo, aparte de la presentación por grupos
   // (esa recorre UNA vista; mezclarlas haría una secuencia sin hilo). Mismo encuadre, atajos y barra.
   const presentViewSlides = () => worthViews().map(key => ({ kind: 'view', key }));
+  // "Presentar fases": una diapositiva por fase (nombre, fecha y objetivo como pie); mismo encuadre, atajos y barra
+  const presentPhaseSlides = () => (S.model.phases || []).map((_, i) => ({ kind: 'phase', i }));
   function present(opts = {}) {
-    if (P || viewBusy || !S.model.nodes.length) return;
+    if (P || viewBusy || !S.model.nodes.length || (opts.phases && !S.model.phases?.length)) return;
     cancelConnect();
     stopPlay();
-    P = { slides: [], i: 0, views: !!opts.views, saved: { view: { ...S.view }, sel: S.sel, key: S.viewKey, flow: S.flow, chosen: S.viewChosen, stored: store.get('view') }, fs: false, idle: 0 };
+    P = { slides: [], i: 0, views: !!opts.views, phases: !!opts.phases, saved: { phase: S.phase, ghosts: S.phaseGhosts, view: { ...S.view }, sel: S.sel, key: S.viewKey, flow: S.flow, chosen: S.viewChosen, stored: store.get('view') }, fs: false, idle: 0 };
     document.body.classList.add('presenting');
     svg.classList.add('presenting');
     $('#present-bar').hidden = false;
@@ -4730,7 +4763,7 @@
     // Esperar a que el lienzo tome su nuevo tamaño
     requestAnimationFrame(() => requestAnimationFrame(() => {
       if (!P) return;
-      P.slides = P.views ? presentViewSlides() : presentSlides();
+      P.slides = P.phases ? presentPhaseSlides() : P.views ? presentViewSlides() : presentSlides();
       presentShow(0, true);
     }));
     presentWake();
@@ -4752,6 +4785,7 @@
       if (saved.stored == null) { try { localStorage.removeItem(`${C.app.storageKey}.view`); } catch { /* sin almacenamiento */ } } else store.set('view', saved.stored);
     }
     if (document.fullscreenElement) document.exitFullscreen?.().catch?.(() => {});
+    if (S.phase !== saved.phase) setPhase(saved.phase);   // se recorrieron fases: vuelve a la que había
     select(saved.sel);
     requestAnimationFrame(() => animateView(saved.view, 0));
   }
@@ -7245,7 +7279,7 @@
   // reportData() arma un modelo plano (secciones de bloques) y dos dibujantes lo pintan: reportMarkdown y reportHTML, así que los dos formatos no se desincronizan.
   // Bloques: { k: 'h3', t } · { k: 'p', t, muted? } · { k: 'kv', items: [[k, v]] } · { k: 'cards', items: [{ label, value, tone? }] }
   //          { k: 'table', head: [], rows: [[celda]], cls? } (celda = texto | { t, tone }) · { k: 'text', label, t } · { k: 'ul', items } · { k: 'img', alt, caption, svg?, uri?, file? }
-  const REP_SECS = ['summary', 'diagram', 'components', 'connections', 'data', 'owners', 'layers', 'costs', 'resilience', 'findings', 'compliance', 'threats', 'decisions', 'requirements', 'raid', 'approvals', 'versions', 'notes'];
+  const REP_SECS = ['summary', 'diagram', 'components', 'connections', 'data', 'owners', 'layers', 'costs', 'resilience', 'findings', 'compliance', 'threats', 'decisions', 'requirements', 'raid', 'approvals', 'phases', 'versions', 'notes'];
   const REP_PAGE = ['diagram', 'components', 'findings', 'decisions']; // secciones que empiezan página al imprimir
   const repT = (k, v) => T(`rep.${k}`, v);
   const repSleep = ms => new Promise(r => setTimeout(r, ms));
@@ -7266,7 +7300,7 @@
       data: m.nodes.some(n => dataClassesOf(n, m).length || regionOf(n, m).value), owners: govTeamList(m).length > 0,
       layers: m.nodes.some(n => layerOf(n).value), costs: m.nodes.some(hasCost), resilience: m.nodes.some(hasRes) || spofList(m).length > 0, findings: findingsOf(m).length > 0,
       compliance: cmpModel(m).keys.length > 0, threats: strideAll(m).length > 0, decisions: !!m.decisions?.length, requirements: !!m.requirements?.length,
-      raid: !!m.raid?.length, approvals: !!m.stakeholders?.length,
+      raid: !!m.raid?.length, approvals: !!m.stakeholders?.length, phases: !!m.phases?.length,
       versions: m.versions.length > 0, notes: (m.notes || []).length > 0 || (m.zones || []).some(z => z.kind !== 'trust')
     };
   }
@@ -7317,6 +7351,33 @@
       } finally { if (scopes.length > 1) setScope(oldScope ?? null); }
     }
 
+    /* fases: una imagen de la arquitectura en cada fase (futuro oculto, sin fantasmas); se restaura la fase y los fantasmas aunque falle */
+    const phImgs = [];
+    if (want('phases')) {
+      const theme = o.theme === 'current' ? S.theme : 'light', oldTheme = S.theme, np = m.phases.length, base = (o.progressBase || 0);
+      const old = { phase: S.phase, ghosts: S.phaseGhosts };
+      try {
+        await eachView([S.viewKey], async () => {
+          try {
+            for (let i = 0; i < np; i++) {
+              o.progress?.(base + i + 1, base + np, `${repT('s.phases')} · ${m.phases[i].name}`);
+              S.phase = i; S.phaseGhosts = false; refreshView();
+              let out;
+              S.theme = theme; try { out = buildSVG(); } finally { S.theme = oldTheme; }
+              const im = { i, svg: out.str };
+              if (o.format === 'md') {
+                const blob = await pngBlob(out);
+                if (!blob) im.uri = 'data:image/svg+xml;base64,' + repB64(out.str);
+                else if (o.separateImages) { im.file = fileName('png', `report-phase-${String(i + 1).padStart(2, '0')}-${m.phases[i].id}`); D.files.push({ name: im.file, blob }); } else im.uri = await repBlobUri(blob);
+              } else im.uri = 'data:image/svg+xml;base64,' + repB64(out.str);
+              phImgs.push(im);
+              await repSleep(0);
+            }
+          } finally { S.phase = old.phase; S.phaseGhosts = old.ghosts; refreshView(); renderPhaseBar(); }
+        });
+      } catch (e) { if (!phImgs.length) throw e; }
+    }
+
     /* resumen */
     if (want('summary')) {
       const mt = monthlyTotal(m.nodes), cards = [{ label: repT('k.components'), value: m.nodes.length }, { label: repT('k.connections'), value: m.edges.length }, { label: repT('k.groups'), value: m.groups.length },
@@ -7326,6 +7387,7 @@
       if (m.decisions?.length) cards.push({ label: repT('k.decisions'), value: m.decisions.length });
       if (m.requirements?.length) cards.push({ label: repT('k.requirements'), value: m.requirements.length });
       if (m.stakeholders?.length) cards.push({ label: repT('k.approvals'), value: m.stakeholders.length });
+      if (m.phases?.length) cards.push({ label: repT('k.phases'), value: m.phases.length });
       const kv = [[repT('author'), D.author], [repT('version'), D.version], [repT('active'), D.active ? `${D.active.label} · ${D.active.status}` : ''], [repT('date'), D.date]].filter(r => r[1]);
       const blocks = [];
       if (D.desc) blocks.push({ k: 'p', t: D.desc });
@@ -7530,6 +7592,22 @@
           return [verLabel(v), T(`ver.st.${v.status}`), st.required.length ? apprSummary(st) : '', apprNames(st.pending, m), apprNames(st.rejected, m)]; }) });
       }
       sec('approvals', blocks);
+    }
+
+    if (want('phases')) {
+      // Tabla comparativa y, por fase: nombre, fecha, objetivo, altas y bajas (nombres) y la imagen de la arquitectura en esa fase
+      const rows = phaseRows(m, phaseHelpers), names = ids => ids.map(nm).join(', ');
+      const blocks = [{ k: 'table', cls: 'wide', head: [repT('h.phase'), repT('h.date'), T('phase.cmp.nodes.tip'), T('phase.cmp.added'), T('phase.cmp.retired'), T('phase.cmp.cost'), T('phase.cmp.delta'), `${T('phase.cmp.findings')} (${SEVERITY.slice().reverse().filter(s => s !== 'critical').map(sevLabel).join(' / ')})`],
+        rows: rows.map(r => [r.name, r.date ? fmtPhaseDate(r.date) : '', String(r.nodes), String(r.added), String(r.retired), phaseCostText(r), phaseCostText(r, 'dCost'), `${r.findings.high} / ${r.findings.medium} / ${r.findings.low}`]) }];
+      rows.forEach((r, i) => {
+        blocks.push({ k: 'h3', t: [r.name, r.date ? fmtPhaseDate(r.date) : ''].filter(Boolean).join(' · ') });
+        if (r.goal) blocks.push({ k: 'p', t: r.goal });
+        const kv = [[T('phase.cmp.added'), names(r.addedIds)], [T('phase.cmp.retired'), names(r.retiredIds)]].filter(x => x[1]);
+        if (kv.length) blocks.push({ k: 'kv', items: kv });
+        const im = phImgs.find(x => x.i === i);
+        if (im) blocks.push({ k: 'img', alt: `${m.title} — ${r.name}`, svg: im.svg, uri: im.uri, file: im.file });
+      });
+      sec('phases', blocks);
     }
 
     if (want('versions')) {
@@ -9675,7 +9753,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
   window.Diagramon = {
     get model() { return clone(S.model); },
     load: (raw, opts = {}) => setModel(raw, { history: true, animate: true, fit: true, ...opts }),
-    addNode, addEdge, relayout, fitView, togglePlay, present, presentViews: () => present({ views: true }), exitPresent, toggleTheme, toggleLang,
+    addNode, addEdge, relayout, fitView, togglePlay, present, presentViews: () => present({ views: true }), presentPhases: () => present({ phases: true }), exitPresent, toggleTheme, toggleLang,
     get lang() { return I.lang; },
     select: ids => select({ kind: 'multi', ids: [].concat(ids) }), align: alignNodes,
     showPath, clearPath,
@@ -9700,7 +9778,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     decisions: () => clone(S.model.decisions || []), compareDecisions: id => { const v = S.model.versions.find(x => x.id === id); return v && Array.isArray(v.decisions) ? diffDecisions(v.decisions, S.model.decisions || []) : null; }, addDecision, updateDecision, removeDecision, exportDecisions,
     addDecisionKit: id => addDecisionKit(id), decisionKits: () => adrKits().map(k => ({ id: k.id, name: loc(k.name), desc: loc(k.desc), decisions: k.decisions.length })),
     phases: () => clone(S.model.phases || []), addPhase, updatePhase: (id, patch) => updatePhase(id, patch), removePhase, setPhase, get phase() { return S.phase; },
-    phaseModel: i => clone(phaseModel(S.model, +i)), phaseStats: i => phaseStats(S.model, +i, { monthly: m => monthlyTotal(m.nodes), findings: m => findingsOf(m).filter(f => !f.dismissed) }),
+    phaseModel: i => clone(phaseModel(S.model, +i)), phaseStats: i => phaseStats(S.model, +i, phaseHelpers), phaseRows: () => phaseRows(S.model, phaseHelpers),
     raid: () => clone(S.model.raid || []), addRaid, updateRaid, removeRaid, validateAssumption,
     stakeholders: () => clone(S.model.stakeholders || []), addStakeholder, updateStakeholder, removeStakeholder,
     adrScore: id => { const d = adrById(id); return d ? { options: Object.fromEntries((d.options || []).map(o => [o.id, adrScore(d, o)])), leader: adrLeader(d) || null, chosen: d.chosen || null } : null; },

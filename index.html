@@ -1227,6 +1227,7 @@
   .ph-chip small { font-size: 10px; color: var(--muted); white-space: nowrap; }
   .ph-chip:hover { background: color-mix(in srgb, var(--text) 7%, transparent); }
   .ph-chip.on { background: color-mix(in srgb, var(--accent) 16%, transparent); border-color: var(--accent); }
+  .ph-play { flex: none; width: 28px; height: 28px; font-size: 12px; }
   .ph-ghost { flex: none; display: flex; align-items: center; gap: 5px; color: var(--muted); font-size: 11px; cursor: pointer; white-space: nowrap; }
   .ph-ghost input:disabled + span { opacity: .5; }
   @media (max-width: 760px) { .phase-bar { max-width: calc(100% - 28px); bottom: 54px; } .phase-bar:not([hidden]) ~ .docbar { bottom: 112px; } .ph-ghost span { display: none; } }
@@ -1243,6 +1244,21 @@
   .ph-body input, .ph-body textarea { width: 100%; min-width: 0; box-sizing: border-box; padding: 5px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface2); color: var(--text); font: 12.5px var(--font); resize: vertical; }
   .ph-body input[aria-invalid="true"] { border-color: var(--sev-high); }
   .ph-row .btn[disabled] { opacity: .35; cursor: default; }
+  .ph-cmp { display: grid; gap: 4px; }
+  .ph-cmp .cat { margin: 6px 2px 0; }
+  .ph-cmp-box { max-width: 100%; overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); scrollbar-width: thin; }
+  .ph-cmp table { border-collapse: collapse; width: 100%; font-size: 11px; font-variant-numeric: tabular-nums; }
+  .ph-cmp th, .ph-cmp td { padding: 4px 7px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--border); }
+  .ph-cmp thead th { color: var(--muted); font-weight: 650; font-size: 10px; }
+  .ph-cmp th:first-child { text-align: left; position: sticky; left: 0; background: var(--surface); }
+  .ph-cmp tbody th { font-weight: 700; } .ph-cmp tbody th small { display: block; font-weight: 400; font-size: 10px; color: var(--muted); }
+  .ph-cmp tr:last-child > * { border-bottom: 0; }
+  .ph-cmp tbody tr { cursor: pointer; } .ph-cmp tbody tr:hover > *, .ph-cmp tbody tr:focus-visible > * { background: color-mix(in srgb, var(--text) 6%, var(--surface)); }
+  .ph-cmp tbody tr.on > * { background: color-mix(in srgb, var(--accent) 16%, var(--surface)); }
+  .ph-cmp td.up { color: var(--ok, #2e9e6a); } .ph-cmp td.dn { color: var(--sev-high); }
+  .ph-fs { display: flex; gap: 3px; justify-content: flex-end; }
+  .ph-f { min-width: 17px; padding: 0 4px; border-radius: 8px; text-align: center; font-weight: 700; font-size: 10.5px; color: #1b1b24; }
+  .ph-f.sev-high { background: var(--sev-high); } .ph-f.sev-medium { background: var(--sev-medium); } .ph-f.sev-low { background: var(--sev-low); } .ph-f.zero { opacity: .3; }
   .diagramon-svg .node.fdim, .diagramon-svg .edge.fdim, .diagramon-svg .group.fdim { opacity: .12; }
   .diagramon-svg .edge.fdim .particle { display: none; }
   .connecting .node { cursor: crosshair; }
@@ -1422,6 +1438,7 @@
       <aside class="inspector" id="inspector" hidden></aside>
       <div class="phase-bar" id="phase-bar" role="group" data-i18n-aria="phase.bar" hidden>
         <div class="ph-chips" id="phase-chips"></div>
+        <button class="tbtn ph-play" id="phase-present" data-i18n-title="phase.present.tip" data-i18n-aria="phase.present.tip">▶</button>
         <label class="ph-ghost" data-i18n-title="phase.ghosts.tip"><input type="checkbox" id="phase-ghosts"><span data-i18n="phase.ghosts"></span></label>
       </div>
       <div class="docbar" id="docbar">
