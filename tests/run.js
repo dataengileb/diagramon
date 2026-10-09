@@ -37,8 +37,8 @@
   // src/adr-kits.js puede faltar (kits de decisiones opcionales): solo ese archivo se carga con tolerancia
   const load = p => { try { new Function('window', 'localStorage', 'document', read(p))(win, storage, doc); } catch (e) { if (p !== 'src/adr-kits.js') throw e; } };
   ['src/config.js', 'src/i18n.js', 'assets/icons/aws.js', 'assets/icons/azure.js', 'assets/icons/gcp.js', 'assets/icons/sap.js', 'assets/icons/fabric.js', 'assets/icons/logos.js',
-    'src/text-lang.js', 'src/adr-kits.js', 'src/examples.js', 'src/iac.js', 'src/export/mermaid.js', 'src/export/plantuml.js', 'src/export/drawio.js', 'src/export/xlsx.js'].forEach(load);
-  const C = win.DIAGRAMON_CONFIG, TXT = win.DiagramonText, IAC = win.DiagramonIaC, EXP = win.DiagramonExport, XLSX = win.DiagramonXlsx;
+    'src/text-lang.js', 'src/adr-kits.js', 'src/examples.js', 'src/iac.js', 'src/export/mermaid.js', 'src/export/plantuml.js', 'src/export/datacontract.js', 'src/export/drawio.js', 'src/export/xlsx.js'].forEach(load);
+  const C = win.DIAGRAMON_CONFIG, TXT = win.DiagramonText, IAC = win.DiagramonIaC, EXP = win.DiagramonExport, XLSX = win.DiagramonXlsx, DC = win.DiagramonContract;
 
   /* ---------- mini marco de pruebas ---------- */
   let pass = 0, fail = 0, group = '';
@@ -873,7 +873,7 @@
   });
   test('phaseStats: nodes, edges, cost and findings of the phase model', () => {
     const m = phDoc(), seen = [], h = { monthly: pm => pm.nodes.reduce((s, n) => s + (n.cost || 0), 0), findings: pm => { seen.push(pm.nodes.length); return [{ severity: 'critical' }, { severity: 'high' }, { severity: 'medium' }, { severity: 'low' }, { severity: 'low' }]; } };
-    eq(PHM.phaseStats(m, 1, h), { nodes: 3, edges: 2, cost: 300, findings: { high: 2, medium: 1, low: 2 } }, 'wave1'); eq(seen, [3], 'helpers get the phase model');
+    eq(PHM.phaseStats(m, 1, h), { nodes: 3, edges: 2, cost: 300, findings: { high: 2, medium: 1, low: 2 }, datasets: 0, storage: null }, 'wave1'); eq(seen, [3], 'helpers get the phase model');
     eq(PHM.phaseStats(m, 0, h).cost, 110, 'mvp cost'); eq(PHM.phaseStats(m, 2, h).cost, 600, 'wave2 cost');
   });
   test('phaseRows: one row per phase with counts, cost, cost delta and findings; no cost shows null', () => {
@@ -1159,6 +1159,83 @@
     used.forEach(k => assert(i18n.split(`'${k}':`).length === 3, `${k} is defined once in en and once in es`));
     const keys = [...i18n.matchAll(/'((?:ds|tab\.data)[\w.]*)':/g)].map(m => m[1]); assert(keys.every(k => keys.filter(x => x === k).length === 2), 'no duplicated ds.* key');
     assert(used.size > 60, 'the UI uses the new keys');
+  });
+
+  /* ---------- contratos de datos (ODCS), métrica freshness y fases con conjuntos ---------- */
+  section('Data contracts');
+  const dcModel = () => ({ title: 'Lake', nodes: [{ id: 'bi', label: 'BI tool' }, { id: 'ml', label: 'ML: "scoring"' }], stakeholders: [{ id: 'SH-001', name: 'Ana Pérez' }], phases: [{ id: 'mvp', name: 'MVP' }],
+    datasets: [{ id: 'DS-001', name: 'orders', domain: 'sales', layer: 'gold', description: 'Orders: one per line # 1', owner: 'SH-001', steward: 'Luis', product: true, classes: ['pii', 'finance'], format: 'delta', freshness: '4h', volume: { perDay: 2.5, retentionDays: 90 },
+      schema: [{ name: 'order_id', type: 'bigint', key: true, nullable: false, desc: 'Primary key' }, { name: 'email', type: 'varchar(80)', pii: true }, { name: 'amount', type: 'decimal(10,2)' }, { name: 'meta', type: 'weird' }],
+      quality: [{ rule: 'not_null', column: 'order_id', severity: 'high' }, { rule: 'unique', column: 'order_id' }, { rule: 'regex', column: 'email', param: '^.+@.+$', severity: 'low' }, { rule: 'accepted_values', column: 'amount', param: 'a, b,c' },
+        { rule: 'range', column: 'amount', param: '0..100' }, { rule: 'freshness', param: '1h' }],
+      contract: { version: '2.1.0', status: 'agreed', consumers: ['bi', 'ml'], terms: 'Internal use only\nNo resale' }, phase: 'mvp' }, { id: 'DS-002', name: 'bare' }] });
+  test('toODCS: ODCS v3.2.0 field names and order on a full fixture', () => {
+    const m = dcModel(), y = DC.toODCS(m.datasets[0], m), top = y.split('\n').filter(l => /^[a-zA-Z]/.test(l)).map(l => l.split(':')[0]);
+    eq(top, ['apiVersion', 'kind', 'id', 'name', 'version', 'status', 'domain', 'dataProduct', 'description', 'tags', 'schema', 'slaProperties', 'team', 'customProperties'], 'top-level keys in order');
+    ['apiVersion: v3.2.0', 'kind: DataContract', 'name: orders', 'version: 2.1.0', 'status: active', 'domain: sales', 'dataProduct: orders', '  purpose: "Orders: one per line # 1"', '  usage: "Internal use only\\nNo resale"', 'tags: [pii, finance]',
+      '  - name: orders\n    physicalType: table', '      - name: order_id\n        physicalType: bigint\n        logicalType: integer\n        primaryKey: true\n        primaryKeyPosition: 1\n        required: true\n        description: Primary key',
+      '        classification: pii\n        tags: [pii]\n', '        physicalType: weird\n', '          - metric: nullValues\n            mustBe: 0\n            unit: rows\n            dimension: completeness\n            severity: error',
+      'metric: duplicateValues', 'metric: invalidValues\n            mustBe: 0\n            arguments:\n              pattern: "^.+@.+$"', 'validValues: [a, b, c]', '            severity: info',
+      '- type: text\n            description: "range (amount): 0..100"\n            dimension: accuracy', '      - type: text\n        description: "freshness: 1h"\n        dimension: timeliness',
+      'slaProperties:\n  - property: latency\n    value: 4\n    unit: h', '  - property: retention\n    value: 90\n    unit: d', 'team:\n  name: sales\n  members:\n    - username: Ana Pérez\n      role: Owner\n    - username: Luis\n      role: Steward',
+      '  - property: diagramonId\n    value: DS-001', '  - property: layer\n    value: gold', '  - property: format\n    value: delta', '  - property: consumers\n    value: [BI tool, "ML: \\"scoring\\""]', '  - property: phase\n    value: MVP', '  - property: volumePerDayGB\n    value: 2.5'
+    ].forEach(k => assert(y.includes(k), `missing:\n${k}\n--- in ---\n${y}`));
+    assert(y.startsWith('# Open Data Contract Standard v3.2.0'), 'version comment'); assert(!y.includes('undefined') && !y.split('\n').some(l => l.endsWith(': null') || l.endsWith(': ')), 'no undefined/null');
+    assert(/\nid: [0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\n/.test(y) && y === DC.toODCS(m.datasets[0], m), 'stable uuid-shaped id');
+  });
+  test('toODCS: a bare dataset still yields a valid minimal contract; toODCSAll joins documents with ---', () => {
+    const m = dcModel(), y = DC.toODCS(m.datasets[1], m);
+    eq(y.split('\n').filter(l => /^[a-zA-Z]/.test(l)).map(l => l.split(':')[0]), ['apiVersion', 'kind', 'id', 'name', 'version', 'status', 'schema', 'customProperties'], 'only required + schema + id');
+    assert(y.includes('version: 1.0.0') && y.includes('status: draft') && y.includes('  - name: bare\n    physicalType: table\n'), y);
+    const all = DC.toODCSAll(m); eq(all.split('---\n').length, 2, 'two documents'); assert(all.indexOf('name: orders') < all.indexOf('---\n') && all.indexOf('---\n') < all.indexOf('name: bare'), 'order');
+    eq(DC.toODCSAll({ datasets: [] }), '', 'no datasets → empty');
+  });
+  test('yq: quotes everything YAML would misread, leaves safe text plain', () => {
+    const q = DC.yq;
+    ['plain', 'two words', 'a/b (c)', 'Ana Pérez', '1.0.0', 'x-y', 'N/A', 'a@b.c', '3d'].forEach(v => eq(q(v), v, `plain: ${v}`));
+    ['', ' lead', 'trail ', 'a: b', 'a #b', '# c', 'yes', 'No', 'ON', 'null', '~', 'true', '1', '1.5', '-3', '1e3', '0x1F', '.5', '2026-10-09', '2026-10-09T10:00', '- item', '- ', '? k', 'a,b', '[x]', '{x}', '&a', '*a', '!t', '|', '>', '%d', '@a', '`a', "it's", 'say "hi"', 'back\\slash', 'line\nbreak', 'tab\there', ':', 'a:', '1_000', '1:30', 'inf', 'NaN']
+      .forEach(v => { const o = q(v); assert(o.startsWith('"') && o.endsWith('"') && JSON.parse(o) === v, `quoted + round trip: ${JSON.stringify(v)} → ${o}`); });
+    eq([q(5), q(true), q(0)], ['5', 'true', '0'], 'numbers and booleans stay bare');
+  });
+  test('wiring: export menu entry hidden unless datasets are declared; API, script and i18n', () => {
+    const html = read('index.html'), app = read('src/app.js'), i18n = read('src/i18n.js');
+    assert(html.includes('data-export="contracts" id="exp-contracts" hidden') && html.includes('<script src="src/export/datacontract.js"></script>'), 'button hidden by default + script tag');
+    ['$(\'#exp-contracts\').hidden = !S.model.datasets?.length', 'contracts: exportContracts', 'function exportContract(id)', 'contractYaml, contractsYaml'].forEach(k => assert(app.includes(k), `app has ${k}`));
+    ['exp.contracts', 'req.m.freshness', 'req.m.freshness.hint', 'req.chk.p.ds', 'req.chk.noFresh', 'req.chk.d.fresh', 'phase.cmp.datasets', 'phase.cmp.storage', 'phase.cmp.storage.tip'].forEach(k => assert(i18n.split(`'${k}':`).length === 3, `${k} once per language`));
+    assert(!read('src/export/datacontract.js').includes('fetch(') && !read('src/export/datacontract.js').includes('XMLHttpRequest'), 'no network');
+  });
+  test('check freshness: worst end-to-end hours against the target; unknown without data', () => {
+    const m = reqModel(), c = (target, e2e) => REQM.reqEval(rq({ check: { metric: 'freshness', ds: 'orders', target } }), m, reqH({ e2e }));
+    const f = ms => () => ({ worst: ms });
+    eq([c(2, f(7200000)).state, c(1, f(7200000)).state, c(3, f(7200000)).state], ['pass', 'fail', 'pass'], 'equal passes, above fails');
+    eq(c(1, f(7200000)).actual, 2, 'actual in hours'); assert(/req\.chk\.d\.fresh/.test(c(1, f(7200000)).detail), 'detail');
+    eq([c(1, () => ({ worst: null })).state, c(1, undefined).state, c(1, () => null).state], ['unknown', 'unknown', 'unknown'], 'no latency / no helper');
+    eq(REQM.reqEval(rq({ check: { metric: 'freshness', target: 1 } }), m, reqH({ e2e: f(1) })).state, 'unknown', 'missing dataset param');
+    eq(REQM.reqEval(rq({ status: 'draft', check: { metric: 'freshness', ds: 'orders', target: 1 } }), m, reqH({ e2e: f(1) })).state, 'unknown', 'draft');
+    const fail = REQM.reqIssues({ ...m, requirements: [rq({ priority: 'must', links: { nodes: ['a'] }, check: { metric: 'freshness', ds: 'orders', target: 1 } })] }, reqH({ e2e: f(7200000) }));
+    eq(fail.map(x => [x.rule, x.severity]), [['fail', 'high']], 'a failing freshness check is a finding');
+  });
+  test('freshness check: clean keeps ds and target only, Spanish alias, text round trip in en and es', () => {
+    const m = reqModel();
+    eq(REQM.cleanReqCheck({ metric: 'Frescura', ds: '  my   data ', target: '4,5', from: 'a', cls: 'pii' }, m), { metric: 'freshness', ds: 'my data', target: 4.5 }, 'params');
+    eq(REQM.cleanReqCheck({ metric: 'freshness', ds: 'x'.repeat(200) }, m).ds.length, 120, 'ds limit');
+    ['en', 'es'].forEach(lang => {
+      const mm = withPositions({ title: 'T', nodes: [{ id: 'a', label: 'A' }], edges: [], groups: [], requirements: [{ id: 'REQ-001', title: 'Fresh', kind: 'nfr', status: 'agreed', check: { metric: 'freshness', ds: 'sales daily', target: 4 } }] });
+      const t = TXT.stringify(mm, lang), r = TXT.parse(t, textCtx(lang));
+      eq(r.errors, [], `parse ${lang}`); eq(r.model.requirements[0].check, { metric: 'freshness', ds: 'sales daily', target: 4 }, `round trip ${lang}`);
+      assert(lang === 'es' ? t.includes('control=frescura conjunto="sales daily" objetivo=4') : t.includes('check=freshness ds="sales daily" target=4'), t);
+    });
+    assert(read('src/app.js').includes("freshness: ['ds', 'target']") && read('src/app.js').includes("frescura: 'freshness'"), 'REQ_PARAMS + Spanish alias');
+  });
+  test('phaseRows / phaseStats with datasets: counts and estimated storage per phase (separate from component cost)', () => {
+    const m = { ...phDoc(), datasets: [{ id: 'DS-001', name: 'a', volume: { perDay: 1, retentionDays: 10 } }, { id: 'DS-002', name: 'b', phase: 'wave1', volume: { perDay: 2, retentionDays: 10 }, layer: 'gold' }, { id: 'DS-003', name: 'c', phase: 'wave2' }] };
+    const h = { monthly: pm => pm.nodes.reduce((s, n) => s + (n.cost || 0), 0), hasCost: pm => pm.nodes.some(n => n.cost != null), findings: () => [], storage: d => (d.volume ? { monthly: d.volume.perDay * d.volume.retentionDays * (d.layer === 'gold' ? 0.1 : 0.05) } : null) };
+    const r = PHM.phaseRows(m, h);
+    eq(r.map(x => [x.datasets, x.datasetIds, x.storage]), [[1, ['DS-001'], 0.5], [2, ['DS-001', 'DS-002'], 2.5], [3, ['DS-001', 'DS-002', 'DS-003'], 2.5]], 'datasets and storage by phase');
+    eq(r.map(x => x.cost), [110, 300, 600], 'component cost untouched');
+    eq(PHM.phaseStats(m, 2, h).datasets, 3, 'stats count');
+    const none = PHM.phaseRows({ ...phDoc(), datasets: [{ id: 'DS-001', name: 'a' }] }, h); eq(none.map(x => [x.datasets, x.storage]), [[1, null], [1, null], [1, null]], 'no volume → storage null');
+    eq(PHM.phaseRows(phDoc(), h).map(x => [x.datasets, x.storage]), [[0, null], [0, null], [0, null]], 'no datasets');
   });
 
   /* ---------- resumen ---------- */

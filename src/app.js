@@ -1385,10 +1385,10 @@
   // Sin la clave (o vacía) el JSON y las exportaciones quedan idénticos. check = «función de aptitud»: se evalúa con lo que la app ya calcula (reqEval).
   /* reqModel:start */
   const REQ_KIND = ['driver', 'nfr', 'constraint', 'principle'], REQ_PRIO = ['must', 'should', 'could'], REQ_STATUS = ['draft', 'agreed', 'dropped'];
-  const REQ_METRIC = ['availability', 'rpo', 'rto', 'cost', 'encryption', 'residency'];
-  const REQ_PARAMS = { availability: ['from', 'to', 'target'], rpo: ['from', 'to', 'target'], rto: ['from', 'to', 'target'], cost: ['target'], encryption: ['cls'], residency: ['cls', 'jur'] };
+  const REQ_METRIC = ['availability', 'rpo', 'rto', 'cost', 'encryption', 'residency', 'freshness'];
+  const REQ_PARAMS = { availability: ['from', 'to', 'target'], rpo: ['from', 'to', 'target'], rto: ['from', 'to', 'target'], cost: ['target'], encryption: ['cls'], residency: ['cls', 'jur'], freshness: ['ds', 'target'] };
   const REQ_ALIAS = { impulsor: 'driver', rnf: 'nfr', restriccion: 'constraint', principio: 'principle', debe: 'must', deberia: 'should', podria: 'could', borrador: 'draft', acordado: 'agreed', acordada: 'agreed', descartado: 'dropped', descartada: 'dropped',
-    disponibilidad: 'availability', costo: 'cost', coste: 'cost', cifrado: 'encryption', residencia: 'residency' };
+    disponibilidad: 'availability', costo: 'cost', coste: 'cost', cifrado: 'encryption', residencia: 'residency', frescura: 'freshness' };
   const REQ_COLOR = { driver: 'var(--p-cielo)', nfr: 'var(--p-lavanda)', constraint: 'var(--p-melocoton)', principle: 'var(--p-menta)' };
   const reqEnum = (v, list) => { const k = String(v ?? '').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, ''); return list.includes(k) ? k : list.includes(REQ_ALIAS[k]) ? REQ_ALIAS[k] : ''; };
   const reqNum = id => { const r = /^REQ-(\d+)$/i.exec(String(id)); return r ? +r[1] : 0; };
@@ -1409,6 +1409,7 @@
     if (!metric) return null;
     const out = { metric }, ps = REQ_PARAMS[metric];
     ['from', 'to'].filter(k => ps.includes(k)).forEach(k => { const v = String(c[k] ?? '').trim(); if (m.nodes.some(n => n.id === v)) out[k] = v; });
+    if (ps.includes('ds')) { const v = String(c.ds ?? '').replace(/\s+/g, ' ').trim().slice(0, 120); if (v) out.ds = v; }   // nombre del conjunto de datos (como en las conexiones)
     if (ps.includes('target') && c.target != null && String(c.target).trim() !== '') { const t = Number(String(c.target).replace(',', '.')); if (Number.isFinite(t) && t >= 0 && (metric !== 'availability' || t <= 100)) out.target = t; }
     ['cls', 'jur'].filter(k => ps.includes(k)).forEach(k => { const v = String(c[k] ?? '').trim().toLowerCase().slice(0, 40); if (v) out[k] = v; });
     return out;
@@ -1473,6 +1474,12 @@
       if (tot == null) return res('unknown', null, T('req.chk.noCost'));
       return res(tot <= c.target + 1e-9 ? 'pass' : 'fail', tot, T('req.chk.d.cost', { a: h.money(tot), t: h.money(c.target) }));
     }
+    if (c.metric === 'freshness') {   // peor frescura de extremo a extremo del conjunto (suma de las latencias del camino más lento) frente al objetivo en horas
+      const f = h.e2e?.(c.ds);
+      if (!f || f.worst == null) return res('unknown', null, T('req.chk.noFresh', c.ds));
+      const hrs = f.worst / 3600000, ok = f.worst <= c.target * 3600000 + 1e-6;
+      return res(ok ? 'pass' : 'fail', hrs, T('req.chk.d.fresh', { n: c.ds, a: h.dur(f.worst / 1000), t: h.dur(c.target * 3600) }));
+    }
     if (c.metric === 'encryption') {
       const es = m.edges.filter(e => h.carries(e, get, c.cls));
       if (!es.length) return res('unknown', null, T('req.chk.noEdges', c.cls));
@@ -1507,7 +1514,7 @@
   }
   // El control con lo que la app ya calcula: disponibilidad compuesta (availability), costo mensual (monthlyTotal), cifrado y cruce de fronteras (crossBorder)
   const REQ_H = {
-    T: (k, v) => T(k, v), availability: (a, b) => availability(a, b), cost: m => { const ns = m.nodes.filter(hasCost); return ns.length ? monthlyTotal(ns) : null; },
+    T: (k, v) => T(k, v), availability: (a, b) => availability(a, b), e2e: name => e2eOf(name), cost: m => { const ns = m.nodes.filter(hasCost); return ns.length ? monthlyTotal(ns) : null; },
     carries: (e, get, cls) => (e.data?.length ? e.data : [...(get(e.from)?.data || []), ...(e.both ? get(e.to)?.data || [] : [])]).includes(cls),
     crossBorder: e => crossBorder(e, id => S.model.nodes.find(n => n.id === id)), sensitive: cls => !!DATA[cls]?.sensitive, nodeJur: n => jurOf(regionOf(n).value)?.key || '',
     edgeName: e => { const nm = id => S.model.nodes.find(n => n.id === id)?.label || id; return `${nm(e.from)} ${e.both ? '↔' : '→'} ${nm(e.to)}`; }, pct: a => fmtPct(a), dur: s => fmtDur(s), money: v => money(v), num: v => numFmt(v, 4)
@@ -1595,11 +1602,13 @@
     const here = phaseStates(m, i).nodes, before = phaseStates(m, i - 1).nodes;
     return { added: m.nodes.filter(n => here.get(n.id) === 0 && before.get(n.id) !== 0).map(n => n.id), retired: m.nodes.filter(n => before.get(n.id) === 0 && here.get(n.id) !== 0).map(n => n.id) };
   }
-  // Cifras de la fase i; h = { monthly(modelo) → costo mensual, findings(modelo) → hallazgos abiertos [{ severity }] }
+  // Cifras de la fase i; h = { monthly(modelo) → costo mensual, findings(modelo) → hallazgos abiertos [{ severity }], storage?(conjunto) → { monthly } | null (almacenamiento estimado) }
+  // datasets = conjuntos declarados presentes en la fase; storage = suma mensual estimada de los que tienen volumen (null si ninguno; aparte del costo escrito a mano)
   function phaseStats(m, i, h) {
     const pm = phaseModel(m, i), f = { high: 0, medium: 0, low: 0 };
     (h.findings(pm) || []).forEach(x => { const k = x.severity === 'critical' || x.severity === 'high' ? 'high' : x.severity === 'medium' ? 'medium' : 'low'; f[k]++; });
-    return { nodes: pm.nodes.length, edges: pm.edges.length, cost: h.monthly(pm), findings: f };
+    const dss = pm.datasets || [], sto = h.storage ? dss.map(d => h.storage(d)).filter(Boolean) : [];
+    return { nodes: pm.nodes.length, edges: pm.edges.length, cost: h.monthly(pm), findings: f, datasets: dss.length, storage: sto.length ? sto.reduce((s, x) => s + x.monthly, 0) : null };
   }
   // Tabla comparativa: una fila por fase (orden = línea de tiempo). cost = null si ningún componente de la fase tiene costo (h.hasCost(modelo)); dCost = cambio respecto de la fase anterior
   function phaseRows(m, h) {
@@ -1608,11 +1617,11 @@
       const st = phaseStats(m, i, h), d = phaseDiff(m, i), cost = h.hasCost && !h.hasCost(phaseModel(m, i)) ? null : st.cost;
       const dCost = i > 0 && (cost != null || prev != null) ? (cost || 0) - (prev || 0) : null;
       prev = cost;
-      return { id: p.id, name: p.name, date: p.date || '', goal: p.goal || '', nodes: st.nodes, edges: st.edges, added: d.added.length, retired: d.retired.length, addedIds: d.added, retiredIds: d.retired, cost, dCost, findings: st.findings };
+      return { id: p.id, name: p.name, date: p.date || '', goal: p.goal || '', nodes: st.nodes, edges: st.edges, added: d.added.length, retired: d.retired.length, addedIds: d.added, retiredIds: d.retired, cost, dCost, findings: st.findings, datasets: st.datasets, datasetIds: (phaseModel(m, i).datasets || []).map(x => x.id), storage: st.storage };
     });
   }
   /* phaseModel:end */
-  const phaseHelpers = { monthly: m => monthlyTotal(m.nodes), hasCost: m => m.nodes.some(hasCost), findings: m => findingsOf(m).filter(f => !f.dismissed) };
+  const phaseHelpers = { monthly: m => monthlyTotal(m.nodes), hasCost: m => m.nodes.some(hasCost), findings: m => findingsOf(m).filter(f => !f.dismissed), storage: ds => storageEstimate(ds, { prices: dsPrices() }) };
   const phaseCostText = (r, k = 'cost') => (r[k] == null ? '—' : k === 'cost' ? money(round2(r.cost)) : r.dCost === 0 ? money(0) : `${r.dCost > 0 ? '+' : '−'}${money(round2(Math.abs(r.dCost)))}`);
 
   /* ---------- conjuntos de datos (catálogo, contrato de datos, frescura de extremo a extremo): modelo ---------- */
@@ -4309,10 +4318,10 @@
   }
   // Comparación de fases bajo la lista: componentes, altas, bajas, costo mensual, cambio de costo y hallazgos abiertos; clic en una fila = elegir esa fase en el lienzo
   function phaseCompare() {
-    const rows = phaseRows(S.model, phaseHelpers), f = (n, k) => `<span class="ph-f sev-${k}${n ? '' : ' zero'}" title="${esc(sevLabel(k))}">${n}</span>`;
+    const rows = phaseRows(S.model, phaseHelpers), hasDs = !!S.model.datasets?.length, hasSto = rows.some(r => r.storage != null), f = (n, k) => `<span class="ph-f sev-${k}${n ? '' : ' zero'}" title="${esc(sevLabel(k))}">${n}</span>`;
     const body = rows.map((r, i) => `<tr data-pc="${i}" tabindex="0" role="button" title="${esc(T('phase.cmp.pick'))}"><th scope="row">${esc(r.name)}${r.date ? `<small>${esc(fmtPhaseDate(r.date))}</small>` : ''}</th><td>${r.nodes}</td><td class="up">${r.added ? '+' + r.added : '0'}</td><td class="dn">${r.retired ? '−' + r.retired : '0'}</td>
-      <td>${esc(phaseCostText(r))}</td><td class="${r.dCost > 0 ? 'dn' : r.dCost < 0 ? 'up' : ''}">${esc(phaseCostText(r, 'dCost'))}</td><td class="ph-fs">${f(r.findings.high, 'high')}${f(r.findings.medium, 'medium')}${f(r.findings.low, 'low')}</td></tr>`).join('');
-    return `<div class="ph-cmp"><div class="cat">${esc(T('phase.cmp.title'))}</div><div class="ph-cmp-box"><table><thead><tr><th>${esc(T('phase.cmp.phase'))}</th><th title="${esc(T('phase.cmp.nodes.tip'))}">${esc(T('phase.cmp.nodes'))}</th><th>${esc(T('phase.cmp.added'))}</th><th>${esc(T('phase.cmp.retired'))}</th><th>${esc(T('phase.cmp.cost'))}</th><th title="${esc(T('phase.cmp.delta.tip'))}">${esc(T('phase.cmp.delta'))}</th><th>${esc(T('phase.cmp.findings'))}</th></tr></thead><tbody>${body}</tbody></table></div></div>`;
+      <td>${esc(phaseCostText(r))}</td><td class="${r.dCost > 0 ? 'dn' : r.dCost < 0 ? 'up' : ''}">${esc(phaseCostText(r, 'dCost'))}</td>${hasDs ? `<td>${r.datasets}</td>` : ''}${hasSto ? `<td title="${esc(T('phase.cmp.storage.tip'))}">${r.storage == null ? '—' : esc(money(round2(r.storage)))}</td>` : ''}<td class="ph-fs">${f(r.findings.high, 'high')}${f(r.findings.medium, 'medium')}${f(r.findings.low, 'low')}</td></tr>`).join('');
+    return `<div class="ph-cmp"><div class="cat">${esc(T('phase.cmp.title'))}</div><div class="ph-cmp-box"><table><thead><tr><th>${esc(T('phase.cmp.phase'))}</th><th title="${esc(T('phase.cmp.nodes.tip'))}">${esc(T('phase.cmp.nodes'))}</th><th>${esc(T('phase.cmp.added'))}</th><th>${esc(T('phase.cmp.retired'))}</th><th>${esc(T('phase.cmp.cost'))}</th><th title="${esc(T('phase.cmp.delta.tip'))}">${esc(T('phase.cmp.delta'))}</th>${hasDs ? `<th>${esc(T('phase.cmp.datasets'))}</th>` : ''}${hasSto ? `<th title="${esc(T('phase.cmp.storage.tip'))}">${esc(T('phase.cmp.storage'))}</th>` : ''}<th>${esc(T('phase.cmp.findings'))}</th></tr></thead><tbody>${body}</tbody></table></div></div>`;
   }
   function markPhaseCmp() { const cur = phaseNow(); phaseBox.querySelectorAll('tr[data-pc]').forEach(tr => { const on = +tr.dataset.pc === cur; tr.classList.toggle('on', on); tr.setAttribute('aria-pressed', on); }); }
   const phaseSlug = s => fold(String(s ?? '')).replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 24) || 'phase';
@@ -7058,6 +7067,7 @@
     const av = activeVersion();
     versionBox.placeholder = av ? verLabel(av) : '1.0';
     $('#exp-levels-svg').hidden = $('#exp-levels-png').hidden = !hasLevels();
+    $('#exp-contracts').hidden = !S.model.datasets?.length;   // solo si el diagrama declara conjuntos de datos
     const r = exportMenu.querySelector('summary').getBoundingClientRect(), pop = exportMenu.querySelector('.menu-pop');
     pop.style.top = `${r.bottom}px`;
     pop.style.right = `${Math.max(8, innerWidth - r.right)}px`;
@@ -7067,7 +7077,7 @@
     const b = ev.target.closest('[data-export]');
     if (!b) return;
     exportMenu.open = false;
-    const f = { svg: exportSVG, png: exportPNG, 'svg-all': () => exportViews('svg'), 'png-all': () => exportViews('png'), 'svg-levels': () => exportLevels('svg'), 'png-levels': () => exportLevels('png'), json: exportJSON, copy: copyJSON, share: shareEncrypted, stride: exportThreats, compliance: openCompMatrix, report: openReportDialog, costs: () => openCosts('breakdown'), 'inventory-xlsx': () => exportInventory('xlsx'), 'inventory-csv': openInventoryDialog }[b.dataset.export];
+    const f = { svg: exportSVG, png: exportPNG, 'svg-all': () => exportViews('svg'), 'png-all': () => exportViews('png'), 'svg-levels': () => exportLevels('svg'), 'png-levels': () => exportLevels('png'), json: exportJSON, copy: copyJSON, share: shareEncrypted, stride: exportThreats, compliance: openCompMatrix, report: openReportDialog, costs: () => openCosts('breakdown'), 'inventory-xlsx': () => exportInventory('xlsx'), 'inventory-csv': openInventoryDialog, contracts: exportContracts }[b.dataset.export];
     if (f) f(); else exportOther(b.dataset.export);
   });
 
@@ -8130,6 +8140,16 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
       toast(T('toast.exported', { name: T(`exp.${fmt}`) }));
     } catch (e) { console.error(e); toast(T('toast.exportFail')); }
   }
+  // Contratos de datos (ODCS, src/export/datacontract.js): un archivo por conjunto, o todos en uno (documentos YAML separados por ---)
+  const contractYaml = v => { const d = dsFind(v); return d && window.DiagramonContract ? window.DiagramonContract.toODCS(clone(d), clone({ ...S.model, versions: undefined, active: undefined })) : ''; };
+  const contractsYaml = () => (S.model.datasets?.length && window.DiagramonContract ? window.DiagramonContract.toODCSAll(clone({ ...S.model, versions: undefined, active: undefined })) : '');
+  function saveContract(text, name) {
+    if (!text) return toast(T('toast.exportFail'));
+    download(text, name, 'application/yaml');
+    toast(T('toast.exported', { name: T('exp.contracts') }));
+  }
+  function exportContract(id) { const d = dsFind(id); if (d) saveContract(contractYaml(d.id), `${fold(d.name).replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'dataset'}.odcs.yaml`); }
+  const exportContracts = () => saveContract(contractsYaml(), 'data-contracts.odcs.yaml');
   function exportJSON() { download(serialize(S.model, true), fileName('json'), 'application/json'); toast(T('toast.json')); }
   function copyJSON() {
     const txt = serialize(S.model, true);
@@ -9957,6 +9977,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     if (c.metric === 'availability') return `${mt} ${nm(c.from)} → ${nm(c.to)} ≥ ${c.target != null ? `${numFmt(c.target, 4)}%` : '?'}`;
     if (c.metric === 'rpo' || c.metric === 'rto') return `${mt} ${nm(c.from)} → ${nm(c.to)} ≤ ${c.target != null ? `${numFmt(c.target, 2)} ${T('req.unit.h')}` : '?'}`;
     if (c.metric === 'cost') return `${mt} ≤ ${c.target != null ? money(c.target) : '?'}`;
+    if (c.metric === 'freshness') return `${mt}: ${c.ds || '?'} ≤ ${c.target != null ? `${numFmt(c.target, 2)} ${T('req.unit.h')}` : '?'}`;
     if (c.metric === 'encryption') return `${mt}: ${cn(c.cls)}`;
     return `${mt}: ${cn(c.cls)} → ${c.jur ? loc(JURS[c.jur]?.label) || c.jur : '?'}`;
   }
@@ -10002,9 +10023,10 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     const c = r.check || {}, m = S.model, ps = REQ_PARAMS[c.metric] || [];
     const sel = (attrs, cur, items, label) => `<select ${attrs} aria-label="${esc(label)}">${items.map(([v, t]) => `<option value="${esc(v)}"${String(v) === String(cur ?? '') ? ' selected' : ''}>${esc(t)}</option>`).join('')}</select>`;
     const nodes = [['', '–'], ...m.nodes.map(n => [n.id, n.label || n.id])];
-    const unit = { availability: '%', rpo: T('req.unit.h'), rto: T('req.unit.h'), cost: `${COST.currency} / ${T('adr.o.month')}` }[c.metric];
+    const unit = { availability: '%', rpo: T('req.unit.h'), rto: T('req.unit.h'), freshness: T('req.unit.h'), cost: `${COST.currency} / ${T('adr.o.month')}` }[c.metric];
     const fields = [
       ps.includes('from') ? `<label>${esc(T('req.chk.p.from'))}${sel('data-rc="from"', c.from, nodes, T('req.chk.p.from'))}</label><label>${esc(T('req.chk.p.to'))}${sel('data-rc="to"', c.to, nodes, T('req.chk.p.to'))}</label>` : '',
+      ps.includes('ds') ? `<label>${esc(T('req.chk.p.ds'))}${sel('data-rc="ds"', c.ds, [['', '–'], ...catalog(m).map(x => [x.name, x.name]), ...(c.ds && !catalog(m).some(x => x.key === dsK(c.ds)) ? [[c.ds, c.ds]] : [])], T('req.chk.p.ds'))}</label>` : '',
       ps.includes('target') ? `<label>${esc(T('req.chk.p.target'))} (${esc(unit)})<input type="number" min="0"${c.metric === 'availability' ? ' max="100"' : ''} step="any" data-rc="target" value="${c.target != null ? esc(c.target) : ''}" autocomplete="off"></label>` : '',
       ps.includes('cls') ? `<label>${esc(T('req.chk.p.cls'))}${sel('data-rc="cls"', c.cls, [['', '–'], ...Object.keys(DATA).map(k => [k, loc(DATA[k].label) || k])], T('req.chk.p.cls'))}</label>` : '',
       ps.includes('jur') ? `<label>${esc(T('req.chk.p.jur'))}${sel('data-rc="jur"', c.jur, [['', '–'], ...Object.keys(JURS).map(k => [k, loc(JURS[k].label) || k])], T('req.chk.p.jur'))}</label>` : ''
@@ -10289,7 +10311,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     select: ids => select({ kind: 'multi', ids: [].concat(ids) }), align: alignNodes,
     showPath, clearPath,
     lineage: ds => { const r = showLineage(ds); return r ? { origins: [...r.origins], consumers: [...r.consumers], hops: r.hops, nodes: [...r.nodes], edges: [...r.edges] } : null; },
-    datasets: () => datasetList().map(d => ({ ...d })),
+    datasets: () => datasetList().map(d => ({ ...d })), contractYaml, contractsYaml,
     catalog: catalogApi, dataset: v => { const d = dsFind(v); return d ? clone(d) : null; }, addDataset, updateDataset, removeDataset, renameDataset: renameDatasetApi, freshness: freshnessApi, storage: storageApi,
     saveVersion, openVersion, compareVersion, deleteVersion,
     costBreakdown: (by = 'team') => costBreakdown(S.model, by), compareCosts: (a = null, b = null) => { const A = cstSource(a || null), B = cstSource(b || null); return A && B ? cstCompare(A, B) : null; }, openCosts,

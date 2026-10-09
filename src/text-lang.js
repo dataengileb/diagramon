@@ -71,7 +71,7 @@
              (es: req … tipo= prioridad= estado= fuente= control= clase= jurisdicción= enlaces=; tipos driver|impulsor, nfr|rnf, constraint|restricción, principle|principio;
              prioridades must|debe, should|debería, could|podría; estados draft|borrador, agreed|acordado, dropped|descartado). Un control (check=) es una función de aptitud
              que la app evalúa con lo que ya calcula (solo en requisitos acordados): availability|disponibilidad from= to= target=99.9 (es desde= hasta= objetivo=), rpo|rto from= to=
-             target=horas, cost|costo target=mensual, encryption|cifrado cls=pii, residency|residencia cls=pii jur=eu. links= lista ids de decisiones, nodos, grupos y conexiones (`origen->destino`).
+             target=horas, cost|costo target=mensual, encryption|cifrado cls=pii, residency|residencia cls=pii jur=eu, freshness|frescura ds=orders target=horas (es conjunto=). links= lista ids de decisiones, nodos, grupos y conexiones (`origen->destino`).
              El campo opcional va en la línea siguiente:   detail: "…"   (es: detalle:)
    Registro RAID: risk R-001: "Falta la licencia CDC" p=3 i=4 owner="PMO" status=open raised=2026-10-07 links=ADR-007,erp
              assumption A-001: "Volumen ≤ 2 TB/día" validation=pending due=2026-11-15 owner="Dueño del dato" links=ADR-002,REQ-003
@@ -223,14 +223,14 @@
   const ADR_FIELD = { context: 'context', contexto: 'context', decision: 'decision', decisión: 'decision', consequences: 'consequences', consecuencias: 'consequences', history: 'history', historial: 'history', signoffs: 'signoffs', firmas: 'signoffs' };
   /* ---------- requisitos: req ID: "título" kind= priority= status= source= check= from= to= target= cls= jur= links= + línea detail ---------- */
   const REQ_RE = /^(?:req|requisito)\s+([^\s:]+)\s*:\s*(.*)$/i, REQ_FIELD_RE = /^(detail|detalle)\s*:\s*(.*)$/i;
-  const REQ_KEYS = ['kind', 'tipo', 'priority', 'prioridad', 'status', 'estado', 'source', 'fuente', 'check', 'control', 'from', 'desde', 'to', 'hasta', 'target', 'objetivo', 'cls', 'clase', 'jur', 'jurisdiccion', 'jurisdicción', 'links', 'enlaces'];
+  const REQ_KEYS = ['kind', 'tipo', 'priority', 'prioridad', 'status', 'estado', 'source', 'fuente', 'check', 'control', 'from', 'desde', 'to', 'hasta', 'target', 'objetivo', 'ds', 'conjunto', 'cls', 'clase', 'jur', 'jurisdiccion', 'jurisdicción', 'links', 'enlaces'];
   const REQ_KIND_IN = { driver: 'driver', impulsor: 'driver', nfr: 'nfr', rnf: 'nfr', constraint: 'constraint', restriccion: 'constraint', principle: 'principle', principio: 'principle' };
   const REQ_PRIO_IN = { must: 'must', debe: 'must', should: 'should', deberia: 'should', could: 'could', podria: 'could' };
   const REQ_ST_IN = { draft: 'draft', borrador: 'draft', agreed: 'agreed', acordado: 'agreed', acordada: 'agreed', dropped: 'dropped', descartado: 'dropped', descartada: 'dropped' };
-  const REQ_MET_IN = { availability: 'availability', disponibilidad: 'availability', rpo: 'rpo', rto: 'rto', cost: 'cost', costo: 'cost', coste: 'cost', encryption: 'encryption', cifrado: 'encryption', residency: 'residency', residencia: 'residency' };
-  const REQ_OUT = { en: {}, es: { driver: 'impulsor', nfr: 'rnf', constraint: 'restricción', principle: 'principio', must: 'debe', should: 'debería', could: 'podría', draft: 'borrador', agreed: 'acordado', dropped: 'descartado', availability: 'disponibilidad', cost: 'costo', encryption: 'cifrado', residency: 'residencia' } };
-  const REQ_W = { en: { kind: 'kind', priority: 'priority', status: 'status', source: 'source', check: 'check', from: 'from', to: 'to', target: 'target', cls: 'cls', jur: 'jur', links: 'links', detail: 'detail' },
-    es: { kind: 'tipo', priority: 'prioridad', status: 'estado', source: 'fuente', check: 'control', from: 'desde', to: 'hasta', target: 'objetivo', cls: 'clase', jur: 'jurisdicción', links: 'enlaces', detail: 'detalle' } };
+  const REQ_MET_IN = { availability: 'availability', disponibilidad: 'availability', rpo: 'rpo', rto: 'rto', cost: 'cost', costo: 'cost', coste: 'cost', encryption: 'encryption', cifrado: 'encryption', residency: 'residency', residencia: 'residency', freshness: 'freshness', frescura: 'freshness' };
+  const REQ_OUT = { en: {}, es: { driver: 'impulsor', nfr: 'rnf', constraint: 'restricción', principle: 'principio', must: 'debe', should: 'debería', could: 'podría', draft: 'borrador', agreed: 'acordado', dropped: 'descartado', availability: 'disponibilidad', cost: 'costo', encryption: 'cifrado', residency: 'residencia', freshness: 'frescura' } };
+  const REQ_W = { en: { kind: 'kind', priority: 'priority', status: 'status', source: 'source', check: 'check', from: 'from', to: 'to', target: 'target', ds: 'ds', cls: 'cls', jur: 'jur', links: 'links', detail: 'detail' },
+    es: { kind: 'tipo', priority: 'prioridad', status: 'estado', source: 'fuente', check: 'control', from: 'desde', to: 'hasta', target: 'objetivo', ds: 'conjunto', cls: 'clase', jur: 'jurisdicción', links: 'enlaces', detail: 'detalle' } };
   const adrText = v => { const t = v.trim(); return /^"(?:[^"\\]|\\.)*"$/.test(t) ? unquote(t) : t.replace(/\\n/g, '\n'); };
   /* ---------- registro RAID: risk|assumption|issue|dependency ID: "título" p= i= owner= status= validation= due= raised= links= + líneas detail/mitigation/history ---------- */
   const RAID_RE = /^(risk|riesgo|assumption|supuesto|issue|problema|dependency|dependencia)\s+([^\s:]+)\s*:\s*(.*)$/i;
@@ -295,8 +295,8 @@
       lvNest: (id, o) => `“${id}” is not a component of “${o}”, so “inside ${id}” cannot be nested there`,
       adrDup: id => `decision “${id}” is declared twice`, adrSt: v => `unknown decision status “${v}” (use proposed, accepted, rejected, deprecated or superseded)`, adrLink: v => `“${v}” is not a node, group or connection (use ids, source->target or version:<id>)`,
       reqDup: id => `requirement “${id}” is declared twice`, reqKind: v => `unknown requirement kind “${v}” (use driver, nfr, constraint or principle)`, reqPrio: v => `unknown priority “${v}” (use must, should or could)`,
-      reqStatus: v => `unknown requirement status “${v}” (use draft, agreed or dropped)`, reqMetric: v => `unknown check “${v}” (use availability, rpo, rto, cost, encryption or residency)`, reqNum: v => `invalid target “${v}” (a number, 0 or more)`,
-      reqNode: v => `“${v}” is not a node (use a component id in from= and to=)`, reqLink: v => `“${v}” is not a decision, node, group or connection (use ids or source->target)`, reqNoCheck: 'from=, to=, target=, cls= and jur= need check=… on the same line',
+      reqStatus: v => `unknown requirement status “${v}” (use draft, agreed or dropped)`, reqMetric: v => `unknown check “${v}” (use availability, rpo, rto, cost, encryption, residency or freshness)`, reqNum: v => `invalid target “${v}” (a number, 0 or more)`,
+      reqNode: v => `“${v}” is not a node (use a component id in from= and to=)`, reqLink: v => `“${v}” is not a decision, node, group or connection (use ids or source->target)`, reqNoCheck: 'from=, to=, target=, ds=, cls= and jur= need check=… on the same line',
       adrSign: v => `invalid sign-off “${v}” (use SH-001 approve|reject YYYY-MM-DD note="…"; separate entries with ;)`, adrSignBy: v => `“${v}” is not a stakeholder`,
       adrHist: v => `invalid history entry “${v}” (use status YYYY-MM-DD by="…" note="…"; separate entries with ;)`,
       raidDup: id => `item “${id}” is declared twice`, raidId: (id, p) => `invalid id “${id}” (use ${p}-001, ${p}-002…)`, raidNum: (k, v) => `invalid ${k} “${v}” (use a whole number from 1 to 5)`,
@@ -336,8 +336,8 @@
       lvNest: (id, o) => `«${id}» no es un componente de «${o}», así que «dentro ${id}» no puede anidarse ahí`,
       adrDup: id => `la decisión «${id}» está declarada dos veces`, adrSt: v => `estado de decisión desconocido «${v}» (usa propuesta, aceptada, rechazada, obsoleta o reemplazada)`, adrLink: v => `«${v}» no es un nodo, grupo ni conexión (usa ids, origen->destino o version:<id>)`,
       reqDup: id => `el requisito «${id}» está declarado dos veces`, reqKind: v => `tipo de requisito desconocido «${v}» (usa impulsor, rnf, restricción o principio)`, reqPrio: v => `prioridad desconocida «${v}» (usa debe, debería o podría)`,
-      reqStatus: v => `estado de requisito desconocido «${v}» (usa borrador, acordado o descartado)`, reqMetric: v => `control desconocido «${v}» (usa disponibilidad, rpo, rto, costo, cifrado o residencia)`, reqNum: v => `objetivo no válido «${v}» (un número, 0 o más)`,
-      reqNode: v => `«${v}» no es un nodo (usa el id de un componente en desde= y hasta=)`, reqLink: v => `«${v}» no es una decisión, nodo, grupo ni conexión (usa ids u origen->destino)`, reqNoCheck: 'desde=, hasta=, objetivo=, clase= y jurisdicción= necesitan control=… en la misma línea',
+      reqStatus: v => `estado de requisito desconocido «${v}» (usa borrador, acordado o descartado)`, reqMetric: v => `control desconocido «${v}» (usa disponibilidad, rpo, rto, costo, cifrado, residencia o frescura)`, reqNum: v => `objetivo no válido «${v}» (un número, 0 o más)`,
+      reqNode: v => `«${v}» no es un nodo (usa el id de un componente en desde= y hasta=)`, reqLink: v => `«${v}» no es una decisión, nodo, grupo ni conexión (usa ids u origen->destino)`, reqNoCheck: 'desde=, hasta=, objetivo=, conjunto=, clase= y jurisdicción= necesitan control=… en la misma línea',
       adrSign: v => `firma no válida «${v}» (usa SH-001 aprueba|rechaza AAAA-MM-DD nota="…"; separa las entradas con ;)`, adrSignBy: v => `«${v}» no es un interesado`,
       adrHist: v => `entrada de historial no válida «${v}» (usa estado AAAA-MM-DD por="…" nota="…"; separa las entradas con ;)`,
       raidDup: id => `el item «${id}» está declarado dos veces`, raidId: (id, p) => `id no válido «${id}» (usa ${p}-001, ${p}-002…)`, raidNum: (k, v) => `${k} no válido «${v}» (usa un número entero de 1 a 5)`,
@@ -707,13 +707,14 @@
         });
         const sv = kv('source', 'fuente')?.trim();
         if (sv) r.source = sv;
-        const mv = kv('check', 'control'), ps = { from: kv('from', 'desde'), to: kv('to', 'hasta'), target: kv('target', 'objetivo'), cls: kv('cls', 'clase'), jur: kv('jur', 'jurisdiccion', 'jurisdicción') };
+        const mv = kv('check', 'control'), ps = { from: kv('from', 'desde'), to: kv('to', 'hasta'), target: kv('target', 'objetivo'), ds: kv('ds', 'conjunto'), cls: kv('cls', 'clase'), jur: kv('jur', 'jurisdiccion', 'jurisdicción') };
         if (mv != null) {
           const mt = REQ_MET_IN[foldK(mv)];
           if (!mt) err(ln, msg.reqMetric(mv));
           else {
             const c = { metric: mt };
             ['from', 'to'].forEach(k => { if (ps[k] != null) { c[k] = ps[k].trim(); reqNodes.push({ ln, id: c[k] }); } });
+            if (ps.ds != null && ps.ds.trim()) c.ds = ps.ds.trim();
             if (ps.target != null) { const n = Number(ps.target.replace(',', '.')); if (ps.target.trim() !== '' && Number.isFinite(n) && n >= 0) c.target = n; else err(ln, msg.reqNum(ps.target)); }
             ['cls', 'jur'].forEach(k => { if (ps[k] != null) c[k] = ps[k].trim().toLowerCase(); });
             if (c.cls && ctx.dataClasses && !ctx.dataClasses.includes(c.cls)) err(ln, msg.data(c.cls));
@@ -1147,7 +1148,7 @@
       const refs = [...(l.decisions || []), ...(l.nodes || []), ...(l.groups || []),
         ...(l.edges || []).map(id => m.edges.find(e => e.id === id)).filter(Boolean).map(e => `${e.from}->${e.to}${same(e).length > 1 ? `#${same(e).indexOf(e) + 1}` : ''}`)];
       out.push('', [`req ${r.id}: ${quote(r.title ?? '')}`, `${rw.kind}=${rv(r.kind || 'driver')}`, r.priority ? `${rw.priority}=${rv(r.priority)}` : '', `${rw.status}=${rv(r.status || 'draft')}`, r.source ? `${rw.source}=${bare(r.source)}` : '',
-        c ? `${rw.check}=${rv(c.metric)}` : '', c?.from != null ? `${rw.from}=${bare(c.from)}` : '', c?.to != null ? `${rw.to}=${bare(c.to)}` : '', c?.target != null ? `${rw.target}=${+c.target}` : '',
+        c ? `${rw.check}=${rv(c.metric)}` : '', c?.from != null ? `${rw.from}=${bare(c.from)}` : '', c?.to != null ? `${rw.to}=${bare(c.to)}` : '', c?.ds ? `${rw.ds}=${bare(c.ds)}` : '', c?.target != null ? `${rw.target}=${+c.target}` : '',
         c?.cls ? `${rw.cls}=${bare(c.cls)}` : '', c?.jur ? `${rw.jur}=${bare(c.jur)}` : '', refs.length ? `${rw.links}=${bare(refs.join(','))}` : ''].filter(Boolean).join(' '));
       if (r.detail) out.push(`  ${rw.detail}: ${quote(r.detail)}`);
     });
