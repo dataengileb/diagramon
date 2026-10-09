@@ -156,6 +156,19 @@ window.DIAGRAMON_CONFIG = {
     serving: 'gold', oro: 'gold', consumo: 'gold'
   },
 
+  /* Conjuntos de datos (catálogo de datasets: formato, capa, contratos y reglas de calidad de cada uno).
+     formats: formatos que se ofrecen en el selector (un formato fuera de la lista se acepta igualmente al leer JSON y texto).
+     qualityRules: tipos de regla de calidad que se ofrecen (not_null, unique, range, regex, accepted_values, freshness, custom).
+     storagePrice: precio ORIENTATIVO de almacenamiento por GB-mes, por capa (bronze, silver, gold); `default` para el resto.
+       Son estimaciones para calcular el almacenamiento de un conjunto (volumen × retención), separadas de los costos
+       escritos a mano en cada componente (`cost`, más abajo). Para ajustarlos, cambia los números por los de tu proveedor;
+       una capa sin precio usa `default`. Moneda: cost.currency. */
+  datasets: {
+    formats: ['delta', 'iceberg', 'hudi', 'parquet', 'avro', 'json', 'csv', 'other'],
+    qualityRules: ['not_null', 'unique', 'range', 'regex', 'accepted_values', 'freshness', 'custom'],
+    storagePrice: { default: 0.023, bronze: 0.02, silver: 0.023, gold: 0.023 }
+  },
+
   /* Cumplimiento normativo: controles que se marcan en componentes y grupos (inspector › Cumplimiento) y la matriz que los cruza.
      frameworks: mapa ORDENADO clave → { label, short, url?, controls: { '<id>': { label: { en, es } } } }.
        · El orden de las claves es el de la matriz y los filtros; `short` es la sigla corta (chips, columnas, CSV).
