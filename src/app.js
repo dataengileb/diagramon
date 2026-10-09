@@ -7717,11 +7717,11 @@
         blocks.push({ k: 'h3', t: `★ ${d.id} · ${d.name}` });
         if (d.description) blocks.push({ k: 'p', t: d.description });
         if (d.schema?.length) {
-          blocks.push({ k: 'h3', t: repT('cat.schema') });
+          blocks.push({ k: 'h4', t: repT('cat.schema') });
           blocks.push({ k: 'table', cls: 'compact', head: [repT('h.name'), repT('h.type'), repT('h.key'), repT('h.pii')], rows: d.schema.map(c => [c.name, c.type || '', c.key ? '✓' : '', c.pii ? '✓' : '']) });
         }
         if (d.quality?.length) {
-          blocks.push({ k: 'h3', t: repT('cat.rules') });
+          blocks.push({ k: 'h4', t: repT('cat.rules') });
           blocks.push({ k: 'table', cls: 'compact', head: [repT('h.rule'), repT('h.column'), repT('h.param'), repT('h.severity')], rows: d.quality.map(q => [q.rule, q.column || '', q.param || '', q.severity ? sevLabel(q.severity) : '']) });
         }
       });
@@ -7907,6 +7907,7 @@
       o.push(`## ${mdEsc(s.title)}`, '');
       s.blocks.forEach(b => {
         if (b.k === 'h3') o.push(`### ${mdEsc(b.t)}`, '');
+        else if (b.k === 'h4') o.push(`#### ${mdEsc(b.t)}`, '');
         else if (b.k === 'p') o.push(b.muted ? `*${mdEsc(b.t)}*` : mdLines(b.t), '');
         else if (b.k === 'kv') o.push(...b.items.map(([k, v]) => `- **${mdEsc(k)}:** ${mdEsc(v).replace(/\r?\n/g, ' ')}`), '');
         else if (b.k === 'ul') o.push(...b.items.map(t => `- ${mdEsc(t).replace(/\r?\n/g, ' ')}`), '');
@@ -7960,6 +7961,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     const css = REP_CSS.replace('__FONT__', fontCss().replace(/"/g, "'")).replace('__TITLE__', `"${String(D.title).replace(/[\\"]/g, '\\$&').replace(/[\r\n]+/g, ' ')}"`);
     const blk = b => {
       if (b.k === 'h3') return `<h3>${esc(b.t)}</h3>`;
+      if (b.k === 'h4') return `<h4>${esc(b.t)}</h4>`;
       if (b.k === 'p') return `<p${b.muted ? ' class="muted"' : ''}>${esc(b.t).replace(/\r?\n/g, '<br>')}</p>`;
       if (b.k === 'kv') return `<dl>${b.items.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v).replace(/\r?\n/g, '<br>')}</dd>`).join('')}</dl>`;
       if (b.k === 'ul') return `<ul>${b.items.map(t => `<li>${esc(t).replace(/\r?\n/g, '<br>')}</li>`).join('')}</ul>`;
