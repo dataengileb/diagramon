@@ -677,7 +677,7 @@
     m.versions = normVersions(raw.versions);
     m.decisions = cleanDecisions(raw.decisions, m);
     { const rq = cleanRequirements(raw.requirements, m); if (rq.length) m.requirements = rq; }   // sin requisitos no hay clave: JSON y exportaciones idénticos
-    m.raid = cleanRaid(raw.raid, m, raw.requirements);   // los requisitos se limpian aparte (si existen): aquí solo importan sus ids
+    m.raid = cleanRaid(raw.raid, m);   // después de los requisitos: sus ids ya están en m.requirements
     // Cada versión puede llevar las decisiones que había al guardarla (para compararlas); sus enlaces se limpian contra el diagrama de la versión
     m.versions.forEach(v => { if (v.decisions) v.decisions = cleanDecisions(v.decisions, { nodes: v.diagram.nodes || [], edges: v.diagram.edges || [], groups: v.diagram.groups || [], versions: m.versions }); });
     if (raw.active != null && m.versions.some(v => v.id === String(raw.active))) m.active = String(raw.active);
@@ -8359,7 +8359,8 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
   const raidLinkList = it => raidKinds.flatMap(k => (it.links?.[k] || []).map(id => ({ kind: k, id, label: raidLinkLabel(k, id) || id })));
   const raidChips = list => (list.length ? `<div class="raid-chips">${list.map(x => `<button type="button" class="raid-chip" data-raid-open="${esc(x.id)}" style="--s:${RAID_TYPE_COLOR[x.type]}" title="${esc(`${x.id} · ${raidTitle(x)} · ${raidStateLabel(x)}`)}"><b>${esc(x.id)}</b> ${esc(x.title)}</button>`).join('')}</div>` : '');
   // Ficha de ADR: items del registro que enlazan a la decisión, y aviso rojo si la sostiene un supuesto invalidado
-  const raidChipsFor = did => { const l = raidOf('decisions', did); return l.length ? `<div class="raid-row"><span>${esc(T('raid.chips'))}</span>${raidChips(l)}</div>` : ''; };
+  const raidChipsFor = (id, kind = 'decisions') => { const l = raidOf(kind, id);   // supuestos y riesgos de una decisión (o de un requisito)
+    return l.length ? `<div class="raid-row"><span>${esc(T('raid.chips'))}</span>${raidChips(l)}</div>` : ''; };
   function raidBanner(d) {
     if (d.status !== 'accepted' && d.status !== 'proposed') return '';
     const bad = raidOf('decisions', d.id).filter(x => x.type === 'assumption' && x.validation === 'invalidated').map(x => x.id);
@@ -8576,6 +8577,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     if (did) raidReopen(did, b.dataset.raidReopen);
   });
   $('#inspector').addEventListener('click', ev => { const b = ev.target.closest('[data-raid-open]'); if (b) raidOpen(b.dataset.raidOpen); });
+  $('#req-panel')?.addEventListener('click', ev => { const b = ev.target.closest('[data-raid-open]'); if (b) raidOpen(b.dataset.raidOpen); });   // y en la ficha del requisito
 
   /* inspector (nodo, conexión y grupo) y filas de versiones */
   const adrKindOfSel = () => ({ node: 'nodes', edge: 'edges', group: 'groups' })[S.sel?.kind];
@@ -8830,6 +8832,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
       <button type="button" class="adr-head" data-req-toggle aria-expanded="${on}"><b class="adr-id">${esc(r.id)}</b><span class="adr-title">${esc(reqTitle(r))}</span><span class="adr-pill" style="--s:${REQ_ST_COLOR[r.status]}">${esc(T(`req.st.${r.status}`))}</span></button>
       <div class="adr-meta req-meta"><span class="req-meta-t">${esc(reqMeta(r))}</span>${reqBadge(r, chk)}</div>
       <div class="req-cov ${cov.cls}">${esc(cov.text)}</div>
+      ${raidChipsFor(r.id, 'requirements')}
       ${!on && r.detail ? `<div class="req-detail">${esc(r.detail)}</div>` : ''}
       ${form}
     </div>`;

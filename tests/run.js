@@ -604,7 +604,8 @@
     eq(m.raid.map(x => x.id), ['A-001', 'A-002', 'A-003', 'A-004', 'R-001', 'R-002', 'D-001'], 'items');
     eq(m.raid.map(x => x.type), ['assumption', 'assumption', 'assumption', 'assumption', 'risk', 'risk', 'dependency'], 'types');
     const nodes = new Set(m.nodes.map(n => n.id)), decs = new Set((m.decisions || []).map(d => d.id));
-    m.raid.forEach(x => { (x.links?.nodes || []).forEach(id => assert(nodes.has(id), `${x.id} links to node ${id}`)); if (decs.size) (x.links?.decisions || []).forEach(id => assert(decs.has(id), `${x.id} links to ${id}`)); assert(!x.links?.requirements, 'no requirement links'); });
+    m.raid.forEach(x => { (x.links?.nodes || []).forEach(id => assert(nodes.has(id), `${x.id} links to node ${id}`)); if (decs.size) (x.links?.decisions || []).forEach(id => assert(decs.has(id), `${x.id} links to ${id}`)); (x.links?.requirements || []).forEach(id => assert((m.requirements || []).some(r => r.id === id), `${x.id} links to ${id}`)); });
+    assert(m.raid.some(x => x.links?.requirements?.length), 'some items trace to requirements');
     assert(m.raid.filter(x => x.type === 'risk').every(x => x.probability && x.impact && x.mitigation), 'risks have p, i and mitigation');
     const es = templates('es').find(x => /Lakehouse greenfield/.test(x.name)).model;
     assert(es.raid.every(x => x.title && x.title !== m.raid.find(y => y.id === x.id).title), 'titles are translated');
