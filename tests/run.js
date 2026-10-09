@@ -964,6 +964,170 @@
     assert(idx.includes('id="review-badge-g"'), 'review badge mirrored on the group button');
   });
 
+  /* ======================================================================
+     10. Conjuntos de datos: catálogo, contrato de datos, frescura de extremo a extremo, latencia
+     ====================================================================== */
+  section('Datasets');
+  const DSM = new Function(`${between('/* datasetModel:start */', '/* datasetModel:end */')}; return { cleanCatalog, catalog, e2eFreshness, storageEstimate, renameDataset, datasetIssues };`)();
+  const DSD = new Function('fold', `const dsKey = s => String(s).trim().toLowerCase(); ${app.slice(app.indexOf('  function lineageOf('), app.indexOf('  // Conjuntos de datos que entran y salen de un nodo'))}\n${app.slice(app.indexOf('  const DUR_UNITS'), app.indexOf('  const numFmt'))}\nreturn { lineageOf, parseDur, normDur };`)(fold);
+  const dsLayer = v => { const k = fold(v).trim(), DLs = C.dataLayers || {}, AL = C.layerAliases || {}; return DLs[k] ? k : DLs[AL[k]] ? AL[k] : null; };
+  const dsClean = (raw, m) => DSM.cleanCatalog(raw, m || { nodes: [{ id: 'bi' }, { id: 'api' }], phases: [{ id: 'mvp' }, { id: 'wave1' }] }, { layer: dsLayer, classes: Object.keys(C.dataClasses || {}), normDur: DSD.normDur });
+  const dsFull = () => ({ id: 'DS-007', name: ' orders ', domain: 'Sales', layer: 'raw', description: 'Orders\r\nfrom ERP', owner: 'SH-003', steward: 'Ana', product: true, classes: ['pii', 'nope'], format: 'Delta', freshness: '4 h',
+    volume: { perDay: '2.5', retentionDays: 365 }, schema: [{ name: 'order_id', type: 'string', key: true }, { name: 'email', type: 'string', pii: true, nullable: false, desc: 'e-mail' }, { name: '  ' }],
+    quality: [{ rule: 'not_null', column: 'order_id', severity: 'high' }, { rule: 'range', param: '0..10' }, { rule: 'bogus' }], contract: { version: '1.0.0', status: 'agreed', consumers: ['bi', 'ghost', 'bi'], terms: 'Daily' }, phase: 'wave1' });
+  test('cleanCatalog keeps the fields of a dataset in canonical key order and normalizes them', () => {
+    const d = dsClean([dsFull()])[0];
+    eq(Object.keys(d), ['id', 'name', 'domain', 'layer', 'description', 'owner', 'steward', 'product', 'classes', 'format', 'freshness', 'volume', 'schema', 'quality', 'contract', 'phase'], 'keys');
+    eq([d.id, d.name, d.layer, d.description, d.classes, d.format, d.freshness, d.volume, d.phase], ['DS-007', 'orders', 'bronze', 'Orders\nfrom ERP', ['pii'], 'delta', '4h', { perDay: 2.5, retentionDays: 365 }, 'wave1'], 'values (alias raw → bronze, unknown class dropped, 4 h → 4h)');
+    eq(d.schema.map(c => Object.keys(c)), [['name', 'type', 'key'], ['name', 'type', 'pii', 'nullable', 'desc']], 'columns: nameless dropped, key order, nullable only when false');
+    eq(d.quality, [{ rule: 'not_null', column: 'order_id', severity: 'high' }, { rule: 'range', param: '0..10' }], 'unknown rule dropped');
+    eq(d.contract, { version: '1.0.0', status: 'agreed', consumers: ['bi'], terms: 'Daily' }, 'consumers must be nodes, no repeats');
+  });
+  test('cleanCatalog drops invalid values, duplicates by key, renumbers ids and enforces the limits', () => {
+    const r = dsClean([{ name: 'a', id: 'DS-002' }, { name: 'A ', id: 'DS-003' }, { name: 'b', id: 'DS-002' }, { name: 'c', id: 'nope' }, { name: '' }, null, 'x', { id: 'DS-009', name: 'd', freshness: 'soon', phase: 'ghost', format: 'xml', layer: 'nope', volume: { perDay: -1, retentionDays: 'x' }, contract: {} }]);
+    eq(r.map(d => [d.id, d.name]), [['DS-002', 'a'], ['DS-010', 'b'], ['DS-011', 'c'], ['DS-009', 'd']], 'later duplicates by name key dropped; duplicate and invalid ids renumbered after the highest');
+    eq(Object.keys(r[3]), ['id', 'name'], 'invalid duration, phase, format, layer, volume and empty contract are dropped');
+    eq(dsClean({}), [], 'not a list'); eq(dsClean(Array.from({ length: 600 }, (_, i) => ({ name: `d${i}` }))).length, 500, 'at most 500 datasets');
+    const big = dsClean([{ name: 'x'.repeat(200), domain: 'd'.repeat(90), schema: Array.from({ length: 400 }, (_, i) => ({ name: `c${i}`, type: 't'.repeat(60) })), quality: Array.from({ length: 150 }, () => ({ rule: 'unique' })) }])[0];
+    eq([big.name.length, big.domain.length, big.schema.length, big.schema[0].type.length, big.quality.length], [120, 60, 300, 40, 100], 'limits: name 120, domain 60, 300 columns, type 40, 100 rules');
+    eq(dsClean([{ name: 'k', contract: { status: 'agreed' } }])[0].contract, { version: '1.0.0', status: 'agreed' }, 'a contract without version gets 1.0.0');
+    eq(dsClean([{ name: 'v', volume: { retentionDays: 30.4 } }])[0].volume, { retentionDays: 30 }, 'volume keeps only what is valid');
+  });
+  test('absence is byte-identical: no datasets and no latency write no key in the JSON, the snapshot or the text', () => {
+    const base = { title: 't', groups: [], nodes: [{ id: 'a', label: 'A', type: 'generic', x: 0, y: 0 }], edges: [] };
+    eq(serializeM(base), serializeM({ ...base, datasets: [] }), 'JSON'); assert(!/dataset|latency/.test(serializeM(base)), 'no key in the JSON');
+    eq(JSON.stringify(snapshotM(base)), JSON.stringify(snapshotM({ ...base, datasets: [] })), 'snapshot'); assert(!JSON.stringify(snapshotM(base)).includes('datasets'), 'no key in the snapshot');
+    ['en', 'es'].forEach(l => { eq(TXT.stringify(base, l), TXT.stringify({ ...base, datasets: [] }, l), `text ${l}`); assert(!/dataset|conjunto|latency|latencia/.test(TXT.stringify(base, l)), `no dataset words in the text ${l}`); });
+    eq(DSM.datasetIssues({ ...base, edges: [{ id: 'e1', from: 'a', to: 'a', datasets: ['x'] }] }, { T: k => k, lineageOf: DSD.lineageOf, parseDur: DSD.parseDur }), [], 'no findings when the diagram declares no dataset');
+  });
+  test('the JSON writes datasets right after phases, with the field order of each part, and the snapshot keeps them', () => {
+    const m = { title: 't', phases: [{ id: 'mvp', name: 'MVP' }, { id: 'wave1', name: 'W1' }], groups: [], nodes: [{ id: 'bi', label: 'BI', type: 'generic', x: 0, y: 0 }], edges: [{ id: 'e1', from: 'bi', to: 'bi', latency: '1h', datasets: ['orders'] }], datasets: dsClean([dsFull()]) };
+    const j = serializeM(m);
+    assert(j.indexOf('"phases"') < j.indexOf('"datasets"') && j.indexOf('"datasets"') < j.indexOf('"groups"'), 'datasets between phases and groups');
+    assert(j.includes('{ "id": "DS-007", "name": "orders", "domain": "Sales", "layer": "bronze"'), 'dataset key order');
+    assert(j.includes('"schema": [{"name":"order_id","type":"string","key":true},{"name":"email","type":"string","pii":true,"nullable":false,"desc":"e-mail"}]'), 'column key order');
+    assert(j.includes('"contract": {"version":"1.0.0","status":"agreed","consumers":["bi"],"terms":"Daily"}') && j.includes('"volume": {"perDay":2.5,"retentionDays":365}'), 'contract and volume key order');
+    assert(j.includes('"datasets": ["orders"], "latency": "1h"'), 'latency right after the edge datasets');
+    eq(snapshotM(m).datasets, m.datasets, 'the snapshot keeps the datasets (versions)'); eq(JSON.parse(j).datasets, m.datasets, 'the JSON round trips');
+  });
+  // erp → cdc → lake → bi (15m + 1h + 4h) y un atajo erp → lake → bi (sin latencia en el primer salto)
+  const dsLat = () => ({ nodes: ['erp', 'cdc', 'lake', 'bi', 'api'].map(id => ({ id })), datasets: [{ id: 'DS-001', name: 'orders', freshness: '4h' }, { id: 'DS-002', name: 'stock' }],
+    edges: [{ id: 'e1', from: 'erp', to: 'cdc', datasets: ['Orders'], latency: '15m' }, { id: 'e2', from: 'cdc', to: 'lake', datasets: ['orders', 'stock'], latency: '1h' }, { id: 'e3', from: 'lake', to: 'bi', datasets: ['orders'], latency: '4h' },
+      { id: 'e4', from: 'erp', to: 'lake', datasets: ['orders'] }, { id: 'e5', from: 'lake', to: 'api', datasets: ['ghost'] }] });
+  const e2e = (m, n) => DSM.e2eFreshness(m, n, DSD);
+  const MIN = 60000;
+  test('catalog lists the declared datasets first, then the undeclared names used on connections', () => {
+    const c = DSM.catalog(dsLat());
+    eq(c.map(x => [x.name, x.declared, x.edges]), [['orders', true, 4], ['stock', true, 1], ['ghost', false, 1]], 'order and counts');
+    eq(c[0].nodes.sort(), ['bi', 'cdc', 'erp', 'lake'], 'nodes touched'); assert(c[0].ds && c[2].ds === null, 'ds is null when undeclared'); eq(c[0].key, 'orders', 'key');
+    const m = { nodes: [], edges: [{ id: 'a', from: 'x', to: 'y', datasets: ['b', 'a'] }, { id: 'b', from: 'x', to: 'y', datasets: ['B'] }, { id: 'c', from: 'x', to: 'y', datasets: ['c'] }] };
+    eq(DSM.catalog(m).map(x => x.name), ['b', 'a', 'c'], 'undeclared: by use, then alphabetical');
+  });
+  test('e2eFreshness takes the slowest path and compares it with the SLA (fail, pass, unknown)', () => {
+    const m = dsLat(), r = e2e(m, 'orders');
+    eq([r.worst, r.path, r.hops, r.unknownHops, r.sla, r.state], [(15 + 60 + 240) * MIN, ['erp', 'cdc', 'lake', 'bi'], 3, 0, 240 * MIN, 'fail'], 'slowest path breaks the 4h SLA');
+    m.datasets[0].freshness = '6h'; eq(e2e(m, 'orders').state, 'pass', 'within the SLA');
+    delete m.datasets[0].freshness; eq([e2e(m, 'orders').state, e2e(m, 'orders').sla, e2e(m, 'orders').worst], ['unknown', null, (15 + 60 + 240) * MIN], 'no SLA = unknown, the time is still computed');
+    eq(e2e(m, 'ghost').state, 'unknown', 'undeclared dataset'); eq(e2e(m, 'nope').worst, null, 'a dataset on no connection');
+  });
+  test('e2eFreshness counts hops without latency as 0 and reports them; with no latency at all it is unknown', () => {
+    const m = dsLat(); delete m.edges[1].latency;
+    const r = e2e(m, 'orders');
+    eq([r.worst, r.hops, r.unknownHops, r.path], [(15 + 240) * MIN, 3, 1, ['erp', 'cdc', 'lake', 'bi']], 'a missing latency adds 0 and is counted');
+    m.edges.forEach(e => delete e.latency);
+    const u = e2e(m, 'orders'); eq([u.worst, u.state, u.sla], [null, 'unknown', 240 * MIN], 'every hop unknown = no figure');
+    m.edges[0].latency = 'soon'; eq(e2e(m, 'orders').unknownHops >= 1, true, 'an invalid latency counts as unknown');
+  });
+  test('e2eFreshness follows both-way connections and does not hang on cycles', () => {
+    const b = { nodes: ['s', 'm', 't'].map(id => ({ id })), datasets: [{ id: 'DS-001', name: 'k', freshness: '2h' }], edges: [{ id: 'e1', from: 's', to: 'm', datasets: ['k'], latency: '1h' }, { id: 'e2', from: 't', to: 'm', datasets: ['k'], latency: '2h', both: true }] };
+    const r = e2e(b, 'k'); eq([r.worst, r.path, r.state], [3 * 3600000, ['s', 'm', 't'], 'fail'], 'm → t works because the edge is both-way');
+    const c = { nodes: ['a', 'b', 'c'].map(id => ({ id })), datasets: [{ id: 'DS-001', name: 'loop', freshness: '1d' }], edges: [{ id: 'e1', from: 'a', to: 'b', datasets: ['loop'], latency: '1h' }, { id: 'e2', from: 'b', to: 'c', datasets: ['loop'], latency: '2h' }, { id: 'e3', from: 'c', to: 'a', datasets: ['loop'], latency: '3h' }] };
+    const k = e2e(c, 'loop'); eq([k.hops <= 2, k.state], [true, 'pass'], 'a pure cycle ends and uses simple paths');
+    const self = { nodes: [{ id: 'a' }], datasets: [{ id: 'DS-001', name: 'z' }], edges: [{ id: 'e1', from: 'a', to: 'a', datasets: ['z'], latency: '1h' }] }; eq(e2e(self, 'z').worst, null, 'a self-loop is not a hop');
+  });
+  test('storageEstimate multiplies per-day volume by retention (365 by default) and prices it by layer', () => {
+    const h = { prices: { default: 0.023, bronze: 0.02 } };
+    eq(DSM.storageEstimate({ layer: 'silver', volume: { perDay: 2, retentionDays: 100 } }, h), { gb: 200, price: 0.023, monthly: 200 * 0.023 }, 'default price');
+    eq(DSM.storageEstimate({ layer: 'bronze', volume: { perDay: 1 } }, h), { gb: 365, price: 0.02, monthly: 365 * 0.02 }, 'bronze price, 365 days');
+    eq(DSM.storageEstimate({ volume: { retentionDays: 30 } }, h), null, 'no per-day volume'); eq(DSM.storageEstimate({}, h), null, 'no volume'); eq(DSM.storageEstimate({ volume: { perDay: 1 } }, {}).price, 0, 'no prices = 0');
+    eq(DSM.storageEstimate({ volume: { perDay: 0 } }, h).gb, 0, 'zero is a figure');
+  });
+  const issuesH = { T: (k, v) => (v ? `${k} ${JSON.stringify(v)}` : k), lineageOf: DSD.lineageOf, parseDur: DSD.parseDur, sensitive: k => k === 'pii', short: k => k.toUpperCase(), fmtDur: s => `${s}s`, edgeName: e => `${e.from}>${e.to}`, nodeName: id => id };
+  const kinds = (m, h = issuesH) => DSM.datasetIssues(m, h).map(f => `${f.id}|${f.severity}`).sort();
+  test('datasetIssues: freshness, undocumented, product without owner or contract, PII, consumers and quality', () => {
+    const m = dsLat();
+    eq(kinds(m), ['data:freshness:DS-001|high', 'data:undocumented:ghost|low'], 'orders breaks its 4h SLA; ghost is used on a connection but not declared');
+    const f = DSM.datasetIssues(m, issuesH).find(x => x.rule === 'freshness');
+    eq([f.source, f.target, f.title, f.detail.includes('"real":"18900s"') && f.detail.includes('"sla":"14400s"')], ['data', { kind: 'edge', id: 'e1' }, 'ds.find.freshness {"id":"DS-001","name":"orders"}', true], 'finding shape with real time and SLA');
+    m.datasets.push({ id: 'DS-003', name: 'gold_sales', layer: 'gold', product: true }, { id: 'DS-004', name: 'customers', product: true, owner: 'SH-001', contract: { version: '1.0.0', status: 'draft' }, quality: [{ rule: 'unique' }] });
+    eq(kinds(m).filter(x => /product-owner|no-quality/.test(x)), ['data:no-quality:DS-003|low', 'data:product-owner:DS-003|medium'], 'a gold product with no owner, contract or rules');
+    m.datasets[0].schema = [{ name: 'email', pii: true }]; eq(kinds(m).includes('data:pii-class:DS-001|medium'), true, 'PII column without the pii class');
+    m.datasets[0].classes = ['pii']; assert(!kinds(m).some(x => x.startsWith('data:pii-class')), 'with the class the notice goes'); assert(!kinds(m).some(x => x.startsWith('data:pii-unencrypted')), 'not unencrypted yet');
+    m.edges[1].encrypted = false; eq(kinds(m).includes('data:pii-unencrypted:DS-001|high'), true, 'sensitive class on an unencrypted connection');
+    m.datasets[0].contract = { version: '1.0.0', status: 'agreed', consumers: ['bi', 'api'] }; eq(kinds(m).includes('data:consumer-unreached:DS-001|low'), true, 'api is not on the lineage of orders');
+    m.datasets[0].contract.consumers = ['bi']; assert(!kinds(m).some(x => x.startsWith('data:consumer-unreached')), 'bi is');
+  });
+  test('renameDataset renames the dataset and its names on connections, and refuses a clash', () => {
+    const m = dsLat(), r = DSM.renameDataset(m, 'DS-001', 'Sales Orders');
+    eq([r.datasets[0].name, r.edges[0].datasets, r.edges[1].datasets, r.edges[4].datasets], ['Sales Orders', ['Sales Orders'], ['Sales Orders', 'stock'], ['ghost']], 'dataset and every spelling of its key on edges; other names stay');
+    eq(m.datasets[0].name, 'orders', 'the original is not touched'); assert(r !== m, 'a new model');
+    assert(DSM.renameDataset(m, 'DS-001', ' STOCK ') === m, 'clashes with another declared dataset (by key)'); assert(DSM.renameDataset(m, 'DS-999', 'x') === m, 'unknown id'); assert(DSM.renameDataset(m, 'DS-001', '  ') === m, 'empty name');
+    eq(DSM.renameDataset(m, 'DS-001', 'ORDERS').datasets[0].name, 'ORDERS', 'a change of case is allowed');
+  });
+  const dsTextDoc = lang => (lang === 'en'
+    ? ['title: Lake', 'phase wave1: "Wave 1"', '', 'erp: ERP', 'lake: Lake', 'bi: BI', 'erp -> lake : load datasets=orders latency=1h', '',
+      'dataset DS-001 orders: layer=silver domain=Sales owner=SH-003 product=yes classes=pii format=delta freshness=1h per_day=2 retention=365 phase=wave1 steward="Ana Pérez" desc="Orders from ERP"',
+      '  column order_id: string key', '  column email: string pii nullable=no desc="Customer e-mail"', '  column "unit price": "decimal(10, 2)"', '  rule not_null order_id severity=high', '  rule range amount param="0..1000000"',
+      '  contract 1.0.0 status=agreed consumers=bi terms="Daily by 06:00"']
+    : ['título: Lago', 'fase wave1: "Ola 1"', '', 'erp: ERP', 'lake: Lago', 'bi: BI', 'erp -> lake : carga tablas=orders latencia=1h', '',
+      'conjunto DS-001 orders: capa=plata dominio=Ventas dueño=SH-003 producto=sí clases=pii formato=delta frescura=1h por_dia=2 retencion=365 fase=wave1 responsable="Ana Pérez" desc="Pedidos del ERP"',
+      '  columna order_id: string clave', '  columna email: string pii nulo=no desc="Correo del cliente"', '  columna "unit price": "decimal(10, 2)"', '  regla not_null order_id severidad=alta', '  regla range amount param="0..1000000"',
+      '  contrato 1.0.0 estado=acordado consumidores=bi terminos="Diario antes de las 06:00"']).join('\n');
+  test('text syntax: datasets, columns, rules, contract and edge latency parse and round trip exactly · en and es', () => {
+    ['en', 'es'].forEach(lang => {
+      const r = TXT.parse(dsTextDoc(lang), textCtx(lang));
+      eq(r.errors, [], `parse errors (${lang})`);
+      const d = r.model.datasets[0];
+      eq([d.id, d.name, d.layer, d.domain, d.owner, d.product, d.classes, d.format, d.freshness, d.volume, d.phase, d.steward], ['DS-001', 'orders', 'silver', lang === 'en' ? 'Sales' : 'Ventas', 'SH-003', true, ['pii'], 'delta', '1h', { perDay: 2, retentionDays: 365 }, 'wave1', 'Ana Pérez'], `fields (${lang})`);
+      eq(d.schema, [{ name: 'order_id', type: 'string', key: true }, { name: 'email', type: 'string', pii: true, nullable: false, desc: lang === 'en' ? 'Customer e-mail' : 'Correo del cliente' }, { name: 'unit price', type: 'decimal(10, 2)' }], `columns (${lang})`);
+      eq(d.quality, [{ rule: 'not_null', column: 'order_id', severity: 'high' }, { rule: 'range', column: 'amount', param: '0..1000000' }], `rules (${lang})`);
+      eq(d.contract, { version: '1.0.0', status: 'agreed', consumers: ['bi'], terms: lang === 'en' ? 'Daily by 06:00' : 'Diario antes de las 06:00' }, `contract (${lang})`);
+      eq(r.model.edges[0].latency, '1h', `edge latency (${lang})`);
+      const t = TXT.stringify(r.model, lang);
+      assert(t.includes(lang === 'en' ? 'latency=1h' : 'latencia=1h'), `latency written (${lang})`);
+      eq(t, TXT.stringify(TXT.parse(t, textCtx(lang)).model, lang), `stable round trip (${lang})`);
+      eq(TXT.parse(t, textCtx(lang)).errors, [], `no errors after the round trip (${lang})`);
+      eq(TXT.parse(t, textCtx(lang)).model.datasets, r.model.datasets, `same datasets (${lang})`);
+    });
+    const en = TXT.stringify(TXT.parse(dsTextDoc('en'), textCtx('en')).model, 'en'), es = TXT.stringify(TXT.parse(dsTextDoc('en'), textCtx('en')).model, 'es');
+    assert(es.includes('conjunto DS-001 orders: capa=plata') && es.includes('  columna order_id: string clave') && es.includes('estado=acordado') && es.includes('  regla not_null order_id severidad=alta'), 'the same model written in Spanish');
+    assert(en.includes('dataset DS-001 orders: layer=silver') && en.includes('  contract 1.0.0 status=agreed consumers=bi'), 'and in English');
+    eq(TXT.parse(es, textCtx('es')).model.datasets, TXT.parse(en, textCtx('en')).model.datasets, 'en and es describe the same datasets');
+  });
+  test('text syntax: errors carry the line number (unknown phase, class, layer, rule, format, consumer, duration, status, duplicates)', () => {
+    const bad = [['dataset DS-001 a: phase=ghost', 1, 'phase'], ['dataset DS-001 a: classes=nope', 1, 'class'], ['dataset DS-001 a: layer=platinum', 1, 'layer'], ['dataset DS-001 a: format=xml', 1, 'format'], ['dataset DS-001 a: freshness=soon', 1, 'duration'],
+      ['dataset DS-001 a: per_day=-1', 1, 'volume'], ['dataset DS-001 a: product=maybe', 1, 'product'], ['dataset x a:', 1, 'id'], ['dataset DS-001 a:\n  rule bogus col', 2, 'rule'], ['dataset DS-001 a:\n  rule not_null c severity=critical', 2, 'severity'],
+      ['dataset DS-001 a:\n  contract 1.0.0 status=done', 2, 'status'], ['dataset DS-001 a:\n  contract 1.0.0 consumers=ghost', 2, 'consumer'], ['dataset DS-001 a:\n\ndataset DS-001 b:', 3, 'duplicate id'], ['dataset DS-001 a:\ndataset DS-002 A:', 2, 'duplicate name'],
+      ['column x: string', 1, 'column outside a dataset'], ['a: A\nb: B\na -> b : x latency=soon', 3, 'latency']];
+    bad.forEach(([src, line, what]) => {
+      const e = TXT.parse(src, textCtx('en')).errors; assert(e.length >= 1 && e.some(x => x.line === line), `${what}: expected an error on line ${line}, got ${JSON.stringify(e)}`);
+    });
+    const es = TXT.parse('conjunto DS-001 a: fase=nada clases=nope', textCtx('es')).errors; assert(es.length === 2 && /fase desconocida/.test(es.map(x => x.msg).join('|')) && /desconocida/.test(es.map(x => x.msg).join('|')), `Spanish messages: ${JSON.stringify(es)}`);
+  });
+  test('phaseModel keeps the datasets present at the phase (no phase = always)', () => {
+    const m = { phases: phList(), groups: [], nodes: [], edges: [], datasets: [{ id: 'DS-001', name: 'a' }, { id: 'DS-002', name: 'b', phase: 'wave1' }, { id: 'DS-003', name: 'c', phase: 'wave2' }] };
+    eq([0, 1, 2].map(i => PHM.phaseModel(m, i).datasets.map(d => d.name)), [['a'], ['a', 'b'], ['a', 'b', 'c']], 'datasets by phase'); eq(PHM.phaseModel(m, -1), m, 'All = the same model');
+    assert(!('datasets' in PHM.phaseModel({ phases: phList(), groups: [], nodes: [], edges: [] }, 1)), 'without datasets the model has no key');
+  });
+  test('wiring: normalize, findings source, edge field, API and i18n for datasets', () => {
+    ['cleanCatalog(raw.datasets, m, dsHelpers())', "addFindingSource('data'", 'data-lat', 'catalog: catalogApi', 'dataset: v =>', 'addDataset', 'updateDataset', 'removeDataset', 'renameDataset: renameDatasetApi', 'freshness: freshnessApi', 'storage: storageApi',
+      "'latency', 'transferOk'", 'raw = { ...raw, datasets: S.model.datasets }', 'datasets: () => datasetList()', 'lineage: ds =>'].forEach(k => assert(app.includes(k), `app has ${k}`));
+    assert(read('src/text-lang.js').includes('latency|latencia'), 'the text edge options know latency');
+    const i18n = read('src/i18n.js'), used = [...new Set([...app.matchAll(/T\('(ds\.[\w.]+)'/g)].map(m => m[1]))];
+    ['find.src.data', ...used, 'ds.find.noOwner', 'ds.find.noContract', 'ds.find.ownerContract'].forEach(k => assert(i18n.split(`'${k}':`).length === 3, `${k} is defined once in en and once in es`));
+    const keys = [...i18n.matchAll(/'(ds\.[\w.]+)':/g)].map(m => m[1]); assert(keys.every(k => keys.filter(x => x === k).length === 2), 'every ds.* key is defined exactly once per language');
+  });
+
   /* ---------- resumen ---------- */
   print(`\n${pass} passed, ${fail} failed`);
   return finish(fail === 0);
