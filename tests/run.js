@@ -37,7 +37,7 @@
   // src/adr-kits.js puede faltar (kits de decisiones opcionales): solo ese archivo se carga con tolerancia
   const load = p => { try { new Function('window', 'localStorage', 'document', read(p))(win, storage, doc); } catch (e) { if (p !== 'src/adr-kits.js') throw e; } };
   ['src/config.js', 'src/i18n.js', 'assets/icons/aws.js', 'assets/icons/azure.js', 'assets/icons/gcp.js', 'assets/icons/sap.js', 'assets/icons/fabric.js', 'assets/icons/logos.js',
-    'src/text-lang.js', 'src/adr-kits.js', 'src/examples.js', 'src/iac.js', 'src/export/mermaid.js', 'src/export/plantuml.js', 'src/export/datacontract.js', 'src/export/drawio.js', 'src/export/xlsx.js'].forEach(load);
+    'src/text-lang.js', 'src/adr-kits.js', 'src/examples.js', 'src/iac.js', 'src/dbt.js', 'src/export/mermaid.js', 'src/export/plantuml.js', 'src/export/datacontract.js', 'src/export/drawio.js', 'src/export/xlsx.js'].forEach(load);
   const C = win.DIAGRAMON_CONFIG, TXT = win.DiagramonText, IAC = win.DiagramonIaC, EXP = win.DiagramonExport, XLSX = win.DiagramonXlsx, DC = win.DiagramonContract;
 
   /* ---------- mini marco de pruebas ---------- */
@@ -1268,6 +1268,120 @@
     eq(PHM.phaseStats(m, 2, h).datasets, 3, 'stats count');
     const none = PHM.phaseRows({ ...phDoc(), datasets: [{ id: 'DS-001', name: 'a' }] }, h); eq(none.map(x => [x.datasets, x.storage]), [[1, null], [1, null], [1, null]], 'no volume → storage null');
     eq(PHM.phaseRows(phDoc(), h).map(x => [x.datasets, x.storage]), [[0, null], [0, null], [0, null]], 'no datasets');
+  });
+
+  /* ======================================================================
+     dbt: importar un manifest (src/dbt.js)
+     ====================================================================== */
+  section('dbt manifest import');
+  const DBT = win.DiagramonDbt, dbtText = read('samples/dbt/manifest.json'), dbtMan = JSON.parse(dbtText);
+  const dbtCat = (m = dbtMan, cfg) => DBT.toCatalog(m, cfg), dbtBy = (r, n) => r.datasets.find(d => d.name === n);
+  test('detect: dbt manifests yes; Diagramon JSON, Terraform, other JSON and IaC files keep their own path', () => {
+    assert(DBT.detect(dbtText, 'manifest.json') && DBT.detect(dbtMan), 'sample detected (text and object)');
+    assert(DBT.detect('{"metadata":{"dbt_schema_version":"https://schemas.getdbt.com/dbt/manifest/v10.json"}}'), 'v10');
+    assert(!DBT.detect('{"metadata":{"dbt_schema_version":"https://schemas.getdbt.com/dbt/run-results/v5.json"}}'), 'run-results is not a manifest');
+    assert(!DBT.detect('{"nodes":[],"edges":[]}') && !DBT.detect('{"a":1}') && !DBT.detect('not json') && !DBT.detect(null), 'other JSON');
+    ['samples/aws-data-lake/terraform-show.json', 'samples/aws-data-lake/cloudformation.yaml', 'samples/kubernetes/shop.yaml', 'samples/docker-compose/docker-compose.yml'].forEach(f => {
+      const t = read(f); assert(!DBT.detect(t) && IAC.detect(t, f.split('/').pop()), `${f} still goes to the IaC importer`);
+    });
+    assert(!IAC.detect(dbtText, 'manifest.json'), 'the IaC importer does not claim the manifest');
+  });
+  test('parse: caps on size and objects, bad input, sparse manifests never throw', () => {
+    eq(Object.keys(DBT.parse(dbtText)), ['manifest'], 'ok');
+    eq(DBT.parse('x'.repeat(21 * 1024 * 1024)).error, 'big', 'over 20 MB'); eq(DBT.parse('{oops').error, 'bad', 'bad json'); eq(DBT.parse('{"a":1}').error, 'bad', 'not a manifest'); eq(DBT.parse(null).error, 'bad', 'null');
+    const nodes = {}; for (let i = 0; i < 5001; i++) nodes[`model.p.m${i}`] = { resource_type: 'model', name: `m${i}` };
+    eq(DBT.parse(JSON.stringify({ metadata: dbtMan.metadata, nodes })).error, 'many', 'over 5,000 objects');
+    ['{}', '{"nodes":null}', '{"nodes":{"a":null,"b":{"resource_type":"model"},"c":{"resource_type":"test","depends_on":null}},"sources":{"s":5},"exposures":{"e":{}},"groups":[]}'].forEach(x => {
+      const m = { metadata: dbtMan.metadata, ...JSON.parse(x) };
+      assert(Array.isArray(DBT.toCatalog(m).datasets), x); assert(DBT.toDiagram(m).diagram.nodes.length >= 1, 'diagram of a sparse manifest');
+    });
+  });
+  test('sample: datasets, names, layers; ephemeral, old versions and tests are not datasets; seeds are bronze', () => {
+    const r = dbtCat();
+    eq(r.project, 'shop_analytics', 'project');
+    eq(r.datasets.map(d => d.name).sort(), ['country_codes', 'customers', 'dim_customers', 'fct_orders', 'int_orders_payments', 'orders', 'payments', 'refunds', 'stg_customers', 'stg_orders', 'stg_payments', 'stg_refunds'], 'names (source tables use the table name)');
+    eq(Object.fromEntries(r.datasets.map(d => [d.name, d.layer]).sort((a, b) => a[0].localeCompare(b[0]))), Object.fromEntries(Object.entries({ orders: 'bronze', customers: 'bronze', payments: 'bronze', refunds: 'bronze', country_codes: 'bronze', stg_orders: 'silver', stg_customers: 'silver', stg_payments: 'silver', stg_refunds: 'silver', int_orders_payments: 'silver', fct_orders: 'gold', dim_customers: 'gold' }).sort((a, b) => a[0].localeCompare(b[0]))), 'layers by rule');
+    eq(r.warnings.filter(w => w.code === 'versions').map(w => w.n), [1], 'the older version of dim_customers is skipped and reported');
+    assert(!dbtBy(r, 'int_dedupe_payments'), 'ephemeral model skipped');
+    eq([r.stats.datasets, r.stats.columns, r.stats.rules, r.stats.exposures, r.stats.byLayer.bronze, r.stats.byLayer.silver, r.stats.byLayer.gold], [12, 28, 11, 2, 5, 5, 2], 'stats');
+  });
+  test('sample: columns, key, nullable, pii, class, domain, owner from the group, product and contract', () => {
+    const r = dbtCat(), fo = dbtBy(r, 'fct_orders'), dc = dbtBy(r, 'dim_customers'), sc = dbtBy(r, 'stg_customers');
+    eq(fo.schema.map(c => c.name), ['order_id', 'customer_id', 'ordered_at', 'net_revenue'], 'columns in order');
+    eq(fo.schema[0], { name: 'order_id', type: 'string', key: true, nullable: false, desc: 'Order key' }, 'primary_key constraint → key + not null');
+    eq(dc.schema.find(c => c.name === 'customer_id'), { name: 'customer_id', type: 'string', key: true, nullable: false, desc: 'Customer key' }, 'unique + not_null tests → key');
+    eq(dc.schema.find(c => c.name === 'email').pii, true, 'meta.pii'); eq(dc.classes, ['pii'], 'class pii'); eq(sc.classes, ['pii'], 'a pii column alone gives the class'); assert(!fo.classes, 'no pii, no class');
+    eq(dbtBy(r, 'stg_orders').schema.find(c => c.name === 'order_id').key, true, 'unique + not_null on a staging model');
+    assert(fo.description.startsWith('One row per order'), 'description');
+    eq([fo.domain, dc.domain], ['Sales', 'finance_analytics'], 'domain: meta.domain, else the group');
+    eq([dbtBy(r, 'stg_orders').domain, dbtBy(r, 'orders').domain], ['shop', undefined], 'domain: top folder under models/ (none for sources)');
+    eq([fo.owner, dc.owner], ['Sales analytics', 'Data Platform Team'], 'owner: meta.owner, else the group owner');
+    eq([fo.product, dc.product, dbtBy(r, 'stg_orders').product], [true, true, undefined], 'access: public → product');
+    eq([fo.contract, dc.contract], [{ version: '1.0.0', status: 'agreed' }, { version: '2', status: 'agreed' }], 'contract: enforced; version from latest_version');
+    eq(dbtBy(r, 'stg_orders').contract, undefined, 'no contract when not enforced');
+    const sh = dbtCat(dbtMan, { stakeholders: [{ id: 'SH-004', name: 'data platform TEAM' }] }); eq(dbtBy(sh, 'dim_customers').owner, 'SH-004', 'owner matches a stakeholder by name, any case');
+    eq(dbtBy(r, 'orders').format, 'delta', 'default format');
+  });
+  test('sample: quality rules for each kind of test, severity and the relationships parameter', () => {
+    const r = dbtCat(), q = n => dbtBy(r, n).quality;
+    eq(q('fct_orders'), [{ rule: 'not_null', severity: 'high', column: 'order_id' }, { rule: 'unique', severity: 'high', column: 'order_id' }, { rule: 'custom', severity: 'high', column: 'customer_id', param: '→ dim_customers.customer_id' }, { rule: 'custom', severity: 'medium', param: 'dbt_utils.expression_is_true' }], 'not_null, unique, relationships, a dbt_utils test (warn → medium)');
+    eq(q('dim_customers').find(x => x.rule === 'accepted_values'), { rule: 'accepted_values', severity: 'medium', column: 'segment', param: 'new,regular,vip' }, 'accepted_values joins with commas');
+    eq(q('stg_refunds'), [{ rule: 'custom', severity: 'high', param: 'assert_no_negative_refunds' }], 'singular test → custom with its name');
+    eq(q('stg_customers'), [{ rule: 'not_null', severity: 'medium', column: 'email' }], 'warn → medium');
+    eq(dbtCat(dbtMan, { severity: { error: 'low', warn: 'low' } }).datasets.find(d => d.name === 'fct_orders').quality.map(x => x.severity), ['low', 'low', 'low', 'low'], 'severity map is configurable');
+    const many = JSON.parse(dbtText); for (let i = 0; i < 120; i++) many.nodes[`test.shop_analytics.t${i}`] = { resource_type: 'test', name: `t${i}`, attached_node: 'model.shop_analytics.fct_orders', test_metadata: { name: 'not_null', kwargs: { column_name: `c${i}` } } };
+    const mr = dbtCat(many); eq(dsClean(mr.datasets).find(d => d.name === 'fct_orders').quality.length, 100, '100-rule cap'); assert(mr.warnings.some(w => w.code === 'cap.rules'), 'cap reported');
+  });
+  test('sample: freshness from error_after, else warn_after; periods map to m / h / d', () => {
+    const r = dbtCat();
+    eq(['orders', 'customers', 'payments', 'refunds', 'stg_orders'].map(n => dbtBy(r, n).freshness), ['12h', '12h', '1d', '1d', undefined], 'error_after wins; warn_after when error_after is empty');
+    const m = JSON.parse(dbtText); m.sources['source.shop_analytics.shop.orders'].freshness = { error_after: { count: 30, period: 'minute' } }; eq(dbtBy(dbtCat(m), 'orders').freshness, '30m', 'minutes');
+    eq(dsClean(r.datasets).find(d => d.name === 'orders').freshness, '12h', 'accepted by the data model');
+  });
+  test('layer rules are configurable; unknown layer stays empty and is reported; name clashes are resolved; 500-dataset cap', () => {
+    const r = dbtCat(dbtMan, { layerRules: [{ layer: 'gold', prefixes: ['stg_'] }] });
+    eq([dbtBy(r, 'stg_orders').layer, dbtBy(r, 'fct_orders').layer], ['gold', undefined], 'config rules replace the defaults'); assert(r.warnings.some(w => w.code === 'layer' && w.n >= 1), 'unknown layer warning');
+    const m = JSON.parse(dbtText); m.nodes['model.shop_analytics.orders'] = { resource_type: 'model', name: 'orders', package_name: 'shop_analytics', original_file_path: 'models/marts/orders.sql', depends_on: { nodes: [] }, config: {}, columns: {} };
+    const names = dbtCat(m).datasets.map(d => d.name); assert(names.includes('orders') && names.includes('shop__orders'), `a source whose name clashes becomes source_name__name: ${names}`);
+    const big = { metadata: dbtMan.metadata, nodes: {} }; for (let i = 0; i < 600; i++) big.nodes[`model.p.stg_${i}`] = { resource_type: 'model', name: `stg_${i}`, package_name: 'p' };
+    const br = dbtCat(big); eq(br.datasets.length, 500, 'at most 500 datasets'); assert(br.warnings.some(w => w.code === 'cap.datasets' && w.n === 100), 'dataset cap reported');
+  });
+  test('merge: keeps what dbt does not know, replaces what it knows, ids stay, second import changes nothing', () => {
+    const inc = dbtCat().datasets, m1 = { nodes: [{ id: 'bi' }], phases: [] };
+    const first = dsClean(DBT.merge([], inc), m1); eq(first.length, 12, 'all added'); assert(first.every(d => !('fmtDefault' in d)), 'no helper fields leak');
+    const mine = first.map(d => d.name === 'fct_orders' ? { ...d, steward: 'Ana', volume: { perDay: 2 }, contract: { ...d.contract, consumers: ['bi'], terms: 'Daily' }, format: 'iceberg', owner: 'Me', description: 'old' } : d.name === 'stg_orders' ? { ...d, owner: 'Kept owner' } : d).concat([{ id: 'DS-099', name: 'not_in_dbt', layer: 'gold', description: 'mine' }]);
+    const merged = dsClean(DBT.merge(mine, inc), m1), by = n => merged.find(d => d.name === n);
+    eq([by('fct_orders').steward, by('fct_orders').volume, by('fct_orders').format, by('fct_orders').contract.consumers, by('fct_orders').contract.terms], ['Ana', { perDay: 2 }, 'iceberg', ['bi'], 'Daily'], 'steward, volume, format (default does not override), consumers and terms stay');
+    eq([by('fct_orders').description.startsWith('One row'), by('fct_orders').owner], [true, 'Sales analytics'], 'description and owner from dbt replace');
+    eq(by('stg_orders').owner, 'Kept owner', 'a user owner stays when dbt has none'); eq(by('not_in_dbt').description, 'mine', 'datasets not in dbt are untouched');
+    eq(merged.length, 13, 'count'); eq(by('fct_orders').id, mine.find(d => d.name === 'fct_orders').id, 'ids are kept');
+    eq(dsClean(DBT.merge(merged, inc), m1), merged, 'second import changes nothing');
+    const m2 = JSON.parse(dbtText); m2.nodes['model.shop_analytics.stg_orders'].description = 'Changed'; const upd = dsClean(DBT.merge(merged, dbtCat(m2).datasets), m1);
+    eq(upd.filter((d, i) => JSON.stringify(d) !== JSON.stringify(merged[i])).map(d => d.name), ['stg_orders'], 'only the changed dataset is updated');
+  });
+  test('new diagram: bounded components, the lineage of every dataset runs from its source system to its exposures', () => {
+    const r = DBT.toDiagram(dbtMan), d = r.diagram, node = id => d.nodes.find(n => n.id === id);
+    assert(d.nodes.length <= 12 && d.nodes.length >= 8, `node count bounded: ${d.nodes.length}`); eq(d.title, 'shop_analytics', 'title = project');
+    eq(d.groups.filter(g => g.layer).map(g => g.layer), ['bronze', 'silver', 'gold'], 'one group per layer, tagged with the layer');
+    eq(d.nodes.filter(n => n.id.startsWith('src_')).map(n => n.label).sort(), ['dbt seeds', 'payments_api', 'shop'], 'one component per source system (seeds in their own)');
+    eq(d.nodes.filter(n => n.id.startsWith('ex_')).map(n => [n.label, n.type]), [['Sales dashboard', 'user'], ['Churn model', 'ai']], 'exposures by type'); assert(node('dbt'), 'one dbt component');
+    const lin = n => DSD.lineageOf(d, n), src = new Set(d.nodes.filter(x => x.id.startsWith('src_')).map(x => x.id)), ex = new Set(d.nodes.filter(x => x.id.startsWith('ex_')).map(x => x.id));
+    const expect = { orders: ['shop', 'ex_sales_dashboard'], customers: ['shop', 'ex_churn_model'], fct_orders: ['shop', 'ex_sales_dashboard'], dim_customers: ['shop', 'ex_churn_model'], stg_orders: ['shop', 'ex_sales_dashboard'], refunds: ['payments_api', 'ex_sales_dashboard'] };
+    Object.entries(expect).forEach(([n, [s, e]]) => { const l = lin(n); assert(l, `${n} has lineage`); assert(l.origins.some(o => node(o).label === s) && l.origins.every(o => src.has(o)), `${n} starts at ${s}: ${l.origins}`); assert(l.consumers.includes(e) && l.consumers.every(c => ex.has(c)), `${n} ends at ${e}: ${l.consumers}`); });
+    eq(lin('dim_customers').consumers.sort(), ['ex_churn_model', 'ex_sales_dashboard'], 'dim_customers feeds both exposures');
+    assert(lin('country_codes').origins.length === 1 && node(lin('country_codes').origins[0]).label === 'dbt seeds', 'a seed starts at the seeds component');
+    eq(r.datasets.find(x => x.name === 'fct_orders').contract.consumers, ['ex_sales_dashboard'], 'contract consumers = exposure component ids');
+    eq(r.datasets.find(x => x.name === 'dim_customers').contract.consumers.sort(), ['ex_churn_model', 'ex_sales_dashboard'], 'contract consumers, second dataset');
+    eq(dsClean(r.datasets, { nodes: d.nodes, phases: [] }).find(x => x.name === 'fct_orders').contract.consumers, ['ex_sales_dashboard'], 'consumers survive the data model');
+    const big = { metadata: dbtMan.metadata, nodes: {}, sources: {} }; for (let i = 0; i < 400; i++) big.nodes[`model.p.stg_${i}`] = { resource_type: 'model', name: `stg_${i}`, depends_on: { nodes: [] } };
+    for (let i = 0; i < 3; i++) big.sources[`source.p.s${i}.t`] = { resource_type: 'source', source_name: `s${i}`, name: `t${i}` };
+    assert(DBT.toDiagram(big).diagram.nodes.length <= 10, 'never one component per model');
+  });
+  test('the dialog, toast and diagram labels exist once in en and once in es', () => {
+    const src = read('src/i18n.js');
+    ['dbt.title', 'dbt.lead', 'dbt.mode', 'dbt.mode.merge', 'dbt.mode.merge.d', 'dbt.mode.new', 'dbt.mode.new.d', 'dbt.pv', 'dbt.pv.datasets', 'dbt.pv.cols', 'dbt.pv.nolayer', 'dbt.warn.layer', 'dbt.warn.versions', 'dbt.warn.cap.datasets', 'dbt.warn.cap.columns', 'dbt.warn.cap.rules', 'dbt.warn.cap.exposures', 'dbt.go',
+      'dbt.err.bad', 'dbt.err.big', 'dbt.err.many', 'dbt.err.empty', 'dbt.done.merge', 'dbt.done.new', 'dbt.grp.sources', 'dbt.grp.bronze', 'dbt.grp.silver', 'dbt.grp.gold', 'dbt.grp.process', 'dbt.grp.exposures', 'dbt.store.bronze', 'dbt.store.silver', 'dbt.store.gold', 'dbt.seeds', 'dbt.sub.source', 'dbt.sub.tables', 'dbt.edge.reads', 'dbt.edge.builds', 'dbt.untitled']
+      .forEach(k => eq(src.split(`'${k}':`).length - 1, 2, `${k}`));
   });
 
   /* ---------- resumen ---------- */

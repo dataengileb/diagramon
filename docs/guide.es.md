@@ -186,6 +186,32 @@ Declara los conjuntos de datos que mueve tu arquitectura, con sus columnas, regl
 
 La plantilla *Lakehouse greenfield* trae diez conjuntos: cinco crudos en bronce, *orders*, *customers* y *products* en plata, y *sales_daily* y *customer_360* en oro como productos de datos. *sales_daily* está preparado para no cumplir su SLA de frescura, así que la pestaña **Revisión** muestra un hallazgo alto que conviene revisar.
 
+#### Importar un manifest de dbt
+
+Muchos equipos de lakehouse ya describen sus tablas en dbt. **Importar** (o soltar el archivo en el lienzo) acepta el `target/manifest.json` que escribe `dbt compile` o `dbt build` (esquemas de manifest v10 a v12). Todo ocurre en el navegador: el archivo se lee en local y no se envía a ningún sitio. Un diálogo pequeño pregunta cómo aplicarlo y muestra una vista previa con las cuentas (conjuntos por capa, columnas, reglas de calidad, exposiciones) y los avisos:
+
+- **Fusionar con el catálogo de este diagrama** (por defecto si el diagrama tiene componentes). Los conjuntos se añaden o se actualizan por nombre. Lo que trae dbt reemplaza lo que había (descripción, columnas, reglas de calidad, capa, dominio, responsable, frescura, producto y contrato cuando vienen); lo que dbt no conoce (volumen, fase, consumidores, responsable de datos, un responsable que pusiste tú si dbt no trae ninguno, el formato que elegiste) se conserva, y los conjuntos que no están en dbt no se tocan. No se crea ningún componente ni conexión. El resultado se resume como *N nuevos · M actualizados · K sin cambios*; importar dos veces el mismo archivo no cambia nada la segunda vez.
+- **Diagrama nuevo con linaje** (por defecto si el diagrama está vacío). Dibuja un diagrama legible, nunca un componente por modelo: un componente por sistema origen, un almacén por capa (Bronce, Plata, Oro, en grupos marcados con la capa), un componente *dbt* y uno por exposición. Las conexiones llevan los nombres de los conjuntos, así que el linaje, el catálogo y el control de frescura funcionan: sistema origen a bronce, bronce a dbt a plata, plata a dbt a oro, oro a las exposiciones que lo usan. El título es el nombre del proyecto de dbt. Reemplaza el diagrama actual; **`⌘Z`** lo recupera.
+
+Cómo se traduce dbt al catálogo (lo ajustable está en `datasets.dbt` de `src/config.js`):
+
+| dbt | Diagramon |
+|---|---|
+| Tabla de fuente, modelo, semilla, instantánea | Un conjunto (nombre = el de la tabla o del modelo; si chocan, la fuente pasa a `source_name__name`). Se omiten las pruebas, los análisis, los modelos efímeros y las versiones antiguas de un modelo |
+| Carpeta, prefijo del nombre, fuente, `meta.layer` | Capa: las fuentes son bronce; `staging` / `stg_` e `intermediate` / `int_` son plata; `marts` / `fct_` / `dim_` / `mart_` son oro; manda `meta.layer`. Sin coincidencia: sin capa, se avisa en la vista previa y no se dibuja |
+| `description` | Descripción |
+| `meta.domain`, el `group` del modelo o la primera carpeta bajo `models/` | Dominio |
+| `meta.owner`, si no el dueño del grupo | Responsable (el id del interesado si el nombre coincide con uno, sin distinguir mayúsculas) |
+| `access: public` o `meta.data_product: true` | Producto de datos |
+| `config.contract.enforced` | Contrato *acordado*, versión de `latest_version` (si no, `1.0.0`) |
+| `meta.format` | Formato (por defecto `delta`) |
+| Columnas | Esquema: tipo de `data_type`; *llave* con una restricción `primary_key` o con la pareja de pruebas `unique` + `not_null`; *no nula* con `not_null`; *pii* con `meta.pii` o la etiqueta `pii` (el conjunto también recibe la clase *pii*); `meta.classification` y las etiquetas que coinciden con una clase de datos |
+| Pruebas | Reglas de calidad: `not_null`, `unique` y `accepted_values` (valores unidos con comas) se traducen directamente; `relationships` pasa a *personalizada* con `→ tabla.campo`; cualquier otra prueba (dbt_utils, singulares…) pasa a *personalizada* con el nombre de la prueba. `error` es alta y `warn` es media |
+| `freshness` de la fuente | SLA de frescura de `error_after` (si no, `warn_after`), como `30m`, `12h` o `1d` |
+| Exposiciones | Componentes de consumo en el diagrama nuevo y consumidores de los contratos de los conjuntos |
+
+Se aplican los límites del modelo de datos (500 conjuntos, 300 columnas y 100 reglas por conjunto); lo que sobra se deja fuera y se avisa. El archivo puede tener hasta 20 MB y 5.000 objetos. Desde la consola: `Diagramon.importDbt(texto, { mode: 'merge' | 'new' })` lo aplica sin diálogo y devuelve el resumen. Hay un ejemplo en `samples/dbt/`.
+
 ## 7. Observaciones de revisión
 
 1. Selecciona un componente y pulsa **⚑ Levantar una observación**.
