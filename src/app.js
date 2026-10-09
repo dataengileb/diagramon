@@ -674,12 +674,14 @@
       m.zones.push(o);
     });
     cleanScopes(m);
+    { const sh = cleanStakeholders(raw.stakeholders, m); if (sh.length) m.stakeholders = sh; }   // antes que las firmas (de versiones y decisiones), que solo guardan las de interesados que existen; sin interesados no hay clave: JSON y exportaciones idénticos
     m.versions = normVersions(raw.versions);
+    m.versions.forEach(v => { const so = cleanSignoffs(v.signoffs, m); if (so.length) v.signoffs = so; else delete v.signoffs; });   // firmas de la versión: solo de interesados que existen
     m.decisions = cleanDecisions(raw.decisions, m);
     { const rq = cleanRequirements(raw.requirements, m); if (rq.length) m.requirements = rq; }   // sin requisitos no hay clave: JSON y exportaciones idénticos
     m.raid = cleanRaid(raw.raid, m);   // después de los requisitos: sus ids ya están en m.requirements
     // Cada versión puede llevar las decisiones que había al guardarla (para compararlas); sus enlaces se limpian contra el diagrama de la versión
-    m.versions.forEach(v => { if (v.decisions) v.decisions = cleanDecisions(v.decisions, { nodes: v.diagram.nodes || [], edges: v.diagram.edges || [], groups: v.diagram.groups || [], versions: m.versions }); });
+    m.versions.forEach(v => { if (v.decisions) v.decisions = cleanDecisions(v.decisions, { nodes: v.diagram.nodes || [], edges: v.diagram.edges || [], groups: v.diagram.groups || [], versions: m.versions, stakeholders: m.stakeholders }); });
     if (raw.active != null && m.versions.some(v => v.id === String(raw.active))) m.active = String(raw.active);
     return m;
   }
@@ -726,6 +728,8 @@
         return e;
       });
       if (hist.length) o.history = hist;
+      if (Array.isArray(v.signoffs)) o.signoffs = v.signoffs;   // se limpian en normalize, cuando ya existen los interesados
+      if (isDay(v.reviewSince)) o.reviewSince = v.reviewSince;
       o.diagram = v.diagram;
       if (Array.isArray(v.decisions)) o.decisions = v.decisions;
       return o;
@@ -1077,9 +1081,10 @@
         if (h.note != null && String(h.note).trim()) e.note = String(h.note).trim().slice(0, 500);
         return e;
       });
+      const so = cleanSignoffs(d.signoffs, m);
       const crit = cleanAdrCriteria(d.criteria), opts = cleanAdrOptions(d.options, crit, m), chosen = String(d.chosen ?? '').trim();
       items.push({ ...o, hist, id, status: adrStatus(d.status), date: isDay(d.date) ? d.date : today(), deciders: String(d.deciders ?? '').trim().slice(0, 200), sup: String(d.supersededBy ?? '').trim(), links: cleanAdrLinks(d.links, m),
-        area: String(d.area ?? '').replace(/\s+/g, ' ').trim().slice(0, 60), crit, opts, chosen: opts.some(x => x.id === chosen) ? chosen : '' });
+        area: String(d.area ?? '').replace(/\s+/g, ' ').trim().slice(0, 60), so, crit, opts, chosen: opts.some(x => x.id === chosen) ? chosen : '' });
     });
     items.forEach(o => { if (!o.id) o.id = adrNextId(items); });
     const ids = new Set(items.map(o => o.id));
@@ -1093,6 +1098,7 @@
       if (o.chosen) r.chosen = o.chosen;
       r.links = o.links;
       if (o.hist.length) r.history = o.hist;
+      if (o.so.length) r.signoffs = o.so;
       return r;
     });
   }
@@ -1122,6 +1128,59 @@
           out.push({ id: `adr:not-leader:${d.id}`, source: 'adr', rule: 'not-leader', severity: 'low', target: tgt(d), title: T('adr.find.notLeader', { id: d.id, c: c.title || c.id, l: l.title || l.id }), detail: T('adr.find.notLeader.d', { c: adrScore(d, c).pct, l: adrScore(d, l).pct }), fix: T('adr.find.notLeader.fix') });
         }
       }
+    });
+    return out;
+  });
+
+  /* ---------- aprobaciones (firmas de ADR y versiones): modelo ---------- */
+  // Cada decisión (m.decisions[i]) y cada versión (m.versions[i]) puede llevar signoffs: [{ by: 'SH-001', verdict: 'approve'|'reject', date, note? }], un registro que solo crece (el más antiguo primero, máx. 200).
+  // Aprobadores requeridos: decisión = interesados activos con A en el área (o en '*'); versión = interesados activos con versions. Solo cuentan las firmas de la ronda actual
+  // (decisión: desde la última entrada «propuesta» del historial; versión: desde reviewSince) y manda la última de cada interesado. Sin aprobadores requeridos no hay compuertas ni hallazgos.
+  /* approvalModel:start */
+  const SIGN_MAX = 200;
+  const apprKey = v => String(v ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
+  function approversFor(kind, o, m) {
+    const people = (m?.stakeholders || []).filter(s => s && s.id && !s.inactive);
+    if (kind === 'version') return people.filter(s => s.versions === true).map(s => s.id);
+    const area = apprKey(o?.area);
+    return people.filter(s => s.raci?.['*'] === 'A' || (area && Object.entries(s.raci || {}).some(([k, v]) => v === 'A' && apprKey(k) === area))).map(s => s.id);
+  }
+  function approvalState(kind, o, m) {
+    const required = approversFor(kind, o, m);
+    const since = kind === 'version' ? (isDay(o?.reviewSince) ? o.reviewSince : '') : ((o?.history || []).filter(h => h.status === 'proposed').map(h => h.date).pop() || '');
+    const last = new Map();
+    (o?.signoffs || []).forEach(s => { if (!since || s.date >= since) last.set(s.by, s.verdict); });
+    const approved = required.filter(id => last.get(id) === 'approve'), rejected = required.filter(id => last.get(id) === 'reject'), pending = required.filter(id => !last.has(id));
+    return { required, approved, rejected, pending, complete: required.length > 0 && !pending.length && !rejected.length };
+  }
+  function cleanSignoffs(raw, m) {
+    const ids = new Set((m?.stakeholders || []).map(s => s?.id)), out = [];
+    (Array.isArray(raw) ? raw : []).forEach(s => {
+      if (!s || typeof s !== 'object' || !ids.has(s.by) || (s.verdict !== 'approve' && s.verdict !== 'reject') || !isDay(s.date)) return;
+      const e = { by: s.by, verdict: s.verdict, date: s.date };
+      if (s.note != null && String(s.note).trim()) e.note = String(s.note).trim().slice(0, 500);
+      out.push(e);
+    });
+    return out.slice(-SIGN_MAX);
+  }
+  /* approvalModel:end */
+  const apprWho = (id, m = S.model) => { const s = (m?.stakeholders || []).find(x => x.id === id); return s ? (s.name || s.id) : id; };
+  const apprNames = (ids, m = S.model) => ids.map(id => apprWho(id, m)).join(', ');
+  const apprGap = st => [...st.pending, ...st.rejected];   // quién falta (sin firmar o que rechazó)
+  // Nombres de quienes faltan para la aprobación completa; [] si no hay aprobación configurada o ya está completa
+  const apprMissing = (kind, o, m = S.model) => { const st = approvalState(kind, o, m); return st.required.length && !st.complete ? apprGap(st).map(id => apprWho(id, m)) : []; };
+  // Hallazgos (fuente «approval»): decisión aceptada sin la aprobación completa, rechazo de un aprobador requerido y versión aprobada sin la aprobación completa
+  addFindingSource('approval', m => {
+    const out = [], tgt = d => { const l = d.links || {}, k = l.nodes?.[0] ? 'node' : l.edges?.[0] ? 'edge' : l.groups?.[0] ? 'group' : 'node'; return { kind: k, id: l.nodes?.[0] || l.edges?.[0] || l.groups?.[0] || '' }; };
+    (m.decisions || []).forEach(d => {
+      const st = approvalState('decision', d, m);
+      if (!st.required.length) return;
+      if (d.status === 'accepted' && !st.complete) out.push({ id: `approval:adr-unsigned:${d.id}`, source: 'approval', rule: 'adr-unsigned', severity: 'medium', target: tgt(d), title: T('appr.find.adr', { id: d.id, who: apprNames(apprGap(st), m) }), detail: d.title, fix: T('appr.find.adr.fix') });
+      if (st.rejected.length && (d.status === 'accepted' || d.status === 'proposed')) out.push({ id: `approval:adr-rejected:${d.id}`, source: 'approval', rule: 'adr-rejected', severity: 'high', target: tgt(d), title: T('appr.find.rej', { id: d.id, who: apprNames(st.rejected, m) }), detail: d.title, fix: T('appr.find.rej.fix') });
+    });
+    (m.versions || []).forEach(v => {
+      const st = approvalState('version', v, m);
+      if (v.status === 'approved' && st.required.length && !st.complete) out.push({ id: `approval:ver-unsigned:${v.id}`, source: 'approval', rule: 'ver-unsigned', severity: 'medium', target: { kind: 'node', id: '' }, title: T('appr.find.ver', { v: verLabel(v), who: apprNames(apprGap(st), m) }), detail: '', fix: T('appr.find.ver.fix') });
     });
     return out;
   });
@@ -1245,6 +1304,73 @@
     if (rule === 'unvalidated') return { ...base, title: T('raid.find.unvalidated', { id: it.id, due: fmtDay(it.due) }), detail: [it.title, acc.length ? T('raid.find.unvalidated.acc', acc.join(', ')) : ''].filter(Boolean).join(' · '), fix: T('raid.find.unvalidated.fix') };
     if (rule === 'risk') return { ...base, title: T('raid.find.risk', { id: it.id, s: score }), detail: it.title, fix: T(it.mitigation ? 'raid.find.risk.fix2' : 'raid.find.risk.fix') };
     return { ...base, title: T('raid.find.overdue', { id: it.id, type: T(`raid.type1.${it.type}`).toLowerCase(), due: fmtDay(it.due) }), detail: it.title, fix: T('raid.find.overdue.fix') };
+  }));
+
+  /* ---------- interesados (comité del cliente) y matriz RACI por área de decisión: modelo ---------- */
+  // m.stakeholders = [{ id: 'SH-001', name, role?, org: 'client'|'partner'|'internal', raci?: { '<área>': 'R'|'A'|'C'|'I', '*': … }, versions?: true (aprueba versiones), inactive?: true (ya no está: nunca se exige, el historial se conserva) }]
+  // Es del documento (como las decisiones y el RAID): no entra en las fotos de versiones y sobrevive al abrir una versión y a los editores. Sin él, el JSON y las exportaciones quedan idénticos.
+  // Las claves de raci son áreas de ADR (sin distinguir mayúsculas ni espacios de más); '*' = todas las áreas.
+  /* stakeholderModel:start */
+  const SH_ORG = ['client', 'partner', 'internal'], SH_RACI = ['R', 'A', 'C', 'I'], SH_ORG_ALIAS = { cliente: 'client', socio: 'partner', interno: 'internal' };
+  const SH_MAX = 200, SH_AREAS = 40;   // límite de interesados; claves de raci por interesado
+  const shOrg = v => { const k = String(v ?? '').trim().toLowerCase(); return SH_ORG.includes(k) ? k : SH_ORG_ALIAS[k] || 'client'; };
+  const shArea = a => (String(a ?? '').trim() === '*' ? '*' : String(a ?? '').replace(/[,\s]+/g, ' ').trim().slice(0, 60));   // sin comas: el texto separa las áreas con comas
+  function cleanShRaci(raw) {
+    const out = {}, seen = new Set();
+    if (raw && typeof raw === 'object' && !Array.isArray(raw)) Object.entries(raw).forEach(([k, v]) => {
+      const a = shArea(k), r = String(v ?? '').trim().toUpperCase();
+      if (!a || !SH_RACI.includes(r) || seen.has(a.toLowerCase()) || Object.keys(out).length >= SH_AREAS) return;
+      seen.add(a.toLowerCase()); out[a] = r;
+    });
+    return out;
+  }
+  function cleanStakeholders(raw, m) {
+    const seen = new Set(), items = [];
+    (Array.isArray(raw) ? raw : []).forEach(s => {
+      if (!s || typeof s !== 'object' || Array.isArray(s)) return;
+      const name = String(s.name ?? '').replace(/\s+/g, ' ').trim().slice(0, 120);
+      if (!name) return;
+      let id = String(s.id ?? '').trim().slice(0, 40);
+      if (!/^SH-\d+$/.test(id) || seen.has(id)) id = ''; else seen.add(id);
+      items.push({ s, id, name });
+    });
+    const num = id => (/^SH-(\d+)$/.exec(id) || [0, 0])[1] | 0;
+    items.forEach(o => { if (!o.id) o.id = `SH-${String(Math.max(0, ...items.map(x => num(x.id))) + 1).padStart(3, '0')}`; });
+    return items.slice(0, SH_MAX).map(({ s, id, name }) => {
+      const r = { id, name }, role = String(s.role ?? '').replace(/\s+/g, ' ').trim().slice(0, 80), raci = cleanShRaci(s.raci);
+      if (role) r.role = role;
+      r.org = shOrg(s.org);
+      if (Object.keys(raci).length) r.raci = raci;
+      if (s.versions === true) r.versions = true;
+      if (s.inactive === true) r.inactive = true;
+      return r;
+    });
+  }
+  // ¿Tiene el interesado una A en esa área (o en '*')?
+  const shIsA = (s, area) => !!s.raci && (s.raci['*'] === 'A' || (!!area && Object.entries(s.raci).some(([k, v]) => v === 'A' && k.toLowerCase() === String(area).trim().toLowerCase())));
+  // Áreas de las decisiones (sin repetir, sin distinguir mayúsculas) y, detrás, las que solo aparecen en alguna matriz
+  function shAreas(m) {
+    const seen = new Map(), add = a => { a = shArea(a); if (a && a !== '*' && !seen.has(a.toLowerCase())) seen.set(a.toLowerCase(), a); };
+    (m.decisions || []).forEach(d => add(d.area));
+    (m.stakeholders || []).forEach(s => Object.keys(s.raci || {}).forEach(add));
+    return [...seen.values()];
+  }
+  // Áreas usadas por alguna decisión y sin ningún aprobador (A) activo; solo si hay interesados
+  function shGaps(m) {
+    const act = (m.stakeholders || []).filter(s => !s.inactive), seen = new Map();
+    if (!(m.stakeholders || []).length) return [];
+    (m.decisions || []).forEach(d => { const a = shArea(d.area); if (a && !seen.has(a.toLowerCase())) seen.set(a.toLowerCase(), a); });
+    return [...seen.values()].filter(a => !act.some(s => shIsA(s, a)));
+  }
+  /* stakeholderModel:end */
+  const shById = id => (S.model.stakeholders || []).find(x => x.id === id);
+  // ¿Tiene firmas (de ADR o de versión)? Entonces no se borra: se marca inactivo y el historial de aprobaciones queda íntegro
+  const shHasSignoffs = (id, m = S.model) => [...(m.decisions || []), ...(m.versions || [])].some(o => (o.signoffs || []).some(x => x.by === id));
+  // Hallazgo bajo (fuente «approval»): un área con decisiones y sin nadie que la apruebe
+  addFindingSource('approval', m => shGaps(m).map(area => {
+    const same = x => shArea(x.area).toLowerCase() === area.toLowerCase(), d = (m.decisions || []).find(x => same(x) && (x.links?.nodes?.[0] || x.links?.edges?.[0] || x.links?.groups?.[0])), l = d?.links || {};
+    const target = l.nodes?.[0] ? { kind: 'node', id: l.nodes[0] } : l.edges?.[0] ? { kind: 'edge', id: l.edges[0] } : l.groups?.[0] ? { kind: 'group', id: l.groups[0] } : { kind: 'node', id: '' };
+    return { id: `approval:no-approver:${area}`, source: 'approval', rule: 'no-approver', severity: 'low', target, title: T('people.find.noApprover', area), detail: (m.decisions || []).filter(same).map(x => x.id).join(', '), fix: T('people.find.noApprover.fix') };
   }));
 
 
@@ -3458,9 +3584,10 @@
     note: ['id', 'x', 'y', 'w', 'h', 'text', 'color', 'in'],
     zone: ['id', 'x', 'y', 'w', 'h', 'label', 'severity', 'desc', 'kind', 'trust', 'in'],
     requirement: ['id', 'title', 'kind', 'detail', 'priority', 'status', 'source', 'check', 'links'],
-    decision: ['id', 'title', 'status', 'date', 'deciders', 'context', 'decision', 'consequences', 'supersededBy', 'area', 'criteria', 'options', 'chosen', 'links', 'history'],
+    decision: ['id', 'title', 'status', 'date', 'deciders', 'context', 'decision', 'consequences', 'supersededBy', 'area', 'criteria', 'options', 'chosen', 'links', 'history', 'signoffs'],
     raid: ['id', 'type', 'title', 'detail', 'owner', 'status', 'probability', 'impact', 'mitigation', 'validation', 'due', 'raised', 'links', 'history']
   };
+  ORDER.stakeholder = ['id', 'name', 'role', 'org', 'raci', 'versions', 'inactive'];
   function serialize(m, full = false) {
     const ordered = (o, keys) => { const r = {}; keys.forEach(k => k in o && (r[k] = o[k])); Object.keys(o).forEach(k => k in r || (r[k] = o[k])); return r; };
     const line = o => '{ ' + Object.entries(o)
@@ -3483,6 +3610,7 @@
     if (m.decisions?.length) body.push(arr('decisions', m.decisions, ORDER.decision));
     if (m.requirements?.length) body.push(arr('requirements', m.requirements, ORDER.requirement));
     if (m.raid?.length) body.push(arr('raid', m.raid, ORDER.raid));
+    if (m.stakeholders?.length) body.push(arr('stakeholders', m.stakeholders, ORDER.stakeholder));
     // El archivo exportado lleva también las versiones; el editor JSON no las muestra
     if (full && m.versions?.length) {
       if (m.active) body.push(`  "active": ${JSON.stringify(m.active)}`);
@@ -3535,6 +3663,7 @@
       if (!Array.isArray(raw.zones)) raw = { ...raw, zones: S.model.zones };
       if (!Array.isArray(raw.requirements) && S.model.requirements) raw = { ...raw, requirements: S.model.requirements }; // igual que las decisiones: el texto siempre las trae; el JSON, si omite la clave, las conserva
       if (!Array.isArray(raw.raid)) raw = { ...raw, raid: S.model.raid };   // el texto siempre trae el registro RAID; el JSON, si omite la clave, lo conserva
+      if (!Array.isArray(raw.stakeholders) && S.model.stakeholders) raw = { ...raw, stakeholders: S.model.stakeholders };   // igual: el texto siempre trae los interesados; el JSON, si omite la clave, los conserva
       if (!Array.isArray(raw.decisions)) raw = { ...raw, decisions: S.model.decisions }; // el texto siempre trae las decisiones (ADR; borrarlas del texto las borra); el JSON, si omite la clave, las conserva
     }
     S.model = normalize(raw);
@@ -4395,6 +4524,8 @@
     const dec = st === 'approved' || st === 'rejected';
     if (dec) { const by = store.get('approver', ''); if (by) v.decidedBy = by; else delete v.decidedBy; v.decidedOn = today(); } else { delete v.decidedBy; delete v.decidedOn; }
     if (st !== 'rejected') delete v.reason;
+    if (st === 'review') v.reviewSince = today();   // empieza una ronda de aprobación: las firmas anteriores ya no cuentan
+    if (st === 'approved' && !v.decidedBy) { const a = approvalState('version', v, S.model); if (a.complete) v.decidedBy = apprNames(a.approved); }   // campo de compatibilidad: los nombres de quienes aprobaron
     const e = { status: st, date: today() };
     if (v.decidedBy) e.by = v.decidedBy;
     (v.history ||= []).push(e);
@@ -4459,7 +4590,7 @@
     const v = findVersion(id);
     if (!v) return;
     S.sel = null;
-    setModel({ ...clone(v.diagram), versions: S.model.versions, active: v.id, decisions: S.model.decisions, requirements: S.model.requirements, raid: S.model.raid }, { history: true });
+    setModel({ ...clone(v.diagram), versions: S.model.versions, active: v.id, decisions: S.model.decisions, requirements: S.model.requirements, raid: S.model.raid, stakeholders: S.model.stakeholders }, { history: true });
     toast(T('ver.opened', { name: verLabel(v) }));
   }
   async function deleteVersion(id, { force } = {}) {
@@ -4525,7 +4656,7 @@
   }
 
   /* ---------- decisiones (ADR): comparar entre versiones ---------- */
-  const ADR_DIFF = ['title', 'status', 'context', 'decision', 'consequences', 'deciders', 'supersededBy', 'area', 'criteria', 'options', 'chosen', 'links'];
+  const ADR_DIFF = ['title', 'status', 'context', 'decision', 'consequences', 'deciders', 'supersededBy', 'area', 'criteria', 'options', 'chosen', 'links', 'signoffs'];
   // a = decisiones de la versión, b = las actuales. El historial no cuenta como cambio por sí solo.
   function diffDecisions(a, b) {
     const am = new Map((a || []).map(d => [d.id, d])), bm = new Map((b || []).map(d => [d.id, d]));
@@ -4612,6 +4743,7 @@
         ${on ? `<div class="ver-flag${dirty ? ' dirty' : ''}">${esc(T(dirty ? 'ver.dirty' : 'ver.current'))}</div>` : ''}
         <div class="ver-meta">${esc(verMeta(v))}</div>
         ${adrChips(decisionsOf('versions', v.id))}
+        ${apprSection('version', v)}
         ${v.note && !editing ? `<div class="ver-note">${esc(v.note)}</div>` : ''}
         ${v.status === 'rejected' && !v.reason ? `<div class="ver-warn">${esc(T('ver.reasonWarn'))}</div>` : ''}
         ${editing ? `<div class="ver-form">
@@ -4699,15 +4831,20 @@
     const val = k === 'name' ? f.value.trim().slice(0, 40) : f.value.trim();
     if (k === 'status') {
       if (!VSTATUS[val] || val === v.status) return;
-      const open = val === 'approved' ? openFindings(v) : [];
-      if (open.length) {
-        // Aprobar con hallazgos abiertos: se restaura el estado y se pregunta (select dispara input y change)
+      const open = val === 'approved' ? openFindings(v) : [], gap = val === 'approved' ? apprMissing('version', v) : [];
+      if (open.length || gap.length) {
+        // Aprobar con hallazgos abiertos o sin todas las firmas: se restaura el estado y se pregunta (select dispara input y change)
         f.value = v.status;
         if (S.verAsk) return;
         S.verAsk = true;
-        const list = open.slice(0, 5).map(n => `${n.label}${n.review.note ? `: ${n.review.note}` : ''}`);
-        if (open.length > 5) list.push(`… +${open.length - 5}`);
-        confirmBox({ title: T('ver.cf.apprTitle', open.length), text: T('ver.cf.apprText'), list, ok: T('ver.cf.apprOk'), cancel: T('ver.cf.cancel') }).then(ok => {
+        (async () => {
+          let ok = true;
+          if (gap.length) ok = await confirmBox({ title: T('appr.cf.vtitle'), text: T('appr.cf.vtext', gap.join(', ')), ok: T('appr.cf.ok'), cancel: T('ver.cf.cancel') });
+          if (ok && open.length) {
+            const list = open.slice(0, 5).map(n => `${n.label}${n.review.note ? `: ${n.review.note}` : ''}`);
+            if (open.length > 5) list.push(`… +${open.length - 5}`);
+            ok = await confirmBox({ title: T('ver.cf.apprTitle', open.length), text: T('ver.cf.apprText'), list, ok: T('ver.cf.apprOk'), cancel: T('ver.cf.cancel') });
+          }
           S.verAsk = false;
           if (!ok || !findVersion(v.id) || v.status === 'approved') return;
           markEdit(); setVerStatus(v, 'approved'); endEdit();
@@ -4715,7 +4852,7 @@
           updateMeta();
           renderVersions();
           toast(T('ver.statusSet', { name: verLabel(v), status: T('ver.st.approved') }));
-        });
+        })();
         return;
       }
     }
@@ -4750,6 +4887,7 @@
     const b = ev.target.closest('button');
     if (!b) return;
     if (b.dataset.save) return saveVersion(b.dataset.save, b.dataset.env);
+    if (b.dataset.apprDo) return apprDo(b, 'version', b.closest('.ver')?.dataset.id);
     if (b.dataset.vfilter) {
       store.set('verFilter', b.dataset.vfilter === store.get('verFilter', 'all') ? 'all' : b.dataset.vfilter);
       renderVersions();
@@ -6151,6 +6289,7 @@
     else if (t.dataset.tab === 'adr') renderAdr(true);
     else if (t.dataset.tab === 'req') renderReq(true);
     else if (t.dataset.tab === 'raid') renderRaid(true);
+    else if (t.dataset.tab === 'people') renderPeople(true);
   }));
 
   function codeBox(box, apply) {
@@ -6192,6 +6331,7 @@
     dataClasses: Object.keys(DATA),
     layers: Object.fromEntries([...Object.keys(DL), ...Object.keys(DL_ALIAS)].map(k => [fold(k), cleanLayer(k)]).filter(([, v]) => v)),
     views: VIEW_KEYS,
+    get stakeholders() { return (S.model?.stakeholders || []).map(x => x.id); },   // ids para validar las firmas (signoffs:) del texto
     lang: I.lang
   });
   codeBox($('#text-src'), box => {
@@ -6822,7 +6962,7 @@
   // reportData() arma un modelo plano (secciones de bloques) y dos dibujantes lo pintan: reportMarkdown y reportHTML, así que los dos formatos no se desincronizan.
   // Bloques: { k: 'h3', t } · { k: 'p', t, muted? } · { k: 'kv', items: [[k, v]] } · { k: 'cards', items: [{ label, value, tone? }] }
   //          { k: 'table', head: [], rows: [[celda]], cls? } (celda = texto | { t, tone }) · { k: 'text', label, t } · { k: 'ul', items } · { k: 'img', alt, caption, svg?, uri?, file? }
-  const REP_SECS = ['summary', 'diagram', 'components', 'connections', 'data', 'owners', 'layers', 'costs', 'resilience', 'findings', 'compliance', 'threats', 'decisions', 'requirements', 'raid', 'versions', 'notes'];
+  const REP_SECS = ['summary', 'diagram', 'components', 'connections', 'data', 'owners', 'layers', 'costs', 'resilience', 'findings', 'compliance', 'threats', 'decisions', 'requirements', 'raid', 'approvals', 'versions', 'notes'];
   const REP_PAGE = ['diagram', 'components', 'findings', 'decisions']; // secciones que empiezan página al imprimir
   const repT = (k, v) => T(`rep.${k}`, v);
   const repSleep = ms => new Promise(r => setTimeout(r, ms));
@@ -6843,7 +6983,7 @@
       data: m.nodes.some(n => dataClassesOf(n, m).length || regionOf(n, m).value), owners: govTeamList(m).length > 0,
       layers: m.nodes.some(n => layerOf(n).value), costs: m.nodes.some(hasCost), resilience: m.nodes.some(hasRes) || spofList(m).length > 0, findings: findingsOf(m).length > 0,
       compliance: cmpModel(m).keys.length > 0, threats: strideAll(m).length > 0, decisions: !!m.decisions?.length, requirements: !!m.requirements?.length,
-      raid: !!m.raid?.length,
+      raid: !!m.raid?.length, approvals: !!m.stakeholders?.length,
       versions: m.versions.length > 0, notes: (m.notes || []).length > 0 || (m.zones || []).some(z => z.kind !== 'trust')
     };
   }
@@ -6902,6 +7042,7 @@
       cards.push({ label: repT('k.findings'), value: open.length, tone: open.some(f => f.severity === 'critical' || f.severity === 'high') ? 'sev-high' : '' });
       if (m.decisions?.length) cards.push({ label: repT('k.decisions'), value: m.decisions.length });
       if (m.requirements?.length) cards.push({ label: repT('k.requirements'), value: m.requirements.length });
+      if (m.stakeholders?.length) cards.push({ label: repT('k.approvals'), value: m.stakeholders.length });
       const kv = [[repT('author'), D.author], [repT('version'), D.version], [repT('active'), D.active ? `${D.active.label} · ${D.active.status}` : ''], [repT('date'), D.date]].filter(r => r[1]);
       const blocks = [];
       if (D.desc) blocks.push({ k: 'p', t: D.desc });
@@ -7082,6 +7223,30 @@
           rows: l.map(x => [...base(x), T(`raid.st.${x.status}`), { t: fmtDay(x.due), tone: late(x) }, ...tail(x)]) });
       });
       sec('raid', blocks);
+    }
+
+    if (want('approvals')) {
+      // Interesados, matriz RACI (filas = interesados; columnas = «Todas las áreas» + áreas de las decisiones) y aprobaciones de decisiones y versiones con aprobadores requeridos o firmas
+      const sh = m.stakeholders, cols = ['*', ...shAreas(m)];
+      const blocks = [{ k: 'h3', t: repT('h.stakeholders') }, { k: 'table', cls: 'wide', head: [repT('h.id'), repT('h.name'), repT('h.role'), repT('h.org'), repT('h.versions'), repT('h.state')],
+        rows: sh.map(s => [s.id, s.name, s.role || '', T(`people.org.${s.org}`), s.versions === true ? '✓' : '', s.inactive ? T('people.inactive') : repT('sh.active')]) }];
+      blocks.push({ k: 'h3', t: T('people.mx.title') }, { k: 'p', t: T('people.mx.legend'), muted: true });
+      blocks.push({ k: 'table', cls: 'compact', head: [repT('h.stakeholder'), ...cols.map(a => (a === '*' ? T('people.all') : a))], rows: sh.map(s => [s.name, ...cols.map(a => (a === '*' ? s.raci?.['*'] : shRaciOf(s, a)) || '')]) });
+      const dec = (m.decisions || []).filter(d => approvalState('decision', d, m).required.length || d.signoffs?.length);
+      if (dec.length) {
+        blocks.push({ k: 'h3', t: repT('h.decApprovals') });
+        blocks.push({ k: 'table', cls: 'wide', head: [repT('h.id'), repT('h.title'), repT('h.status'), repT('h.approvals'), repT('h.pendingNames'), repT('h.rejectedNames')], rows: dec.map(d => {
+          const st = approvalState('decision', d, m);
+          return [d.id, d.title, T(`adr.st.${d.status}`), st.required.length ? apprSummary(st) : '', apprNames(st.pending, m), apprNames(st.rejected, m)]; }) });
+      }
+      const ver = (m.versions || []).filter(v => approvalState('version', v, m).required.length || v.signoffs?.length);
+      if (ver.length) {
+        blocks.push({ k: 'h3', t: repT('h.verApprovals') });
+        blocks.push({ k: 'table', cls: 'wide', head: [repT('h.version'), repT('h.status'), repT('h.approvals'), repT('h.pendingNames'), repT('h.rejectedNames')], rows: ver.map(v => {
+          const st = approvalState('version', v, m);
+          return [verLabel(v), T(`ver.st.${v.status}`), st.required.length ? apprSummary(st) : '', apprNames(st.pending, m), apprNames(st.rejected, m)]; }) });
+      }
+      sec('approvals', blocks);
     }
 
     if (want('versions')) {
@@ -7399,6 +7564,8 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
   const INV_ADR = [['id'], ['title'], ['status'], ['date'], ['links']];
   const INV_REQ = [['id'], ['title'], ['kind'], ['priority'], ['status'], ['source'], ['coveredBy'], ['check'], ['result']];
   const INV_RAID = [['id'], ['type'], ['title'], ['status'], ['owner'], ['probability'], ['impact'], ['score'], ['mitigation'], ['due'], ['raised'], ['links'], ['detail']];
+  const INV_SH = [['id'], ['name'], ['role'], ['org'], ['raci'], ['versions'], ['inactive']];
+  const INV_SIGN = [['kind'], ['object'], ['by'], ['stakeholder'], ['verdict'], ['date'], ['note']];
   const INV_FIND = [['severity'], ['source'], ['rule'], ['title'], ['target'], ['dismissed'], ['reason']];
   const INV_VER = [['name'], ['env'], ['status'], ['author'], ['created'], ['updated'], ['decidedOn']];
   const invYN = v => T(v ? 'sec.yes' : 'sec.no');
@@ -7485,6 +7652,10 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
       const rl = l => [...(l?.decisions || []), ...(l?.requirements || []), links(l)].filter(Boolean).join('; ');
       out.push(mk('raid', INV_RAID, m.raid.map(x => [x.id, T(`raid.type1.${x.type}`), x.title, T(`raid.st.${raidState(x)}`), x.owner || '', x.probability ?? '', x.impact ?? '', raidScore(x) || '', x.mitigation || '', x.due || '', x.raised || '', rl(x.links), x.detail || ''])));
     }
+    // Interesados (una fila por persona, con su RACI como «área:letra») y firmas de decisiones y versiones (una fila por firma); solo si hay datos
+    if (m.stakeholders?.length) out.push(mk('stakeholders', INV_SH, m.stakeholders.map(s => [s.id, s.name, s.role || '', T(`people.org.${s.org}`), Object.entries(s.raci || {}).map(([k, v]) => `${k}:${v}`).join('; '), invYN(s.versions === true), invYN(!!s.inactive)])));
+    const sg = [...(m.decisions || []).map(d => [d, 'decision', d.id]), ...(m.versions || []).map(v => [v, 'version', v.id])].flatMap(([o, kind, id]) => (o.signoffs || []).map(x => [T(`inv.sg.${kind}`), id, x.by, apprWho(x.by, m), T(x.verdict === 'approve' ? 'appr.approved' : 'appr.rejected'), x.date, x.note || '']));
+    if (sg.length) out.push(mk('signoffs', INV_SIGN, sg));
     // Hallazgos (abiertos y descartados)
     const tl = t => { const o = (t.kind === 'node' ? m.nodes : t.kind === 'edge' ? m.edges : t.kind === 'group' ? m.groups : t.kind === 'zone' ? m.zones || [] : []).find(x => x.id === t.id); return !o ? t.id : t.kind === 'edge' ? `${nm(o.from)} → ${nm(o.to)}` : o.label || t.id; };
     const fnd = typeof allFindings === 'function' ? allFindings(m).map(f => { const d = f.source !== 'review' && m.dismissed?.[f.id]; return [sevLabel(f.severity), typeof srcLabel === 'function' ? srcLabel(f.source) : f.source, f.rule, f.title, tl(f.target || {}), invYN(!!d), d?.reason || '']; }) : [];
@@ -7745,6 +7916,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     else if (ev.key === 'Delete' || ev.key === 'Backspace') { if (S.sel) { ev.preventDefault(); deleteSelection(); } }
     else if (ev.key === 'Escape' && ADR.wide) { ADR.wide = null; renderAdr(true); }   // cierra la matriz de opciones ampliada
     else if (ev.key === 'Escape' && REQ.wide) { REQ.wide = false; renderReq(true); }   // y la de trazabilidad de requisitos
+    else if (ev.key === 'Escape' && PEOPLE.wide) { PEOPLE.wide = false; renderPeople(true); }   // y la matriz RACI de interesados
     else if (ev.key === 'Escape' && filterMenu.open) filterMenu.open = false;
     else if (ev.key === 'Escape') { if (S.play) stopPlay(); else if (S.path) clearPath(); else if (S.connecting) cancelConnect(); else if (!S.sel && S.compare) compareVersion(null); else if (!S.sel && !S.flow && S.scope) scopeUp(); else select(null); }
     else if (ev.altKey && ev.key === 'ArrowUp') { ev.preventDefault(); scopeUp(); }  // sube un nivel C4
@@ -8010,6 +8182,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     if (nd && nd.status !== d.status) {   // cambió el estado (también por «reemplazada por»): se anota con la fecha de hoy y el autor
       const h = d.history?.length ? [...nd.history || d.history] : [{ status: d.status, date: d.date }], e = { status: nd.status, date: today() }, by = adrAuthor();
       if (by) e.by = by;
+      if (nd.status === 'accepted') { const gap = apprMissing('decision', nd); if (gap.length) e.note = T('appr.note.without', gap.join(', ')); }   // aceptada sin todas las firmas: queda anotado
       nd.history = [...h, e].slice(-200); nd.date = e.date;
     } else if (nd && nd.history?.length && 'date' in patch && isDay(patch.date)) nd.history[nd.history.length - 1].date = nd.date;
     S.model.decisions = list;
@@ -8132,6 +8305,54 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     renderAdrList();
   }
   const adrMatches = d => (!ADR.st || d.status === ADR.st) && (!ADR.area || d.area === ADR.area) && (!ADR.q || [d.id, d.title, d.area, d.context, d.decision, d.consequences, ...(d.options || []).map(o => o.title)].some(x => String(x || '').toLowerCase().includes(ADR.q.toLowerCase())));
+  /* ---------- aprobaciones: firmar, sección «Aprobaciones» de la ficha de ADR y de versión ---------- */
+  const APPR_COLOR = { approve: 'var(--p-menta)', reject: 'var(--p-coral)', pending: 'var(--p-limon)' };
+  // Registra la firma de hoy (ADR: pasa por updateDecision; versión: directo). Devuelve false si el interesado o el veredicto no existen
+  function signOff(kind, id, sid, verdict, note) {
+    if (!(S.model.stakeholders || []).some(x => x.id === sid) || (verdict !== 'approve' && verdict !== 'reject')) return false;
+    const e = { by: sid, verdict, date: today() }, n = String(note ?? '').trim().slice(0, 500);
+    if (n) e.note = n;
+    if (kind === 'decision') { const d = adrById(id); return !!d && updateDecision(id, { signoffs: [...(d.signoffs || []), e].slice(-SIGN_MAX) }); }
+    const v = kind === 'version' && findVersion(id);
+    if (!v) return false;
+    pushHistory();
+    v.signoffs = [...(v.signoffs || []), e].slice(-SIGN_MAX);
+    changed(true); renderVersions();
+    return true;
+  }
+  const apprInfo = (kind, id) => { const o = kind === 'decision' ? adrById(id) : kind === 'version' ? findVersion(id) : null; return o ? { ...approvalState(kind, o, S.model), signoffs: clone(o.signoffs || []) } : null; };
+  const apprSummary = st => T('appr.sum', { n: st.approved.length, t: st.required.length });
+  const apprTone = st => (st.rejected.length ? 'reject' : st.complete ? 'approve' : 'pending');
+  // Línea compacta de la ficha cerrada: «2 de 3 aprobaciones»
+  const apprLine = (kind, o) => { const st = approvalState(kind, o, S.model); return st.required.length ? `<div class="appr-line" style="--s:${APPR_COLOR[apprTone(st)]}">${esc(apprSummary(st))}</div>` : ''; };
+  function apprSection(kind, o) {
+    const m = S.model, st = approvalState(kind, o, m), log = o.signoffs || [];
+    if (!st.required.length && !log.length) return '';
+    const person = id => (m.stakeholders || []).find(x => x.id === id), lastOf = id => [...log].reverse().find(x => x.by === id);
+    const rows = st.required.map(id => {
+      const p = person(id) || { name: id }, l = lastOf(id), v = st.approved.includes(id) ? 'approve' : st.rejected.includes(id) ? 'reject' : 'pending';
+      const chip = v === 'pending' ? T('appr.pending') : `${v === 'approve' ? '✓' : '✗'} ${T(v === 'approve' ? 'appr.approved' : 'appr.rejected')} ${fmtDay(l.date)}`;
+      return `<div class="appr-row" style="--s:${APPR_COLOR[v]}"><span class="appr-who"><b>${esc(p.name || id)}</b>${p.role ? ` <em>${esc(p.role)}</em>` : ''}</span><span class="appr-chip">${esc(chip)}</span>
+        <span class="appr-btns"><button type="button" class="btn small" data-appr-do="approve" data-appr-sid="${esc(id)}">${esc(T('appr.approve'))}</button><button type="button" class="btn small" data-appr-do="reject" data-appr-sid="${esc(id)}">${esc(T('appr.reject'))}</button></span></div>`;
+    }).join('');
+    const warns = [];
+    if (kind === 'decision') {
+      if (typeof raidOf === 'function') { const bad = raidOf('decisions', o.id).filter(x => x.type === 'assumption' && (x.validation === 'invalidated' || (x.validation === 'pending' && typeof raidLate === 'function' && raidLate(x)))).map(x => x.id); if (bad.length) warns.push(T('appr.warn.raid', bad.join(', '))); }
+      if (typeof requirementsOf === 'function' && typeof reqCheck === 'function') { const bad = requirementsOf('decisions', o.id).filter(r => r.check && reqCheck(r).state === 'fail').map(r => r.id); if (bad.length) warns.push(T('appr.warn.req', bad.join(', '))); }
+    }
+    const entry = x => `<li style="--s:${APPR_COLOR[x.verdict]}"><time>${esc(fmtDay(x.date))}</time><span>${esc(person(x.by)?.name || x.by)}</span><b>${x.verdict === 'approve' ? '✓' : '✗'} ${esc(T(x.verdict === 'approve' ? 'appr.approved' : 'appr.rejected'))}</b>${x.note ? `<em>${esc(x.note)}</em>` : ''}</li>`;
+    return `<div class="appr" data-appr="${kind}">
+      <div class="appr-h"><span>${esc(T('appr.title'))}</span>${st.required.length ? `<b style="--s:${APPR_COLOR[apprTone(st)]}">${esc(apprSummary(st))}</b>` : ''}</div>
+      ${rows}${st.required.length ? `<input class="appr-note" data-appr-note maxlength="500" placeholder="${esc(T('appr.note.ph'))}" aria-label="${esc(T('appr.note'))}" autocomplete="off">` : `<p class="adr-hint">${esc(T('appr.none'))}</p>`}
+      ${warns.map(w => `<div class="appr-warn">⚠ ${esc(w)}</div>`).join('')}
+      ${log.length ? `<details class="appr-log"><summary>${esc(T('appr.log', log.length))}</summary><ol>${[...log].reverse().map(entry).join('')}</ol></details>` : ''}
+    </div>`;
+  }
+  const apprDo = (b, kind, id) => {
+    const sid = b.dataset.apprSid, note = b.closest('.appr')?.querySelector('[data-appr-note]')?.value || '';
+    if (signOff(kind, id, sid, b.dataset.apprDo, note)) toast(T(b.dataset.apprDo === 'approve' ? 'appr.done.approve' : 'appr.done.reject', apprWho(sid)));
+  };
+
   // Línea de tiempo compacta: fecha · estado · quién · nota (en la ficha abierta, la última entrada se puede editar)
   function adrTimeline(d, edit) {
     const hs = adrHist(d), last = hs.length - 1;
@@ -8144,7 +8365,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     if (df.added.includes(d.id)) return `<div class="adr-cmp add">${esc(T('adr.cmp.new'))}</div>`;
     const c = df.changed.find(x => x.id === d.id);
     if (!c) return `<div class="adr-cmp same">${esc(T('adr.cmp.same'))}</div>`;
-    const old = cmp.v.decisions.find(x => x.id === d.id), FN = { title: 'adr.f.title', status: 'adr.f.status', context: 'adr.f.context', decision: 'adr.f.decision', consequences: 'adr.f.consequences', deciders: 'adr.f.deciders', supersededBy: 'adr.f.superseded', area: 'adr.f.area', criteria: 'adr.crit', options: 'adr.opts', chosen: 'adr.chosen', links: 'adr.f.links' };
+    const old = cmp.v.decisions.find(x => x.id === d.id), FN = { title: 'adr.f.title', status: 'adr.f.status', context: 'adr.f.context', decision: 'adr.f.decision', consequences: 'adr.f.consequences', deciders: 'adr.f.deciders', supersededBy: 'adr.f.superseded', area: 'adr.f.area', criteria: 'adr.crit', options: 'adr.opts', chosen: 'adr.chosen', links: 'adr.f.links', signoffs: 'appr.title' };
     const fs = c.fields.map(f => T(FN[f]).toLowerCase()).join(', '), st = c.fields.includes('status') ? ` · ${T(`adr.st.${old.status}`)} → ${T(`adr.st.${d.status}`)}` : '';
     const more = adrOptDiff(old, d).map(x => `<div class="adr-cmp-d">${esc(x)}</div>`).join('');
     return `<div class="adr-cmp chg">${esc(`${T('adr.cmp.chg')}: ${fs}${st}`)}${more}</div>`;
@@ -8162,6 +8383,8 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     });
     ao.forEach((o, id) => { if (!bo.has(id)) out.push(T('adr.cmp.o.del', { t: nm(o) })); });
     if ((a.chosen || '') !== (b.chosen || '')) out.push(T('adr.cmp.chosen', { a: a.chosen ? nm(ao.get(a.chosen) || { id: a.chosen }) : '—', b: b.chosen ? nm(bo.get(b.chosen) || { id: b.chosen }) : '—' }));
+    { const sk = x => `${x.by}|${x.verdict}|${x.date}`, had = new Set((a.signoffs || []).map(sk));   // firmas nuevas desde la versión
+      (b.signoffs || []).filter(x => !had.has(sk(x))).forEach(x => out.push(T(x.verdict === 'approve' ? 'appr.cmp.approved' : 'appr.cmp.rejected', x.by))); }
     return out;
   }
   function adrGone(d) {
@@ -8212,6 +8435,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
         <datalist id="adr-areas">${[...new Set(ds.map(x => x.area).filter(Boolean))].map(a => `<option value="${esc(a)}">`).join('')}</datalist>
         ${['context', 'decision', 'consequences'].map(k => `${k === 'decision' ? adrOptions(d) : ''}<label>${esc(T(`adr.f.${k}`))}<textarea data-af="${k}" rows="4" placeholder="${esc(T(`adr.f.${k}.ph`))}">${esc(d[k])}</textarea></label>`).join('')}
         <div class="adr-histbox"><span>${esc(T('adr.hist'))}</span>${adrTimeline(d, true)}</div>
+        ${apprSection('decision', d)}
         <label>${esc(T('adr.f.superseded'))}<select data-af="supersededBy"><option value="">${esc(T('insp.none'))}</option>${others.map(x => `<option value="${esc(x.id)}"${x.id === d.supersededBy ? ' selected' : ''}>${esc(`${x.id} · ${adrTitle(x)}`)}</option>`).join('')}</select></label>
         <div class="adr-links-edit"><span>${esc(T('adr.f.links'))}</span>${links.length ? links.map(l => goChip(l, true)).join('') : `<em>${esc(T('adr.noLinks'))}</em>`}
           <div class="adr-row"><button class="btn small" data-adr="linksel">${esc(T('adr.linkSel'))}</button>
@@ -8223,6 +8447,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
       <button type="button" class="adr-head" data-adr-toggle aria-expanded="${on}"><b class="adr-id">${esc(d.id)}</b><span class="adr-title">${esc(adrTitle(d))}</span><span class="adr-pill">${esc(T(`adr.st.${d.status}`))}</span></button>
       <div class="adr-meta">${esc(adrMeta(d))}</div>
       ${d.options?.length ? `<div class="adr-osum">${esc(T('adr.osum', { n: d.options.length }))}${d.chosen ? ` · <b>✓ ${esc(d.options.find(o => o.id === d.chosen).title || d.chosen)}</b>` : ''}</div>` : ''}
+      ${apprLine('decision', d)}
       ${adrMark(d, cmp)}
       ${reqChipsFor(d.id)}
       ${!on && links.length ? `<div class="adr-links">${links.map(l => goChip(l, false)).join('')}</div>` : ''}
@@ -8297,7 +8522,12 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     const k = f.dataset.af;
     if (!k) return;
     if (f.tagName === 'SELECT') {
-      if (k === 'status') updateDecision(d.id, { status: f.value });
+      if (k === 'status') {
+        const gap = f.value === 'accepted' && d.status !== 'accepted' ? apprMissing('decision', d) : [];
+        if (!gap.length) return void updateDecision(d.id, { status: f.value });
+        f.value = d.status;   // pregunta antes de aceptar sin todas las firmas (no bloquea)
+        confirmBox({ title: T('appr.cf.title'), text: T('appr.cf.text', gap.join(', ')), ok: T('appr.cf.ok'), cancel: T('ver.cf.cancel') }).then(ok => { if (ok && adrById(d.id)) updateDecision(d.id, { status: 'accepted' }); });
+      }
       else if (k === 'supersededBy') updateDecision(d.id, f.value ? { supersededBy: f.value, status: 'superseded' } : { supersededBy: '' });
     } else { changed(true); renderInspector(); renderVersions(); }
   });
@@ -8319,6 +8549,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     if (d0.adrToggle != null && d) { ADR.open = ADR.open === d.id ? null : d.id; return renderAdr(true); }
     if (d0.adrGo) { const [k, ...r] = d0.adrGo.split(':'); return adrFocus(k, r.join(':')); }
     if (!d) return;
+    if (d0.apprDo) return void apprDo(b, 'decision', d.id);
     if (d0.adr === 'wide') { ADR.wide = ADR.wide === d.id ? null : d.id; return renderAdr(true); }
     if (d0.adr === 'addopt') return adrAddOption(d);
     if (d0.adr === 'addcrit') return adrAddCriterion(d);
@@ -8578,6 +8809,130 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
   });
   $('#inspector').addEventListener('click', ev => { const b = ev.target.closest('[data-raid-open]'); if (b) raidOpen(b.dataset.raidOpen); });
   $('#req-panel')?.addEventListener('click', ev => { const b = ev.target.closest('[data-raid-open]'); if (b) raidOpen(b.dataset.raidOpen); });   // y en la ficha del requisito
+
+  /* ---------- interesados: crear/cambiar/borrar, pestaña (fichas) y matriz RACI ---------- */
+  const PEOPLE = { open: null, wide: false };   // ficha abierta; matriz RACI ampliada
+  const SH_ORG_COLOR = { client: 'var(--p-cielo)', partner: 'var(--p-lavanda)', internal: 'var(--p-menta)' };
+  const SH_RACI_COLOR = { R: 'var(--p-cielo)', A: 'var(--p-coral)', C: 'var(--p-limon)', I: 'var(--muted)' };
+  const shRaciOf = (s, area) => { const k = Object.keys(s.raci || {}).find(x => x.toLowerCase() === String(area).toLowerCase()); return k ? s.raci[k] : ''; };
+  // Todo pasa por cleanStakeholders, así los ids, los límites y los valores de raci siempre quedan coherentes
+  function addStakeholder(p = {}) {
+    p = p && typeof p === 'object' ? p : {};
+    if ((S.model.stakeholders || []).length >= SH_MAX) { toast(T('adr.max', SH_MAX)); return ''; }
+    pushHistory();
+    const list = cleanStakeholders([...(S.model.stakeholders || []), { ...p, name: String(p.name ?? '').trim() || T('people.new') }], S.model), nd = list[list.length - 1];
+    S.model.stakeholders = list;
+    changed(true); renderPeople(true);
+    return nd.id;
+  }
+  function updateStakeholder(id, patch) {
+    const s = shById(id);
+    if (!s || !patch || typeof patch !== 'object') return false;
+    const list = cleanStakeholders(S.model.stakeholders.map(x => (x === s ? { ...s, ...patch, id: s.id } : x)), S.model);
+    if (!list.some(x => x.id === s.id)) return false;   // sin nombre no hay interesado
+    pushHistory();
+    S.model.stakeholders = list;
+    changed(true); renderPeople(true);
+    return true;
+  }
+  function removeStakeholder(id) {
+    const s = shById(id);
+    if (!s) return false;
+    if (shHasSignoffs(id)) { toast(T('people.blocked', s.name)); return false; }   // con firmas no se borra: se marca inactivo
+    pushHistory();
+    const list = cleanStakeholders(S.model.stakeholders.filter(x => x !== s), S.model);
+    if (list.length) S.model.stakeholders = list; else delete S.model.stakeholders;
+    if (PEOPLE.open === id) PEOPLE.open = null;
+    changed(true); renderPeople(true);
+    return true;
+  }
+  const peoplePanel = $('#people-panel');
+  const shMeta = s => [s.role, T(`people.org.${s.org}`)].filter(Boolean).join(' · ');
+  function shCard(s) {
+    const on = PEOPLE.open === s.id, tags = [s.versions ? T('people.versions.short') : '', s.inactive ? T('people.inactive') : ''].filter(Boolean);
+    const form = on ? `<div class="raid-form">
+        <label>${esc(T('people.f.name'))}<input data-pf="name" value="${esc(s.name)}" maxlength="120" autocomplete="off"></label>
+        <div class="raid-two"><label>${esc(T('people.f.role'))}<input data-pf="role" value="${esc(s.role || '')}" maxlength="80" placeholder="${esc(T('people.f.role.ph'))}" autocomplete="off"></label>
+          <label>${esc(T('people.f.org'))}<select data-ps="org" aria-label="${esc(T('people.f.org'))}">${SH_ORG.map(o => `<option value="${o}"${s.org === o ? ' selected' : ''}>${esc(T(`people.org.${o}`))}</option>`).join('')}</select></label></div>
+        <label class="ppl-chk"><input type="checkbox" data-pk="versions"${s.versions ? ' checked' : ''}> ${esc(T('people.versions'))}</label>
+        <label class="ppl-chk"><input type="checkbox" data-pk="inactive"${s.inactive ? ' checked' : ''}> ${esc(T('people.inactive.tip'))}</label>
+        <button class="btn small danger" data-ppl-del>${esc(T('people.delete'))}</button>
+      </div>` : '';
+    return `<div class="raid ppl${on ? ' on' : ''}${s.inactive ? ' off' : ''}" data-id="${esc(s.id)}" style="--s:${SH_ORG_COLOR[s.org]}">
+      <button type="button" class="raid-head" data-ppl-toggle aria-expanded="${on}"><b class="raid-id">${esc(s.id)}</b><span class="raid-title">${esc(s.name)}</span><span class="raid-pill">${esc(T(`people.org.${s.org}`))}</span></button>
+      <div class="raid-meta">${esc([s.role, ...tags].filter(Boolean).join(' · '))}</div>
+      ${form}
+    </div>`;
+  }
+  // Matriz RACI: filas = interesados, columnas = «todas las áreas» + cada área de las decisiones; ⚠ en la columna sin ningún aprobador (A)
+  function shMatrix() {
+    const hs = S.model.stakeholders || [], areas = shAreas(S.model), gaps = new Set(shGaps(S.model).map(a => a.toLowerCase())), wide = PEOPLE.wide;
+    const cols = [['*', T('people.all')], ...areas.map(a => [a, a])];
+    const head = cols.map(([a, lbl]) => { const gap = gaps.has(a.toLowerCase()); return `<th class="ppl-mx-a${gap ? ' gap' : ''}" title="${esc(gap ? `${lbl} · ${T('people.noApprover')}` : lbl)}"><span>${esc(lbl)}</span>${gap ? `<b class="ppl-warn" role="img" aria-label="${esc(T('people.noApprover'))}">⚠</b>` : ''}</th>`; }).join('');
+    const rows = hs.map(s => `<tr class="${s.inactive ? 'off' : ''}"><th scope="row" class="req-mx-r"><button type="button" class="adr-mx-t" data-ppl-open="${esc(s.id)}" title="${esc(`${s.name}${s.role ? ` · ${s.role}` : ''}`)}"><b>${esc(s.id)}</b> <span>${esc(s.name)}</span></button></th>${cols.map(([a, lbl]) => {
+      const v = shRaciOf(s, a);
+      return `<td class="ppl-mx-c"><select data-pm="${esc(a)}" data-pid="${esc(s.id)}" class="${v ? 'has' : ''}" style="--s:${SH_RACI_COLOR[v] || 'var(--muted)'}" aria-label="${esc(`${s.name} · ${lbl}`)}">${['', ...SH_RACI].map(r => `<option value="${r}"${v === r ? ' selected' : ''}>${r || '–'}</option>`).join('')}</select></td>`;
+    }).join('')}</tr>`).join('');
+    return `${wide ? '<div class="req-back" data-ppl-wide="1"></div>' : ''}<div class="req-mx-box ppl-mx-box${wide ? ' wide' : ''}"><div class="adr-opts-h"><span>${esc(T('people.mx.title'))}</span><button type="button" class="btn small" data-ppl-wide="1" title="${esc(T('adr.wide.tip'))}">${esc(T(wide ? 'adr.narrow' : 'adr.wide'))}</button></div>
+      <p class="raid-hint">${esc(T('people.mx.legend'))}</p>
+      <div class="req-mx-wrap"><table class="req-mx ppl-mx"><thead><tr><th class="req-mx-r">${esc(T('people.mx.who'))}</th>${head}</tr></thead><tbody>${rows}</tbody></table></div></div>`;
+  }
+  function renderPeople(force) {
+    if (!peoplePanel || !S.model || !$('.pane[data-pane="people"]')?.classList.contains('on')) return;
+    const a = document.activeElement;
+    if (!force && a && peoplePanel.contains(a) && a.matches('input, textarea, select')) return;   // no pisar lo que se está escribiendo
+    if (PEOPLE.open && !shById(PEOPLE.open)) PEOPLE.open = null;
+    const hs = S.model.stakeholders || [], gaps = shGaps(S.model), box = $('#people-list'), keep = box.parentElement?.scrollTop || 0, hx = box.querySelector('.req-mx-wrap')?.scrollLeft || 0;
+    $('#people-bar').innerHTML = `<div class="raid-tools"><button class="btn small primary" data-ppl-add>+ ${esc(T('people.add'))}</button></div>${hs.length ? `<div class="raid-sum" aria-live="polite">${esc(T('people.sum', hs.length))}${gaps.length ? ` · <span class="raid-late">${esc(T('people.sum.gaps', gaps.length))}</span>` : ''}</div>` : ''}`;
+    box.innerHTML = hs.length ? hs.map(shCard).join('') + shMatrix() : `<p class="fnd-empty">${esc(T('people.empty'))}</p>`;
+    if (box.parentElement) box.parentElement.scrollTop = keep;
+    const w = box.querySelector('.req-mx-wrap');
+    if (w && hx) w.scrollLeft = hx;
+  }
+  peoplePanel?.addEventListener('focusin', ev => { if (ev.target.dataset?.pf) beginEdit(); });
+  peoplePanel?.addEventListener('focusout', ev => { if (ev.target.dataset?.pf) endEdit(); });
+  peoplePanel?.addEventListener('input', ev => {
+    const f = ev.target, k = f.dataset?.pf, card = f.closest('.ppl'), s = k && card && shById(card.dataset.id);
+    if (!s) return;
+    if (k === 'name' && !f.value.trim()) return;   // el nombre no puede quedar vacío
+    markEdit();
+    if (f.value.trim() || k === 'name') s[k] = f.value; else delete s[k];
+    syncEditor(); save();
+    card.querySelector('.raid-title').textContent = s.name;
+    card.querySelector('.raid-meta').textContent = [s.role, ...(s.versions ? [T('people.versions.short')] : []), ...(s.inactive ? [T('people.inactive')] : [])].filter(Boolean).join(' · ');
+  });
+  peoplePanel?.addEventListener('change', ev => {
+    const f = ev.target, d0 = f.dataset;
+    if (d0.pm != null) {   // celda de la matriz: R/A/C/I o vacío
+      const s = shById(d0.pid);
+      if (!s) return;
+      const raci = { ...s.raci }, cur = Object.keys(raci).find(k => k.toLowerCase() === d0.pm.toLowerCase());
+      if (cur) delete raci[cur];
+      if (f.value) raci[d0.pm] = f.value;
+      return void updateStakeholder(s.id, { raci });
+    }
+    const card = f.closest('.ppl'), s = card && shById(card.dataset.id);
+    if (!s) return;
+    if (d0.ps) return void updateStakeholder(s.id, { [d0.ps]: f.value });
+    if (d0.pk) return void updateStakeholder(s.id, { [d0.pk]: f.checked });
+    if (d0.pf) { S.model.stakeholders = cleanStakeholders(S.model.stakeholders, S.model); changed(true); renderPeople(true); }   // al terminar de escribir: se normaliza y se repinta la matriz
+  });
+  peoplePanel?.addEventListener('click', async ev => {
+    const b = ev.target.closest('button');
+    if (!b) return;
+    const d0 = b.dataset, card = b.closest('.ppl'), s = card && shById(card.dataset.id);
+    if (d0.pplAdd != null) { const id = addStakeholder(); if (id) { PEOPLE.open = id; renderPeople(true); $(`#people-list .ppl[data-id="${CSS.escape(id)}"]`)?.scrollIntoView({ block: 'nearest' }); } return; }
+    if (d0.pplWide) { PEOPLE.wide = !PEOPLE.wide; return renderPeople(true); }
+    if (d0.pplOpen) { PEOPLE.open = d0.pplOpen; PEOPLE.wide = false; renderPeople(true); return void $(`#people-list .ppl[data-id="${CSS.escape(d0.pplOpen)}"]`)?.scrollIntoView({ block: 'nearest' }); }
+    if (d0.pplToggle != null && s) { PEOPLE.open = PEOPLE.open === s.id ? null : s.id; return renderPeople(true); }
+    if (d0.pplDel == null || !s) return;
+    if (shHasSignoffs(s.id)) {   // tiene firmas: no se borra; se ofrece marcarlo como inactivo
+      if (s.inactive) return void toast(T('people.blocked', s.name));
+      if (await confirmBox({ title: T('people.cf.blocked', s.name), text: T('people.cf.blocked.text'), ok: T('people.inactive.mark'), cancel: T('ver.cf.cancel') })) updateStakeholder(s.id, { inactive: true });
+      return;
+    }
+    if (await confirmBox({ title: T('people.cf.title', s.name), text: T('people.cf.text'), ok: T('people.delete'), cancel: T('ver.cf.cancel'), danger: true })) removeStakeholder(s.id);
+  });
 
   /* inspector (nodo, conexión y grupo) y filas de versiones */
   const adrKindOfSel = () => ({ node: 'nodes', edge: 'edges', group: 'groups' })[S.sel?.kind];
@@ -9057,9 +9412,11 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     threats: () => strideAll().map(t => ({ edge: t.e.id, from: t.e.from, to: t.e.to, zones: t.zones.map(z => z.id), category: t.cat, severity: t.severity, status: t.status, note: t.note })),
     exportThreats, exportReport,
     inventory: () => inventoryRows(S.model).map(r => ({ ...r })), exportInventory: (kind = 'xlsx') => exportInventory(['csv', 'csv-all'].includes(kind) ? kind : 'xlsx'),
+    signoff: (kind, id, sid, verdict, note) => signOff(kind, id, sid, verdict, note), approval: (kind, id) => apprInfo(kind, id),
     decisions: () => clone(S.model.decisions || []), compareDecisions: id => { const v = S.model.versions.find(x => x.id === id); return v && Array.isArray(v.decisions) ? diffDecisions(v.decisions, S.model.decisions || []) : null; }, addDecision, updateDecision, removeDecision, exportDecisions,
     addDecisionKit: id => addDecisionKit(id), decisionKits: () => adrKits().map(k => ({ id: k.id, name: loc(k.name), desc: loc(k.desc), decisions: k.decisions.length })),
     raid: () => clone(S.model.raid || []), addRaid, updateRaid, removeRaid, validateAssumption,
+    stakeholders: () => clone(S.model.stakeholders || []), addStakeholder, updateStakeholder, removeStakeholder,
     adrScore: id => { const d = adrById(id); return d ? { options: Object.fromEntries((d.options || []).map(o => [o.id, adrScore(d, o)])), leader: adrLeader(d) || null, chosen: d.chosen || null } : null; },
     requirements: () => clone(S.model.requirements || []), addRequirement, updateRequirement, removeRequirement, checkRequirement,
     setScope: id => setScope(id), get scope() { return S.scope; }, scopes: () => scopeList().map(x => ({ ...x, path: [...x.path] })), exportLevels,

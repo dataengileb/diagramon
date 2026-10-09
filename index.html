@@ -813,6 +813,19 @@
   .adr > .raid-row { margin-top: 6px; }
   .raid-warn { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 6px; padding: 6px 9px; border-radius: 8px; font-size: 11.5px; font-weight: 650; color: var(--p-coral); background: color-mix(in srgb, var(--p-coral) 12%, transparent); border: 1px solid color-mix(in srgb, var(--p-coral) 50%, transparent); }
   .raid-warn span { flex: 1; min-width: 0; }
+  .appr { display: grid; gap: 6px; margin: 8px 0 2px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px; background: color-mix(in srgb, var(--surface2) 55%, transparent); min-width: 0; }
+  .appr-h { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px; font-size: 11px; font-weight: 700; color: var(--muted); }
+  .appr-h b { padding: 1px 8px; border-radius: 999px; font-size: 10.5px; color: var(--text); background: color-mix(in srgb, var(--s) 22%, transparent); border: 1px solid color-mix(in srgb, var(--s) 45%, transparent); }
+  .appr-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding-left: 8px; border-left: 3px solid var(--s); min-width: 0; }
+  .appr-who { flex: 1 1 120px; min-width: 0; font-size: 12px; overflow-wrap: anywhere; } .appr-who em { font-style: normal; font-size: 11px; color: var(--muted); }
+  .appr-chip { flex: none; font-size: 11px; font-weight: 650; color: var(--text); }
+  .appr-btns { display: flex; gap: 4px; flex: none; }
+  .appr-note { width: 100%; min-width: 0; box-sizing: border-box; padding: 5px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); font: inherit; font-size: 12px; }
+  .appr-warn { padding: 5px 8px; border-radius: 8px; font-size: 11.5px; font-weight: 650; color: var(--p-limon); background: color-mix(in srgb, var(--p-limon) 12%, transparent); border: 1px solid color-mix(in srgb, var(--p-limon) 45%, transparent); }
+  .appr-log summary { cursor: pointer; font-size: 11px; font-weight: 650; color: var(--muted); }
+  .appr-log ol { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 3px; font-size: 11.5px; }
+  .appr-log li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 6px; padding-left: 6px; border-left: 2px solid var(--s); } .appr-log time { color: var(--muted); font-variant-numeric: tabular-nums; } .appr-log em { font-style: normal; color: var(--muted); overflow-wrap: anywhere; }
+  .appr-line { margin-top: 2px; font-size: 11.5px; font-weight: 650; color: var(--text); } .appr-line::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 6px; border-radius: 50%; background: var(--s); }
   .raid-form { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; margin-top: 9px; padding-top: 9px; border-top: 1px dashed var(--border); }
   .raid-form label { display: grid; gap: 4px; font-size: 11px; font-weight: 650; color: var(--muted); }
   .raid-form input, .raid-form select, .raid-form textarea { width: 100%; min-width: 0; box-sizing: border-box; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface2); color: var(--text); font: 12.5px var(--font); }
@@ -825,6 +838,18 @@
   .raid-hist { list-style: none; margin: 4px 0; padding: 0; display: flex; flex-direction: column; gap: 3px; font-size: 11.5px; }
   .raid-hist li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
   .raid-hist time { color: var(--muted); font-variant-numeric: tabular-nums; } .raid-by { color: var(--muted); }
+  /* Interesados: fichas (reutilizan las de RAID) y matriz RACI */
+  .ppl.off { opacity: .6; }
+  .ppl-chk { display: flex !important; align-items: center; gap: 7px; font-size: 12px !important; font-weight: 600 !important; color: var(--text) !important; } .ppl-chk input { width: auto !important; }
+  .ppl-mx-box { margin-top: 10px; }
+  .ppl-mx td.ppl-mx-c { width: 52px; min-width: 52px; padding: 2px; }
+  .ppl-mx tr.off > * { opacity: .55; }
+  .ppl-mx .ppl-mx-a { min-width: 52px; max-width: 90px; font-size: 10px; vertical-align: bottom; }
+  .ppl-mx .ppl-mx-a span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ppl-mx .ppl-mx-a.gap { color: var(--p-coral); } .ppl-warn { margin-left: 2px; font-weight: 800; }
+  .ppl-mx select { width: 44px; height: 24px; padding: 0 2px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface2); color: var(--muted); font: 700 11.5px var(--font); text-align: center; }
+  .ppl-mx select.has { color: var(--text); background: color-mix(in srgb, var(--s) 28%, var(--surface2)); border-color: color-mix(in srgb, var(--s) 55%, var(--border)); }
+  .ppl-mx-box.wide .ppl-mx select { width: 56px; height: 28px; font-size: 13px; } .ppl-mx-box.wide .ppl-mx .ppl-mx-a { max-width: 140px; font-size: 12px; }
 </style>
 
 <!-- Estilos del diagrama. También se incrustan al exportar SVG/PNG. -->
@@ -1288,6 +1313,7 @@
         <button class="tab on" data-tab="components" data-i18n="tab.components"></button>
         <button class="tab" data-tab="templates" data-i18n="tab.templates"></button>
         <button class="tab" data-tab="versions" data-i18n="tab.versions"></button>
+        <button class="tab" data-tab="people" data-i18n="tab.people" data-i18n-title="tab.people.tip"></button>
         <button class="tab" data-tab="review"><span data-i18n="tab.review"></span><b class="tab-badge" id="review-badge" hidden></b></button>
         <button class="tab" data-tab="adr" data-i18n="tab.adr" data-i18n-title="tab.adr.tip"></button>
         <button class="tab" data-tab="req" data-i18n="tab.req" data-i18n-title="tab.req.tip"></button>
@@ -1309,6 +1335,7 @@
       </div>
       <div class="pane" data-pane="templates"><div id="examples"></div></div>
       <div class="pane" data-pane="versions"><div id="versions"></div></div>
+      <div class="pane" data-pane="people"><div id="people-panel"><div id="people-bar"></div><div id="people-list"></div></div></div>
       <div class="pane" data-pane="review"><div id="review-panel"></div></div>
       <div class="pane" data-pane="adr"><div id="adr-panel"><div id="adr-bar"></div><div id="adr-list"></div></div></div>
       <div class="pane" data-pane="req"><div id="req-panel"><div id="req-bar"></div><div id="req-list"></div></div></div>

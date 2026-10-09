@@ -273,7 +273,8 @@
      ====================================================================== */
   section('ADR options');
   const adrSrc = between('/* adrModel:start */', '/* adrModel:end */');
-  const ADRM = new Function('isDay', 'today', `${adrSrc}; return { adrScore, adrFull, adrLeader, cleanDecisions };`)(v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v), () => '2026-01-01');
+  const apprSrc = between('/* approvalModel:start */', '/* approvalModel:end */');   // cleanDecisions llama a cleanSignoffs
+  const ADRM = new Function('isDay', 'today', `${apprSrc}; ${adrSrc}; return { adrScore, adrFull, adrLeader, cleanDecisions };`)(v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v), () => '2026-01-01');
   const adrModel = { nodes: [{ id: 'a' }], edges: [], groups: [], versions: [{ id: 'v2' }] };
   const adrDec = () => ({
     id: 'ADR-001', title: 'Open table format', status: 'proposed', date: '2026-10-07', context: 'c', decision: '', consequences: '', area: 'Storage',
@@ -609,6 +610,200 @@
     assert(m.raid.filter(x => x.type === 'risk').every(x => x.probability && x.impact && x.mitigation), 'risks have p, i and mitigation');
     const es = templates('es').find(x => /Lakehouse greenfield/.test(x.name)).model;
     assert(es.raid.every(x => x.title && x.title !== m.raid.find(y => y.id === x.id).title), 'titles are translated');
+  });
+  test('lakehouse template ships six stakeholders with RACI keys in en and es, and a signed ADR-001', () => {
+    const m = templates('en').find(x => /Lakehouse greenfield/.test(x.name)).model, es = templates('es').find(x => /Lakehouse greenfield/.test(x.name)).model;
+    const ids = new Set(m.stakeholders.map(s => s.id));
+    eq(m.stakeholders.length, 6, 'six stakeholders');
+    const areas = new Set([...m.decisions, ...es.decisions].map(d => d.area));
+    m.stakeholders.forEach(s => Object.keys(s.raci || {}).forEach(k => assert(k === '*' || areas.has(k), `${s.id} raci area ${k} is used by a decision`)));
+    assert(m.stakeholders.every(s => s.org === 'client' || s.org === 'partner'), 'org is client or partner');
+    const signs = [...m.decisions, ...(m.versions || [])].flatMap(x => x.signoffs || []);
+    assert(signs.length > 0 && signs.every(x => ids.has(x.by)), 'every sign-off names a stakeholder');
+    const adr1 = m.decisions.find(d => d.id === 'ADR-001');
+    eq(adr1.status, 'accepted', 'ADR-001 is accepted');
+    eq(adr1.signoffs.map(x => x.by), ['SH-001'], 'ADR-001 has one approval, the lead architect is still pending');
+  });
+
+  /* ======================================================================
+     9. Interesados y RACI
+     ====================================================================== */
+  section('Stakeholders');
+  const SHM = new Function(`${between('/* stakeholderModel:start */', '/* stakeholderModel:end */')}; return { cleanStakeholders, shGaps, shAreas, shIsA };`)();
+  const shSet = () => [
+    { id: 'SH-001', name: 'Ana Pérez', role: 'CISO', org: 'client', raci: { '*': 'C', Security: 'A', 'Data Platform': 'R' }, versions: true },
+    { id: 'SH-002', name: 'Luis "El Jefe" Gómez', org: 'partner', raci: { platform: 'A' } },
+    { id: 'SH-003', name: 'Marta', role: 'FinOps', org: 'internal', raci: { Operations: 'A' }, inactive: true }
+  ];
+  test('a quoted raci list accepts areas with spaces', () => {
+    const { model: m, errors } = TXT.parse('stakeholder SH-001: "Ana" raci="*:C,Data Platform:R"', textCtx('en'));
+    eq(errors.length, 0, 'no errors');
+    eq(m.stakeholders?.[0]?.raci?.['Data Platform'], 'R', 'area with a space');
+  });
+  test('cleanStakeholders keeps valid entries in canonical key order and applies the limits', () => {
+    const r = SHM.cleanStakeholders(shSet(), {});
+    eq(r.map(x => x.id), ['SH-001', 'SH-002', 'SH-003'], 'ids');
+    eq(Object.keys(r[0]), ['id', 'name', 'role', 'org', 'raci', 'versions'], 'key order');
+    eq(Object.keys(r[2]), ['id', 'name', 'role', 'org', 'raci', 'inactive'], 'inactive last');
+    const big = SHM.cleanStakeholders([{ name: `  ${'n'.repeat(200)}  `, role: 'r'.repeat(200), org: 'nonsense', raci: Object.fromEntries(Array.from({ length: 60 }, (_, i) => [`Area ${i}`, i % 2 ? 'a' : 'x'])) }], {})[0];
+    eq([big.name.length, big.role.length, big.org, Object.keys(big.raci).length, [...new Set(Object.values(big.raci))]], [120, 80, 'client', 30, ['A']], 'name <= 120, role <= 80, org defaults to client, invalid letters dropped, raci uppercased');
+    const keys = SHM.cleanStakeholders([{ name: 'x', raci: { ['y'.repeat(100)]: 'R', ' Two  words, here ': 'i', '*': 'c', '': 'A', Dup: 'R', dup: 'A' } }], {})[0].raci;
+    eq(Object.keys(keys), ['y'.repeat(60), 'Two words here', '*', 'Dup'], 'areas are cut to 60 chars, tidied, deduplicated without regard to case');
+    eq(keys['Two words here'], 'I', 'letters are uppercased');
+    const many = SHM.cleanStakeholders([{ name: 'x', raci: Object.fromEntries(Array.from({ length: 60 }, (_, i) => [`A${i}`, 'R'])) }], {})[0];
+    eq(Object.keys(many.raci).length, 40, 'at most 40 areas');
+  });
+  test('cleanStakeholders renumbers invalid and duplicate ids, drops nameless entries and is idempotent', () => {
+    const r = SHM.cleanStakeholders([{ id: 'SH-004', name: 'a' }, { id: 'SH-004', name: 'dup' }, { id: 'X-1', name: 'bad' }, { name: '   ' }, null, 5, { name: 'last', id: 'SH-002', versions: 'yes', inactive: 1 }], {});
+    eq(r.map(x => [x.id, x.name]), [['SH-004', 'a'], ['SH-005', 'dup'], ['SH-006', 'bad'], ['SH-002', 'last']], 'ids');
+    eq([r[3].versions, r[3].inactive], [undefined, undefined], 'flags only when exactly true');
+    const once = SHM.cleanStakeholders(shSet(), {});
+    eq(JSON.stringify(SHM.cleanStakeholders(once, {})), JSON.stringify(once), 'idempotent');
+    eq(SHM.cleanStakeholders(undefined, {}), [], 'no key');
+    eq(SHM.cleanStakeholders(Array.from({ length: 250 }, (_, i) => ({ name: `p${i}` })), {}).length, 200, 'at most 200 stakeholders');
+  });
+  test('the model and the exports are byte-identical without stakeholders', () => {
+    assert(/if \(m\.stakeholders\?\.length\) body\.push\(arr\('stakeholders'/.test(app), 'JSON export only writes the key when there are stakeholders');
+    assert(/if \(sh\.length\) m\.stakeholders = sh/.test(app), 'normalize adds the key only when there are stakeholders');
+    const base = { title: 'No people', groups: [], nodes: [{ id: 'a', label: 'A', type: 'generic' }], edges: [] };
+    eq(serializeM(base), serializeM({ ...base, stakeholders: [] }), 'JSON');
+    const b = withPositions(base);
+    ['en', 'es'].forEach(l => {
+      const t0 = TXT.stringify(b, l);
+      eq(t0, TXT.stringify({ ...b, stakeholders: [] }, l), `text (${l})`);
+      const p = TXT.parse(t0, textCtx(l));
+      eq([p.errors, p.model.stakeholders], [[], []], `parse (${l})`);
+    });
+    assert(/stakeholders: S\.model\.stakeholders/.test(app) && /raw\.stakeholders\) && S\.model\.stakeholders/.test(app), 'openVersion and the editors keep the stakeholders');
+    eq(/stakeholder/i.test(serializeM(base)), false, 'no stakeholder key in the JSON');
+  });
+  test('JSON export of stakeholders keeps the canonical order', () => {
+    const j = serializeM({ title: 't', groups: [], nodes: [], edges: [], stakeholders: SHM.cleanStakeholders(shSet(), {}) });
+    assert(/"stakeholders": \[\n    \{ "id": "SH-001", "name": "Ana Pérez", "role": "CISO", "org": "client", "raci": \{"\*":"C","Security":"A","Data Platform":"R"\}, "versions": true \}/.test(j), `JSON line:\n${j}`);
+    eq(JSON.parse(j).stakeholders, SHM.cleanStakeholders(shSet(), {}), 'round trip');
+  });
+  ['en', 'es'].forEach(lang => test(`stakeholders round trip in the text format · ${lang}`, () => {
+    const m = withPositions({ title: 'People', nodes: [{ id: 'a', label: 'A' }], edges: [], stakeholders: SHM.cleanStakeholders(shSet(), {}) });
+    const t1 = TXT.stringify(m, lang), r = TXT.parse(t1, textCtx(lang));
+    eq(r.errors, [], 'parse errors');
+    const t2 = TXT.stringify({ ...r.model, meta: m.meta }, lang);
+    assert(t1 === t2, `text changed:\n${t1}\n---\n${t2}`);
+    eq(SHM.cleanStakeholders(r.model.stakeholders, r.model), SHM.cleanStakeholders(m.stakeholders, m), 'model');
+    if (lang === 'es') assert(/^interesado SH-001: "Ana Pérez" rol="CISO" org=cliente raci="\*:C,Security:A,Data Platform:R" versiones$/m.test(t1) && /^interesado SH-002: .* org=socio raci=platform:A$/m.test(t1) && /^interesado SH-003: "Marta" rol="FinOps" org=interno raci=Operations:A inactivo$/m.test(t1), `Spanish keywords:\n${t1}`);
+    else assert(/^stakeholder SH-001: "Ana Pérez" role="CISO" org=client raci="\*:C,Security:A,Data Platform:R" versions$/m.test(t1) && /^stakeholder SH-003: "Marta" role="FinOps" org=internal raci=Operations:A inactive$/m.test(t1), `English keywords:\n${t1}`);
+  }));
+  test('stakeholder text accepts both languages and reports errors with line numbers', () => {
+    const ctx = textCtx('en');
+    const ok = TXT.parse(['a: A', 'interesado SH-1: "Ana" rol="CISO" org=socio raci=*:c,Seguridad:A versiones', 'stakeholder SH-2: "Luis" inactivo'].join('\n'), ctx);
+    eq(ok.errors, [], 'mixed-language input');
+    eq(ok.model.stakeholders, [{ id: 'SH-1', name: 'Ana', role: 'CISO', org: 'partner', raci: { '*': 'C', Seguridad: 'A' }, versions: true }, { id: 'SH-2', name: 'Luis', org: 'client', inactive: true }], 'values');
+    const bad = TXT.parse(['a: A', 'stakeholder X-1: "bad id"', 'stakeholder SH-1: "x" org=alien raci=Sec:Z,nocolon', 'stakeholder SH-1: "dup"'].join('\n'), ctx);
+    eq(bad.errors.map(e => e.line).sort(), [2, 3, 3, 3, 4], 'one error per problem, with its line');
+    const es = TXT.parse('stakeholder SH-1: "x" org=alien', textCtx('es'));
+    assert(/org no válida/.test(JSON.stringify(es.errors[0])), 'Spanish error message');
+  });
+  test('shGaps: areas of the decisions without an active accountable stakeholder', () => {
+    const sh = SHM.cleanStakeholders(shSet(), {});
+    const decs = [{ id: 'ADR-001', area: 'security' }, { id: 'ADR-002', area: 'Platform' }, { id: 'ADR-003', area: 'Operations' }, { id: 'ADR-004', area: ' data  platform ' }, { id: 'ADR-005' }];
+    eq(SHM.shGaps({ stakeholders: sh, decisions: decs }), ['Operations', 'data platform'], 'case-insensitive match, inactive stakeholders do not count, no area is ignored');
+    eq(SHM.shGaps({ stakeholders: [{ id: 'SH-001', name: 'x', raci: { '*': 'A' } }], decisions: decs }), [], 'A on * covers every area');
+    eq(SHM.shGaps({ decisions: decs }), [], 'no stakeholders, no findings');
+    eq(SHM.shAreas({ stakeholders: sh, decisions: decs }), ['security', 'Platform', 'Operations', 'data platform'], 'matrix columns: decision areas, then areas only used in the matrix');
+    eq(SHM.shAreas({ stakeholders: [{ id: 'SH-001', name: 'x', raci: { Extra: 'R', '*': 'A' } }], decisions: [{ id: 'ADR-001', area: 'Core' }] }), ['Core', 'Extra'], 'areas used only in a matrix come after');
+  });
+  test('the Stakeholders tab, the finding and the API are wired', () => {
+    assert(/data-tab="people"/.test(read('index.html')) && /data-pane="people"/.test(read('index.html')), 'tab and pane in index.html');
+    assert(/addFindingSource\('approval'/.test(app) && /approval:no-approver:/.test(app), 'no-approver finding');
+    assert(/stakeholders: \(\) => clone\(S\.model\.stakeholders \|\| \[\]\), addStakeholder, updateStakeholder, removeStakeholder/.test(app), 'API');
+    assert(/shHasSignoffs\(id\)\) \{ toast/.test(app), 'delete is blocked when the stakeholder has sign-offs');
+  });
+
+  /* ======================================================================
+     10. Aprobaciones: firmas de ADR y versiones
+     ====================================================================== */
+  section('Approvals');
+  const isDayT = v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
+  const APPM = new Function('isDay', `${apprSrc}; return { approversFor, approvalState, cleanSignoffs };`)(isDayT);
+  const people = () => [
+    { id: 'SH-001', name: 'Ana', raci: { '*': 'C', Security: 'A' } }, { id: 'SH-002', name: 'Luis', raci: { platform: 'A' } },
+    { id: 'SH-003', name: 'Eva', raci: { '*': 'A' }, versions: true }, { id: 'SH-004', name: 'Old', raci: { '*': 'A' }, versions: true, inactive: true }, { id: 'SH-005', name: 'Read', raci: { '*': 'I' } }];
+  const apprM = { stakeholders: people() };
+  test('approversFor: active A on the area (case-insensitive) or on *, versions flag for versions', () => {
+    eq(APPM.approversFor('decision', { area: ' security ' }, apprM), ['SH-001', 'SH-003'], 'Security (trimmed, any case) + *');
+    eq(APPM.approversFor('decision', { area: 'PLATFORM' }, apprM), ['SH-002', 'SH-003'], 'Platform');
+    eq(APPM.approversFor('decision', {}, apprM), ['SH-003'], 'no area uses only *');
+    eq(APPM.approversFor('decision', { area: 'Other' }, apprM), ['SH-003'], 'unknown area');
+    eq(APPM.approversFor('version', {}, apprM), ['SH-003'], 'versions (inactive left out)');
+    eq(APPM.approversFor('decision', { area: 'x' }, {}), [], 'no stakeholders');
+  });
+  test('approvalState: latest sign-off wins, only the current round counts, empty means not configured', () => {
+    const so = (by, verdict, date) => ({ by, verdict, date });
+    const d = { area: 'Security', history: [{ status: 'proposed', date: '2026-10-01' }, { status: 'accepted', date: '2026-10-05' }, { status: 'proposed', date: '2026-10-08' }],
+      signoffs: [so('SH-001', 'approve', '2026-10-02'), so('SH-003', 'reject', '2026-10-09'), so('SH-003', 'approve', '2026-10-10'), so('SH-001', 'approve', '2026-10-08')] };
+    eq(APPM.approvalState('decision', d, apprM), { required: ['SH-001', 'SH-003'], approved: ['SH-001', 'SH-003'], rejected: [], pending: [], complete: true }, 'both approved in the last round');
+    d.history.push({ status: 'proposed', date: '2026-10-11' });
+    eq(APPM.approvalState('decision', d, apprM).pending, ['SH-001', 'SH-003'], 'a new proposed entry starts a new round');
+    d.signoffs.push(so('SH-001', 'reject', '2026-10-12'));
+    const st = APPM.approvalState('decision', d, apprM);
+    eq([st.rejected, st.pending, st.complete], [['SH-001'], ['SH-003'], false], 'rejection blocks');
+    eq(APPM.approvalState('decision', { signoffs: [so('SH-003', 'approve', '2026-01-01')] }, apprM).complete, true, 'no proposed entry: everything counts');
+    const v = { reviewSince: '2026-10-05', signoffs: [so('SH-003', 'approve', '2026-10-04')] };
+    eq(APPM.approvalState('version', v, apprM).pending, ['SH-003'], 'before reviewSince does not count');
+    v.signoffs.push(so('SH-003', 'approve', '2026-10-05'));
+    eq(APPM.approvalState('version', v, apprM).complete, true, 'on reviewSince counts');
+    eq(APPM.approvalState('version', {}, { stakeholders: [{ id: 'SH-001', name: 'A' }] }), { required: [], approved: [], rejected: [], pending: [], complete: false }, 'not configured');
+  });
+  test('cleanSignoffs keeps known stakeholders, valid verdicts and dates; trims notes; caps at 200', () => {
+    const r = APPM.cleanSignoffs([{ by: 'SH-001', verdict: 'approve', date: '2026-10-08', note: '  ok  ' }, { by: 'SH-009', verdict: 'approve', date: '2026-10-08' }, { by: 'SH-001', verdict: 'maybe', date: '2026-10-08' },
+      { by: 'SH-002', verdict: 'reject', date: 'soon' }, { by: 'SH-002', verdict: 'reject', date: '2026-10-09', note: 'x'.repeat(600), extra: 1 }, null, 'x'], apprM);
+    eq(r.map(x => [x.by, x.verdict, x.date, (x.note || '').length]), [['SH-001', 'approve', '2026-10-08', 2], ['SH-002', 'reject', '2026-10-09', 500]], 'entries');
+    eq(Object.keys(r[0]), ['by', 'verdict', 'date', 'note'], 'key order');
+    eq(APPM.cleanSignoffs(Array.from({ length: 250 }, (_, i) => ({ by: 'SH-001', verdict: 'approve', date: '2026-10-08', note: String(i) })), apprM).length, 200, 'limit');
+    eq(APPM.cleanSignoffs([{ by: 'SH-001', verdict: 'approve', date: '2026-10-08' }], {}), [], 'without stakeholders everything is dropped');
+  });
+  test('cleanDecisions keeps signoffs after history, and nothing appears when absent', () => {
+    const d = { id: 'ADR-001', title: 'T', status: 'accepted', date: '2026-10-08', context: 'a', history: [{ status: 'accepted', date: '2026-10-08' }], signoffs: [{ by: 'SH-001', verdict: 'approve', date: '2026-10-08' }, { by: 'GHOST', verdict: 'approve', date: '2026-10-08' }] };
+    const r = ADRM.cleanDecisions([d], { ...adrModel, stakeholders: people() })[0];
+    eq(Object.keys(r).slice(-2), ['history', 'signoffs'], 'order'); eq(r.signoffs.length, 1, 'ghost dropped');
+    assert(!('signoffs' in ADRM.cleanDecisions([{ ...d, signoffs: [] }], adrModel)[0]), 'no key without sign-offs');
+    assert(!('signoffs' in ADRM.cleanDecisions([d], adrModel)[0]), 'no key when the model has no stakeholders');
+  });
+  ['en', 'es'].forEach(lang => test(`sign-offs round trip in the text format · ${lang}`, () => {
+    const m = withPositions({ title: 'ADR', nodes: [{ id: 'a', label: 'A' }], edges: [] });
+    m.decisions = [{ id: 'ADR-001', title: 'T', status: 'accepted', date: '2026-10-09', context: 'c', decision: '', consequences: '', area: 'Security', links: {},
+      history: [{ status: 'proposed', date: '2026-10-07' }, { status: 'accepted', date: '2026-10-09' }],
+      signoffs: [{ by: 'SH-001', verdict: 'approve', date: '2026-10-08', note: 'Looks "good"; ship' }, { by: 'SH-002', verdict: 'reject', date: '2026-10-09' }] }];
+    const ctx = { ...textCtx(lang), stakeholders: ['SH-001', 'SH-002'] }, t1 = TXT.stringify(m, lang), r = TXT.parse(t1, ctx);
+    eq(r.errors, [], 'parse errors');
+    eq(r.model.decisions[0].signoffs, m.decisions[0].signoffs, 'model');
+    assert(TXT.stringify({ ...r.model, meta: m.meta }, lang) === t1, 'text is stable');
+    if (lang === 'es') assert(/^  firmas: SH-001 aprueba 2026-10-08 nota="Looks \\"good\\"; ship"; SH-002 rechaza 2026-10-09$/m.test(t1), `Spanish keywords:\n${t1}`);
+    else assert(/^  signoffs: SH-001 approve 2026-10-08 note="Looks \\"good\\"; ship"; SH-002 reject 2026-10-09$/m.test(t1), `English keywords:\n${t1}`);
+  }));
+  test('sign-off text accepts both languages and reports errors with line numbers', () => {
+    const ctx = { ...textCtx('en'), stakeholders: ['SH-001'] };
+    const ok = TXT.parse(['a: A', 'adr ADR-1: "T"', '  firmas: SH-001 aprobado 2026-10-08 nota=ok'].join('\n'), ctx);
+    eq(ok.errors, [], 'mixed-language input'); eq(ok.model.decisions[0].signoffs, [{ by: 'SH-001', verdict: 'approve', date: '2026-10-08', note: 'ok' }], 'values');
+    const bad = TXT.parse(['adr ADR-1: "T"', '  signoffs: SH-009 approve 2026-10-08', '  signoffs: SH-001 maybe 2026-10-08; SH-001 approve nope; SH-001 approve'].join('\n'), ctx);
+    eq(bad.errors.map(e => e.line).sort(), [2, 3, 3, 3], 'unknown stakeholder and malformed entries, each with its line');
+  });
+  test('old documents stay byte-identical (no sign-off keys in text or JSON order)', () => {
+    const m = withPositions({ title: 'ADR', nodes: [{ id: 'a', label: 'A' }], edges: [] });
+    m.decisions = [{ id: 'ADR-001', title: 'T', status: 'accepted', date: '2026-10-09', context: 'c', decision: '', consequences: '', links: {}, history: [{ status: 'accepted', date: '2026-10-09' }] }];
+    assert(!/signoffs|firmas/.test(TXT.stringify(m, 'en') + TXT.stringify(m, 'es')), 'no sign-off lines');
+    assert(!/signoffs/.test(serializeM(m, true)), 'no sign-off key in the JSON');
+  });
+
+  test('the stakeholder and sign-off examples of the text-format docs parse without errors · en and es', () => {
+    const ex = { en: ['adr ADR-001: "T" status=accepted area="Security"', '  signoffs: SH-001 approve 2026-10-08 note="ok"; SH-002 reject 2026-10-09',
+      'stakeholder SH-001: "Ana Pérez" role="CISO" org=client raci=*:C,Security:A,Platform:R versions', 'stakeholder SH-002: "Luis Gómez" role="Data owner" org=partner raci=Consumption:A,*:I inactive'],
+    es: ['adr ADR-001: "T" estado=aceptada área="Seguridad"', '  firmas: SH-001 aprueba 2026-10-08 nota="ok"; SH-002 rechaza 2026-10-09',
+      'interesado SH-001: "Ana Pérez" rol="CISO" org=cliente raci=*:C,Seguridad:A,Platform:R versiones', 'interesado SH-002: "Luis Gómez" rol="Dueño del dato" org=socio raci=Consumo:A,*:I inactivo'] };
+    ['en', 'es'].forEach(lang => {
+      const r = TXT.parse(ex[lang].join('\n'), textCtx(lang));
+      eq(r.errors, [], `parse errors (${lang})`);
+      eq(r.model.stakeholders.map(x => x.id), ['SH-001', 'SH-002'], `stakeholders (${lang})`);
+    });
   });
 
   /* ---------- resumen ---------- */
