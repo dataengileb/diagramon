@@ -928,6 +928,18 @@
     const ex = ['phase mvp: "MVP" date=2026-12 goal="Batch ingestion and first BI"', 'phase wave1: "Wave 1" date=2027-03', 'src: Source', 'cdc: CDC phase=wave1', 'tmp: Upload phase=mvp until=wave1', 'src -> cdc : x phase=wave1'].join('\n');
     eq(TXT.parse(ex, textCtx('en')).errors, [], 'the example of the text-format header parses');
   });
+  test('the phase examples of the text-format docs parse without errors · en and es', () => {
+    const ex = { en: ['phase mvp: "MVP" date=2026-12 goal="Batch ingestion of ERP and CRM files, first BI"', 'phase wave1: "Wave 1" date=2027-03 goal="Change data capture and the gold layer"', 'phase wave2: "Wave 2" date=2027-06', '',
+      'erp: ERP [db]', 'crm: CRM [db]', 'upload: Manual file upload phase=mvp until=wave1', 'cdc: CDC replication phase=wave1', 'stream: Event stream phase=wave2', 'erp -> cdc : changes phase=wave1', 'erp -> upload : extract phase=mvp'],
+    es: ['fase mvp: "MVP" fecha=2026-12 objetivo="Ingesta por lotes de archivos del ERP y el CRM, primer BI"', 'fase ola1: "Ola 1" fecha=2027-03 objetivo="Captura de cambios y la capa oro"', 'fase ola2: "Ola 2" fecha=2027-06', '',
+      'erp: ERP [db]', 'crm: CRM [db]', 'subida: Carga manual de archivos fase=mvp hasta=ola1', 'cdc: Replicación CDC fase=ola1', 'flujo: Flujo de eventos fase=ola2', 'erp -> cdc : cambios fase=ola1', 'erp -> subida : extracción fase=mvp'] };
+    ['en', 'es'].forEach(lang => {
+      const r = TXT.parse(ex[lang].join('\n'), textCtx(lang));
+      eq(r.errors, [], `parse errors (${lang})`);
+      eq(r.model.phases.length, 3, `phases (${lang})`);
+      eq(r.model.nodes.filter(n => n.until).map(n => [n.id, n.phase, n.until]), [[lang === 'en' ? 'upload' : 'subida', 'mvp', lang === 'en' ? 'wave1' : 'ola1']], `until (${lang})`);
+    });
+  });
   test('the phase model stays out of the old paths: markers, ORDER, API-facing helpers exist', () => {
     ['ORDER.phase = [\'id\', \'name\', \'date\', \'goal\']'].forEach(x => assert(app.includes(x), x));
     assert(/cleanPhaseRefs\(\[\.\.\.m\.groups, \.\.\.m\.nodes, \.\.\.m\.edges\], m\.phases\)/.test(app), 'normalize cleans the element fields'); assert(/if \(m\.phases\?\.length\) head\.push\(arr\('phases'/.test(app), 'JSON only writes the key when there are phases');
