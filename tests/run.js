@@ -611,6 +611,94 @@
     assert(es.raid.every(x => x.title && x.title !== m.raid.find(y => y.id === x.id).title), 'titles are translated');
   });
 
+  /* ======================================================================
+     9. Interesados y RACI
+     ====================================================================== */
+  section('Stakeholders');
+  const SHM = new Function(`${between('/* stakeholderModel:start */', '/* stakeholderModel:end */')}; return { cleanStakeholders, shGaps, shAreas, shIsA };`)();
+  const shSet = () => [
+    { id: 'SH-001', name: 'Ana Pérez', role: 'CISO', org: 'client', raci: { '*': 'C', Security: 'A', 'Data Platform': 'R' }, versions: true },
+    { id: 'SH-002', name: 'Luis "El Jefe" Gómez', org: 'partner', raci: { platform: 'A' } },
+    { id: 'SH-003', name: 'Marta', role: 'FinOps', org: 'internal', raci: { Operations: 'A' }, inactive: true }
+  ];
+  test('cleanStakeholders keeps valid entries in canonical key order and applies the limits', () => {
+    const r = SHM.cleanStakeholders(shSet(), {});
+    eq(r.map(x => x.id), ['SH-001', 'SH-002', 'SH-003'], 'ids');
+    eq(Object.keys(r[0]), ['id', 'name', 'role', 'org', 'raci', 'versions'], 'key order');
+    eq(Object.keys(r[2]), ['id', 'name', 'role', 'org', 'raci', 'inactive'], 'inactive last');
+    const big = SHM.cleanStakeholders([{ name: `  ${'n'.repeat(200)}  `, role: 'r'.repeat(200), org: 'nonsense', raci: Object.fromEntries(Array.from({ length: 60 }, (_, i) => [`Area ${i}`, i % 2 ? 'a' : 'x'])) }], {})[0];
+    eq([big.name.length, big.role.length, big.org, Object.keys(big.raci).length, [...new Set(Object.values(big.raci))]], [120, 80, 'client', 30, ['A']], 'name <= 120, role <= 80, org defaults to client, invalid letters dropped, raci uppercased');
+    const keys = SHM.cleanStakeholders([{ name: 'x', raci: { ['y'.repeat(100)]: 'R', ' Two  words, here ': 'i', '*': 'c', '': 'A', Dup: 'R', dup: 'A' } }], {})[0].raci;
+    eq(Object.keys(keys), ['y'.repeat(60), 'Two words here', '*', 'Dup'], 'areas are cut to 60 chars, tidied, deduplicated without regard to case');
+    eq(keys['Two words here'], 'I', 'letters are uppercased');
+    const many = SHM.cleanStakeholders([{ name: 'x', raci: Object.fromEntries(Array.from({ length: 60 }, (_, i) => [`A${i}`, 'R'])) }], {})[0];
+    eq(Object.keys(many.raci).length, 40, 'at most 40 areas');
+  });
+  test('cleanStakeholders renumbers invalid and duplicate ids, drops nameless entries and is idempotent', () => {
+    const r = SHM.cleanStakeholders([{ id: 'SH-004', name: 'a' }, { id: 'SH-004', name: 'dup' }, { id: 'X-1', name: 'bad' }, { name: '   ' }, null, 5, { name: 'last', id: 'SH-002', versions: 'yes', inactive: 1 }], {});
+    eq(r.map(x => [x.id, x.name]), [['SH-004', 'a'], ['SH-005', 'dup'], ['SH-006', 'bad'], ['SH-002', 'last']], 'ids');
+    eq([r[3].versions, r[3].inactive], [undefined, undefined], 'flags only when exactly true');
+    const once = SHM.cleanStakeholders(shSet(), {});
+    eq(JSON.stringify(SHM.cleanStakeholders(once, {})), JSON.stringify(once), 'idempotent');
+    eq(SHM.cleanStakeholders(undefined, {}), [], 'no key');
+    eq(SHM.cleanStakeholders(Array.from({ length: 250 }, (_, i) => ({ name: `p${i}` })), {}).length, 200, 'at most 200 stakeholders');
+  });
+  test('the model and the exports are byte-identical without stakeholders', () => {
+    assert(/if \(m\.stakeholders\?\.length\) body\.push\(arr\('stakeholders'/.test(app), 'JSON export only writes the key when there are stakeholders');
+    assert(/if \(sh\.length\) m\.stakeholders = sh/.test(app), 'normalize adds the key only when there are stakeholders');
+    const base = { title: 'No people', groups: [], nodes: [{ id: 'a', label: 'A', type: 'generic' }], edges: [] };
+    eq(serializeM(base), serializeM({ ...base, stakeholders: [] }), 'JSON');
+    const b = withPositions(base);
+    ['en', 'es'].forEach(l => {
+      const t0 = TXT.stringify(b, l);
+      eq(t0, TXT.stringify({ ...b, stakeholders: [] }, l), `text (${l})`);
+      const p = TXT.parse(t0, textCtx(l));
+      eq([p.errors, p.model.stakeholders], [[], []], `parse (${l})`);
+    });
+    assert(/stakeholders: S\.model\.stakeholders/.test(app) && /raw\.stakeholders\) && S\.model\.stakeholders/.test(app), 'openVersion and the editors keep the stakeholders');
+    eq(/stakeholder/i.test(serializeM(base)), false, 'no stakeholder key in the JSON');
+  });
+  test('JSON export of stakeholders keeps the canonical order', () => {
+    const j = serializeM({ title: 't', groups: [], nodes: [], edges: [], stakeholders: SHM.cleanStakeholders(shSet(), {}) });
+    assert(/"stakeholders": \[\n    \{ "id": "SH-001", "name": "Ana Pérez", "role": "CISO", "org": "client", "raci": \{"\*":"C","Security":"A","Data Platform":"R"\}, "versions": true \}/.test(j), `JSON line:\n${j}`);
+    eq(JSON.parse(j).stakeholders, SHM.cleanStakeholders(shSet(), {}), 'round trip');
+  });
+  ['en', 'es'].forEach(lang => test(`stakeholders round trip in the text format · ${lang}`, () => {
+    const m = withPositions({ title: 'People', nodes: [{ id: 'a', label: 'A' }], edges: [], stakeholders: SHM.cleanStakeholders(shSet(), {}) });
+    const t1 = TXT.stringify(m, lang), r = TXT.parse(t1, textCtx(lang));
+    eq(r.errors, [], 'parse errors');
+    const t2 = TXT.stringify({ ...r.model, meta: m.meta }, lang);
+    assert(t1 === t2, `text changed:\n${t1}\n---\n${t2}`);
+    eq(SHM.cleanStakeholders(r.model.stakeholders, r.model), SHM.cleanStakeholders(m.stakeholders, m), 'model');
+    if (lang === 'es') assert(/^interesado SH-001: "Ana Pérez" rol="CISO" org=cliente raci="\*:C,Security:A,Data Platform:R" versiones$/m.test(t1) && /^interesado SH-002: .* org=socio raci=platform:A$/m.test(t1) && /^interesado SH-003: "Marta" rol="FinOps" org=interno raci=Operations:A inactivo$/m.test(t1), `Spanish keywords:\n${t1}`);
+    else assert(/^stakeholder SH-001: "Ana Pérez" role="CISO" org=client raci="\*:C,Security:A,Data Platform:R" versions$/m.test(t1) && /^stakeholder SH-003: "Marta" role="FinOps" org=internal raci=Operations:A inactive$/m.test(t1), `English keywords:\n${t1}`);
+  }));
+  test('stakeholder text accepts both languages and reports errors with line numbers', () => {
+    const ctx = textCtx('en');
+    const ok = TXT.parse(['a: A', 'interesado SH-1: "Ana" rol="CISO" org=socio raci=*:c,Seguridad:A versiones', 'stakeholder SH-2: "Luis" inactivo'].join('\n'), ctx);
+    eq(ok.errors, [], 'mixed-language input');
+    eq(ok.model.stakeholders, [{ id: 'SH-1', name: 'Ana', role: 'CISO', org: 'partner', raci: { '*': 'C', Seguridad: 'A' }, versions: true }, { id: 'SH-2', name: 'Luis', org: 'client', inactive: true }], 'values');
+    const bad = TXT.parse(['a: A', 'stakeholder X-1: "bad id"', 'stakeholder SH-1: "x" org=alien raci=Sec:Z,nocolon', 'stakeholder SH-1: "dup"'].join('\n'), ctx);
+    eq(bad.errors.map(e => e.line).sort(), [2, 3, 3, 3, 4], 'one error per problem, with its line');
+    const es = TXT.parse('stakeholder SH-1: "x" org=alien', textCtx('es'));
+    assert(/org no válida/.test(JSON.stringify(es.errors[0])), 'Spanish error message');
+  });
+  test('shGaps: areas of the decisions without an active accountable stakeholder', () => {
+    const sh = SHM.cleanStakeholders(shSet(), {});
+    const decs = [{ id: 'ADR-001', area: 'security' }, { id: 'ADR-002', area: 'Platform' }, { id: 'ADR-003', area: 'Operations' }, { id: 'ADR-004', area: ' data  platform ' }, { id: 'ADR-005' }];
+    eq(SHM.shGaps({ stakeholders: sh, decisions: decs }), ['Operations', 'data platform'], 'case-insensitive match, inactive stakeholders do not count, no area is ignored');
+    eq(SHM.shGaps({ stakeholders: [{ id: 'SH-001', name: 'x', raci: { '*': 'A' } }], decisions: decs }), [], 'A on * covers every area');
+    eq(SHM.shGaps({ decisions: decs }), [], 'no stakeholders, no findings');
+    eq(SHM.shAreas({ stakeholders: sh, decisions: decs }), ['security', 'Platform', 'Operations', 'data platform'], 'matrix columns: decision areas, then areas only used in the matrix');
+    eq(SHM.shAreas({ stakeholders: [{ id: 'SH-001', name: 'x', raci: { Extra: 'R', '*': 'A' } }], decisions: [{ id: 'ADR-001', area: 'Core' }] }), ['Core', 'Extra'], 'areas used only in a matrix come after');
+  });
+  test('the Stakeholders tab, the finding and the API are wired', () => {
+    assert(/data-tab="people"/.test(read('index.html')) && /data-pane="people"/.test(read('index.html')), 'tab and pane in index.html');
+    assert(/addFindingSource\('approval'/.test(app) && /approval:no-approver:/.test(app), 'no-approver finding');
+    assert(/stakeholders: \(\) => clone\(S\.model\.stakeholders \|\| \[\]\), addStakeholder, updateStakeholder, removeStakeholder/.test(app), 'API');
+    assert(/shHasSignoffs\(id\)\) \{ toast/.test(app), 'delete is blocked when the stakeholder has sign-offs');
+  });
+
   /* ---------- resumen ---------- */
   print(`\n${pass} passed, ${fail} failed`);
   return finish(fail === 0);

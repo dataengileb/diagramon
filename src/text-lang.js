@@ -79,7 +79,10 @@
              p= es la probabilidad y i= el impacto, de 1 a 5, solo en riesgos). Los ids son R-, A-, I- o D- más un número. Líneas de campo justo después:
                detail: "…"  mitigation: "…" (riesgos)  history: validated 2026-11-02 by="Ana" note="…"; invalidated 2026-12-01 (supuestos)
              (es: detalle: mitigación: historial: validado… invalidado… por= nota=). links= lista ids de decisiones (ADR-001), requisitos (REQ-001), nodos, grupos y conexiones (`origen->destino`, `#2` si hay varias iguales).
-   El texto es la fuente de verdad de notas, zonas, fronteras, notas STRIDE, descartados, decisiones (ADR), requisitos y registro RAID: borrarlos del texto los borra del diagrama.
+   Interesados: stakeholder SH-001: "Ana Pérez" role="CISO" org=client raci=*:C,Seguridad:A,"Data Platform":R versions inactive
+             (es: interesado … rol= org=cliente|socio|interno raci= versiones inactivo). raci= lista área:letra (R responsable, A aprueba, C consultado, I informado);
+             `*` vale para todas las áreas; las áreas son las de las decisiones (ADR) y no pueden llevar comas. `versions` = aprueba versiones; `inactive` = ya no participa.
+   El texto es la fuente de verdad de notas, zonas, fronteras, notas STRIDE, descartados, decisiones (ADR), requisitos, registro RAID e interesados: borrarlos del texto los borra del diagrama.
    Comentario: líneas que empiezan por # o //
 
    Acepta las palabras clave en inglés y en español (title/título, group/grupo,
@@ -202,6 +205,13 @@
   const RAID_ST_OUT = { en: {}, es: { open: 'abierto', closed: 'cerrado' } }, RAID_VAL_OUT = { en: {}, es: { pending: 'pendiente', validated: 'validado', invalidated: 'invalidado' } };
   const RAID_W = { en: { risk: 'risk', assumption: 'assumption', issue: 'issue', dependency: 'dependency', owner: 'owner', status: 'status', validation: 'validation', due: 'due', raised: 'raised', links: 'links', detail: 'detail', mitigation: 'mitigation', history: 'history', by: 'by', note: 'note' },
     es: { risk: 'riesgo', assumption: 'supuesto', issue: 'problema', dependency: 'dependencia', owner: 'dueño', status: 'estado', validation: 'validación', due: 'fecha', raised: 'registrado', links: 'enlaces', detail: 'detalle', mitigation: 'mitigación', history: 'historial', by: 'por', note: 'nota' } };
+  /* ---------- interesados: stakeholder ID: "nombre" role= org= raci=área:letra,… + marcas versions / inactive ---------- */
+  const SH_RE = /^(stakeholder|interesado)\s+([^\s:]+)\s*:\s*(.*)$/i;
+  const SH_KEYS = ['role', 'rol', 'org', 'raci'];
+  const SH_ORG_IN = { client: 'client', cliente: 'client', partner: 'partner', socio: 'partner', internal: 'internal', interno: 'internal' };
+  const SH_ORG_OUT = { en: {}, es: { client: 'cliente', partner: 'socio', internal: 'interno' } };
+  const SH_FLAG = { versions: 'versions', versiones: 'versions', inactive: 'inactive', inactivo: 'inactive' };
+  const SH_W = { en: { stakeholder: 'stakeholder', role: 'role', org: 'org', raci: 'raci', versions: 'versions', inactive: 'inactive' }, es: { stakeholder: 'interesado', role: 'rol', org: 'org', raci: 'raci', versions: 'versiones', inactive: 'inactivo' } };
   // Divide por `;` ignorando los de dentro de comillas
   const splitSemi = v => { const out = []; let cur = '', q = false; for (let i = 0; i < v.length; i++) { const c = v[i]; if (c === '\\' && q) { cur += c + (v[++i] ?? ''); continue; } if (c === '"') q = !q; if (c === ';' && !q) { out.push(cur); cur = ''; } else cur += c; } out.push(cur); return out; };
   const hv = v => (/[\s";[\]{}]/.test(String(v)) || String(v) === '' ? quote(v) : String(v));
@@ -253,6 +263,7 @@
       raidSt: v => `invalid status “${v}” (use open or closed)`, raidVal: v => `invalid validation “${v}” (use pending, validated or invalidated)`,
       raidLink: v => `“${v}” is not a node, group, connection, decision or requirement (use ids, source->target, ADR-001 or REQ-001)`,
       raidHist: v => `invalid history entry “${v}” (use pending|validated|invalidated YYYY-MM-DD by="…" note="…"; separate entries with ;)`,
+      stkDup: id => `stakeholder “${id}” is declared twice`, stkId: id => `invalid stakeholder id “${id}” (use SH-001, SH-002…)`, stkOrg: v => `invalid org “${v}” (use client, partner or internal)`, stkRaci: v => `invalid raci “${v}” (use area:R|A|C|I separated by commas; * means every area)`,
       adrCritId: v => `invalid criterion id “${v}” (use a-z, 0-9 and -, up to 30 characters)`, adrCritDup: v => `criterion “${v}” is declared twice in this decision`, adrWeight: v => `invalid weight “${v}” (use a whole number from 1 to 5)`,
       adrOptId: v => `invalid option id “${v}” (use letters, digits and -, up to 20 characters)`, adrOptDup: v => `option “${v}” is declared twice in this decision`, adrChosen: v => `only one option can be chosen (“${v}” is already)`,
       adrCost: v => `invalid cost “${v}” (a number, 0 or more)`, adrRisk: v => `invalid risk “${v}” (use low, medium or high)`, adrScore: v => `invalid score “${v}” (use criterion:1..5, e.g. scores=cost:4,skills:5)`, adrScoreCrit: v => `score for “${v}”, which is not a criterion of this decision`,
@@ -286,6 +297,7 @@
       raidSt: v => `estado no válido «${v}» (usa abierto o cerrado)`, raidVal: v => `validación no válida «${v}» (usa pendiente, validado o invalidado)`,
       raidLink: v => `«${v}» no es un nodo, grupo, conexión, decisión ni requisito (usa ids, origen->destino, ADR-001 o REQ-001)`,
       raidHist: v => `entrada de historial no válida «${v}» (usa pendiente|validado|invalidado AAAA-MM-DD por="…" nota="…"; separa las entradas con ;)`,
+      stkDup: id => `el interesado «${id}» está declarado dos veces`, stkId: id => `id de interesado no válido «${id}» (usa SH-001, SH-002…)`, stkOrg: v => `org no válida «${v}» (usa cliente, socio o interno)`, stkRaci: v => `raci no válido «${v}» (usa área:R|A|C|I separados por comas; * vale para todas las áreas)`,
       adrCritId: v => `id de criterio no válido «${v}» (usa a-z, 0-9 y -, hasta 30 caracteres)`, adrCritDup: v => `el criterio «${v}» está declarado dos veces en esta decisión`, adrWeight: v => `peso no válido «${v}» (usa un número entero de 1 a 5)`,
       adrOptId: v => `id de opción no válido «${v}» (usa letras, dígitos y -, hasta 20 caracteres)`, adrOptDup: v => `la opción «${v}» está declarada dos veces en esta decisión`, adrChosen: v => `solo una opción puede ser la elegida («${v}» ya lo es)`,
       adrCost: v => `costo no válido «${v}» (un número, 0 o más)`, adrRisk: v => `riesgo no válido «${v}» (usa bajo, medio o alto)`, adrScore: v => `puntaje no válido «${v}» (usa criterio:1..5, p. ej. puntos=costo:4,habilidades:5)`, adrScoreCrit: v => `puntaje para «${v}», que no es un criterio de esta decisión`,
@@ -350,6 +362,8 @@
     const reqSeen = new Set(), reqRefs = [], reqNodes = []; let reqCur = null, reqOpen = false;
     model.raid = [];
     const raidSeen = new Set(), raidRefs = []; let raidCur = null, raidOpen = false;
+    model.stakeholders = [];
+    const shSeen = new Set();
     // Tipos propios declarados en cualquier línea (una conexión puede usarlos antes de que se declaren)
     const customIds = new Set();
     String(src).split(/\r?\n/).forEach(l => { const q = l.trim().match(TYPE_RE); if (q) customIds.add(q[2].toLowerCase()); });
@@ -441,6 +455,28 @@
         const lk = kv.links ?? kv.enlaces;
         if (lk != null) raidRefs.push({ it, ln, refs: String(lk).split(',').map(x => x.trim()).filter(Boolean) });
         model.raid.push(it); raidCur = it;
+        return;
+      }
+      if ((m = line.match(SH_RE))) {   // stakeholder SH-001: "nombre" role= org= raci=área:letra,… versions inactive
+        const id = m[2], tk = tokens(m[3], SH_KEYS), flags = tk.words.filter(w => SH_FLAG[foldK(w)]), rest = tk.words.filter(w => !SH_FLAG[foldK(w)]), kv = tk.kv;
+        const it = { id, name: (tk.quotes[0] ?? rest.join(' ')).trim() };
+        if (!/^SH-\d+$/.test(id)) err(ln, msg.stkId(id));
+        if (shSeen.has(id)) err(ln, msg.stkDup(id)); else shSeen.add(id);
+        const ro = (kv.role ?? kv.rol)?.trim();
+        if (ro) it.role = ro;
+        const ov = kv.org;
+        if (ov != null) { const o = SH_ORG_IN[foldK(ov)]; if (o) it.org = o; else err(ln, msg.stkOrg(ov)); } else it.org = 'client';
+        if (kv.raci != null) {
+          const raci = {};
+          String(kv.raci).split(',').map(x => x.trim()).filter(Boolean).forEach(x => {
+            const c = x.lastIndexOf(':'), a = c > 0 ? x.slice(0, c).trim() : '', r = c > 0 ? x.slice(c + 1).trim().toUpperCase() : '';
+            if (a && /^[RACI]$/.test(r)) raci[a] = r; else err(ln, msg.stkRaci(x));
+          });
+          if (Object.keys(raci).length) it.raci = raci;
+        }
+        if (flags.some(w => SH_FLAG[foldK(w)] === 'versions')) it.versions = true;
+        if (flags.some(w => SH_FLAG[foldK(w)] === 'inactive')) it.inactive = true;
+        model.stakeholders.push(it);
         return;
       }
       if (inAdr && adrCur && (m = line.match(ADR_CRIT_RE))) {   // criterio de la decisión: criterion id: "Etiqueta" weight=3
@@ -952,6 +988,13 @@
         it.due ? `${xw.due}=${it.due}` : '', it.raised ? `${xw.raised}=${it.raised}` : '', refs.length ? `${xw.links}=${bare(refs.join(','))}` : ''].filter(Boolean).join(' '));
       ['detail', 'mitigation'].forEach(k => { if (it[k]) out.push(`  ${xw[k]}: ${quote(it[k])}`); });
       if (it.history?.length) out.push(`  ${xw.history}: ${it.history.map(h => `${(RAID_VAL_OUT[lang] || {})[h.validation] || h.validation} ${h.date}${h.by ? ` ${xw.by}=${hv(h.by)}` : ''}${h.note ? ` ${xw.note}=${hv(h.note)}` : ''}`).join('; ')}`);
+    });
+    // Interesados: después del registro RAID; una línea por persona
+    const sw = SH_W[lang] || SH_W.en;
+    (m.stakeholders || []).forEach(s => {
+      const raci = Object.entries(s.raci || {}).map(([k, v]) => `${k}:${v}`).join(',');
+      out.push('', [`${sw.stakeholder} ${s.id}: ${quote(s.name ?? '')}`, s.role ? `${sw.role}=${quote(s.role)}` : '', `${sw.org}=${(SH_ORG_OUT[lang] || {})[s.org || 'client'] || s.org || 'client'}`, raci ? `${sw.raci}=${bare(raci)}` : '',
+        s.versions ? sw.versions : '', s.inactive ? sw.inactive : ''].filter(Boolean).join(' '));
     });
     return out.join('\n') + '\n';
   }
