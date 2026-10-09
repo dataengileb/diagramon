@@ -392,7 +392,10 @@ window.DIAGRAMON_EXAMPLES = [
         { id: 'n5', x: 1520, y: -190, w: 340, h: 130, color: 'limon', text: { en: 'Undecided: serving and semantic layer.\nSee ADR-012.', es: 'Sin decidir: consumo y capa semántica.\nVer ADR-012.' } },
         { id: 'n6', x: 760, y: 1100, w: 700, h: 110, color: 'rosa', text: { en: 'Undecided: governance and operations.\nCatalog ADR-005 · quality ADR-011 · access ADR-013 · network and keys ADR-014 · IaC and CI/CD ADR-015 · operating model ADR-016 · FinOps ADR-017.', es: 'Sin decidir: gobierno y operaciones.\nCatálogo ADR-005 · calidad ADR-011 · acceso ADR-013 · red y claves ADR-014 · IaC y CI/CD ADR-015 · modelo operativo ADR-016 · FinOps ADR-017.' } }
       ],
-      decisions: (() => { const kit = (window.DIAGRAMON_ADR_KITS || []).find(k => k.id === 'lakehouse'); return kit ? kit.decisions.map((d, i) => ({ id: 'ADR-' + String(i + 1).padStart(3, '0'), status: 'proposed', date: '2026-10-07', criteria: d.criteria || kit.criteria, ...d })) : []; })(),
+      decisions: (() => { const kit = (window.DIAGRAMON_ADR_KITS || []).find(k => k.id === 'lakehouse'); const list = kit ? kit.decisions.map((d, i) => ({ id: 'ADR-' + String(i + 1).padStart(3, '0'), status: 'proposed', date: '2026-10-07', criteria: d.criteria || kit.criteria, ...d })) : [];
+        // ADR-001 ya aceptada: la aprueba el Jefe de datos y falta la firma del arquitecto líder (ver «stakeholders»)
+        const adr1 = list.find(d => d.id === 'ADR-001'); if (adr1) { adr1.status = 'accepted'; adr1.signoffs = [{ by: 'SH-001', verdict: 'approve', date: '2026-10-08' }]; }
+        return list; })(),
       // Lo que saldría de un descubrimiento real (todos en borrador: se acuerdan con el cliente). Los controles (check) se evalúan al pasar a «acordado» y
       // cuando el diagrama tiene los datos (SLA, regiones, costos): ahora cifrado de PII ya se puede comprobar.
       requirements: [
@@ -434,6 +437,22 @@ window.DIAGRAMON_EXAMPLES = [
           raised: '2026-10-07', links: { decisions: ['ADR-005', 'ADR-013'], requirements: ['REQ-002', 'REQ-003'], nodes: ['silver', 'iam'] } },
         { id: 'D-001', type: 'dependency', title: { en: 'Network and identity teams provide private connectivity and SSO', es: 'Los equipos de red e identidad entregan conectividad privada y SSO' },
           owner: { en: 'Network team', es: 'Equipo de red' }, status: 'open', due: '2026-11-30', raised: '2026-10-07', links: { decisions: ['ADR-013', 'ADR-014'], nodes: ['iam'] } }
+      ],
+      // Comité típico: el RACI por área define quién aprueba cada ADR (A); el arquitecto líder y el patrocinador aprueban las versiones.
+      // Las claves de área van en inglés y español porque la plantilla resuelve las áreas de las ADR en el idioma activo.
+      stakeholders: [
+        { id: 'SH-001', name: 'Head of Data', role: { en: 'Data leadership', es: 'Liderazgo de datos' }, org: 'client',
+          raci: { Platform: 'A', Plataforma: 'A', Storage: 'A', Almacenamiento: 'A', Processing: 'A', Procesamiento: 'A' } },
+        { id: 'SH-002', name: 'CISO', role: { en: 'Information security', es: 'Seguridad de la información' }, org: 'client',
+          raci: { Security: 'A', Seguridad: 'A', Governance: 'A', Gobierno: 'A' } },
+        { id: 'SH-003', name: 'Business data owner', role: { en: 'Data owner, business', es: 'Dueño del dato, negocio' }, org: 'client',
+          raci: { Consumption: 'A', Consumo: 'A', '*': 'C' } },
+        { id: 'SH-004', name: 'FinOps lead', role: { en: 'Cloud cost management', es: 'Gestión de costos de nube' }, org: 'client',
+          raci: { Operations: 'A', Operaciones: 'A', Platform: 'C', Plataforma: 'C' } },
+        { id: 'SH-005', name: 'Lead architect', role: { en: 'Architecture', es: 'Arquitectura' }, org: 'partner', versions: true,
+          raci: { '*': 'R', Platform: 'A', Plataforma: 'A' } },
+        { id: 'SH-006', name: 'Client sponsor', role: { en: 'Executive sponsor', es: 'Patrocinador ejecutivo' }, org: 'client', versions: true,
+          raci: { '*': 'I' } }
       ]
     }
   }

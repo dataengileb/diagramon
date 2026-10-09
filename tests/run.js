@@ -611,6 +611,19 @@
     const es = templates('es').find(x => /Lakehouse greenfield/.test(x.name)).model;
     assert(es.raid.every(x => x.title && x.title !== m.raid.find(y => y.id === x.id).title), 'titles are translated');
   });
+  test('lakehouse template ships six stakeholders with RACI keys in en and es, and a signed ADR-001', () => {
+    const m = templates('en').find(x => /Lakehouse greenfield/.test(x.name)).model, es = templates('es').find(x => /Lakehouse greenfield/.test(x.name)).model;
+    const ids = new Set(m.stakeholders.map(s => s.id));
+    eq(m.stakeholders.length, 6, 'six stakeholders');
+    const areas = new Set([...m.decisions, ...es.decisions].map(d => d.area));
+    m.stakeholders.forEach(s => Object.keys(s.raci || {}).forEach(k => assert(k === '*' || areas.has(k), `${s.id} raci area ${k} is used by a decision`)));
+    assert(m.stakeholders.every(s => s.org === 'client' || s.org === 'partner'), 'org is client or partner');
+    const signs = [...m.decisions, ...(m.versions || [])].flatMap(x => x.signoffs || []);
+    assert(signs.length > 0 && signs.every(x => ids.has(x.by)), 'every sign-off names a stakeholder');
+    const adr1 = m.decisions.find(d => d.id === 'ADR-001');
+    eq(adr1.status, 'accepted', 'ADR-001 is accepted');
+    eq(adr1.signoffs.map(x => x.by), ['SH-001'], 'ADR-001 has one approval, the lead architect is still pending');
+  });
 
   /* ======================================================================
      9. Interesados y RACI
