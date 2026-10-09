@@ -8372,7 +8372,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     const DBT = window.DiagramonDbt, cfg = dbtCfg();
     if (mode === 'new') {
       const r = DBT.toDiagram(man, cfg);
-      if (!r.stats.datasets) { toast(T('dbt.err.empty'), 3200); return { error: 'empty' }; }
+      if (!r.stats.datasets || !r.diagram.nodes.length) { toast(T('dbt.err.empty'), 3200); return { error: 'empty' }; }
       S.sel = null;
       setModel(r.diagram, { history: true, animate: true, fit: true });
       const sum = { mode, datasets: r.stats.datasets, columns: r.stats.columns, rules: r.stats.rules, exposures: r.stats.exposures, nodes: r.stats.nodes, edges: r.stats.edges, warnings: r.warnings };

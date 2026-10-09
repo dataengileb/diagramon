@@ -1293,7 +1293,7 @@
     eq(DBT.parse(JSON.stringify({ metadata: dbtMan.metadata, nodes })).error, 'many', 'over 5,000 objects');
     ['{}', '{"nodes":null}', '{"nodes":{"a":null,"b":{"resource_type":"model"},"c":{"resource_type":"test","depends_on":null}},"sources":{"s":5},"exposures":{"e":{}},"groups":[]}'].forEach(x => {
       const m = { metadata: dbtMan.metadata, ...JSON.parse(x) };
-      assert(Array.isArray(DBT.toCatalog(m).datasets), x); assert(DBT.toDiagram(m).diagram.nodes.length >= 1, 'diagram of a sparse manifest');
+      assert(Array.isArray(DBT.toCatalog(m).datasets), x); assert(Array.isArray(DBT.toDiagram(m).diagram.nodes), 'diagram of a sparse manifest');
     });
   });
   test('sample: datasets, names, layers; ephemeral, old versions and tests are not datasets; seeds are bronze', () => {
@@ -1317,10 +1317,11 @@
     eq([dbtBy(r, 'stg_orders').domain, dbtBy(r, 'orders').domain], ['shop', undefined], 'domain: top folder under models/ (none for sources)');
     eq([fo.owner, dc.owner], ['Sales analytics', 'Data Platform Team'], 'owner: meta.owner, else the group owner');
     eq([fo.product, dc.product, dbtBy(r, 'stg_orders').product], [true, true, undefined], 'access: public → product');
-    eq([fo.contract, dc.contract], [{ version: '1.0.0', status: 'agreed' }, { version: '2', status: 'agreed' }], 'contract: enforced; version from latest_version');
+    eq([fo.contract, dc.contract], [{ version: '1.0.0', status: 'agreed' }, { version: '2.0.0', status: 'agreed' }], 'contract: enforced; version from latest_version as semver');
     eq(dbtBy(r, 'stg_orders').contract, undefined, 'no contract when not enforced');
     const sh = dbtCat(dbtMan, { stakeholders: [{ id: 'SH-004', name: 'data platform TEAM' }] }); eq(dbtBy(sh, 'dim_customers').owner, 'SH-004', 'owner matches a stakeholder by name, any case');
     eq(dbtBy(r, 'orders').format, 'delta', 'default format');
+    [[2, '2.0.0'], ['2.1', '2.1.0'], ['1.0.0', '1.0.0'], [3, '3.0.0'], ['v4', '4.0.0'], [undefined, '1.0.0'], ['beta', 'beta']].forEach(([v, e]) => { const m = JSON.parse(dbtText); m.nodes['model.shop_analytics.dim_customers'].latest_version = v; m.nodes['model.shop_analytics.dim_customers'].version = v; eq(dbtBy(dbtCat(m), 'dim_customers').contract.version, e, `contract version ${v}`); });
   });
   test('sample: quality rules for each kind of test, severity and the relationships parameter', () => {
     const r = dbtCat(), q = n => dbtBy(r, n).quality;
@@ -1364,7 +1365,8 @@
     assert(d.nodes.length <= 12 && d.nodes.length >= 8, `node count bounded: ${d.nodes.length}`); eq(d.title, 'shop_analytics', 'title = project');
     eq(d.groups.filter(g => g.layer).map(g => g.layer), ['bronze', 'silver', 'gold'], 'one group per layer, tagged with the layer');
     eq(d.nodes.filter(n => n.id.startsWith('src_')).map(n => n.label).sort(), ['dbt seeds', 'payments_api', 'shop'], 'one component per source system (seeds in their own)');
-    eq(d.nodes.filter(n => n.id.startsWith('ex_')).map(n => [n.label, n.type]), [['Sales dashboard', 'user'], ['Churn model', 'ai']], 'exposures by type'); assert(node('dbt'), 'one dbt component');
+    eq(d.nodes.filter(n => n.id.startsWith('ex_')).map(n => [n.label, n.type]), [['Sales dashboard', 'user'], ['Churn model', 'ai']], 'exposures by type'); eq(d.nodes.filter(n => n.id.startsWith('dbt_')).map(n => n.id), ['dbt_bronze_silver', 'dbt_silver_gold'], 'one dbt component per layer transition present (none bronze → gold here)');
+    eq(d.nodes.filter(n => n.id.startsWith('dbt_')).map(n => n.label), ['dbt · bronze → silver', 'dbt · silver → gold'], 'labels');
     const lin = n => DSD.lineageOf(d, n), src = new Set(d.nodes.filter(x => x.id.startsWith('src_')).map(x => x.id)), ex = new Set(d.nodes.filter(x => x.id.startsWith('ex_')).map(x => x.id));
     const expect = { orders: ['shop', 'ex_sales_dashboard'], customers: ['shop', 'ex_churn_model'], fct_orders: ['shop', 'ex_sales_dashboard'], dim_customers: ['shop', 'ex_churn_model'], stg_orders: ['shop', 'ex_sales_dashboard'], refunds: ['payments_api', 'ex_sales_dashboard'] };
     Object.entries(expect).forEach(([n, [s, e]]) => { const l = lin(n); assert(l, `${n} has lineage`); assert(l.origins.some(o => node(o).label === s) && l.origins.every(o => src.has(o)), `${n} starts at ${s}: ${l.origins}`); assert(l.consumers.includes(e) && l.consumers.every(c => ex.has(c)), `${n} ends at ${e}: ${l.consumers}`); });
@@ -1376,11 +1378,18 @@
     const big = { metadata: dbtMan.metadata, nodes: {}, sources: {} }; for (let i = 0; i < 400; i++) big.nodes[`model.p.stg_${i}`] = { resource_type: 'model', name: `stg_${i}`, depends_on: { nodes: [] } };
     for (let i = 0; i < 3; i++) big.sources[`source.p.s${i}.t`] = { resource_type: 'source', source_name: `s${i}`, name: `t${i}` };
     assert(DBT.toDiagram(big).diagram.nodes.length <= 10, 'never one component per model');
+    // sin ciclos dirigidos en el diagrama, para ningún conjunto
+    const cyc = (edges) => { const adj = new Map(); edges.forEach(e => { if (!adj.has(e.from)) adj.set(e.from, []); adj.get(e.from).push(e.to); }); const st = new Map(); const dfs = u => { st.set(u, 1); for (const v of adj.get(u) || []) { if (st.get(v) === 1) return true; if (!st.get(v) && dfs(v)) return true; } st.set(u, 2); return false; }; return [...adj.keys()].some(u => !st.get(u) && dfs(u)); };
+    assert(!cyc(d.edges), 'the whole diagram has no directed cycle');
+    r.datasets.forEach(x => assert(!cyc(d.edges.filter(e => e.datasets.includes(x.name))), `${x.name}: acyclic lineage`));
+    const gm = JSON.parse(dbtText); gm.nodes['model.shop_analytics.fct_orders'].depends_on.nodes.push('source.shop_analytics.shop.orders');
+    const g2 = DBT.toDiagram(gm).diagram; assert(g2.nodes.some(n => n.id === 'dbt_bronze_gold') && !cyc(g2.edges), 'a gold model that reads bronze adds a bronze → gold component, still acyclic');
+    eq(lin('fct_orders').origins.map(o => node(o).label).sort(), ['payments_api', 'shop'], 'fct_orders starts at its source systems');
   });
   test('the dialog, toast and diagram labels exist once in en and once in es', () => {
     const src = read('src/i18n.js');
     ['dbt.title', 'dbt.lead', 'dbt.mode', 'dbt.mode.merge', 'dbt.mode.merge.d', 'dbt.mode.new', 'dbt.mode.new.d', 'dbt.pv', 'dbt.pv.datasets', 'dbt.pv.cols', 'dbt.pv.nolayer', 'dbt.warn.layer', 'dbt.warn.versions', 'dbt.warn.cap.datasets', 'dbt.warn.cap.columns', 'dbt.warn.cap.rules', 'dbt.warn.cap.exposures', 'dbt.go',
-      'dbt.err.bad', 'dbt.err.big', 'dbt.err.many', 'dbt.err.empty', 'dbt.done.merge', 'dbt.done.new', 'dbt.grp.sources', 'dbt.grp.bronze', 'dbt.grp.silver', 'dbt.grp.gold', 'dbt.grp.process', 'dbt.grp.exposures', 'dbt.store.bronze', 'dbt.store.silver', 'dbt.store.gold', 'dbt.seeds', 'dbt.sub.source', 'dbt.sub.tables', 'dbt.edge.reads', 'dbt.edge.builds', 'dbt.untitled']
+      'dbt.err.bad', 'dbt.err.big', 'dbt.err.many', 'dbt.err.empty', 'dbt.done.merge', 'dbt.done.new', 'dbt.grp.sources', 'dbt.grp.bronze', 'dbt.grp.silver', 'dbt.grp.gold', 'dbt.grp.process', 'dbt.grp.exposures', 'dbt.store.bronze', 'dbt.store.silver', 'dbt.store.gold', 'dbt.seeds', 'dbt.sub.source', 'dbt.sub.tables', 'dbt.lay.bronze', 'dbt.lay.silver', 'dbt.lay.gold', 'dbt.edge.reads', 'dbt.edge.builds', 'dbt.untitled']
       .forEach(k => eq(src.split(`'${k}':`).length - 1, 2, `${k}`));
   });
 

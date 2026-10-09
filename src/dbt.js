@@ -56,6 +56,8 @@ window.DiagramonDbt = (() => {
   const slug = s => str(s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'x';
   // 'ref("dim")' / "source('a','b')" / 'dim' → nombre de la tabla
   const refName = v => { const s = str(v).trim(), q = [...s.matchAll(/['"]([^'"]+)['"]/g)].map(x => x[1]); return q.length ? q[q.length - 1] : s; };
+  // 2 → 2.0.0, 2.1 → 2.1.0, 1.0.0 igual; lo que no es numérico se deja como viene
+  const semver = (v, d) => { const t = str(v).trim(); if (!t) return d; const m = t.match(/^v?(\d+)(?:\.(\d+))?(?:\.(\d+))?$/); return m ? `${m[1]}.${m[2] || 0}.${m[3] || 0}` : t; };
   const PERIOD = { minute: 'm', hour: 'h', day: 'd' };
   const dur = o => {
     if (!isObj(o)) return '';
@@ -133,7 +135,7 @@ window.DiagramonDbt = (() => {
       if (ow) { const sh = arr(c.stakeholders).find(s => low(s.name) === low(ow)); it.owner = sh ? sh.id : ow; }
       const acc = low(n.access || (n.config && n.config.access));
       if (arr(c.publicAccess).map(low).includes(acc) || yes(meta.data_product)) it.product = true;
-      if (n.config && isObj(n.config.contract) && n.config.contract.enforced === true) it.contract = { version: str(n.latest_version ?? '').trim() || c.contractVersion, status: 'agreed' };
+      if (n.config && isObj(n.config.contract) && n.config.contract.enforced === true) it.contract = { version: semver(n.latest_version, c.contractVersion), status: 'agreed' };
       const fm = low(meta.format);
       it.format = fm || c.format; if (!fm) it.fmtDefault = true;
       if (kind === 'source') { const f = freshnessOf(n.freshness); if (f) it.freshness = f; }
@@ -277,8 +279,12 @@ window.DiagramonDbt = (() => {
     systems.forEach(s => nodes.push({ id: sysId.get(s), label: s === '\0seeds' ? T('dbt.seeds') : s, type: s === '\0seeds' ? c.storeType : c.systemType, group: gSrc, sub: T('dbt.sub.source') }));
     const storeId = new Map(layers.map(k => [k, nid(`st_${k}`)]));
     layers.forEach(k => nodes.push({ id: storeId.get(k), label: T(`dbt.store.${k}`), type: c.storeType, group: `g_${k}`, sub: T('dbt.sub.tables') }));
-    nodes.push({ id: 'dbt', label: 'dbt', type: c.dbtType, group: gProc, sub: b.project || '' });
-    ids.add('dbt');
+    // Un componente dbt por cambio de capa que de verdad ocurre (bronce → plata, plata → oro, y bronce → oro solo si un modelo de oro lee bronce): el grafo no tiene ciclos
+    const rk = k => layers.indexOf(k), trs = [];
+    items.forEach(q => q.deps.forEach(p => { const P = byUid.get(p); if (P && rk(P.layer) < rk(q.layer) && !trs.some(t => t[0] === P.layer && t[1] === q.layer)) trs.push([P.layer, q.layer]); }));
+    trs.sort((x, y) => rk(x[0]) - rk(y[0]) || rk(x[1]) - rk(y[1]));
+    const trId = new Map(trs.map(([x, y]) => [`${x}>${y}`, nid(`dbt_${x}_${y}`)]));
+    trs.forEach(([x, y]) => nodes.push({ id: trId.get(`${x}>${y}`), label: `dbt · ${T(`dbt.lay.${x}`)} → ${T(`dbt.lay.${y}`)}`, type: c.dbtType, group: gProc, sub: b.project || '' }));
     const expId = new Map();
     exps.forEach(e => { const id = nid(`ex_${slug(e.name)}`); expId.set(e.uid, id); nodes.push({ id, label: e.name, type: c.exposureTypes[e.type] || c.exposureDefault, group: gExp, sub: e.owner || e.type }); });
     // Cada conjunto lleva por las conexiones todo su camino: sus orígenes, sus pasos por dbt y sus consumidores (anc ∪ él ∪ desc)
@@ -289,9 +295,10 @@ window.DiagramonDbt = (() => {
       [...up].map(u => byUid.get(u)).filter(x => x.system).forEach(s => put(sysId.get(s.system), storeId.get(s.layer), d.name, ''));
       [...up, ...down].forEach(u => parentsOf(u).forEach(p => {
         const P = byUid.get(p), Q = byUid.get(u);
-        if (P.layer === Q.layer || !(up.has(u) || down.has(p))) return;
-        put(storeId.get(P.layer), 'dbt', d.name, T('dbt.edge.reads'));
-        put('dbt', storeId.get(Q.layer), d.name, T('dbt.edge.builds'));
+        if (rk(P.layer) >= rk(Q.layer) || !(up.has(u) || down.has(p))) return;
+        const tr = trId.get(`${P.layer}>${Q.layer}`);
+        put(storeId.get(P.layer), tr, d.name, T('dbt.edge.reads'));
+        put(tr, storeId.get(Q.layer), d.name, T('dbt.edge.builds'));
       }));
       exps.forEach(e => { if (e.deps.some(u => down.has(u) && byUid.has(u))) e.deps.filter(u => down.has(u) && byUid.has(u)).forEach(u => put(storeId.get(byUid.get(u).layer), expId.get(e.uid), d.name, '')); });
     });
