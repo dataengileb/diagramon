@@ -825,6 +825,18 @@
   .raid-hist { list-style: none; margin: 4px 0; padding: 0; display: flex; flex-direction: column; gap: 3px; font-size: 11.5px; }
   .raid-hist li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
   .raid-hist time { color: var(--muted); font-variant-numeric: tabular-nums; } .raid-by { color: var(--muted); }
+  /* Interesados: fichas (reutilizan las de RAID) y matriz RACI */
+  .ppl.off { opacity: .6; }
+  .ppl-chk { display: flex !important; align-items: center; gap: 7px; font-size: 12px !important; font-weight: 600 !important; color: var(--text) !important; } .ppl-chk input { width: auto !important; }
+  .ppl-mx-box { margin-top: 10px; }
+  .ppl-mx td.ppl-mx-c { width: 52px; min-width: 52px; padding: 2px; }
+  .ppl-mx tr.off > * { opacity: .55; }
+  .ppl-mx .ppl-mx-a { min-width: 52px; max-width: 90px; font-size: 10px; vertical-align: bottom; }
+  .ppl-mx .ppl-mx-a span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ppl-mx .ppl-mx-a.gap { color: var(--p-coral); } .ppl-warn { margin-left: 2px; font-weight: 800; }
+  .ppl-mx select { width: 44px; height: 24px; padding: 0 2px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface2); color: var(--muted); font: 700 11.5px var(--font); text-align: center; }
+  .ppl-mx select.has { color: var(--text); background: color-mix(in srgb, var(--s) 28%, var(--surface2)); border-color: color-mix(in srgb, var(--s) 55%, var(--border)); }
+  .ppl-mx-box.wide .ppl-mx select { width: 56px; height: 28px; font-size: 13px; } .ppl-mx-box.wide .ppl-mx .ppl-mx-a { max-width: 140px; font-size: 12px; }
 </style>
 
 <!-- Estilos del diagrama. También se incrustan al exportar SVG/PNG. -->
@@ -1288,6 +1300,7 @@
         <button class="tab on" data-tab="components" data-i18n="tab.components"></button>
         <button class="tab" data-tab="templates" data-i18n="tab.templates"></button>
         <button class="tab" data-tab="versions" data-i18n="tab.versions"></button>
+        <button class="tab" data-tab="people" data-i18n="tab.people" data-i18n-title="tab.people.tip"></button>
         <button class="tab" data-tab="review"><span data-i18n="tab.review"></span><b class="tab-badge" id="review-badge" hidden></b></button>
         <button class="tab" data-tab="adr" data-i18n="tab.adr" data-i18n-title="tab.adr.tip"></button>
         <button class="tab" data-tab="req" data-i18n="tab.req" data-i18n-title="tab.req.tip"></button>
@@ -1309,6 +1322,7 @@
       </div>
       <div class="pane" data-pane="templates"><div id="examples"></div></div>
       <div class="pane" data-pane="versions"><div id="versions"></div></div>
+      <div class="pane" data-pane="people"><div id="people-panel"><div id="people-bar"></div><div id="people-list"></div></div></div>
       <div class="pane" data-pane="review"><div id="review-panel"></div></div>
       <div class="pane" data-pane="adr"><div id="adr-panel"><div id="adr-bar"></div><div id="adr-list"></div></div></div>
       <div class="pane" data-pane="req"><div id="req-panel"><div id="req-bar"></div><div id="req-list"></div></div></div>
