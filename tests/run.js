@@ -1147,6 +1147,21 @@
     ['find.src.data', ...used, 'ds.find.noOwner', 'ds.find.noContract', 'ds.find.ownerContract'].forEach(k => assert(i18n.split(`'${k}':`).length === 3, `${k} is defined once in en and once in es`));
     const keys = [...i18n.matchAll(/'(ds\.[\w.]+)':/g)].map(m => m[1]); assert(keys.every(k => keys.filter(x => x === k).length === 2), 'every ds.* key is defined exactly once per language');
   });
+  test('report and Excel for datasets: section after layers, sheets, Latency column only when used, new keys once per language', () => {
+    assert(/REP_SECS = \[[^\]]*'layers', 'datasets', 'costs'/.test(app), 'section after layers'); assert(app.includes('datasets: !!m.datasets?.length'), 'available only with datasets');
+    assert(app.includes("want('datasets')") && app.includes("sec('datasets'"), 'section body');
+    assert(app.includes("mk('datasets', INV_DS") && app.includes("mk('columns', INV_DSC") && app.includes("mk('quality', INV_DSQ"), 'three sheets, columns and quality only with rows');
+    assert(app.includes("const lat = m.edges.some(e => e.latency != null && e.latency !== '')") && app.includes("...(lat ? [['latency']] : [])"), 'latency column only when some edge has it');
+    assert(app.includes("if (m.datasets?.length) {\n      const dsl = m.datasets"), 'Excel sheets only with datasets');
+    const i18n = read('src/i18n.js'), es = i18n.indexOf('\n    es: {');
+    const newKeys = ['rep.s.datasets', 'rep.cat.sum', 'rep.cat.estNote', 'rep.cat.undoc', 'rep.cat.schema', 'rep.cat.rules', 'rep.cat.st.draft', 'rep.cat.st.agreed', 'rep.cat.st.deprecated', 'rep.h.domain', 'rep.h.product', 'rep.h.freshness', 'rep.h.contract', 'rep.h.storage', 'rep.h.key', 'rep.h.pii', 'rep.h.column', 'rep.h.rule', 'rep.h.param',
+      'inv.sheet.datasets', 'inv.sheet.columns', 'inv.sheet.quality', 'inv.c.domain', 'inv.c.product', 'inv.c.format', 'inv.c.freshness', 'inv.c.e2e', 'inv.c.frState', 'inv.c.perDay', 'inv.c.retention', 'inv.c.estGb', 'inv.c.estMonthly', 'inv.c.contractVersion', 'inv.c.consumers', 'inv.c.latency', 'inv.c.dsId', 'inv.c.dsName', 'inv.c.column', 'inv.c.key', 'inv.c.pii', 'inv.c.nullable', 'inv.c.param', 'inv.fr.pass', 'inv.fr.fail', 'inv.fr.unknown'];
+    newKeys.forEach(k => {
+      const at = i18n.split(`'${k}':`).length - 1;
+      assert(at === 2, `${k} is defined ${at} times, expected once in en and once in es`);
+      assert(i18n.indexOf(`'${k}':`) < es && i18n.lastIndexOf(`'${k}':`) > es, `${k} is in both blocks`);
+    });
+  });
 
   test('Data tab wiring: tab in group data, pane inside the side panel, every ds.* key used by the UI defined once per language', () => {
     const idx = read('index.html'), i18n = read('src/i18n.js');

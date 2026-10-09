@@ -7519,7 +7519,7 @@
   // reportData() arma un modelo plano (secciones de bloques) y dos dibujantes lo pintan: reportMarkdown y reportHTML, así que los dos formatos no se desincronizan.
   // Bloques: { k: 'h3', t } · { k: 'p', t, muted? } · { k: 'kv', items: [[k, v]] } · { k: 'cards', items: [{ label, value, tone? }] }
   //          { k: 'table', head: [], rows: [[celda]], cls? } (celda = texto | { t, tone }) · { k: 'text', label, t } · { k: 'ul', items } · { k: 'img', alt, caption, svg?, uri?, file? }
-  const REP_SECS = ['summary', 'diagram', 'components', 'connections', 'data', 'owners', 'layers', 'costs', 'resilience', 'findings', 'compliance', 'threats', 'decisions', 'requirements', 'raid', 'approvals', 'phases', 'versions', 'notes'];
+  const REP_SECS = ['summary', 'diagram', 'components', 'connections', 'data', 'owners', 'layers', 'datasets', 'costs', 'resilience', 'findings', 'compliance', 'threats', 'decisions', 'requirements', 'raid', 'approvals', 'phases', 'versions', 'notes'];
   const REP_PAGE = ['diagram', 'components', 'findings', 'decisions']; // secciones que empiezan página al imprimir
   const repT = (k, v) => T(`rep.${k}`, v);
   const repSleep = ms => new Promise(r => setTimeout(r, ms));
@@ -7540,7 +7540,7 @@
       data: m.nodes.some(n => dataClassesOf(n, m).length || regionOf(n, m).value), owners: govTeamList(m).length > 0,
       layers: m.nodes.some(n => layerOf(n).value), costs: m.nodes.some(hasCost), resilience: m.nodes.some(hasRes) || spofList(m).length > 0, findings: findingsOf(m).length > 0,
       compliance: cmpModel(m).keys.length > 0, threats: strideAll(m).length > 0, decisions: !!m.decisions?.length, requirements: !!m.requirements?.length,
-      raid: !!m.raid?.length, approvals: !!m.stakeholders?.length, phases: !!m.phases?.length,
+      raid: !!m.raid?.length, approvals: !!m.stakeholders?.length, phases: !!m.phases?.length, datasets: !!m.datasets?.length,
       versions: m.versions.length > 0, notes: (m.notes || []).length > 0 || (m.zones || []).some(z => z.kind !== 'trust')
     };
   }
@@ -7697,6 +7697,35 @@
 
     if (want('layers')) {
       sec('layers', [{ k: 'table', head: [repT('h.layer'), repT('h.nodes')], rows: Object.keys(DL).map(k => [layerInfo(k).label, m.nodes.filter(n => layerOf(n).value === k).map(n => n.label).join(', ')]).filter(r => r[1]) }]);
+    }
+
+    if (want('datasets')) {
+      // Resumen, tabla del catálogo (declarados), sin documentar al final y, por producto, su esquema y sus reglas de calidad
+      const dsl = m.datasets, cat = catalog(m), und = cat.filter(c => !c.declared), prods = dsl.filter(d => d.product), blocks = [];
+      const ownerOf = o => m.stakeholders?.find(s => s.id === o)?.name || o || '';
+      const frCell = f => ({ t: `${f.worst == null ? '—' : fmtDur(f.worst / 1000)} · ${f.sla == null ? '—' : fmtDur(f.sla / 1000)} · ${{ pass: '✓', fail: '✗', unknown: '?' }[f.state]}`, tone: f.state === 'fail' ? 'sev-high' : '' });
+      blocks.push({ k: 'p', t: repT('cat.sum', { n: dsl.length, p: prods.length, u: und.length, b: dsl.filter(d => e2eOf(d.name, m).state === 'fail').length }) });
+      const rows = dsl.map(d => {
+        const f = e2eOf(d.name, m), sto = storageEstimate(d, { prices: dsPrices() });
+        return [d.id, d.name, d.domain || '', d.layer ? layerInfo(d.layer).label : '', ownerOf(d.owner), d.product ? '★' : '', frCell(f),
+          d.contract ? `${d.contract.version} · ${repT(`cat.st.${d.contract.status}`)}` : '', sto ? `${numFmt(sto.gb, 1)} GB · ${money(round2(sto.monthly))}` : ''];
+      });
+      blocks.push({ k: 'table', cls: 'wide', head: [repT('h.id'), repT('h.name'), repT('h.domain'), repT('h.layer'), repT('h.owner'), repT('h.product'), repT('h.freshness'), repT('h.contract'), repT('h.storage')], rows });
+      if (dsl.some(d => storageEstimate(d, { prices: dsPrices() }))) blocks.push({ k: 'p', muted: true, t: repT('cat.estNote') });
+      if (und.length) blocks.push({ k: 'p', t: `${repT('cat.undoc')}: ${und.map(c => c.name).join(', ')}` });
+      prods.forEach(d => {
+        blocks.push({ k: 'h3', t: `★ ${d.id} · ${d.name}` });
+        if (d.description) blocks.push({ k: 'p', t: d.description });
+        if (d.schema?.length) {
+          blocks.push({ k: 'h3', t: repT('cat.schema') });
+          blocks.push({ k: 'table', cls: 'compact', head: [repT('h.name'), repT('h.type'), repT('h.key'), repT('h.pii')], rows: d.schema.map(c => [c.name, c.type || '', c.key ? '✓' : '', c.pii ? '✓' : '']) });
+        }
+        if (d.quality?.length) {
+          blocks.push({ k: 'h3', t: repT('cat.rules') });
+          blocks.push({ k: 'table', cls: 'compact', head: [repT('h.rule'), repT('h.column'), repT('h.param'), repT('h.severity')], rows: d.quality.map(q => [q.rule, q.column || '', q.param || '', q.severity ? sevLabel(q.severity) : '']) });
+        }
+      });
+      sec('datasets', blocks);
     }
 
     if (want('costs')) {
@@ -8176,6 +8205,8 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
   const INV_REQ = [['id'], ['title'], ['kind'], ['priority'], ['status'], ['source'], ['coveredBy'], ['check'], ['result']];
   const INV_RAID = [['id'], ['type'], ['title'], ['status'], ['owner'], ['probability'], ['impact'], ['score'], ['mitigation'], ['due'], ['raised'], ['links'], ['detail']];
   const INV_SH = [['id'], ['name'], ['role'], ['org'], ['raci'], ['versions'], ['inactive']];
+  const INV_DS = [['id'], ['name'], ['domain'], ['layer'], ['owner'], ['steward'], ['product'], ['data'], ['format'], ['freshness'], ['e2e'], ['frState'], ['perDay'], ['retention', 'int'], ['estGb'], ['estMonthly', 'money'], ['phase'], ['contractVersion'], ['status'], ['consumers']];
+  const INV_DSC = [['dsId'], ['dsName'], ['column'], ['type'], ['key'], ['pii'], ['nullable'], ['desc']], INV_DSQ = [['dsId'], ['dsName'], ['rule'], ['column'], ['param'], ['severity']];   // hojas Columns y Quality del catálogo de datos
   const INV_PH = [['phase'], ['until']];   // columnas de fase de componentes y conexiones (solo si el diagrama tiene fases)
   const INV_PHASE = [['id'], ['name'], ['date'], ['goal'], ['components', 'int'], ['added', 'int'], ['retired', 'int'], ['monthly', 'money']];
   const phNm = (m, id) => (id ? m.phases?.find(p => p.id === id)?.name || '' : '');   // nombre de la fase («» si no hay)
@@ -8237,13 +8268,14 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     // Conexiones
     const open = typeof strideAll === 'function' ? (() => { try { return strideAll(m).filter(t => t.status === 'open'); } catch { return []; } })() : [];
     const ets = Array.isArray(m.edgeTypes) ? m.edgeTypes : [], etOf = id => ets.find(t => t.id === id); // del modelo que se exporta, no del lienzo
+    const lat = m.edges.some(e => e.latency != null && e.latency !== '');   // columna Latencia solo si alguna conexión la tiene
     const conn = m.edges.map(e => {
       const cb = typeof crossBorder === 'function' ? crossBorder(e, byId) : null, ct = etOf(e.style);
       return [e.id || '', nm(e.from), nm(e.to), String(e.label || '').replace(/\s*\n\s*/g, ' '), ct ? loc(ct.label) : edgeStyleLabel(e.style), T(EDGE_W[e.weight] ? `wt.${e.weight}` : 'wt.normal'), invYN(!!ct), e.encrypted === true ? T('enc.yes') : e.encrypted === false ? T('enc.no') : T('enc.unset'),
         (e.data || []).map(k => loc(DATA[k]?.short) || String(k).toUpperCase()).join(' '), (e.datasets || []).join('; '), invYN(!!cb), cb ? invYN(cb.approved) : '', open.filter(t => t.e === e || t.e.id === e.id).length,
-        ...(ph ? [phNm(m, e.phase), phNm(m, e.until)] : [])];
+        ...(lat ? [e.latency || ''] : []), ...(ph ? [phNm(m, e.phase), phNm(m, e.until)] : [])];
     });
-    const cn = [...INV_CONN, ...(ph ? INV_PH : [])];
+    const cn = [...INV_CONN, ...(lat ? [['latency']] : []), ...(ph ? INV_PH : [])];
     if (conn.length) out.push(mk('connections', cn, conn));
     // Tipos de conexión propios (solo si el diagrama los tiene)
     if (ets.length) out.push(mk('types', INV_TYPE, ets.map(t => [t.id, loc(t.label), t.dash || '', t.color || '', t.width ?? '', t.particles ?? '', m.edges.filter(e => e.style === t.id).length])));
@@ -8272,6 +8304,20 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     if (m.raid?.length) {
       const rl = l => [...(l?.decisions || []), ...(l?.requirements || []), links(l)].filter(Boolean).join('; ');
       out.push(mk('raid', INV_RAID, m.raid.map(x => [x.id, T(`raid.type1.${x.type}`), x.title, T(`raid.st.${raidState(x)}`), x.owner || '', x.probability ?? '', x.impact ?? '', raidScore(x) || '', x.mitigation || '', x.due || '', x.raised || '', rl(x.links), x.detail || ''])));
+    }
+    // Catálogo de datos (solo si hay conjuntos): una fila por conjunto (frescura real, costo estimado y contrato), y Columnas y Calidad si tienen filas
+    if (m.datasets?.length) {
+      const dsl = m.datasets, ownerOf = o => m.stakeholders?.find(s => s.id === o)?.name || o || '', pr = { prices: dsPrices() };
+      out.push(mk('datasets', INV_DS, dsl.map(d => {
+        const f = e2eOf(d.name, m), sto = storageEstimate(d, pr);
+        return [d.id, d.name, d.domain || '', d.layer ? layerInfo(d.layer).label : '', ownerOf(d.owner), d.steward || '', invYN(!!d.product), (d.classes || []).map(k => loc(DATA[k]?.short) || String(k).toUpperCase()).join(' '),
+          d.format || '', d.freshness || '', f.worst == null ? '' : fmtDur(f.worst / 1000), T(`inv.fr.${f.state}`), d.volume?.perDay ?? '', d.volume?.retentionDays ?? '', sto ? round2(sto.gb) : '', sto ? round2(sto.monthly) : '',
+          phNm(m, d.phase), d.contract?.version || '', d.contract ? T(`rep.cat.st.${d.contract.status}`) : '', (d.contract?.consumers || []).map(nm).join('; ')];
+      })));
+      const dc = dsl.flatMap(d => (d.schema || []).map(c => [d.id, d.name, c.name, c.type || '', invYN(!!c.key), invYN(!!c.pii), invYN(c.nullable !== false), c.desc || '']));
+      if (dc.length) out.push(mk('columns', INV_DSC, dc));
+      const dq = dsl.flatMap(d => (d.quality || []).map(q => [d.id, d.name, q.rule, q.column || '', q.param || '', q.severity ? sevLabel(q.severity) : '']));
+      if (dq.length) out.push(mk('quality', INV_DSQ, dq));
     }
     // Interesados (una fila por persona, con su RACI como «área:letra») y firmas de decisiones y versiones (una fila por firma); solo si hay datos
     if (m.stakeholders?.length) out.push(mk('stakeholders', INV_SH, m.stakeholders.map(s => [s.id, s.name, s.role || '', T(`people.org.${s.org}`), Object.entries(s.raci || {}).map(([k, v]) => `${k}:${v}`).join('; '), invYN(s.versions === true), invYN(!!s.inactive)])));
