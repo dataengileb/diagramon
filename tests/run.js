@@ -273,7 +273,8 @@
      ====================================================================== */
   section('ADR options');
   const adrSrc = between('/* adrModel:start */', '/* adrModel:end */');
-  const ADRM = new Function('isDay', 'today', `${adrSrc}; return { adrScore, adrFull, adrLeader, cleanDecisions };`)(v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v), () => '2026-01-01');
+  const apprSrc = between('/* approvalModel:start */', '/* approvalModel:end */');   // cleanDecisions llama a cleanSignoffs
+  const ADRM = new Function('isDay', 'today', `${apprSrc}; ${adrSrc}; return { adrScore, adrFull, adrLeader, cleanDecisions };`)(v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v), () => '2026-01-01');
   const adrModel = { nodes: [{ id: 'a' }], edges: [], groups: [], versions: [{ id: 'v2' }] };
   const adrDec = () => ({
     id: 'ADR-001', title: 'Open table format', status: 'proposed', date: '2026-10-07', context: 'c', decision: '', consequences: '', area: 'Storage',
@@ -697,6 +698,82 @@
     assert(/addFindingSource\('approval'/.test(app) && /approval:no-approver:/.test(app), 'no-approver finding');
     assert(/stakeholders: \(\) => clone\(S\.model\.stakeholders \|\| \[\]\), addStakeholder, updateStakeholder, removeStakeholder/.test(app), 'API');
     assert(/shHasSignoffs\(id\)\) \{ toast/.test(app), 'delete is blocked when the stakeholder has sign-offs');
+  });
+
+  /* ======================================================================
+     10. Aprobaciones: firmas de ADR y versiones
+     ====================================================================== */
+  section('Approvals');
+  const isDayT = v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
+  const APPM = new Function('isDay', `${apprSrc}; return { approversFor, approvalState, cleanSignoffs };`)(isDayT);
+  const people = () => [
+    { id: 'SH-001', name: 'Ana', raci: { '*': 'C', Security: 'A' } }, { id: 'SH-002', name: 'Luis', raci: { platform: 'A' } },
+    { id: 'SH-003', name: 'Eva', raci: { '*': 'A' }, versions: true }, { id: 'SH-004', name: 'Old', raci: { '*': 'A' }, versions: true, inactive: true }, { id: 'SH-005', name: 'Read', raci: { '*': 'I' } }];
+  const apprM = { stakeholders: people() };
+  test('approversFor: active A on the area (case-insensitive) or on *, versions flag for versions', () => {
+    eq(APPM.approversFor('decision', { area: ' security ' }, apprM), ['SH-001', 'SH-003'], 'Security (trimmed, any case) + *');
+    eq(APPM.approversFor('decision', { area: 'PLATFORM' }, apprM), ['SH-002', 'SH-003'], 'Platform');
+    eq(APPM.approversFor('decision', {}, apprM), ['SH-003'], 'no area uses only *');
+    eq(APPM.approversFor('decision', { area: 'Other' }, apprM), ['SH-003'], 'unknown area');
+    eq(APPM.approversFor('version', {}, apprM), ['SH-003'], 'versions (inactive left out)');
+    eq(APPM.approversFor('decision', { area: 'x' }, {}), [], 'no stakeholders');
+  });
+  test('approvalState: latest sign-off wins, only the current round counts, empty means not configured', () => {
+    const so = (by, verdict, date) => ({ by, verdict, date });
+    const d = { area: 'Security', history: [{ status: 'proposed', date: '2026-10-01' }, { status: 'accepted', date: '2026-10-05' }, { status: 'proposed', date: '2026-10-08' }],
+      signoffs: [so('SH-001', 'approve', '2026-10-02'), so('SH-003', 'reject', '2026-10-09'), so('SH-003', 'approve', '2026-10-10'), so('SH-001', 'approve', '2026-10-08')] };
+    eq(APPM.approvalState('decision', d, apprM), { required: ['SH-001', 'SH-003'], approved: ['SH-001', 'SH-003'], rejected: [], pending: [], complete: true }, 'both approved in the last round');
+    d.history.push({ status: 'proposed', date: '2026-10-11' });
+    eq(APPM.approvalState('decision', d, apprM).pending, ['SH-001', 'SH-003'], 'a new proposed entry starts a new round');
+    d.signoffs.push(so('SH-001', 'reject', '2026-10-12'));
+    const st = APPM.approvalState('decision', d, apprM);
+    eq([st.rejected, st.pending, st.complete], [['SH-001'], ['SH-003'], false], 'rejection blocks');
+    eq(APPM.approvalState('decision', { signoffs: [so('SH-003', 'approve', '2026-01-01')] }, apprM).complete, true, 'no proposed entry: everything counts');
+    const v = { reviewSince: '2026-10-05', signoffs: [so('SH-003', 'approve', '2026-10-04')] };
+    eq(APPM.approvalState('version', v, apprM).pending, ['SH-003'], 'before reviewSince does not count');
+    v.signoffs.push(so('SH-003', 'approve', '2026-10-05'));
+    eq(APPM.approvalState('version', v, apprM).complete, true, 'on reviewSince counts');
+    eq(APPM.approvalState('version', {}, { stakeholders: [{ id: 'SH-001', name: 'A' }] }), { required: [], approved: [], rejected: [], pending: [], complete: false }, 'not configured');
+  });
+  test('cleanSignoffs keeps known stakeholders, valid verdicts and dates; trims notes; caps at 200', () => {
+    const r = APPM.cleanSignoffs([{ by: 'SH-001', verdict: 'approve', date: '2026-10-08', note: '  ok  ' }, { by: 'SH-009', verdict: 'approve', date: '2026-10-08' }, { by: 'SH-001', verdict: 'maybe', date: '2026-10-08' },
+      { by: 'SH-002', verdict: 'reject', date: 'soon' }, { by: 'SH-002', verdict: 'reject', date: '2026-10-09', note: 'x'.repeat(600), extra: 1 }, null, 'x'], apprM);
+    eq(r.map(x => [x.by, x.verdict, x.date, (x.note || '').length]), [['SH-001', 'approve', '2026-10-08', 2], ['SH-002', 'reject', '2026-10-09', 500]], 'entries');
+    eq(Object.keys(r[0]), ['by', 'verdict', 'date', 'note'], 'key order');
+    eq(APPM.cleanSignoffs(Array.from({ length: 250 }, (_, i) => ({ by: 'SH-001', verdict: 'approve', date: '2026-10-08', note: String(i) })), apprM).length, 200, 'limit');
+    eq(APPM.cleanSignoffs([{ by: 'SH-001', verdict: 'approve', date: '2026-10-08' }], {}), [], 'without stakeholders everything is dropped');
+  });
+  test('cleanDecisions keeps signoffs after history, and nothing appears when absent', () => {
+    const d = { id: 'ADR-001', title: 'T', status: 'accepted', date: '2026-10-08', context: 'a', history: [{ status: 'accepted', date: '2026-10-08' }], signoffs: [{ by: 'SH-001', verdict: 'approve', date: '2026-10-08' }, { by: 'GHOST', verdict: 'approve', date: '2026-10-08' }] };
+    const r = ADRM.cleanDecisions([d], { ...adrModel, stakeholders: people() })[0];
+    eq(Object.keys(r).slice(-2), ['history', 'signoffs'], 'order'); eq(r.signoffs.length, 1, 'ghost dropped');
+    assert(!('signoffs' in ADRM.cleanDecisions([{ ...d, signoffs: [] }], adrModel)[0]), 'no key without sign-offs');
+    assert(!('signoffs' in ADRM.cleanDecisions([d], adrModel)[0]), 'no key when the model has no stakeholders');
+  });
+  ['en', 'es'].forEach(lang => test(`sign-offs round trip in the text format · ${lang}`, () => {
+    const m = withPositions({ title: 'ADR', nodes: [{ id: 'a', label: 'A' }], edges: [] });
+    m.decisions = [{ id: 'ADR-001', title: 'T', status: 'accepted', date: '2026-10-09', context: 'c', decision: '', consequences: '', area: 'Security', links: {},
+      history: [{ status: 'proposed', date: '2026-10-07' }, { status: 'accepted', date: '2026-10-09' }],
+      signoffs: [{ by: 'SH-001', verdict: 'approve', date: '2026-10-08', note: 'Looks "good"; ship' }, { by: 'SH-002', verdict: 'reject', date: '2026-10-09' }] }];
+    const ctx = { ...textCtx(lang), stakeholders: ['SH-001', 'SH-002'] }, t1 = TXT.stringify(m, lang), r = TXT.parse(t1, ctx);
+    eq(r.errors, [], 'parse errors');
+    eq(r.model.decisions[0].signoffs, m.decisions[0].signoffs, 'model');
+    assert(TXT.stringify({ ...r.model, meta: m.meta }, lang) === t1, 'text is stable');
+    if (lang === 'es') assert(/^  firmas: SH-001 aprueba 2026-10-08 nota="Looks \\"good\\"; ship"; SH-002 rechaza 2026-10-09$/m.test(t1), `Spanish keywords:\n${t1}`);
+    else assert(/^  signoffs: SH-001 approve 2026-10-08 note="Looks \\"good\\"; ship"; SH-002 reject 2026-10-09$/m.test(t1), `English keywords:\n${t1}`);
+  }));
+  test('sign-off text accepts both languages and reports errors with line numbers', () => {
+    const ctx = { ...textCtx('en'), stakeholders: ['SH-001'] };
+    const ok = TXT.parse(['a: A', 'adr ADR-1: "T"', '  firmas: SH-001 aprobado 2026-10-08 nota=ok'].join('\n'), ctx);
+    eq(ok.errors, [], 'mixed-language input'); eq(ok.model.decisions[0].signoffs, [{ by: 'SH-001', verdict: 'approve', date: '2026-10-08', note: 'ok' }], 'values');
+    const bad = TXT.parse(['adr ADR-1: "T"', '  signoffs: SH-009 approve 2026-10-08', '  signoffs: SH-001 maybe 2026-10-08; SH-001 approve nope; SH-001 approve'].join('\n'), ctx);
+    eq(bad.errors.map(e => e.line).sort(), [2, 3, 3, 3], 'unknown stakeholder and malformed entries, each with its line');
+  });
+  test('old documents stay byte-identical (no sign-off keys in text or JSON order)', () => {
+    const m = withPositions({ title: 'ADR', nodes: [{ id: 'a', label: 'A' }], edges: [] });
+    m.decisions = [{ id: 'ADR-001', title: 'T', status: 'accepted', date: '2026-10-09', context: 'c', decision: '', consequences: '', links: {}, history: [{ status: 'accepted', date: '2026-10-09' }] }];
+    assert(!/signoffs|firmas/.test(TXT.stringify(m, 'en') + TXT.stringify(m, 'es')), 'no sign-off lines');
+    assert(!/signoffs/.test(serializeM(m, true)), 'no sign-off key in the JSON');
   });
 
   /* ---------- resumen ---------- */

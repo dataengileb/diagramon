@@ -58,6 +58,7 @@
              (es: adr … estado=aceptada fecha= decisores= enlaces= reemplazada-por=; estados proposed|propuesta, accepted|aceptada, rejected|rechazada,
              deprecated|obsoleta, superseded|reemplazada). Los campos van en las líneas siguientes, cada uno con su texto entre comillas (\n = salto de línea):
                context: "…"  decision: "…"  consequences: "…"  history: proposed 2026-05-20 by="Ana" note="…"; accepted 2026-06-02
+               signoffs: SH-001 approve 2026-10-08 note="…"; SH-002 reject 2026-10-09   (es: firmas: SH-001 aprueba … nota=; rechaza)
              (es: contexto: decisión: consecuencias: historial: … por= nota=). links= lista ids de nodos, grupos, conexiones (`origen->destino`, `#2` si hay
              varias iguales) y versiones (`version:<id>`; las versiones no viven en el texto, así que solo se conservan los enlaces a las que ya existen).
              Opciones evaluadas (opcional): area="Almacenamiento" en la línea `adr`, y líneas de campo con criterios y opciones:
@@ -166,7 +167,7 @@
   const DISMISS_RE = /^(dismiss|descartar|descartado)\s+(?:("(?:[^"\\]|\\.)*")|(\S+?))\s*:\s+(.*)$/i;
   /* ---------- decisiones de arquitectura (ADR): adr ID: "título" status= date= … + líneas context/decision/consequences/history ---------- */
   const ADR_RE = /^adr\s+([^\s:]+)\s*:\s*(.*)$/i;
-  const ADR_FIELD_RE = /^(context|contexto|decision|decisi[oó]n|consequences|consecuencias|history|historial)\s*:\s*(.*)$/i;
+  const ADR_FIELD_RE = /^(context|contexto|decision|decisi[oó]n|consequences|consecuencias|history|historial|signoffs|firmas)\s*:\s*(.*)$/i;
   const ADR_KEYS = ['status', 'estado', 'date', 'fecha', 'deciders', 'decisores', 'links', 'enlaces', 'superseded-by', 'reemplazada-por', 'sustituida-por', 'area', 'área'];
   // Criterios y opciones de una decisión (líneas de campo tras `adr`)
   const ADR_CRIT_RE = /^(criterion|criterio)\s+([^\s:]+)\s*:\s*(.*)$/i, ADR_OPT_RE = /^(option|opci[oó]n)\s+([^\s:]+)\s*:\s*(.*)$/i;
@@ -176,12 +177,16 @@
   const ADR_RISK_IN = { low: 'low', bajo: 'low', baja: 'low', medium: 'medium', medio: 'medium', media: 'medium', high: 'high', alto: 'high', alta: 'high' };
   const ADR_RISK_OUT = { en: {}, es: { low: 'bajo', medium: 'medio', high: 'alto' } };
   const ADR_HKEYS = ['by', 'por', 'note', 'nota'];
+  // Firmas (aprobaciones): `signoffs: SH-001 approve 2026-10-08 note="…"; SH-002 reject 2026-10-09` (es: firmas: … aprueba|rechaza … nota=)
+  const ADR_SKEYS = ['note', 'nota'];
+  const SIGN_IN = { approve: 'approve', aprueba: 'approve', aprobar: 'approve', aprobada: 'approve', aprobado: 'approve', reject: 'reject', rechaza: 'reject', rechazar: 'reject', rechazada: 'reject', rechazado: 'reject' };
+  const SIGN_OUT = { en: {}, es: { approve: 'aprueba', reject: 'rechaza' } };
   const ADR_ST_IN = { proposed: 'proposed', propuesta: 'proposed', propuesto: 'proposed', accepted: 'accepted', aceptada: 'accepted', aceptado: 'accepted', rejected: 'rejected', rechazada: 'rejected', rechazado: 'rejected',
     deprecated: 'deprecated', obsoleta: 'deprecated', obsoleto: 'deprecated', superseded: 'superseded', reemplazada: 'superseded', reemplazado: 'superseded', sustituida: 'superseded', sustituido: 'superseded', superada: 'superseded', superado: 'superseded' };
   const ADR_ST_OUT = { en: {}, es: { proposed: 'propuesta', accepted: 'aceptada', rejected: 'rechazada', deprecated: 'obsoleta', superseded: 'reemplazada' } };
-  const ADR_W = { en: { area: 'area', crit: 'criterion', opt: 'option', weight: 'weight', chosen: 'chosen', cost: 'cost', risk: 'risk', version: 'version', scores: 'scores', summary: 'summary', pros: 'pros', cons: 'cons', status: 'status', date: 'date', deciders: 'deciders', links: 'links', sup: 'superseded-by', context: 'context', decision: 'decision', consequences: 'consequences', history: 'history', by: 'by', note: 'note' },
-    es: { area: 'área', crit: 'criterio', opt: 'opción', weight: 'peso', chosen: 'elegida', cost: 'costo', risk: 'riesgo', version: 'versión', scores: 'puntos', summary: 'resumen', pros: 'pros', cons: 'contras', status: 'estado', date: 'fecha', deciders: 'decisores', links: 'enlaces', sup: 'reemplazada-por', context: 'contexto', decision: 'decisión', consequences: 'consecuencias', history: 'historial', by: 'por', note: 'nota' } };
-  const ADR_FIELD = { context: 'context', contexto: 'context', decision: 'decision', decisión: 'decision', consequences: 'consequences', consecuencias: 'consequences', history: 'history', historial: 'history' };
+  const ADR_W = { en: { area: 'area', crit: 'criterion', opt: 'option', weight: 'weight', chosen: 'chosen', cost: 'cost', risk: 'risk', version: 'version', scores: 'scores', summary: 'summary', pros: 'pros', cons: 'cons', status: 'status', date: 'date', deciders: 'deciders', links: 'links', sup: 'superseded-by', context: 'context', decision: 'decision', consequences: 'consequences', history: 'history', signoffs: 'signoffs', by: 'by', note: 'note' },
+    es: { area: 'área', crit: 'criterio', opt: 'opción', weight: 'peso', chosen: 'elegida', cost: 'costo', risk: 'riesgo', version: 'versión', scores: 'puntos', summary: 'resumen', pros: 'pros', cons: 'contras', status: 'estado', date: 'fecha', deciders: 'decisores', links: 'enlaces', sup: 'reemplazada-por', context: 'contexto', decision: 'decisión', consequences: 'consecuencias', history: 'historial', signoffs: 'firmas', by: 'por', note: 'nota' } };
+  const ADR_FIELD = { context: 'context', contexto: 'context', decision: 'decision', decisión: 'decision', consequences: 'consequences', consecuencias: 'consequences', history: 'history', historial: 'history', signoffs: 'signoffs', firmas: 'signoffs' };
   /* ---------- requisitos: req ID: "título" kind= priority= status= source= check= from= to= target= cls= jur= links= + línea detail ---------- */
   const REQ_RE = /^(?:req|requisito)\s+([^\s:]+)\s*:\s*(.*)$/i, REQ_FIELD_RE = /^(detail|detalle)\s*:\s*(.*)$/i;
   const REQ_KEYS = ['kind', 'tipo', 'priority', 'prioridad', 'status', 'estado', 'source', 'fuente', 'check', 'control', 'from', 'desde', 'to', 'hasta', 'target', 'objetivo', 'cls', 'clase', 'jur', 'jurisdiccion', 'jurisdicción', 'links', 'enlaces'];
@@ -258,6 +263,7 @@
       reqDup: id => `requirement “${id}” is declared twice`, reqKind: v => `unknown requirement kind “${v}” (use driver, nfr, constraint or principle)`, reqPrio: v => `unknown priority “${v}” (use must, should or could)`,
       reqStatus: v => `unknown requirement status “${v}” (use draft, agreed or dropped)`, reqMetric: v => `unknown check “${v}” (use availability, rpo, rto, cost, encryption or residency)`, reqNum: v => `invalid target “${v}” (a number, 0 or more)`,
       reqNode: v => `“${v}” is not a node (use a component id in from= and to=)`, reqLink: v => `“${v}” is not a decision, node, group or connection (use ids or source->target)`, reqNoCheck: 'from=, to=, target=, cls= and jur= need check=… on the same line',
+      adrSign: v => `invalid sign-off “${v}” (use SH-001 approve|reject YYYY-MM-DD note="…"; separate entries with ;)`, adrSignBy: v => `“${v}” is not a stakeholder`,
       adrHist: v => `invalid history entry “${v}” (use status YYYY-MM-DD by="…" note="…"; separate entries with ;)`,
       raidDup: id => `item “${id}” is declared twice`, raidId: (id, p) => `invalid id “${id}” (use ${p}-001, ${p}-002…)`, raidNum: (k, v) => `invalid ${k} “${v}” (use a whole number from 1 to 5)`,
       raidSt: v => `invalid status “${v}” (use open or closed)`, raidVal: v => `invalid validation “${v}” (use pending, validated or invalidated)`,
@@ -292,6 +298,7 @@
       reqDup: id => `el requisito «${id}» está declarado dos veces`, reqKind: v => `tipo de requisito desconocido «${v}» (usa impulsor, rnf, restricción o principio)`, reqPrio: v => `prioridad desconocida «${v}» (usa debe, debería o podría)`,
       reqStatus: v => `estado de requisito desconocido «${v}» (usa borrador, acordado o descartado)`, reqMetric: v => `control desconocido «${v}» (usa disponibilidad, rpo, rto, costo, cifrado o residencia)`, reqNum: v => `objetivo no válido «${v}» (un número, 0 o más)`,
       reqNode: v => `«${v}» no es un nodo (usa el id de un componente en desde= y hasta=)`, reqLink: v => `«${v}» no es una decisión, nodo, grupo ni conexión (usa ids u origen->destino)`, reqNoCheck: 'desde=, hasta=, objetivo=, clase= y jurisdicción= necesitan control=… en la misma línea',
+      adrSign: v => `firma no válida «${v}» (usa SH-001 aprueba|rechaza AAAA-MM-DD nota="…"; separa las entradas con ;)`, adrSignBy: v => `«${v}» no es un interesado`,
       adrHist: v => `entrada de historial no válida «${v}» (usa estado AAAA-MM-DD por="…" nota="…"; separa las entradas con ;)`,
       raidDup: id => `el item «${id}» está declarado dos veces`, raidId: (id, p) => `id no válido «${id}» (usa ${p}-001, ${p}-002…)`, raidNum: (k, v) => `${k} no válido «${v}» (usa un número entero de 1 a 5)`,
       raidSt: v => `estado no válido «${v}» (usa abierto o cerrado)`, raidVal: v => `validación no válida «${v}» (usa pendiente, validado o invalidado)`,
@@ -358,7 +365,7 @@
     const errors = [];
     const nodes = new Map(), groups = new Set(), stack = [], gobj = new Map(), inRefs = [], nests = [], thLines = [];
     model.notes = []; model.zones = []; model.dismissed = {}; model.edgeTypes = []; model.decisions = []; model.requirements = [];
-    const adrSeen = new Set(), adrRefs = [], adrScores = []; let adrCur = null, adrOpen = false;
+    const adrSeen = new Set(), adrRefs = [], adrScores = [], adrSigns = []; let adrCur = null, adrOpen = false;
     const reqSeen = new Set(), reqRefs = [], reqNodes = []; let reqCur = null, reqOpen = false;
     model.raid = [];
     const raidSeen = new Set(), raidRefs = []; let raidCur = null, raidOpen = false;
@@ -514,6 +521,17 @@
       if (inAdr && adrCur && (m = line.match(ADR_FIELD_RE))) {
         adrOpen = true;
         const f = ADR_FIELD[m[1].toLowerCase()];
+        if (f === 'signoffs') {
+          splitSemi(m[2]).map(x => x.trim()).filter(Boolean).forEach(ent => {
+            const tk = tokens(ent, ADR_SKEYS), vd = SIGN_IN[foldK(tk.words[1] || '')], h = { by: tk.words[0], verdict: vd, date: tk.words[2] };
+            if (!vd || tk.words.length !== 3 || !isDay(h.date) || tk.quotes.length) return err(ln, msg.adrSign(ent));
+            const nt = (tk.kv.note ?? tk.kv.nota)?.trim();
+            if (nt) h.note = nt;
+            adrSigns.push({ ln, by: h.by });
+            (adrCur.signoffs ||= []).push(h);
+          });
+          return;
+        }
         if (f !== 'history') { adrCur[f] = adrText(m[2]); return; }
         splitSemi(m[2]).map(x => x.trim()).filter(Boolean).forEach(ent => {
           const tk = tokens(ent, ADR_HKEYS), st = ADR_ST_IN[foldK(tk.words[0] || '')], h = { status: st, date: tk.words[1] };
@@ -799,6 +817,8 @@
       const tk = tokens(t.rest, []), note = tk.quotes[0] ?? tk.words.join(' ').replace(/\\n/g, '\n');
       if (note) e.threats[t.k].note = note;
     });
+    // Firmas: el interesado debe existir (los de la página, o los declarados en el propio texto)
+    { const known = new Set([...(ctx.stakeholders || []), ...(model.stakeholders || []).map(x => x.id)]); adrSigns.forEach(({ ln, by }) => { if (!known.has(by)) err(ln, msg.adrSignBy(by)); }); }
     // Puntajes: cada criterio citado debe estar declarado en la misma decisión
     adrScores.forEach(({ d, ids, ln }) => ids.forEach(k => { if (!(d.criteria || []).some(c => c.id === k)) err(ln, msg.adrScoreCrit(k)); }));
     // Enlaces de las decisiones: nodo, grupo, conexión (origen->destino[#n]) o version:<id> (las versiones no están en el texto: las valida setModel)
@@ -964,6 +984,7 @@
         out.push(`  ${aw.opt} ${o.id}: ${quote(o.title ?? '')}${d.chosen === o.id ? ` ${aw.chosen}` : ''}${o.cost != null ? ` ${aw.cost}=${+o.cost}` : ''}${o.risk ? ` ${aw.risk}=${(ADR_RISK_OUT[lang] || {})[o.risk] || o.risk}` : ''}${o.version ? ` ${aw.version}=${bare(o.version)}` : ''}${sc ? ` ${aw.scores}=${sc}` : ''}${['summary', 'pros', 'cons'].filter(k => o[k]).map(k => ` ${aw[k]}=${quote(o[k])}`).join('')}`);
       });
       ['context', 'decision', 'consequences'].forEach(k => { if (d[k]) out.push(`  ${aw[k]}: ${quote(d[k])}`); });
+      if (d.signoffs?.length) out.push(`  ${aw.signoffs}: ${d.signoffs.map(x => `${x.by} ${(SIGN_OUT[lang] || {})[x.verdict] || x.verdict} ${x.date}${x.note ? ` ${aw.note}=${hv(x.note)}` : ''}`).join('; ')}`);
       if (d.history?.length) out.push(`  ${aw.history}: ${d.history.map(h => `${ast[h.status] || h.status} ${h.date}${h.by ? ` ${aw.by}=${hv(h.by)}` : ''}${h.note ? ` ${aw.note}=${hv(h.note)}` : ''}`).join('; ')}`);
     });
     // Requisitos: al final; el detalle en una línea de campo entre comillas (JSON)
