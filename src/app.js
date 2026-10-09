@@ -655,6 +655,7 @@
       if (o.weight !== 'high' && o.weight !== 'critical') delete o.weight;
       if (o.both === true || (typeof o.both === 'string' && /^(yes|true|si|sí)$/i.test(o.both))) o.both = true; else delete o.both;
       const dsl = cleanDatasets(o.datasets); if (dsl.length) o.datasets = dsl; else delete o.datasets;
+      { const lt = normDur(o.latency); if (lt != null) o.latency = lt; else delete o.latency; }   // tiempo que tarda el dato en este salto ('15m', '1h', '1d'); inválido = se descarta
       if (o.transferOk === true || (typeof o.transferOk === 'string' && /^(yes|true|ok|si|sí)$/i.test(o.transferOk))) o.transferOk = true; else delete o.transferOk;
       { const th = cleanThreats(o.threats); if (th) o.threats = th; else delete o.threats; }
       m.edges.push(o);
@@ -683,6 +684,7 @@
     m.decisions = cleanDecisions(raw.decisions, m);
     { const rq = cleanRequirements(raw.requirements, m); if (rq.length) m.requirements = rq; }   // sin requisitos no hay clave: JSON y exportaciones idénticos
     m.raid = cleanRaid(raw.raid, m);   // después de los requisitos: sus ids ya están en m.requirements
+    { const ds = cleanCatalog(raw.datasets, m, dsHelpers()); if (ds.length) m.datasets = ds; }   // después de nodos y fases (consumidores y fase deben existir); sin conjuntos no hay clave: JSON y exportaciones idénticos
     // Cada versión puede llevar las decisiones que había al guardarla (para compararlas); sus enlaces se limpian contra el diagrama de la versión
     m.versions.forEach(v => { if (v.decisions) v.decisions = cleanDecisions(v.decisions, { nodes: v.diagram.nodes || [], edges: v.diagram.edges || [], groups: v.diagram.groups || [], versions: m.versions, stakeholders: m.stakeholders }); });
     if (raw.active != null && m.versions.some(v => v.id === String(raw.active))) m.active = String(raw.active);
@@ -1582,7 +1584,8 @@
       ...m,
       groups: m.groups.filter(g => st.groups.get(g.id) === 0).map(g => fix(g, 'parent')),
       nodes: m.nodes.filter(n => st.nodes.get(n.id) === 0).map(n => fix(n, 'group')),
-      edges: m.edges.filter(e => st.edges.get(e.id) === 0).map(e => ({ ...e }))
+      edges: m.edges.filter(e => st.edges.get(e.id) === 0).map(e => ({ ...e })),
+      ...(m.datasets ? { datasets: m.datasets.filter(d => !d.phase || phaseIndex(m, d.phase) <= i) } : {})   // un conjunto sin fase está siempre; con fase, desde esa fase
     };
   }
   // Nodos que entran y salen en la fase i respecto de la anterior (en la primera: los que declaran esa fase)
@@ -1611,6 +1614,177 @@
   /* phaseModel:end */
   const phaseHelpers = { monthly: m => monthlyTotal(m.nodes), hasCost: m => m.nodes.some(hasCost), findings: m => findingsOf(m).filter(f => !f.dismissed) };
   const phaseCostText = (r, k = 'cost') => (r[k] == null ? '—' : k === 'cost' ? money(round2(r.cost)) : r.dCost === 0 ? money(0) : `${r.dCost > 0 ? '+' : '−'}${money(round2(Math.abs(r.dCost)))}`);
+
+  /* ---------- conjuntos de datos (catálogo, contrato de datos, frescura de extremo a extremo): modelo ---------- */
+  // m.datasets = [{ id: 'DS-001', name (CLAVE que une con edge.datasets, sin distinguir mayúsculas), domain?, layer?, description?, owner? ('SH-003' o texto), steward?, product?: true, classes?: ['pii'],
+  //   format?, freshness?: '1h' (SLA), volume?: { perDay?: GB, retentionDays? }, schema?: [{ name, type, key?, pii?, nullable?: false, desc? }], quality?: [{ rule, column?, param?, severity? }],
+  //   contract?: { version, status: 'draft'|'agreed'|'deprecated', consumers?: [ids de nodos], terms? }, phase?: id de fase }] (máx. 500)
+  // Es del diagrama (entra en las fotos de versiones). En conexiones: latency = tiempo que tarda el dato en ese salto. Sin conjuntos ni latencias, el JSON y las exportaciones quedan idénticos.
+  // El bloque solo usa lo que recibe en `h` (cleanCatalog: layer, classes, formats, rules, normDur · e2eFreshness y datasetIssues: lineageOf, parseDur, T…).
+  /* datasetModel:start */
+  const DS_MAX = 500, DS_COLS = 300, DS_RULES_MAX = 100, DS_DEFAULT_DAYS = 365;
+  const DS_FORMATS = ['delta', 'iceberg', 'hudi', 'parquet', 'avro', 'json', 'csv', 'other'];
+  const DS_RULES = ['not_null', 'unique', 'range', 'regex', 'accepted_values', 'freshness', 'custom'];
+  const DS_STATUS = ['draft', 'agreed', 'deprecated'], DS_SEV = ['low', 'medium', 'high'];
+  const dsK = s => String(s ?? '').trim().toLowerCase();
+  const dsText = (v, n) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, n);
+  const dsLong = (v, n) => String(v ?? '').replace(/\r\n?/g, '\n').trim().slice(0, n);
+  const dsYes = v => v === true || /^(true|yes|si|sí|1)$/i.test(String(v ?? '').trim());
+  const dsNo = v => v === false || /^(false|no|0)$/i.test(String(v ?? '').trim());
+  const dsNum = v => { const n = typeof v === 'number' || (typeof v === 'string' && v.trim() !== '') ? Number(v) : NaN; return Number.isFinite(n) && n >= 0 ? n : null; };
+  const dsNextId = list => `DS-${String(Math.max(0, ...list.map(x => +String(x.id).slice(3) || 0)) + 1).padStart(3, '0')}`;
+  // Limpia m.datasets contra el diagrama m (nodos y fases que existen); h = { layer(v) → clave | null, classes: [claves], formats?, rules?, normDur(v) → texto | null }
+  function cleanCatalog(raw, m, h) {
+    const seenId = new Set(), seenName = new Set(), items = [], nodes = new Set((m.nodes || []).map(n => n.id)), phases = new Set((m.phases || []).map(p => p.id));
+    const formats = h.formats || DS_FORMATS, rules = h.rules || DS_RULES;
+    (Array.isArray(raw) ? raw : []).forEach(r => {
+      if (!r || typeof r !== 'object' || Array.isArray(r)) return;
+      const name = dsText(r.name, 120), key = dsK(name);
+      if (!name || seenName.has(key)) return;
+      seenName.add(key);
+      const rid = String(r.id ?? '').trim(), id = /^DS-\d+$/.test(rid) && !seenId.has(rid) ? rid : '';
+      if (id) seenId.add(id);
+      const o = { id, name }, put = (k, v) => { if (v) o[k] = v; };
+      put('domain', dsText(r.domain, 60));
+      put('layer', h.layer ? h.layer(r.layer) : '');
+      put('description', dsLong(r.description, 2000));
+      put('owner', dsText(r.owner, 120));
+      put('steward', dsText(r.steward, 120));
+      if (dsYes(r.product)) o.product = true;
+      { const cl = [...new Set((Array.isArray(r.classes) ? r.classes : typeof r.classes === 'string' ? r.classes.split(/[,;]/) : []).map(dsK).filter(k => (h.classes || []).includes(k)))]; if (cl.length) o.classes = cl; }
+      { const f = dsK(r.format); if (formats.includes(f)) o.format = f; }
+      { const fr = r.freshness == null || r.freshness === '' ? null : h.normDur(r.freshness); if (fr != null) o.freshness = fr; }
+      if (r.volume && typeof r.volume === 'object' && !Array.isArray(r.volume)) {
+        const v = {}, pd = dsNum(r.volume.perDay), rd = dsNum(r.volume.retentionDays);
+        if (pd != null) v.perDay = pd;
+        if (rd != null) v.retentionDays = Math.round(rd);
+        if (Object.keys(v).length) o.volume = v;
+      }
+      const schema = (Array.isArray(r.schema) ? r.schema : []).filter(c => c && typeof c === 'object' && !Array.isArray(c) && dsText(c.name, 120)).slice(0, DS_COLS).map(c => {
+        const col = { name: dsText(c.name, 120) }, ty = dsText(c.type, 40), ds = dsText(c.desc, 500);
+        if (ty) col.type = ty;
+        if (dsYes(c.key)) col.key = true;
+        if (dsYes(c.pii)) col.pii = true;
+        if (dsNo(c.nullable)) col.nullable = false;
+        if (ds) col.desc = ds;
+        return col;
+      });
+      if (schema.length) o.schema = schema;
+      const quality = (Array.isArray(r.quality) ? r.quality : []).filter(q => q && typeof q === 'object' && rules.includes(dsK(q.rule))).slice(0, DS_RULES_MAX).map(q => {
+        const x = { rule: dsK(q.rule) }, col = dsText(q.column, 120), pa = dsText(q.param, 200), sv = dsK(q.severity);
+        if (col) x.column = col;
+        if (pa) x.param = pa;
+        if (DS_SEV.includes(sv)) x.severity = sv;
+        return x;
+      });
+      if (quality.length) o.quality = quality;
+      if (r.contract && typeof r.contract === 'object' && !Array.isArray(r.contract)) {
+        const c = r.contract, ver = dsText(c.version, 20), st = dsK(c.status), cons = [...new Set((Array.isArray(c.consumers) ? c.consumers : []).map(x => String(x ?? '').trim()).filter(x => nodes.has(x)))], terms = dsLong(c.terms, 2000);
+        if (ver || DS_STATUS.includes(st) || cons.length || terms) {
+          const k = { version: ver || '1.0.0', status: DS_STATUS.includes(st) ? st : 'draft' };
+          if (cons.length) k.consumers = cons;
+          if (terms) k.terms = terms;
+          o.contract = k;
+        }
+      }
+      { const ph = String(r.phase ?? '').trim(); if (ph && phases.has(ph)) o.phase = ph; }
+      items.push(o);
+    });
+    items.forEach(o => { if (!o.id) o.id = dsNextId(items); });
+    return items.slice(0, DS_MAX);
+  }
+  // Conexiones que llevan el conjunto `name` (sin distinguir mayúsculas)
+  const dsEdges = (m, name) => { const k = dsK(name); return (m.edges || []).filter(e => (e.datasets || []).some(d => dsK(d) === k)); };
+  // Catálogo: declarados primero (en el orden del arreglo) y después los nombres usados en conexiones sin declarar (por uso y luego alfabético)
+  function catalog(m) {
+    const use = new Map();
+    (m.edges || []).forEach(e => [...new Set((e.datasets || []).map(dsK))].forEach(k => {
+      const r = use.get(k) || { name: (e.datasets || []).find(d => dsK(d) === k), edges: 0, nodes: new Set() };
+      r.edges++; r.nodes.add(e.from); r.nodes.add(e.to); use.set(k, r);
+    }));
+    const declared = (m.datasets || []).map(ds => { const k = dsK(ds.name), u = use.get(k); return { ds, name: ds.name, key: k, declared: true, edges: u ? u.edges : 0, nodes: u ? [...u.nodes] : [] }; });
+    const known = new Set(declared.map(d => d.key));
+    const rest = [...use.entries()].filter(([k]) => !known.has(k)).map(([k, u]) => ({ ds: null, name: u.name, key: k, declared: false, edges: u.edges, nodes: [...u.nodes] }))
+      .sort((a, b) => b.edges - a.edges || a.name.localeCompare(b.name));
+    return [...declared, ...rest];
+  }
+  // Frescura de extremo a extremo: el camino más lento de un origen del linaje a un consumidor, sumando edge.latency (en ms). Un salto sin latencia suma 0 y se cuenta en unknownHops.
+  // Sin ninguna latencia en el camino → worst null y estado 'unknown'; sin SLA también es 'unknown'. h = { lineageOf(m, name) → { origins, consumers, nodes } | null, parseDur(v) → segundos | null }
+  function e2eFreshness(m, name, h) {
+    const ds = (m.datasets || []).find(d => dsK(d.name) === dsK(name)), slaS = ds?.freshness != null ? h.parseDur(ds.freshness) : null, sla = slaS == null ? null : slaS * 1000;
+    const none = { worst: null, path: [], hops: 0, unknownHops: 0, sla, state: 'unknown' };
+    const lin = h.lineageOf(m, name), es = dsEdges(m, name).filter(e => e.from !== e.to);
+    if (!lin || !es.length) return none;
+    const steps = es.flatMap(e => { const s = e.latency == null || e.latency === '' ? null : h.parseDur(e.latency), ms = s == null ? null : s * 1000; return [[e.from, e.to, ms], ...(e.both ? [[e.to, e.from, ms]] : [])]; });
+    const ids = [...lin.nodes], seeds = lin.origins.length ? lin.origins : ids.slice(0, 1);
+    // best[id] = el camino simple más lento hasta id; el tope de relajaciones evita que un ciclo cuelgue el cálculo (como en lineageOf)
+    const best = new Map(seeds.map(id => [id, { ms: 0, unk: 0, path: [id] }])), q = [...seeds], cap = ids.length * steps.length + 8;
+    for (let n = 0; q.length && n < cap; n++) {
+      const u = q.shift(), b = best.get(u);
+      steps.forEach(([a, c, ms]) => {
+        if (a !== u || b.path.includes(c)) return;
+        const cand = { ms: b.ms + (ms || 0), unk: b.unk + (ms == null ? 1 : 0), path: [...b.path, c] }, cur = best.get(c);
+        if (!cur || cand.ms > cur.ms || (cand.ms === cur.ms && cand.path.length > cur.path.length)) { best.set(c, cand); q.push(c); }
+      });
+    }
+    const ends = (lin.consumers.length ? lin.consumers : ids).filter(id => best.has(id) && best.get(id).path.length > 1);
+    if (!ends.length) return none;
+    const top = ends.map(id => best.get(id)).reduce((a, c) => (c.ms > a.ms || (c.ms === a.ms && c.path.length > a.path.length) ? c : a));
+    const hops = top.path.length - 1, worst = top.unk === hops ? null : top.ms;
+    return { worst, path: top.path, hops, unknownHops: top.unk, sla, state: worst == null || sla == null ? 'unknown' : worst > sla ? 'fail' : 'pass' };
+  }
+  // Almacenamiento estimado: GB guardados = al día × días de retención (365 si no se indica) y costo mensual con el precio por GB-mes de la capa. h = { prices: { default, bronze… } }
+  function storageEstimate(ds, h) {
+    const pd = ds?.volume?.perDay;
+    if (pd == null) return null;
+    const gb = pd * (ds.volume.retentionDays ?? DS_DEFAULT_DAYS), price = h.prices?.[ds.layer] ?? h.prices?.default ?? 0;
+    return { gb, price, monthly: gb * price };
+  }
+  // Cambia el nombre de un conjunto y el de sus apariciones en las conexiones (las demás se quedan). Si el nombre nuevo choca con otro conjunto declarado, devuelve m sin tocar
+  function renameDataset(m, id, newName) {
+    const ds = (m.datasets || []).find(d => d.id === id), name = dsText(newName, 120);
+    if (!ds || !name || (m.datasets || []).some(d => d !== ds && dsK(d.name) === dsK(name))) return m;
+    const old = dsK(ds.name);
+    return { ...m, datasets: m.datasets.map(d => (d === ds ? { ...d, name } : d)), edges: m.edges.map(e => {
+      if (!(e.datasets || []).some(x => dsK(x) === old)) return e;
+      const seen = new Set(), list = e.datasets.map(x => (dsK(x) === old ? name : x)).filter(x => !seen.has(dsK(x)) && seen.add(dsK(x)));
+      return { ...e, datasets: list };
+    }) };
+  }
+  // Avisos del catálogo, ya con textos: [{ id: 'data:<tipo>:<id|nombre>', source: 'data', rule, severity, target, title, detail?, fix }]
+  // h = { T, lineageOf, parseDur, sensitive(clase), short(clase), fmtDur(segundos), edgeName(e), nodeName(id) }
+  function datasetIssues(m, h) {
+    const out = [], T = h.T, nodeName = h.nodeName || (id => id);
+    const tgt = name => { const e = dsEdges(m, name)[0]; return e ? { kind: 'edge', id: e.id } : { kind: 'node', id: '' }; };
+    const add = (rule, key, severity, name, title, detail, fix) => out.push({ id: `data:${rule}:${key}`, source: 'data', rule, severity, target: tgt(name), title, ...(detail ? { detail } : {}), fix });
+    if ((m.datasets || []).length) catalog(m).filter(c => !c.declared).forEach(c => add('undocumented', c.name, 'low', c.name, T('ds.find.undocumented', { name: c.name, n: c.edges }), '', T('ds.find.undocumented.fix')));
+    (m.datasets || []).forEach(d => {
+      const a = { id: d.id, name: d.name };
+      if (d.product && (!d.owner || !d.contract)) add('product-owner', d.id, 'medium', d.name, T(!d.owner && !d.contract ? 'ds.find.ownerContract' : !d.owner ? 'ds.find.noOwner' : 'ds.find.noContract', a), '', T('ds.find.product.fix'));
+      const f = e2eFreshness(m, d.name, h);
+      if (f.state === 'fail') add('freshness', d.id, 'high', d.name, T('ds.find.freshness', a), T('ds.find.freshness.d', { real: h.fmtDur(f.worst / 1000), sla: h.fmtDur(f.sla / 1000), path: f.path.map(nodeName).join(' → ') }), T('ds.find.freshness.fix'));
+      if ((d.schema || []).some(c => c.pii) && !(d.classes || []).includes('pii')) add('pii-class', d.id, 'medium', d.name, T('ds.find.piiClass', a), '', T('ds.find.piiClass.fix'));
+      const sens = (d.classes || []).filter(k => h.sensitive(k)), bad = sens.length ? dsEdges(m, d.name).filter(e => e.encrypted === false) : [];
+      if (bad.length) add('pii-unencrypted', d.id, 'high', d.name, T('ds.find.piiUnenc', { ...a, cls: sens.map(h.short).join(', ') }), bad.map(h.edgeName).join(' · '), T('ds.find.piiUnenc.fix'));
+      if (d.contract?.consumers?.length) {
+        const lin = h.lineageOf(m, d.name), off = d.contract.consumers.filter(id => !lin || !lin.nodes.has(id));
+        if (off.length) add('consumer-unreached', d.id, 'low', d.name, T('ds.find.unreached', { ...a, list: off.map(nodeName).join(', ') }), '', T('ds.find.unreached.fix'));
+      }
+      if ((d.product || d.layer === 'gold') && !(d.quality || []).length) add('no-quality', d.id, 'low', d.name, T('ds.find.noQuality', a), '', T('ds.find.noQuality.fix'));
+    });
+    return out;
+  }
+  /* datasetModel:end */
+  // Lo que el bloque recibe de la app
+  const dsPrices = () => C.datasets?.storagePrice || { default: 0.023 };
+  const dsHelpers = () => ({ layer: cleanLayer, classes: Object.keys(DATA), formats: C.datasets?.formats, rules: C.datasets?.qualityRules, normDur, lineageOf, parseDur, prices: dsPrices(), T: (k, v) => T(k, v), fmtDur: s => fmtDur(s),
+    sensitive: k => !!DATA[k]?.sensitive, short: k => loc(DATA[k]?.short) || String(k).toUpperCase(), nodeName: id => S.model.nodes.find(n => n.id === id)?.label || id,
+    edgeName: e => { const nm = id => S.model.nodes.find(n => n.id === id)?.label || id; return `${nm(e.from)} ${e.both ? '↔' : '→'} ${nm(e.to)}`; } });
+  const e2eOf = (name, m = S.model) => e2eFreshness(m, name, dsHelpers());
+  const dsById = (id, m = S.model) => (m.datasets || []).find(d => d.id === id);
+  const dsFind = (v, m = S.model) => dsById(v, m) || (m.datasets || []).find(d => dsK(d.name) === dsK(v));
+  // Hallazgos (fuente «data»): sin documentar, producto sin dueño o contrato, frescura que no cumple el SLA, columnas PII sin clase, clase sensible sin cifrar, consumidores fuera del linaje, sin reglas de calidad
+  addFindingSource('data', m => ((m.datasets || []).length ? datasetIssues(m, dsHelpers()) : []));
 
   /* ---------- disponibilidad (SLA), RPO/RTO, réplicas y puntos únicos de fallo ---------- */
   const RSL = { entryTypes: ['user', 'web', 'mobile', 'external', 'client'], dataStoreTypes: ['db', 'nosql', 'storage'], dataStoreIconCategories: ['Bases de datos', 'Almacenamiento'],
@@ -3689,7 +3863,7 @@
   const ORDER = {
     group: ['id', 'label', 'icon', 'color', 'parent', 'kind', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'controls', 'in', 'phase', 'until'],
     node: ['id', 'label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'x', 'y', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'exposure', 'backup', 'controls', 'in', 'c4', 'sla', 'rpo', 'rto', 'replicas', 'phase', 'until'],
-    edge: ['id', 'from', 'to', 'label', 'style', 'weight', 'route', 'both', 'color', 'data', 'encrypted', 'datasets', 'transferOk', 'threats', 'phase', 'until'],
+    edge: ['id', 'from', 'to', 'label', 'style', 'weight', 'route', 'both', 'color', 'data', 'encrypted', 'datasets', 'latency', 'transferOk', 'threats', 'phase', 'until'],
     note: ['id', 'x', 'y', 'w', 'h', 'text', 'color', 'in'],
     zone: ['id', 'x', 'y', 'w', 'h', 'label', 'severity', 'desc', 'kind', 'trust', 'in'],
     requirement: ['id', 'title', 'kind', 'detail', 'priority', 'status', 'source', 'check', 'links'],
@@ -3697,6 +3871,19 @@
     raid: ['id', 'type', 'title', 'detail', 'owner', 'status', 'probability', 'impact', 'mitigation', 'validation', 'due', 'raised', 'links', 'history']
   };
   ORDER.phase = ['id', 'name', 'date', 'goal'];
+  ORDER.dataset = ['id', 'name', 'domain', 'layer', 'description', 'owner', 'steward', 'product', 'classes', 'format', 'freshness', 'volume', 'schema', 'quality', 'contract', 'phase'];
+  ORDER.dsColumn = ['name', 'type', 'key', 'pii', 'nullable', 'desc'];
+  ORDER.dsRule = ['rule', 'column', 'param', 'severity'];
+  ORDER.dsContract = ['version', 'status', 'consumers', 'terms'];
+  // Un conjunto con las claves en el orden canónico, también las de sus columnas, reglas, volumen y contrato (ordered = el ordenador de serialize)
+  function dsOrdered(d, ordered) {
+    const o = ordered(d, ORDER.dataset);
+    if (o.schema) o.schema = o.schema.map(c => ordered(c, ORDER.dsColumn));
+    if (o.quality) o.quality = o.quality.map(q => ordered(q, ORDER.dsRule));
+    if (o.volume) o.volume = ordered(o.volume, ['perDay', 'retentionDays']);
+    if (o.contract) o.contract = ordered(o.contract, ORDER.dsContract);
+    return o;
+  }
   ORDER.stakeholder = ['id', 'name', 'role', 'org', 'raci', 'versions', 'inactive'];
   function serialize(m, full = false) {
     const ordered = (o, keys) => { const r = {}; keys.forEach(k => k in o && (r[k] = o[k])); Object.keys(o).forEach(k => k in r || (r[k] = o[k])); return r; };
@@ -3712,6 +3899,7 @@
     if (m.routing) head.push(`  "routing": ${JSON.stringify(m.routing)}`);
     if (m.layerNames === 'zones') head.push(`  "layerNames": "zones"`);
     if (m.phases?.length) head.push(arr('phases', m.phases, ORDER.phase));
+    if (m.datasets?.length) head.push(`  "datasets": [\n${m.datasets.map(d => '    ' + line(dsOrdered(d, ordered))).join(',\n')}\n  ]`);
     if (m.edgeTypes?.length) head.push(`  "edgeTypes": ${JSON.stringify(m.edgeTypes)}`);
     if (m.dismissed && Object.keys(m.dismissed).length) head.push(`  "dismissed": ${JSON.stringify(m.dismissed)}`);
     if (m.meta) head.push(`  "meta": ${JSON.stringify(m.meta)}`);
@@ -3775,6 +3963,7 @@
       if (!Array.isArray(raw.requirements) && S.model.requirements) raw = { ...raw, requirements: S.model.requirements }; // igual que las decisiones: el texto siempre las trae; el JSON, si omite la clave, las conserva
       if (!Array.isArray(raw.raid)) raw = { ...raw, raid: S.model.raid };   // el texto siempre trae el registro RAID; el JSON, si omite la clave, lo conserva
       if (!Array.isArray(raw.stakeholders) && S.model.stakeholders) raw = { ...raw, stakeholders: S.model.stakeholders };   // igual: el texto siempre trae los interesados; el JSON, si omite la clave, los conserva
+      if (!Array.isArray(raw.datasets) && S.model.datasets) raw = { ...raw, datasets: S.model.datasets };   // el texto siempre trae los conjuntos de datos; el JSON, si omite la clave, los conserva
       if (!Array.isArray(raw.decisions)) raw = { ...raw, decisions: S.model.decisions }; // el texto siempre trae las decisiones (ADR; borrarlas del texto las borra); el JSON, si omite la clave, las conserva
     }
     S.model = normalize(raw);
@@ -3807,6 +3996,7 @@
     if (S.model.decisions?.length) pruneAdrLinks();
     if (S.model.requirements?.length) pruneReqLinks();
     if (S.model.raid?.length) pruneRaidLinks();
+    if (S.model.datasets?.length) { const ds = cleanCatalog(S.model.datasets, S.model, dsHelpers()); if (ds.length) S.model.datasets = ds; else delete S.model.datasets; }   // consumidores y fase que ya no existen
     if (structural) render(false); else { updateGeometry(); applyCompare(); }
     syncEditor();
     save();
@@ -4823,7 +5013,7 @@
   const findVersion = id => S.model.versions.find(v => v.id === id);
   // Solo lo que se dibuja: sin versiones y con posiciones redondeadas
   const snapshotOf = m => {
-    const d = clone({ title: m.title, ...(m.direction ? { direction: m.direction } : {}), ...(m.routing ? { routing: m.routing } : {}), ...(m.layerNames ? { layerNames: m.layerNames } : {}), ...(m.phases?.length ? { phases: m.phases } : {}), ...(m.edgeTypes?.length ? { edgeTypes: m.edgeTypes } : {}), ...(m.dismissed ? { dismissed: m.dismissed } : {}), groups: m.groups, nodes: m.nodes, edges: m.edges, ...(m.notes?.length ? { notes: m.notes } : {}), ...(m.zones?.length ? { zones: m.zones } : {}) });
+    const d = clone({ title: m.title, ...(m.direction ? { direction: m.direction } : {}), ...(m.routing ? { routing: m.routing } : {}), ...(m.layerNames ? { layerNames: m.layerNames } : {}), ...(m.phases?.length ? { phases: m.phases } : {}), ...(m.datasets?.length ? { datasets: m.datasets } : {}), ...(m.edgeTypes?.length ? { edgeTypes: m.edgeTypes } : {}), ...(m.dismissed ? { dismissed: m.dismissed } : {}), groups: m.groups, nodes: m.nodes, edges: m.edges, ...(m.notes?.length ? { notes: m.notes } : {}), ...(m.zones?.length ? { zones: m.zones } : {}) });
     d.nodes.forEach(n => { n.x = Math.round(n.x); n.y = Math.round(n.y); });
     return d;
   };
@@ -4938,7 +5128,7 @@
   // Diferencias entre lo guardado (a) y el lienzo (b). La posición no cuenta como cambio.
   const DIFF_FIELDS = {
     node: ['label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'exposure', 'backup', 'controls', 'in', 'c4', 'sla', 'rpo', 'rto', 'replicas', 'phase', 'until'],
-    edge: ['label', 'style', 'weight', 'route', 'both', 'color', 'data', 'encrypted', 'datasets', 'transferOk', 'threats', 'phase', 'until'],
+    edge: ['label', 'style', 'weight', 'route', 'both', 'color', 'data', 'encrypted', 'datasets', 'latency', 'transferOk', 'threats', 'phase', 'until'],
     group: ['label', 'icon', 'color', 'parent', 'kind', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'controls', 'in', 'phase', 'until'],
     type: ['label', 'dash', 'color', 'width', 'particles'] // tipos de conexión propios (model.edgeTypes), por id
   };
@@ -5114,7 +5304,7 @@
     if (!(d.count.a + d.count.r + d.count.c + d.typeN)) return `<p class="ver-sum">${esc(T('ver.same'))}</p>`;
     const FIELD = { label: 'insp.name', sub: 'insp.detail', type: 'insp.type', icon: 'insp.icon', group: 'insp.group', color: 'insp.color', badge: 'field.badge',
       cost: 'cost.label', costPeriod: 'cost.period', costYears: 'cost.yearsAria', desc: 'insp.desc', style: 'insp.style', weight: 'wt.label', parent: 'insp.parent',
-      data: 'data.label', encrypted: 'enc.label', route: 'insp.route', both: 'insp.dir', review: 'rev.label', kind: 'gkind.label', phase: 'phase.label', until: 'phase.until', exposure: 'sec.expo.label', backup: 'sec.backup.label', controls: 'cmp.title', in: 'c4.in', c4: 'c4.label', sla: 'res.sla', rpo: 'res.rpo', rto: 'res.rto', replicas: 'res.replicas', dash: 'et.dash', width: 'et.width', particles: 'et.particles' };
+      data: 'data.label', encrypted: 'enc.label', route: 'insp.route', both: 'insp.dir', review: 'rev.label', kind: 'gkind.label', phase: 'phase.label', until: 'phase.until', exposure: 'sec.expo.label', backup: 'sec.backup.label', controls: 'cmp.title', in: 'c4.in', c4: 'c4.label', sla: 'res.sla', rpo: 'res.rpo', rto: 'res.rto', replicas: 'res.replicas', latency: 'ds.latency', dash: 'et.dash', width: 'et.width', particles: 'et.particles' };
     const fields = (fs, kind) => fs.map(f => T(kind === 'edge' && f === 'label' ? 'insp.label' : kind === 'type' && f === 'label' ? 'et.label' : FIELD[f] || f).toLowerCase()).join(', ');
     const names = new Map([...S.compare.base.nodes, ...S.model.nodes].map(n => [n.id, n.label]));
     const edgeName = e => `${names.get(e.from) || e.from} ${e.both ? '↔' : '→'} ${names.get(e.to) || e.to}`;
@@ -5736,6 +5926,8 @@
       <input class="ds-add" list="ds-suggest" placeholder="${esc(T('lin.add.ph'))}" aria-label="${esc(T('lin.add.aria'))}" autocomplete="off" spellcheck="false">
       <datalist id="ds-suggest">${more.map(n => `<option value="${esc(n)}"></option>`).join('')}</datalist>${list.length ? '' : `<span class="cost-hint">${T('lin.none')}</span>`}</div>`;
   };
+  // Latencia de una conexión: tiempo que tarda el dato en ese salto ('15m', '1h', '1d'); se valida con parseDur
+  const latencyField = e => `<label>${T('ds.latency')}<input data-lat list="dl-dur" value="${esc(e.latency || '')}" placeholder="${esc(T('ds.latency.ph'))}" aria-label="${esc(T('ds.latency'))}" autocomplete="off" spellcheck="false"><span class="cost-hint">${T('ds.latency.hint')}</span></label><datalist id="dl-dur">${DUR_TIERS.map(v => `<option value="${v}"></option>`).join('')}</datalist>`;
   // Conjuntos que pasan por las conexiones de un nodo (solo lectura; pulsar uno muestra su linaje)
   const nodeDsField = n => {
     const list = datasetsOfNode(n.id);
@@ -5966,6 +6158,7 @@
         ${encField(t)}
         ${dataField(t, true)}
         ${dsField(t)}
+        ${latencyField(t)}
         ${xferField(t)}
         ${strideField(t)}
         ${raidField(t)}
@@ -6138,6 +6331,18 @@
     changed(true);
     const h = $('#res-hint');
     if (h) h.innerHTML = resHintHtml(list);
+  });
+  /* ---------- latencia de la conexión: escribir en el inspector (inválida = campo marcado y no se guarda) ---------- */
+  inspector.addEventListener('focusin', ev => { if (ev.target.matches('input[data-lat]')) beginEdit(); });
+  inspector.addEventListener('input', ev => {
+    const f = ev.target, t = selTarget();
+    if (!f.matches('input[data-lat]') || !t || Array.isArray(t)) return;
+    const v = f.value.trim(), val = v ? normDur(v) : null;
+    f.setAttribute('aria-invalid', !!v && val == null);
+    if (v && val == null) return;
+    markEdit();
+    if (val != null) t.latency = val; else delete t.latency;
+    changed(true);
   });
   /* ---------- STRIDE: nota de cada decisión ---------- */
   inspector.addEventListener('focusin', ev => { if (ev.target.matches('input[data-th-note]')) beginEdit(); });
@@ -9780,6 +9985,47 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     return [...by.values()].sort((a, b) => (!a.team - !b.team) || a.team.localeCompare(b.team)).map(t => ({ ...t, owners: [...t.owners].sort(), stewards: [...t.stewards].sort() }));
   }
 
+  /* ---------- conjuntos de datos: API (todo pasa por cleanCatalog; deshacer como cualquier cambio) ---------- */
+  const dsCommit = (list, extra = {}) => { // list = nuevo m.datasets; extra = otros cambios del modelo (renombrar toca también las conexiones)
+    pushHistory();
+    Object.assign(S.model, extra);
+    if (list.length) S.model.datasets = list; else delete S.model.datasets;
+    changed(true);
+  };
+  function addDataset(d = {}) {
+    d = d && typeof d === 'object' ? d : {};
+    const cur = S.model.datasets || [];
+    if (cur.length >= DS_MAX || !dsText(d.name, 120) || cur.some(x => dsK(x.name) === dsK(d.name))) return '';
+    const list = cleanCatalog([...cur, { ...d, id: '' }], S.model, dsHelpers());
+    if (list.length !== cur.length + 1) return '';
+    dsCommit(list);
+    return list[list.length - 1].id;
+  }
+  function updateDataset(id, patch) {
+    const ds = dsById(id);
+    if (!ds || !patch || typeof patch !== 'object') return false;
+    const { id: _i, name: _n, ...rest } = patch;   // el id no cambia; el nombre se cambia con renameDataset (arrastra las conexiones)
+    const list = cleanCatalog(S.model.datasets.map(x => (x === ds ? { ...ds, ...rest } : x)), S.model, dsHelpers());
+    if (list.length !== S.model.datasets.length) return false;
+    dsCommit(list);
+    return true;
+  }
+  function removeDataset(id) {
+    const ds = dsById(id);
+    if (!ds) return false;
+    dsCommit(S.model.datasets.filter(x => x !== ds));
+    return true;
+  }
+  function renameDatasetApi(id, name) {
+    const m2 = renameDataset(S.model, id, name);
+    if (m2 === S.model) return false;
+    dsCommit(m2.datasets, { edges: m2.edges });
+    return true;
+  }
+  const catalogApi = () => catalog(S.model).map(c => ({ ...c, ds: c.ds ? clone(c.ds) : null, nodes: [...c.nodes] }));
+  const freshnessApi = name => { const r = e2eOf(name); return { ...r, path: [...r.path] }; };
+  const storageApi = id => { const ds = dsFind(id); return ds ? storageEstimate(ds, { prices: dsPrices() }) : null; };
+
   // API para extensiones futuras (consola o scripts propios)
   window.Diagramon = {
     get model() { return clone(S.model); },
@@ -9790,6 +10036,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     showPath, clearPath,
     lineage: ds => { const r = showLineage(ds); return r ? { origins: [...r.origins], consumers: [...r.consumers], hops: r.hops, nodes: [...r.nodes], edges: [...r.edges] } : null; },
     datasets: () => datasetList().map(d => ({ ...d })),
+    catalog: catalogApi, dataset: v => { const d = dsFind(v); return d ? clone(d) : null; }, addDataset, updateDataset, removeDataset, renameDataset: renameDatasetApi, freshness: freshnessApi, storage: storageApi,
     saveVersion, openVersion, compareVersion, deleteVersion,
     costBreakdown: (by = 'team') => costBreakdown(S.model, by), compareCosts: (a = null, b = null) => { const A = cstSource(a || null), B = cstSource(b || null); return A && B ? cstCompare(A, B) : null; }, openCosts,
     setFilter, clearFilter, get filter() { return clone(S.filter); },

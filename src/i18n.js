@@ -364,6 +364,16 @@ review db: "DB in a public subnet" by=Ana raised=2026-10-01 due=2026-11-15
       'insp.path': 'Path', 'path.show': ({ a, b }) => `Show path ${a} → ${b}`, 'path.swap': ({ a, b }) => `Show path ${a} → ${b}`,
       'path.summary': ({ name, hops, count }) => `Path <b>${name}</b> · ${hops} ${hops === 1 ? 'hop' : 'hops'} · ${count} ${count === 1 ? 'route' : 'routes'}`,
       'path.none': ({ name }) => `<b>${name}</b> · no path`, 'path.undirected': 'no directed path; showing undirected', 'path.exit': 'Clear the path (Esc)',
+      /* conjuntos de datos: latencia de la conexión y avisos del catálogo */
+      'ds.latency': 'Latency', 'ds.latency.ph': '1h', 'ds.latency.hint': 'Time the data takes on this hop (batch window, micro-batch interval…): 15m, 1h, 1d.', 'find.src.data': 'Data catalog',
+      'ds.find.undocumented': ({ name, n }) => `“${name}” travels on ${n} ${n === 1 ? 'connection' : 'connections'} but is not documented`, 'ds.find.undocumented.fix': 'Add it to the data catalog (owner, layer, freshness) or rename it to match a documented dataset.',
+      'ds.find.noOwner': ({ id, name }) => `Data product ${id} “${name}” has no owner`, 'ds.find.noContract': ({ id, name }) => `Data product ${id} “${name}” has no data contract`, 'ds.find.ownerContract': ({ id, name }) => `Data product ${id} “${name}” has no owner and no data contract`,
+      'ds.find.product.fix': 'A data product needs an accountable owner and an agreed contract: fill them in the dataset.',
+      'ds.find.freshness': ({ id, name }) => `${id} “${name}” does not meet its freshness SLA`, 'ds.find.freshness.d': ({ real, sla, path }) => `real ${real} · SLA ${sla} · ${path}`, 'ds.find.freshness.fix': 'Shorten the slowest hop (batch window, interval) or relax the SLA.',
+      'ds.find.piiClass': ({ id, name }) => `${id} “${name}” has PII columns but is not classified as PII`, 'ds.find.piiClass.fix': 'Add the PII data class to the dataset.',
+      'ds.find.piiUnenc': ({ id, name, cls }) => `${id} “${name}” (${cls}) travels over an unencrypted connection`, 'ds.find.piiUnenc.fix': 'Turn on encryption in transit on those connections.',
+      'ds.find.unreached': ({ id, name, list }) => `${id} “${name}”: ${list} in its contract is not on the dataset lineage`, 'ds.find.unreached.fix': 'Add the dataset to the connections that reach that consumer, or remove it from the contract.',
+      'ds.find.noQuality': ({ id, name }) => `${id} “${name}” has no quality rules`, 'ds.find.noQuality.fix': 'Add at least a not_null or unique rule on its key columns.',
       /* linaje de datos */
       'lin.label': 'Datasets', 'lin.add.ph': 'Add a table or dataset…', 'lin.add.aria': 'Add a dataset', 'lin.none': 'Tables or datasets that travel through this connection. Click one to see its lineage.', 'lin.remove': ({ name }) => `Remove ${name}`, 'lin.show': ({ name }) => `Show the lineage of ${name}`,
       'lin.node': 'Datasets', 'lin.node.hint': 'Datasets on its connections. Click one to see its lineage.',
@@ -880,6 +890,16 @@ revisión db: "BD en subred pública" por=Ana levantada=2026-10-01 compromiso=20
       'insp.path': 'Camino', 'path.show': ({ a, b }) => `Ver camino ${a} → ${b}`, 'path.swap': ({ a, b }) => `Ver camino ${a} → ${b}`,
       'path.summary': ({ name, hops, count }) => `Camino <b>${name}</b> · ${hops} ${hops === 1 ? 'salto' : 'saltos'} · ${count} ${count === 1 ? 'ruta' : 'rutas'}`,
       'path.none': ({ name }) => `<b>${name}</b> · sin camino`, 'path.undirected': 'sin camino dirigido; se muestra sin dirección', 'path.exit': 'Quitar el camino (Esc)',
+      /* conjuntos de datos: latencia de la conexión y avisos del catálogo */
+      'ds.latency': 'Latencia', 'ds.latency.ph': '1h', 'ds.latency.hint': 'Tiempo que tarda el dato en este salto (ventana de lote, intervalo de micro-lote…): 15m, 1h, 1d.', 'find.src.data': 'Catálogo de datos',
+      'ds.find.undocumented': ({ name, n }) => `«${name}» viaja por ${n} ${n === 1 ? 'conexión' : 'conexiones'} pero no está documentado`, 'ds.find.undocumented.fix': 'Añádelo al catálogo de datos (dueño, capa, frescura) o renómbralo para que coincida con un conjunto documentado.',
+      'ds.find.noOwner': ({ id, name }) => `El producto de datos ${id} «${name}» no tiene dueño`, 'ds.find.noContract': ({ id, name }) => `El producto de datos ${id} «${name}» no tiene contrato de datos`, 'ds.find.ownerContract': ({ id, name }) => `El producto de datos ${id} «${name}» no tiene dueño ni contrato de datos`,
+      'ds.find.product.fix': 'Un producto de datos necesita un dueño responsable y un contrato acordado: complétalos en el conjunto.',
+      'ds.find.freshness': ({ id, name }) => `${id} «${name}» no cumple su SLA de frescura`, 'ds.find.freshness.d': ({ real, sla, path }) => `real ${real} · SLA ${sla} · ${path}`, 'ds.find.freshness.fix': 'Acorta el salto más lento (ventana de lote, intervalo) o relaja el SLA.',
+      'ds.find.piiClass': ({ id, name }) => `${id} «${name}» tiene columnas PII pero no está clasificado como PII`, 'ds.find.piiClass.fix': 'Añade la clase de datos PII al conjunto.',
+      'ds.find.piiUnenc': ({ id, name, cls }) => `${id} «${name}» (${cls}) viaja por una conexión sin cifrar`, 'ds.find.piiUnenc.fix': 'Activa el cifrado en tránsito en esas conexiones.',
+      'ds.find.unreached': ({ id, name, list }) => `${id} «${name}»: ${list} del contrato no está en el linaje del conjunto`, 'ds.find.unreached.fix': 'Añade el conjunto a las conexiones que llegan a ese consumidor, o quítalo del contrato.',
+      'ds.find.noQuality': ({ id, name }) => `${id} «${name}» no tiene reglas de calidad`, 'ds.find.noQuality.fix': 'Añade al menos una regla not_null o unique en sus columnas clave.',
       /* linaje de datos */
       'lin.label': 'Conjuntos de datos', 'lin.add.ph': 'Añadir una tabla o conjunto…', 'lin.add.aria': 'Añadir un conjunto de datos', 'lin.none': 'Tablas o conjuntos de datos que viajan por esta conexión. Pulsa uno para ver su linaje.', 'lin.remove': ({ name }) => `Quitar ${name}`, 'lin.show': ({ name }) => `Ver el linaje de ${name}`,
       'lin.node': 'Conjuntos de datos', 'lin.node.hint': 'Conjuntos de datos de sus conexiones. Pulsa uno para ver su linaje.',
