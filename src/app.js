@@ -655,6 +655,7 @@
       if (o.weight !== 'high' && o.weight !== 'critical') delete o.weight;
       if (o.both === true || (typeof o.both === 'string' && /^(yes|true|si|sí)$/i.test(o.both))) o.both = true; else delete o.both;
       const dsl = cleanDatasets(o.datasets); if (dsl.length) o.datasets = dsl; else delete o.datasets;
+      { const lt = normDur(o.latency); if (lt != null) o.latency = lt; else delete o.latency; }   // tiempo que tarda el dato en este salto ('15m', '1h', '1d'); inválido = se descarta
       if (o.transferOk === true || (typeof o.transferOk === 'string' && /^(yes|true|ok|si|sí)$/i.test(o.transferOk))) o.transferOk = true; else delete o.transferOk;
       { const th = cleanThreats(o.threats); if (th) o.threats = th; else delete o.threats; }
       m.edges.push(o);
@@ -683,6 +684,7 @@
     m.decisions = cleanDecisions(raw.decisions, m);
     { const rq = cleanRequirements(raw.requirements, m); if (rq.length) m.requirements = rq; }   // sin requisitos no hay clave: JSON y exportaciones idénticos
     m.raid = cleanRaid(raw.raid, m);   // después de los requisitos: sus ids ya están en m.requirements
+    { const ds = cleanCatalog(raw.datasets, m, dsHelpers()); if (ds.length) m.datasets = ds; }   // después de nodos y fases (consumidores y fase deben existir); sin conjuntos no hay clave: JSON y exportaciones idénticos
     // Cada versión puede llevar las decisiones que había al guardarla (para compararlas); sus enlaces se limpian contra el diagrama de la versión
     m.versions.forEach(v => { if (v.decisions) v.decisions = cleanDecisions(v.decisions, { nodes: v.diagram.nodes || [], edges: v.diagram.edges || [], groups: v.diagram.groups || [], versions: m.versions, stakeholders: m.stakeholders }); });
     if (raw.active != null && m.versions.some(v => v.id === String(raw.active))) m.active = String(raw.active);
@@ -1383,10 +1385,10 @@
   // Sin la clave (o vacía) el JSON y las exportaciones quedan idénticos. check = «función de aptitud»: se evalúa con lo que la app ya calcula (reqEval).
   /* reqModel:start */
   const REQ_KIND = ['driver', 'nfr', 'constraint', 'principle'], REQ_PRIO = ['must', 'should', 'could'], REQ_STATUS = ['draft', 'agreed', 'dropped'];
-  const REQ_METRIC = ['availability', 'rpo', 'rto', 'cost', 'encryption', 'residency'];
-  const REQ_PARAMS = { availability: ['from', 'to', 'target'], rpo: ['from', 'to', 'target'], rto: ['from', 'to', 'target'], cost: ['target'], encryption: ['cls'], residency: ['cls', 'jur'] };
+  const REQ_METRIC = ['availability', 'rpo', 'rto', 'cost', 'encryption', 'residency', 'freshness'];
+  const REQ_PARAMS = { availability: ['from', 'to', 'target'], rpo: ['from', 'to', 'target'], rto: ['from', 'to', 'target'], cost: ['target'], encryption: ['cls'], residency: ['cls', 'jur'], freshness: ['ds', 'target'] };
   const REQ_ALIAS = { impulsor: 'driver', rnf: 'nfr', restriccion: 'constraint', principio: 'principle', debe: 'must', deberia: 'should', podria: 'could', borrador: 'draft', acordado: 'agreed', acordada: 'agreed', descartado: 'dropped', descartada: 'dropped',
-    disponibilidad: 'availability', costo: 'cost', coste: 'cost', cifrado: 'encryption', residencia: 'residency' };
+    disponibilidad: 'availability', costo: 'cost', coste: 'cost', cifrado: 'encryption', residencia: 'residency', frescura: 'freshness' };
   const REQ_COLOR = { driver: 'var(--p-cielo)', nfr: 'var(--p-lavanda)', constraint: 'var(--p-melocoton)', principle: 'var(--p-menta)' };
   const reqEnum = (v, list) => { const k = String(v ?? '').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, ''); return list.includes(k) ? k : list.includes(REQ_ALIAS[k]) ? REQ_ALIAS[k] : ''; };
   const reqNum = id => { const r = /^REQ-(\d+)$/i.exec(String(id)); return r ? +r[1] : 0; };
@@ -1407,6 +1409,7 @@
     if (!metric) return null;
     const out = { metric }, ps = REQ_PARAMS[metric];
     ['from', 'to'].filter(k => ps.includes(k)).forEach(k => { const v = String(c[k] ?? '').trim(); if (m.nodes.some(n => n.id === v)) out[k] = v; });
+    if (ps.includes('ds')) { const v = String(c.ds ?? '').replace(/\s+/g, ' ').trim().slice(0, 120); if (v) out.ds = v; }   // nombre del conjunto de datos (como en las conexiones)
     if (ps.includes('target') && c.target != null && String(c.target).trim() !== '') { const t = Number(String(c.target).replace(',', '.')); if (Number.isFinite(t) && t >= 0 && (metric !== 'availability' || t <= 100)) out.target = t; }
     ['cls', 'jur'].filter(k => ps.includes(k)).forEach(k => { const v = String(c[k] ?? '').trim().toLowerCase().slice(0, 40); if (v) out[k] = v; });
     return out;
@@ -1471,6 +1474,12 @@
       if (tot == null) return res('unknown', null, T('req.chk.noCost'));
       return res(tot <= c.target + 1e-9 ? 'pass' : 'fail', tot, T('req.chk.d.cost', { a: h.money(tot), t: h.money(c.target) }));
     }
+    if (c.metric === 'freshness') {   // peor frescura de extremo a extremo del conjunto (suma de las latencias del camino más lento) frente al objetivo en horas
+      const f = h.e2e?.(c.ds);
+      if (!f || f.worst == null) return res('unknown', null, T('req.chk.noFresh', c.ds));
+      const hrs = f.worst / 3600000, ok = f.worst <= c.target * 3600000 + 1e-6;
+      return res(ok ? 'pass' : 'fail', hrs, T('req.chk.d.fresh', { n: c.ds, a: h.dur(f.worst / 1000), t: h.dur(c.target * 3600) }));
+    }
     if (c.metric === 'encryption') {
       const es = m.edges.filter(e => h.carries(e, get, c.cls));
       if (!es.length) return res('unknown', null, T('req.chk.noEdges', c.cls));
@@ -1505,7 +1514,7 @@
   }
   // El control con lo que la app ya calcula: disponibilidad compuesta (availability), costo mensual (monthlyTotal), cifrado y cruce de fronteras (crossBorder)
   const REQ_H = {
-    T: (k, v) => T(k, v), availability: (a, b) => availability(a, b), cost: m => { const ns = m.nodes.filter(hasCost); return ns.length ? monthlyTotal(ns) : null; },
+    T: (k, v) => T(k, v), availability: (a, b) => availability(a, b), e2e: name => e2eOf(name), cost: m => { const ns = m.nodes.filter(hasCost); return ns.length ? monthlyTotal(ns) : null; },
     carries: (e, get, cls) => (e.data?.length ? e.data : [...(get(e.from)?.data || []), ...(e.both ? get(e.to)?.data || [] : [])]).includes(cls),
     crossBorder: e => crossBorder(e, id => S.model.nodes.find(n => n.id === id)), sensitive: cls => !!DATA[cls]?.sensitive, nodeJur: n => jurOf(regionOf(n).value)?.key || '',
     edgeName: e => { const nm = id => S.model.nodes.find(n => n.id === id)?.label || id; return `${nm(e.from)} ${e.both ? '↔' : '→'} ${nm(e.to)}`; }, pct: a => fmtPct(a), dur: s => fmtDur(s), money: v => money(v), num: v => numFmt(v, 4)
@@ -1582,7 +1591,8 @@
       ...m,
       groups: m.groups.filter(g => st.groups.get(g.id) === 0).map(g => fix(g, 'parent')),
       nodes: m.nodes.filter(n => st.nodes.get(n.id) === 0).map(n => fix(n, 'group')),
-      edges: m.edges.filter(e => st.edges.get(e.id) === 0).map(e => ({ ...e }))
+      edges: m.edges.filter(e => st.edges.get(e.id) === 0).map(e => ({ ...e })),
+      ...(m.datasets ? { datasets: m.datasets.filter(d => !d.phase || phaseIndex(m, d.phase) <= i) } : {})   // un conjunto sin fase está siempre; con fase, desde esa fase
     };
   }
   // Nodos que entran y salen en la fase i respecto de la anterior (en la primera: los que declaran esa fase)
@@ -1592,11 +1602,13 @@
     const here = phaseStates(m, i).nodes, before = phaseStates(m, i - 1).nodes;
     return { added: m.nodes.filter(n => here.get(n.id) === 0 && before.get(n.id) !== 0).map(n => n.id), retired: m.nodes.filter(n => before.get(n.id) === 0 && here.get(n.id) !== 0).map(n => n.id) };
   }
-  // Cifras de la fase i; h = { monthly(modelo) → costo mensual, findings(modelo) → hallazgos abiertos [{ severity }] }
+  // Cifras de la fase i; h = { monthly(modelo) → costo mensual, findings(modelo) → hallazgos abiertos [{ severity }], storage?(conjunto) → { monthly } | null (almacenamiento estimado) }
+  // datasets = conjuntos declarados presentes en la fase; storage = suma mensual estimada de los que tienen volumen (null si ninguno; aparte del costo escrito a mano)
   function phaseStats(m, i, h) {
     const pm = phaseModel(m, i), f = { high: 0, medium: 0, low: 0 };
     (h.findings(pm) || []).forEach(x => { const k = x.severity === 'critical' || x.severity === 'high' ? 'high' : x.severity === 'medium' ? 'medium' : 'low'; f[k]++; });
-    return { nodes: pm.nodes.length, edges: pm.edges.length, cost: h.monthly(pm), findings: f };
+    const dss = pm.datasets || [], sto = h.storage ? dss.map(d => h.storage(d)).filter(Boolean) : [];
+    return { nodes: pm.nodes.length, edges: pm.edges.length, cost: h.monthly(pm), findings: f, datasets: dss.length, storage: sto.length ? sto.reduce((s, x) => s + x.monthly, 0) : null };
   }
   // Tabla comparativa: una fila por fase (orden = línea de tiempo). cost = null si ningún componente de la fase tiene costo (h.hasCost(modelo)); dCost = cambio respecto de la fase anterior
   function phaseRows(m, h) {
@@ -1605,12 +1617,183 @@
       const st = phaseStats(m, i, h), d = phaseDiff(m, i), cost = h.hasCost && !h.hasCost(phaseModel(m, i)) ? null : st.cost;
       const dCost = i > 0 && (cost != null || prev != null) ? (cost || 0) - (prev || 0) : null;
       prev = cost;
-      return { id: p.id, name: p.name, date: p.date || '', goal: p.goal || '', nodes: st.nodes, edges: st.edges, added: d.added.length, retired: d.retired.length, addedIds: d.added, retiredIds: d.retired, cost, dCost, findings: st.findings };
+      return { id: p.id, name: p.name, date: p.date || '', goal: p.goal || '', nodes: st.nodes, edges: st.edges, added: d.added.length, retired: d.retired.length, addedIds: d.added, retiredIds: d.retired, cost, dCost, findings: st.findings, datasets: st.datasets, datasetIds: (phaseModel(m, i).datasets || []).map(x => x.id), storage: st.storage };
     });
   }
   /* phaseModel:end */
-  const phaseHelpers = { monthly: m => monthlyTotal(m.nodes), hasCost: m => m.nodes.some(hasCost), findings: m => findingsOf(m).filter(f => !f.dismissed) };
+  const phaseHelpers = { monthly: m => monthlyTotal(m.nodes), hasCost: m => m.nodes.some(hasCost), findings: m => findingsOf(m).filter(f => !f.dismissed), storage: ds => storageEstimate(ds, { prices: dsPrices() }) };
   const phaseCostText = (r, k = 'cost') => (r[k] == null ? '—' : k === 'cost' ? money(round2(r.cost)) : r.dCost === 0 ? money(0) : `${r.dCost > 0 ? '+' : '−'}${money(round2(Math.abs(r.dCost)))}`);
+
+  /* ---------- conjuntos de datos (catálogo, contrato de datos, frescura de extremo a extremo): modelo ---------- */
+  // m.datasets = [{ id: 'DS-001', name (CLAVE que une con edge.datasets, sin distinguir mayúsculas), domain?, layer?, description?, owner? ('SH-003' o texto), steward?, product?: true, classes?: ['pii'],
+  //   format?, freshness?: '1h' (SLA), volume?: { perDay?: GB, retentionDays? }, schema?: [{ name, type, key?, pii?, nullable?: false, desc? }], quality?: [{ rule, column?, param?, severity? }],
+  //   contract?: { version, status: 'draft'|'agreed'|'deprecated', consumers?: [ids de nodos], terms? }, phase?: id de fase }] (máx. 500)
+  // Es del diagrama (entra en las fotos de versiones). En conexiones: latency = tiempo que tarda el dato en ese salto. Sin conjuntos ni latencias, el JSON y las exportaciones quedan idénticos.
+  // El bloque solo usa lo que recibe en `h` (cleanCatalog: layer, classes, formats, rules, normDur · e2eFreshness y datasetIssues: lineageOf, parseDur, T…).
+  /* datasetModel:start */
+  const DS_MAX = 500, DS_COLS = 300, DS_RULES_MAX = 100, DS_DEFAULT_DAYS = 365;
+  const DS_FORMATS = ['delta', 'iceberg', 'hudi', 'parquet', 'avro', 'json', 'csv', 'other'];
+  const DS_RULES = ['not_null', 'unique', 'range', 'regex', 'accepted_values', 'freshness', 'custom'];
+  const DS_STATUS = ['draft', 'agreed', 'deprecated'], DS_SEV = ['low', 'medium', 'high'];
+  const dsK = s => String(s ?? '').trim().toLowerCase();
+  const dsText = (v, n) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, n);
+  const dsLong = (v, n) => String(v ?? '').replace(/\r\n?/g, '\n').trim().slice(0, n);
+  const dsYes = v => v === true || /^(true|yes|si|sí|1)$/i.test(String(v ?? '').trim());
+  const dsNo = v => v === false || /^(false|no|0)$/i.test(String(v ?? '').trim());
+  const dsNum = v => { const n = typeof v === 'number' || (typeof v === 'string' && v.trim() !== '') ? Number(v) : NaN; return Number.isFinite(n) && n >= 0 ? n : null; };
+  const dsNextId = list => `DS-${String(Math.max(0, ...list.map(x => +String(x.id).slice(3) || 0)) + 1).padStart(3, '0')}`;
+  // Limpia m.datasets contra el diagrama m (nodos y fases que existen); h = { layer(v) → clave | null, classes: [claves], formats?, rules?, normDur(v) → texto | null }
+  function cleanCatalog(raw, m, h) {
+    const seenId = new Set(), seenName = new Set(), items = [], nodes = new Set((m.nodes || []).map(n => n.id)), phases = new Set((m.phases || []).map(p => p.id));
+    const formats = h.formats || DS_FORMATS, rules = h.rules || DS_RULES;
+    (Array.isArray(raw) ? raw : []).forEach(r => {
+      if (!r || typeof r !== 'object' || Array.isArray(r)) return;
+      const name = dsText(r.name, 120), key = dsK(name);
+      if (!name || seenName.has(key)) return;
+      seenName.add(key);
+      const rid = String(r.id ?? '').trim(), id = /^DS-\d+$/.test(rid) && !seenId.has(rid) ? rid : '';
+      if (id) seenId.add(id);
+      const o = { id, name }, put = (k, v) => { if (v) o[k] = v; };
+      put('domain', dsText(r.domain, 60));
+      put('layer', h.layer ? h.layer(r.layer) : '');
+      put('description', dsLong(r.description, 2000));
+      put('owner', dsText(r.owner, 120));
+      put('steward', dsText(r.steward, 120));
+      if (dsYes(r.product)) o.product = true;
+      { const cl = [...new Set((Array.isArray(r.classes) ? r.classes : typeof r.classes === 'string' ? r.classes.split(/[,;]/) : []).map(dsK).filter(k => (h.classes || []).includes(k)))]; if (cl.length) o.classes = cl; }
+      { const f = dsK(r.format); if (formats.includes(f)) o.format = f; }
+      { const fr = r.freshness == null || r.freshness === '' ? null : h.normDur(r.freshness); if (fr != null) o.freshness = fr; }
+      if (r.volume && typeof r.volume === 'object' && !Array.isArray(r.volume)) {
+        const v = {}, pd = dsNum(r.volume.perDay), rd = dsNum(r.volume.retentionDays);
+        if (pd != null) v.perDay = pd;
+        if (rd != null) v.retentionDays = Math.round(rd);
+        if (Object.keys(v).length) o.volume = v;
+      }
+      const schema = (Array.isArray(r.schema) ? r.schema : []).filter(c => c && typeof c === 'object' && !Array.isArray(c) && dsText(c.name, 120)).slice(0, DS_COLS).map(c => {
+        const col = { name: dsText(c.name, 120) }, ty = dsText(c.type, 40), ds = dsText(c.desc, 500);
+        if (ty) col.type = ty;
+        if (dsYes(c.key)) col.key = true;
+        if (dsYes(c.pii)) col.pii = true;
+        if (dsNo(c.nullable)) col.nullable = false;
+        if (ds) col.desc = ds;
+        return col;
+      });
+      if (schema.length) o.schema = schema;
+      const quality = (Array.isArray(r.quality) ? r.quality : []).filter(q => q && typeof q === 'object' && rules.includes(dsK(q.rule))).slice(0, DS_RULES_MAX).map(q => {
+        const x = { rule: dsK(q.rule) }, col = dsText(q.column, 120), pa = dsText(q.param, 200), sv = dsK(q.severity);
+        if (col) x.column = col;
+        if (pa) x.param = pa;
+        if (DS_SEV.includes(sv)) x.severity = sv;
+        return x;
+      });
+      if (quality.length) o.quality = quality;
+      if (r.contract && typeof r.contract === 'object' && !Array.isArray(r.contract)) {
+        const c = r.contract, ver = dsText(c.version, 20), st = dsK(c.status), cons = [...new Set((Array.isArray(c.consumers) ? c.consumers : []).map(x => String(x ?? '').trim()).filter(x => nodes.has(x)))], terms = dsLong(c.terms, 2000);
+        if (ver || DS_STATUS.includes(st) || cons.length || terms) {
+          const k = { version: ver || '1.0.0', status: DS_STATUS.includes(st) ? st : 'draft' };
+          if (cons.length) k.consumers = cons;
+          if (terms) k.terms = terms;
+          o.contract = k;
+        }
+      }
+      { const ph = String(r.phase ?? '').trim(); if (ph && phases.has(ph)) o.phase = ph; }
+      items.push(o);
+    });
+    items.forEach(o => { if (!o.id) o.id = dsNextId(items); });
+    return items.slice(0, DS_MAX);
+  }
+  // Conexiones que llevan el conjunto `name` (sin distinguir mayúsculas)
+  const dsEdges = (m, name) => { const k = dsK(name); return (m.edges || []).filter(e => (e.datasets || []).some(d => dsK(d) === k)); };
+  // Catálogo: declarados primero (en el orden del arreglo) y después los nombres usados en conexiones sin declarar (por uso y luego alfabético)
+  function catalog(m) {
+    const use = new Map();
+    (m.edges || []).forEach(e => [...new Set((e.datasets || []).map(dsK))].forEach(k => {
+      const r = use.get(k) || { name: (e.datasets || []).find(d => dsK(d) === k), edges: 0, nodes: new Set() };
+      r.edges++; r.nodes.add(e.from); r.nodes.add(e.to); use.set(k, r);
+    }));
+    const declared = (m.datasets || []).map(ds => { const k = dsK(ds.name), u = use.get(k); return { ds, name: ds.name, key: k, declared: true, edges: u ? u.edges : 0, nodes: u ? [...u.nodes] : [] }; });
+    const known = new Set(declared.map(d => d.key));
+    const rest = [...use.entries()].filter(([k]) => !known.has(k)).map(([k, u]) => ({ ds: null, name: u.name, key: k, declared: false, edges: u.edges, nodes: [...u.nodes] }))
+      .sort((a, b) => b.edges - a.edges || a.name.localeCompare(b.name));
+    return [...declared, ...rest];
+  }
+  // Frescura de extremo a extremo: el camino más lento de un origen del linaje a un consumidor, sumando edge.latency (en ms). Un salto sin latencia suma 0 y se cuenta en unknownHops.
+  // Sin ninguna latencia en el camino → worst null y estado 'unknown'; sin SLA también es 'unknown'. h = { lineageOf(m, name) → { origins, consumers, nodes } | null, parseDur(v) → segundos | null }
+  function e2eFreshness(m, name, h) {
+    const ds = (m.datasets || []).find(d => dsK(d.name) === dsK(name)), slaS = ds?.freshness != null ? h.parseDur(ds.freshness) : null, sla = slaS == null ? null : slaS * 1000;
+    const none = { worst: null, path: [], hops: 0, unknownHops: 0, sla, state: 'unknown' };
+    const lin = h.lineageOf(m, name), es = dsEdges(m, name).filter(e => e.from !== e.to);
+    if (!lin || !es.length) return none;
+    const steps = es.flatMap(e => { const s = e.latency == null || e.latency === '' ? null : h.parseDur(e.latency), ms = s == null ? null : s * 1000; return [[e.from, e.to, ms], ...(e.both ? [[e.to, e.from, ms]] : [])]; });
+    const ids = [...lin.nodes], seeds = lin.origins.length ? lin.origins : ids.slice(0, 1);
+    // best[id] = el camino simple más lento hasta id; el tope de relajaciones evita que un ciclo cuelgue el cálculo (como en lineageOf)
+    const best = new Map(seeds.map(id => [id, { ms: 0, unk: 0, path: [id] }])), q = [...seeds], cap = ids.length * steps.length + 8;
+    for (let n = 0; q.length && n < cap; n++) {
+      const u = q.shift(), b = best.get(u);
+      steps.forEach(([a, c, ms]) => {
+        if (a !== u || b.path.includes(c)) return;
+        const cand = { ms: b.ms + (ms || 0), unk: b.unk + (ms == null ? 1 : 0), path: [...b.path, c] }, cur = best.get(c);
+        if (!cur || cand.ms > cur.ms || (cand.ms === cur.ms && cand.path.length > cur.path.length)) { best.set(c, cand); q.push(c); }
+      });
+    }
+    const ends = (lin.consumers.length ? lin.consumers : ids).filter(id => best.has(id) && best.get(id).path.length > 1);
+    if (!ends.length) return none;
+    const top = ends.map(id => best.get(id)).reduce((a, c) => (c.ms > a.ms || (c.ms === a.ms && c.path.length > a.path.length) ? c : a));
+    const hops = top.path.length - 1, worst = top.unk === hops ? null : top.ms;
+    return { worst, path: top.path, hops, unknownHops: top.unk, sla, state: worst == null || sla == null ? 'unknown' : worst > sla ? 'fail' : 'pass' };
+  }
+  // Almacenamiento estimado: GB guardados = al día × días de retención (365 si no se indica) y costo mensual con el precio por GB-mes de la capa. h = { prices: { default, bronze… } }
+  function storageEstimate(ds, h) {
+    const pd = ds?.volume?.perDay;
+    if (pd == null) return null;
+    const gb = pd * (ds.volume.retentionDays ?? DS_DEFAULT_DAYS), price = h.prices?.[ds.layer] ?? h.prices?.default ?? 0;
+    return { gb, price, monthly: gb * price };
+  }
+  // Cambia el nombre de un conjunto y el de sus apariciones en las conexiones (las demás se quedan). Si el nombre nuevo choca con otro conjunto declarado, devuelve m sin tocar
+  function renameDataset(m, id, newName) {
+    const ds = (m.datasets || []).find(d => d.id === id), name = dsText(newName, 120);
+    if (!ds || !name || (m.datasets || []).some(d => d !== ds && dsK(d.name) === dsK(name))) return m;
+    const old = dsK(ds.name);
+    return { ...m, datasets: m.datasets.map(d => (d === ds ? { ...d, name } : d)), edges: m.edges.map(e => {
+      if (!(e.datasets || []).some(x => dsK(x) === old)) return e;
+      const seen = new Set(), list = e.datasets.map(x => (dsK(x) === old ? name : x)).filter(x => !seen.has(dsK(x)) && seen.add(dsK(x)));
+      return { ...e, datasets: list };
+    }) };
+  }
+  // Avisos del catálogo, ya con textos: [{ id: 'data:<tipo>:<id|nombre>', source: 'data', rule, severity, target, title, detail?, fix }]
+  // h = { T, lineageOf, parseDur, sensitive(clase), short(clase), fmtDur(segundos), edgeName(e), nodeName(id) }
+  function datasetIssues(m, h) {
+    const out = [], T = h.T, nodeName = h.nodeName || (id => id);
+    const tgt = name => { const e = dsEdges(m, name)[0]; return e ? { kind: 'edge', id: e.id } : { kind: 'node', id: '' }; };
+    const add = (rule, key, severity, name, title, detail, fix) => out.push({ id: `data:${rule}:${key}`, source: 'data', rule, severity, target: tgt(name), title, ...(detail ? { detail } : {}), fix });
+    if ((m.datasets || []).length) catalog(m).filter(c => !c.declared).forEach(c => add('undocumented', c.name, 'low', c.name, T('ds.find.undocumented', { name: c.name, n: c.edges }), '', T('ds.find.undocumented.fix')));
+    (m.datasets || []).forEach(d => {
+      const a = { id: d.id, name: d.name };
+      if (d.product && (!d.owner || !d.contract)) add('product-owner', d.id, 'medium', d.name, T(!d.owner && !d.contract ? 'ds.find.ownerContract' : !d.owner ? 'ds.find.noOwner' : 'ds.find.noContract', a), '', T('ds.find.product.fix'));
+      const f = e2eFreshness(m, d.name, h);
+      if (f.state === 'fail') add('freshness', d.id, 'high', d.name, T('ds.find.freshness', a), T('ds.find.freshness.d', { real: h.fmtDur(f.worst / 1000), sla: h.fmtDur(f.sla / 1000), path: f.path.map(nodeName).join(' → ') }), T('ds.find.freshness.fix'));
+      if ((d.schema || []).some(c => c.pii) && !(d.classes || []).includes('pii')) add('pii-class', d.id, 'medium', d.name, T('ds.find.piiClass', a), '', T('ds.find.piiClass.fix'));
+      const sens = (d.classes || []).filter(k => h.sensitive(k)), bad = sens.length ? dsEdges(m, d.name).filter(e => e.encrypted === false) : [];
+      if (bad.length) add('pii-unencrypted', d.id, 'high', d.name, T('ds.find.piiUnenc', { ...a, cls: sens.map(h.short).join(', ') }), bad.map(h.edgeName).join(' · '), T('ds.find.piiUnenc.fix'));
+      if (d.contract?.consumers?.length) {
+        const lin = h.lineageOf(m, d.name), off = d.contract.consumers.filter(id => !lin || !lin.nodes.has(id));
+        if (off.length) add('consumer-unreached', d.id, 'low', d.name, T('ds.find.unreached', { ...a, list: off.map(nodeName).join(', ') }), '', T('ds.find.unreached.fix'));
+      }
+      if ((d.product || d.layer === 'gold') && !(d.quality || []).length) add('no-quality', d.id, 'low', d.name, T('ds.find.noQuality', a), '', T('ds.find.noQuality.fix'));
+    });
+    return out;
+  }
+  /* datasetModel:end */
+  // Lo que el bloque recibe de la app
+  const dsPrices = () => C.datasets?.storagePrice || { default: 0.023 };
+  const dsHelpers = () => ({ layer: cleanLayer, classes: Object.keys(DATA), formats: C.datasets?.formats, rules: C.datasets?.qualityRules, normDur, lineageOf, parseDur, prices: dsPrices(), T: (k, v) => T(k, v), fmtDur: s => fmtDur(s),
+    sensitive: k => !!DATA[k]?.sensitive, short: k => loc(DATA[k]?.short) || String(k).toUpperCase(), nodeName: id => S.model.nodes.find(n => n.id === id)?.label || id,
+    edgeName: e => { const nm = id => S.model.nodes.find(n => n.id === id)?.label || id; return `${nm(e.from)} ${e.both ? '↔' : '→'} ${nm(e.to)}`; } });
+  const e2eOf = (name, m = S.model) => e2eFreshness(m, name, dsHelpers());
+  const dsById = (id, m = S.model) => (m.datasets || []).find(d => d.id === id);
+  const dsFind = (v, m = S.model) => dsById(v, m) || (m.datasets || []).find(d => dsK(d.name) === dsK(v));
+  // Hallazgos (fuente «data»): sin documentar, producto sin dueño o contrato, frescura que no cumple el SLA, columnas PII sin clase, clase sensible sin cifrar, consumidores fuera del linaje, sin reglas de calidad
+  addFindingSource('data', m => ((m.datasets || []).length ? datasetIssues(m, dsHelpers()) : []));
 
   /* ---------- disponibilidad (SLA), RPO/RTO, réplicas y puntos únicos de fallo ---------- */
   const RSL = { entryTypes: ['user', 'web', 'mobile', 'external', 'client'], dataStoreTypes: ['db', 'nosql', 'storage'], dataStoreIconCategories: ['Bases de datos', 'Almacenamiento'],
@@ -3689,7 +3872,7 @@
   const ORDER = {
     group: ['id', 'label', 'icon', 'color', 'parent', 'kind', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'controls', 'in', 'phase', 'until'],
     node: ['id', 'label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'x', 'y', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'exposure', 'backup', 'controls', 'in', 'c4', 'sla', 'rpo', 'rto', 'replicas', 'phase', 'until'],
-    edge: ['id', 'from', 'to', 'label', 'style', 'weight', 'route', 'both', 'color', 'data', 'encrypted', 'datasets', 'transferOk', 'threats', 'phase', 'until'],
+    edge: ['id', 'from', 'to', 'label', 'style', 'weight', 'route', 'both', 'color', 'data', 'encrypted', 'datasets', 'latency', 'transferOk', 'threats', 'phase', 'until'],
     note: ['id', 'x', 'y', 'w', 'h', 'text', 'color', 'in'],
     zone: ['id', 'x', 'y', 'w', 'h', 'label', 'severity', 'desc', 'kind', 'trust', 'in'],
     requirement: ['id', 'title', 'kind', 'detail', 'priority', 'status', 'source', 'check', 'links'],
@@ -3697,6 +3880,19 @@
     raid: ['id', 'type', 'title', 'detail', 'owner', 'status', 'probability', 'impact', 'mitigation', 'validation', 'due', 'raised', 'links', 'history']
   };
   ORDER.phase = ['id', 'name', 'date', 'goal'];
+  ORDER.dataset = ['id', 'name', 'domain', 'layer', 'description', 'owner', 'steward', 'product', 'classes', 'format', 'freshness', 'volume', 'schema', 'quality', 'contract', 'phase'];
+  ORDER.dsColumn = ['name', 'type', 'key', 'pii', 'nullable', 'desc'];
+  ORDER.dsRule = ['rule', 'column', 'param', 'severity'];
+  ORDER.dsContract = ['version', 'status', 'consumers', 'terms'];
+  // Un conjunto con las claves en el orden canónico, también las de sus columnas, reglas, volumen y contrato (ordered = el ordenador de serialize)
+  function dsOrdered(d, ordered) {
+    const o = ordered(d, ORDER.dataset);
+    if (o.schema) o.schema = o.schema.map(c => ordered(c, ORDER.dsColumn));
+    if (o.quality) o.quality = o.quality.map(q => ordered(q, ORDER.dsRule));
+    if (o.volume) o.volume = ordered(o.volume, ['perDay', 'retentionDays']);
+    if (o.contract) o.contract = ordered(o.contract, ORDER.dsContract);
+    return o;
+  }
   ORDER.stakeholder = ['id', 'name', 'role', 'org', 'raci', 'versions', 'inactive'];
   function serialize(m, full = false) {
     const ordered = (o, keys) => { const r = {}; keys.forEach(k => k in o && (r[k] = o[k])); Object.keys(o).forEach(k => k in r || (r[k] = o[k])); return r; };
@@ -3712,6 +3908,7 @@
     if (m.routing) head.push(`  "routing": ${JSON.stringify(m.routing)}`);
     if (m.layerNames === 'zones') head.push(`  "layerNames": "zones"`);
     if (m.phases?.length) head.push(arr('phases', m.phases, ORDER.phase));
+    if (m.datasets?.length) head.push(`  "datasets": [\n${m.datasets.map(d => '    ' + line(dsOrdered(d, ordered))).join(',\n')}\n  ]`);
     if (m.edgeTypes?.length) head.push(`  "edgeTypes": ${JSON.stringify(m.edgeTypes)}`);
     if (m.dismissed && Object.keys(m.dismissed).length) head.push(`  "dismissed": ${JSON.stringify(m.dismissed)}`);
     if (m.meta) head.push(`  "meta": ${JSON.stringify(m.meta)}`);
@@ -3775,6 +3972,7 @@
       if (!Array.isArray(raw.requirements) && S.model.requirements) raw = { ...raw, requirements: S.model.requirements }; // igual que las decisiones: el texto siempre las trae; el JSON, si omite la clave, las conserva
       if (!Array.isArray(raw.raid)) raw = { ...raw, raid: S.model.raid };   // el texto siempre trae el registro RAID; el JSON, si omite la clave, lo conserva
       if (!Array.isArray(raw.stakeholders) && S.model.stakeholders) raw = { ...raw, stakeholders: S.model.stakeholders };   // igual: el texto siempre trae los interesados; el JSON, si omite la clave, los conserva
+      if (!Array.isArray(raw.datasets) && S.model.datasets) raw = { ...raw, datasets: S.model.datasets };   // el texto siempre trae los conjuntos de datos; el JSON, si omite la clave, los conserva
       if (!Array.isArray(raw.decisions)) raw = { ...raw, decisions: S.model.decisions }; // el texto siempre trae las decisiones (ADR; borrarlas del texto las borra); el JSON, si omite la clave, las conserva
     }
     S.model = normalize(raw);
@@ -3796,6 +3994,7 @@
     renderAdr(true);
     renderReq(true);
     renderRaid(true);
+    renderDs(true);
     save();
     updateUndoButtons();
     if (opts.fit) fitView(opts.fit !== 'instant');
@@ -3807,10 +4006,12 @@
     if (S.model.decisions?.length) pruneAdrLinks();
     if (S.model.requirements?.length) pruneReqLinks();
     if (S.model.raid?.length) pruneRaidLinks();
+    if (S.model.datasets?.length) { const ds = cleanCatalog(S.model.datasets, S.model, dsHelpers()); if (ds.length) S.model.datasets = ds; else delete S.model.datasets; }   // consumidores y fase que ya no existen
     if (structural) render(false); else { updateGeometry(); applyCompare(); }
     syncEditor();
     save();
     updateUndoButtons();
+    renderDs();
   }
 
   function updateMeta() {
@@ -4117,10 +4318,10 @@
   }
   // Comparación de fases bajo la lista: componentes, altas, bajas, costo mensual, cambio de costo y hallazgos abiertos; clic en una fila = elegir esa fase en el lienzo
   function phaseCompare() {
-    const rows = phaseRows(S.model, phaseHelpers), f = (n, k) => `<span class="ph-f sev-${k}${n ? '' : ' zero'}" title="${esc(sevLabel(k))}">${n}</span>`;
+    const rows = phaseRows(S.model, phaseHelpers), hasDs = !!S.model.datasets?.length, hasSto = rows.some(r => r.storage != null), f = (n, k) => `<span class="ph-f sev-${k}${n ? '' : ' zero'}" title="${esc(sevLabel(k))}">${n}</span>`;
     const body = rows.map((r, i) => `<tr data-pc="${i}" tabindex="0" role="button" title="${esc(T('phase.cmp.pick'))}"><th scope="row">${esc(r.name)}${r.date ? `<small>${esc(fmtPhaseDate(r.date))}</small>` : ''}</th><td>${r.nodes}</td><td class="up">${r.added ? '+' + r.added : '0'}</td><td class="dn">${r.retired ? '−' + r.retired : '0'}</td>
-      <td>${esc(phaseCostText(r))}</td><td class="${r.dCost > 0 ? 'dn' : r.dCost < 0 ? 'up' : ''}">${esc(phaseCostText(r, 'dCost'))}</td><td class="ph-fs">${f(r.findings.high, 'high')}${f(r.findings.medium, 'medium')}${f(r.findings.low, 'low')}</td></tr>`).join('');
-    return `<div class="ph-cmp"><div class="cat">${esc(T('phase.cmp.title'))}</div><div class="ph-cmp-box"><table><thead><tr><th>${esc(T('phase.cmp.phase'))}</th><th title="${esc(T('phase.cmp.nodes.tip'))}">${esc(T('phase.cmp.nodes'))}</th><th>${esc(T('phase.cmp.added'))}</th><th>${esc(T('phase.cmp.retired'))}</th><th>${esc(T('phase.cmp.cost'))}</th><th title="${esc(T('phase.cmp.delta.tip'))}">${esc(T('phase.cmp.delta'))}</th><th>${esc(T('phase.cmp.findings'))}</th></tr></thead><tbody>${body}</tbody></table></div></div>`;
+      <td>${esc(phaseCostText(r))}</td><td class="${r.dCost > 0 ? 'dn' : r.dCost < 0 ? 'up' : ''}">${esc(phaseCostText(r, 'dCost'))}</td>${hasDs ? `<td>${r.datasets}</td>` : ''}${hasSto ? `<td title="${esc(T('phase.cmp.storage.tip'))}">${r.storage == null ? '—' : esc(money(round2(r.storage)))}</td>` : ''}<td class="ph-fs">${f(r.findings.high, 'high')}${f(r.findings.medium, 'medium')}${f(r.findings.low, 'low')}</td></tr>`).join('');
+    return `<div class="ph-cmp"><div class="cat">${esc(T('phase.cmp.title'))}</div><div class="ph-cmp-box"><table><thead><tr><th>${esc(T('phase.cmp.phase'))}</th><th title="${esc(T('phase.cmp.nodes.tip'))}">${esc(T('phase.cmp.nodes'))}</th><th>${esc(T('phase.cmp.added'))}</th><th>${esc(T('phase.cmp.retired'))}</th><th>${esc(T('phase.cmp.cost'))}</th><th title="${esc(T('phase.cmp.delta.tip'))}">${esc(T('phase.cmp.delta'))}</th>${hasDs ? `<th>${esc(T('phase.cmp.datasets'))}</th>` : ''}${hasSto ? `<th title="${esc(T('phase.cmp.storage.tip'))}">${esc(T('phase.cmp.storage'))}</th>` : ''}<th>${esc(T('phase.cmp.findings'))}</th></tr></thead><tbody>${body}</tbody></table></div></div>`;
   }
   function markPhaseCmp() { const cur = phaseNow(); phaseBox.querySelectorAll('tr[data-pc]').forEach(tr => { const on = +tr.dataset.pc === cur; tr.classList.toggle('on', on); tr.setAttribute('aria-pressed', on); }); }
   const phaseSlug = s => fold(String(s ?? '')).replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 24) || 'phase';
@@ -4823,7 +5024,7 @@
   const findVersion = id => S.model.versions.find(v => v.id === id);
   // Solo lo que se dibuja: sin versiones y con posiciones redondeadas
   const snapshotOf = m => {
-    const d = clone({ title: m.title, ...(m.direction ? { direction: m.direction } : {}), ...(m.routing ? { routing: m.routing } : {}), ...(m.layerNames ? { layerNames: m.layerNames } : {}), ...(m.phases?.length ? { phases: m.phases } : {}), ...(m.edgeTypes?.length ? { edgeTypes: m.edgeTypes } : {}), ...(m.dismissed ? { dismissed: m.dismissed } : {}), groups: m.groups, nodes: m.nodes, edges: m.edges, ...(m.notes?.length ? { notes: m.notes } : {}), ...(m.zones?.length ? { zones: m.zones } : {}) });
+    const d = clone({ title: m.title, ...(m.direction ? { direction: m.direction } : {}), ...(m.routing ? { routing: m.routing } : {}), ...(m.layerNames ? { layerNames: m.layerNames } : {}), ...(m.phases?.length ? { phases: m.phases } : {}), ...(m.datasets?.length ? { datasets: m.datasets } : {}), ...(m.edgeTypes?.length ? { edgeTypes: m.edgeTypes } : {}), ...(m.dismissed ? { dismissed: m.dismissed } : {}), groups: m.groups, nodes: m.nodes, edges: m.edges, ...(m.notes?.length ? { notes: m.notes } : {}), ...(m.zones?.length ? { zones: m.zones } : {}) });
     d.nodes.forEach(n => { n.x = Math.round(n.x); n.y = Math.round(n.y); });
     return d;
   };
@@ -4938,7 +5139,7 @@
   // Diferencias entre lo guardado (a) y el lienzo (b). La posición no cuenta como cambio.
   const DIFF_FIELDS = {
     node: ['label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'exposure', 'backup', 'controls', 'in', 'c4', 'sla', 'rpo', 'rto', 'replicas', 'phase', 'until'],
-    edge: ['label', 'style', 'weight', 'route', 'both', 'color', 'data', 'encrypted', 'datasets', 'transferOk', 'threats', 'phase', 'until'],
+    edge: ['label', 'style', 'weight', 'route', 'both', 'color', 'data', 'encrypted', 'datasets', 'latency', 'transferOk', 'threats', 'phase', 'until'],
     group: ['label', 'icon', 'color', 'parent', 'kind', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'controls', 'in', 'phase', 'until'],
     type: ['label', 'dash', 'color', 'width', 'particles'] // tipos de conexión propios (model.edgeTypes), por id
   };
@@ -5114,7 +5315,7 @@
     if (!(d.count.a + d.count.r + d.count.c + d.typeN)) return `<p class="ver-sum">${esc(T('ver.same'))}</p>`;
     const FIELD = { label: 'insp.name', sub: 'insp.detail', type: 'insp.type', icon: 'insp.icon', group: 'insp.group', color: 'insp.color', badge: 'field.badge',
       cost: 'cost.label', costPeriod: 'cost.period', costYears: 'cost.yearsAria', desc: 'insp.desc', style: 'insp.style', weight: 'wt.label', parent: 'insp.parent',
-      data: 'data.label', encrypted: 'enc.label', route: 'insp.route', both: 'insp.dir', review: 'rev.label', kind: 'gkind.label', phase: 'phase.label', until: 'phase.until', exposure: 'sec.expo.label', backup: 'sec.backup.label', controls: 'cmp.title', in: 'c4.in', c4: 'c4.label', sla: 'res.sla', rpo: 'res.rpo', rto: 'res.rto', replicas: 'res.replicas', dash: 'et.dash', width: 'et.width', particles: 'et.particles' };
+      data: 'data.label', encrypted: 'enc.label', route: 'insp.route', both: 'insp.dir', review: 'rev.label', kind: 'gkind.label', phase: 'phase.label', until: 'phase.until', exposure: 'sec.expo.label', backup: 'sec.backup.label', controls: 'cmp.title', in: 'c4.in', c4: 'c4.label', sla: 'res.sla', rpo: 'res.rpo', rto: 'res.rto', replicas: 'res.replicas', latency: 'ds.latency', dash: 'et.dash', width: 'et.width', particles: 'et.particles' };
     const fields = (fs, kind) => fs.map(f => T(kind === 'edge' && f === 'label' ? 'insp.label' : kind === 'type' && f === 'label' ? 'et.label' : FIELD[f] || f).toLowerCase()).join(', ');
     const names = new Map([...S.compare.base.nodes, ...S.model.nodes].map(n => [n.id, n.label]));
     const edgeName = e => `${names.get(e.from) || e.from} ${e.both ? '↔' : '→'} ${names.get(e.to) || e.to}`;
@@ -5729,17 +5930,21 @@
       return `<button class="dchip${n === list.length ? ' on' : n ? ' some' : ''}" data-dclass="${esc(k)}" style="--c:${colorVar(c.color) || 'var(--accent)'}" title="${esc(loc(c.label) || k)}">${esc(loc(c.short) || k.toUpperCase())}</button>`;
     }).join('')}</div><span class="cost-hint">${esc(on.length ? on.map(([, c]) => loc(c.label)).join(' · ') : T(edge ? 'data.noneEdge' : 'data.none'))}</span></div>`;
   };
+  // Botón de catálogo de la ficha del inspector: ▤ abre el conjunto en la pestaña Datos; + lo documenta si solo se usa en conexiones
+  const dsCatBtn = d => (dsFind(d) ? `<button class="ds-cat" data-ds-open="${esc(d)}" title="${esc(T('ds.chip.open', d))}" aria-label="${esc(T('ds.chip.open', d))}">▤</button>` : `<button class="ds-cat" data-ds-doc="${esc(d)}" title="${esc(T('ds.chip.doc', d))}" aria-label="${esc(T('ds.chip.doc', d))}">+</button>`);
   // Conjuntos de datos de una conexión: fichas (nombre = ver linaje, × = quitar) y campo para añadir
   const dsField = e => {
     const list = e.datasets || [], more = datasetList().map(d => d.name).filter(n => !list.some(x => dsKey(x) === dsKey(n)));
-    return `<div class="field">${T('lin.label')}<div class="ds-chips">${list.map(d => `<span class="ds-chip"><button class="ds-name" data-lin="${esc(d)}" title="${esc(T('lin.show', { name: d }))}">${esc(d)}</button><button class="ds-x" data-ds-rm="${esc(d)}" title="${esc(T('lin.remove', { name: d }))}" aria-label="${esc(T('lin.remove', { name: d }))}">×</button></span>`).join('')}</div>
+    return `<div class="field">${T('lin.label')}<div class="ds-chips">${list.map(d => `<span class="ds-chip"><button class="ds-name" data-lin="${esc(d)}" title="${esc(T('lin.show', { name: d }))}">${esc(d)}</button>${dsCatBtn(d)}<button class="ds-x" data-ds-rm="${esc(d)}" title="${esc(T('lin.remove', { name: d }))}" aria-label="${esc(T('lin.remove', { name: d }))}">×</button></span>`).join('')}</div>
       <input class="ds-add" list="ds-suggest" placeholder="${esc(T('lin.add.ph'))}" aria-label="${esc(T('lin.add.aria'))}" autocomplete="off" spellcheck="false">
       <datalist id="ds-suggest">${more.map(n => `<option value="${esc(n)}"></option>`).join('')}</datalist>${list.length ? '' : `<span class="cost-hint">${T('lin.none')}</span>`}</div>`;
   };
+  // Latencia de una conexión: tiempo que tarda el dato en ese salto ('15m', '1h', '1d'); se valida con parseDur
+  const latencyField = e => `<label>${T('ds.latency')}<input data-lat list="dl-dur" value="${esc(e.latency || '')}" placeholder="${esc(T('ds.latency.ph'))}" aria-label="${esc(T('ds.latency'))}" autocomplete="off" spellcheck="false"><span class="cost-hint">${T('ds.latency.hint')}</span></label><datalist id="dl-dur">${DUR_TIERS.map(v => `<option value="${v}"></option>`).join('')}</datalist>`;
   // Conjuntos que pasan por las conexiones de un nodo (solo lectura; pulsar uno muestra su linaje)
   const nodeDsField = n => {
     const list = datasetsOfNode(n.id);
-    return list.length ? `<div class="field">${T('lin.node')}<div class="ds-chips">${list.map(d => `<span class="ds-chip"><button class="ds-name" data-lin="${esc(d)}" title="${esc(T('lin.show', { name: d }))}">${esc(d)}</button></span>`).join('')}</div><span class="cost-hint">${T('lin.node.hint')}</span></div>` : '';
+    return list.length ? `<div class="field">${T('lin.node')}<div class="ds-chips">${list.map(d => `<span class="ds-chip"><button class="ds-name" data-lin="${esc(d)}" title="${esc(T('lin.show', { name: d }))}">${esc(d)}</button>${dsCatBtn(d)}</span>`).join('')}</div><span class="cost-hint">${T('lin.node.hint')}</span></div>` : '';
   };
   // Capa del data lake (nodos y grupos, también varios a la vez): ninguna / una de config.js › dataLayers.
   // «Ninguna» pasa a «Heredada (Oro)» cuando el grupo aporta una; abajo, el nombre que usa todo el documento
@@ -5966,6 +6171,7 @@
         ${encField(t)}
         ${dataField(t, true)}
         ${dsField(t)}
+        ${latencyField(t)}
         ${xferField(t)}
         ${strideField(t)}
         ${raidField(t)}
@@ -6138,6 +6344,18 @@
     changed(true);
     const h = $('#res-hint');
     if (h) h.innerHTML = resHintHtml(list);
+  });
+  /* ---------- latencia de la conexión: escribir en el inspector (inválida = campo marcado y no se guarda) ---------- */
+  inspector.addEventListener('focusin', ev => { if (ev.target.matches('input[data-lat]')) beginEdit(); });
+  inspector.addEventListener('input', ev => {
+    const f = ev.target, t = selTarget();
+    if (!f.matches('input[data-lat]') || !t || Array.isArray(t)) return;
+    const v = f.value.trim(), val = v ? normDur(v) : null;
+    f.setAttribute('aria-invalid', !!v && val == null);
+    if (v && val == null) return;
+    markEdit();
+    if (val != null) t.latency = val; else delete t.latency;
+    changed(true);
   });
   /* ---------- STRIDE: nota de cada decisión ---------- */
   inspector.addEventListener('focusin', ev => { if (ev.target.matches('input[data-th-note]')) beginEdit(); });
@@ -6598,16 +6816,37 @@
     if (matchMedia('(max-width: 760px)').matches) $('#main').classList.remove('open');
   });
 
-  $$('.tab').forEach(t => t.addEventListener('click', () => {
-    $$('.tab').forEach(x => x.classList.toggle('on', x === t));
+  /* ---------- pestañas agrupadas ---------- */
+  // Fila 1: grupos (.tabg[data-g]); fila 2: solo las pestañas (.tab[data-group]) del grupo activo. Añadir una pestaña a un grupo = `data-group` en el botón.
+  const TABG = $$('.tabg'), TABS = $$('.tab');
+  TABG.forEach(g => { g.hidden = !TABS.some(t => t.dataset.group === g.dataset.g); g.setAttribute('role', 'tab'); });
+  TABS.forEach(t => t.setAttribute('role', 'tab'));
+  function syncTabs(t) {
+    TABG.forEach(g => { const on = g.dataset.g === t.dataset.group; g.classList.toggle('on', on); g.setAttribute('aria-selected', on); g.tabIndex = on ? 0 : -1; });
+    TABS.forEach(x => { const on = x === t; x.classList.toggle('on', on); x.hidden = x.dataset.group !== t.dataset.group; x.setAttribute('aria-selected', on); x.tabIndex = on ? 0 : -1; });
+  }
+  TABS.forEach(t => t.addEventListener('click', () => {
+    syncTabs(t);
     $$('.pane').forEach(p => p.classList.toggle('on', p.dataset.pane === t.dataset.tab));
     store.set('tab', t.dataset.tab);
+    const last = store.get('tabg', {}); last[t.dataset.group] = t.dataset.tab; store.set('tabg', last);
     if (t.dataset.tab === 'review') renderFindings();
     else if (t.dataset.tab === 'adr') renderAdr(true);
     else if (t.dataset.tab === 'req') renderReq(true);
     else if (t.dataset.tab === 'raid') renderRaid(true);
+    else if (t.dataset.tab === 'data') renderDs(true);
     else if (t.dataset.tab === 'people') renderPeople(true);
   }));
+  TABG.forEach(g => g.addEventListener('click', () => {
+    const mine = TABS.filter(t => t.dataset.group === g.dataset.g), last = store.get('tabg', {})[g.dataset.g];
+    (mine.find(t => t.dataset.tab === last) || mine[0])?.click();
+  }));
+  // Flechas / Inicio / Fin dentro de cada fila (activan al mover, como un tablist automático)
+  [TABG, TABS].forEach(row => row.forEach(b => b.addEventListener('keydown', ev => {
+    const vis = row.filter(x => !x.hidden), i = vis.indexOf(b), n = { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: vis.length - 1 }[ev.key];
+    if (n === undefined) return;
+    ev.preventDefault(); const nb = vis[(n + vis.length) % vis.length]; nb.click(); nb.focus();
+  })));
 
   function codeBox(box, apply) {
     box.addEventListener('focus', beginEdit);
@@ -6828,6 +7067,7 @@
     const av = activeVersion();
     versionBox.placeholder = av ? verLabel(av) : '1.0';
     $('#exp-levels-svg').hidden = $('#exp-levels-png').hidden = !hasLevels();
+    $('#exp-contracts').hidden = !S.model.datasets?.length;   // solo si el diagrama declara conjuntos de datos
     const r = exportMenu.querySelector('summary').getBoundingClientRect(), pop = exportMenu.querySelector('.menu-pop');
     pop.style.top = `${r.bottom}px`;
     pop.style.right = `${Math.max(8, innerWidth - r.right)}px`;
@@ -6837,7 +7077,7 @@
     const b = ev.target.closest('[data-export]');
     if (!b) return;
     exportMenu.open = false;
-    const f = { svg: exportSVG, png: exportPNG, 'svg-all': () => exportViews('svg'), 'png-all': () => exportViews('png'), 'svg-levels': () => exportLevels('svg'), 'png-levels': () => exportLevels('png'), json: exportJSON, copy: copyJSON, share: shareEncrypted, stride: exportThreats, compliance: openCompMatrix, report: openReportDialog, costs: () => openCosts('breakdown'), 'inventory-xlsx': () => exportInventory('xlsx'), 'inventory-csv': openInventoryDialog }[b.dataset.export];
+    const f = { svg: exportSVG, png: exportPNG, 'svg-all': () => exportViews('svg'), 'png-all': () => exportViews('png'), 'svg-levels': () => exportLevels('svg'), 'png-levels': () => exportLevels('png'), json: exportJSON, copy: copyJSON, share: shareEncrypted, stride: exportThreats, compliance: openCompMatrix, report: openReportDialog, costs: () => openCosts('breakdown'), 'inventory-xlsx': () => exportInventory('xlsx'), 'inventory-csv': openInventoryDialog, contracts: exportContracts }[b.dataset.export];
     if (f) f(); else exportOther(b.dataset.export);
   });
 
@@ -7279,7 +7519,7 @@
   // reportData() arma un modelo plano (secciones de bloques) y dos dibujantes lo pintan: reportMarkdown y reportHTML, así que los dos formatos no se desincronizan.
   // Bloques: { k: 'h3', t } · { k: 'p', t, muted? } · { k: 'kv', items: [[k, v]] } · { k: 'cards', items: [{ label, value, tone? }] }
   //          { k: 'table', head: [], rows: [[celda]], cls? } (celda = texto | { t, tone }) · { k: 'text', label, t } · { k: 'ul', items } · { k: 'img', alt, caption, svg?, uri?, file? }
-  const REP_SECS = ['summary', 'diagram', 'components', 'connections', 'data', 'owners', 'layers', 'costs', 'resilience', 'findings', 'compliance', 'threats', 'decisions', 'requirements', 'raid', 'approvals', 'phases', 'versions', 'notes'];
+  const REP_SECS = ['summary', 'diagram', 'components', 'connections', 'data', 'owners', 'layers', 'datasets', 'costs', 'resilience', 'findings', 'compliance', 'threats', 'decisions', 'requirements', 'raid', 'approvals', 'phases', 'versions', 'notes'];
   const REP_PAGE = ['diagram', 'components', 'findings', 'decisions']; // secciones que empiezan página al imprimir
   const repT = (k, v) => T(`rep.${k}`, v);
   const repSleep = ms => new Promise(r => setTimeout(r, ms));
@@ -7300,7 +7540,7 @@
       data: m.nodes.some(n => dataClassesOf(n, m).length || regionOf(n, m).value), owners: govTeamList(m).length > 0,
       layers: m.nodes.some(n => layerOf(n).value), costs: m.nodes.some(hasCost), resilience: m.nodes.some(hasRes) || spofList(m).length > 0, findings: findingsOf(m).length > 0,
       compliance: cmpModel(m).keys.length > 0, threats: strideAll(m).length > 0, decisions: !!m.decisions?.length, requirements: !!m.requirements?.length,
-      raid: !!m.raid?.length, approvals: !!m.stakeholders?.length, phases: !!m.phases?.length,
+      raid: !!m.raid?.length, approvals: !!m.stakeholders?.length, phases: !!m.phases?.length, datasets: !!m.datasets?.length,
       versions: m.versions.length > 0, notes: (m.notes || []).length > 0 || (m.zones || []).some(z => z.kind !== 'trust')
     };
   }
@@ -7457,6 +7697,35 @@
 
     if (want('layers')) {
       sec('layers', [{ k: 'table', head: [repT('h.layer'), repT('h.nodes')], rows: Object.keys(DL).map(k => [layerInfo(k).label, m.nodes.filter(n => layerOf(n).value === k).map(n => n.label).join(', ')]).filter(r => r[1]) }]);
+    }
+
+    if (want('datasets')) {
+      // Resumen, tabla del catálogo (declarados), sin documentar al final y, por producto, su esquema y sus reglas de calidad
+      const dsl = m.datasets, cat = catalog(m), und = cat.filter(c => !c.declared), prods = dsl.filter(d => d.product), blocks = [];
+      const ownerOf = o => m.stakeholders?.find(s => s.id === o)?.name || o || '';
+      const frCell = f => ({ t: `${f.worst == null ? '—' : fmtDur(f.worst / 1000)} · ${f.sla == null ? '—' : fmtDur(f.sla / 1000)} · ${{ pass: '✓', fail: '✗', unknown: '?' }[f.state]}`, tone: f.state === 'fail' ? 'sev-high' : '' });
+      blocks.push({ k: 'p', t: repT('cat.sum', { n: dsl.length, p: prods.length, u: und.length, b: dsl.filter(d => e2eOf(d.name, m).state === 'fail').length }) });
+      const rows = dsl.map(d => {
+        const f = e2eOf(d.name, m), sto = storageEstimate(d, { prices: dsPrices() });
+        return [d.id, d.name, d.domain || '', d.layer ? layerInfo(d.layer).label : '', ownerOf(d.owner), d.product ? '★' : '', frCell(f),
+          d.contract ? `${d.contract.version} · ${repT(`cat.st.${d.contract.status}`)}` : '', sto ? `${numFmt(sto.gb, 1)} GB · ${money(round2(sto.monthly))}` : ''];
+      });
+      blocks.push({ k: 'table', cls: 'wide', head: [repT('h.id'), repT('h.name'), repT('h.domain'), repT('h.layer'), repT('h.owner'), repT('h.product'), repT('h.freshness'), repT('h.contract'), repT('h.storage')], rows });
+      if (dsl.some(d => storageEstimate(d, { prices: dsPrices() }))) blocks.push({ k: 'p', muted: true, t: repT('cat.estNote') });
+      if (und.length) blocks.push({ k: 'p', t: `${repT('cat.undoc')}: ${und.map(c => c.name).join(', ')}` });
+      prods.forEach(d => {
+        blocks.push({ k: 'h3', t: `★ ${d.id} · ${d.name}` });
+        if (d.description) blocks.push({ k: 'p', t: d.description });
+        if (d.schema?.length) {
+          blocks.push({ k: 'h4', t: repT('cat.schema') });
+          blocks.push({ k: 'table', cls: 'compact', head: [repT('h.name'), repT('h.type'), repT('h.key'), repT('h.pii')], rows: d.schema.map(c => [c.name, c.type || '', c.key ? '✓' : '', c.pii ? '✓' : '']) });
+        }
+        if (d.quality?.length) {
+          blocks.push({ k: 'h4', t: repT('cat.rules') });
+          blocks.push({ k: 'table', cls: 'compact', head: [repT('h.rule'), repT('h.column'), repT('h.param'), repT('h.severity')], rows: d.quality.map(q => [q.rule, q.column || '', q.param || '', q.severity ? sevLabel(q.severity) : '']) });
+        }
+      });
+      sec('datasets', blocks);
     }
 
     if (want('costs')) {
@@ -7638,6 +7907,7 @@
       o.push(`## ${mdEsc(s.title)}`, '');
       s.blocks.forEach(b => {
         if (b.k === 'h3') o.push(`### ${mdEsc(b.t)}`, '');
+        else if (b.k === 'h4') o.push(`#### ${mdEsc(b.t)}`, '');
         else if (b.k === 'p') o.push(b.muted ? `*${mdEsc(b.t)}*` : mdLines(b.t), '');
         else if (b.k === 'kv') o.push(...b.items.map(([k, v]) => `- **${mdEsc(k)}:** ${mdEsc(v).replace(/\r?\n/g, ' ')}`), '');
         else if (b.k === 'ul') o.push(...b.items.map(t => `- ${mdEsc(t).replace(/\r?\n/g, ' ')}`), '');
@@ -7691,6 +7961,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     const css = REP_CSS.replace('__FONT__', fontCss().replace(/"/g, "'")).replace('__TITLE__', `"${String(D.title).replace(/[\\"]/g, '\\$&').replace(/[\r\n]+/g, ' ')}"`);
     const blk = b => {
       if (b.k === 'h3') return `<h3>${esc(b.t)}</h3>`;
+      if (b.k === 'h4') return `<h4>${esc(b.t)}</h4>`;
       if (b.k === 'p') return `<p${b.muted ? ' class="muted"' : ''}>${esc(b.t).replace(/\r?\n/g, '<br>')}</p>`;
       if (b.k === 'kv') return `<dl>${b.items.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v).replace(/\r?\n/g, '<br>')}</dd>`).join('')}</dl>`;
       if (b.k === 'ul') return `<ul>${b.items.map(t => `<li>${esc(t).replace(/\r?\n/g, '<br>')}</li>`).join('')}</ul>`;
@@ -7900,6 +8171,16 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
       toast(T('toast.exported', { name: T(`exp.${fmt}`) }));
     } catch (e) { console.error(e); toast(T('toast.exportFail')); }
   }
+  // Contratos de datos (ODCS, src/export/datacontract.js): un archivo por conjunto, o todos en uno (documentos YAML separados por ---)
+  const contractYaml = v => { const d = dsFind(v); return d && window.DiagramonContract ? window.DiagramonContract.toODCS(clone(d), clone({ ...S.model, versions: undefined, active: undefined })) : ''; };
+  const contractsYaml = () => (S.model.datasets?.length && window.DiagramonContract ? window.DiagramonContract.toODCSAll(clone({ ...S.model, versions: undefined, active: undefined })) : '');
+  function saveContract(text, name) {
+    if (!text) return toast(T('toast.exportFail'));
+    download(text, name, 'application/yaml');
+    toast(T('toast.exported', { name: T('exp.contracts') }));
+  }
+  function exportContract(id) { const d = dsFind(id); if (d) saveContract(contractYaml(d.id), `${fold(d.name).replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'dataset'}.odcs.yaml`); }
+  const exportContracts = () => saveContract(contractsYaml(), 'data-contracts.odcs.yaml');
   function exportJSON() { download(serialize(S.model, true), fileName('json'), 'application/json'); toast(T('toast.json')); }
   function copyJSON() {
     const txt = serialize(S.model, true);
@@ -7926,6 +8207,8 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
   const INV_REQ = [['id'], ['title'], ['kind'], ['priority'], ['status'], ['source'], ['coveredBy'], ['check'], ['result']];
   const INV_RAID = [['id'], ['type'], ['title'], ['status'], ['owner'], ['probability'], ['impact'], ['score'], ['mitigation'], ['due'], ['raised'], ['links'], ['detail']];
   const INV_SH = [['id'], ['name'], ['role'], ['org'], ['raci'], ['versions'], ['inactive']];
+  const INV_DS = [['id'], ['name'], ['domain'], ['layer'], ['owner'], ['steward'], ['product'], ['data'], ['format'], ['freshness'], ['e2e'], ['frState'], ['perDay'], ['retention', 'int'], ['estGb'], ['estMonthly', 'money'], ['phase'], ['contractVersion'], ['status'], ['consumers']];
+  const INV_DSC = [['dsId'], ['dsName'], ['column'], ['type'], ['key'], ['pii'], ['nullable'], ['desc']], INV_DSQ = [['dsId'], ['dsName'], ['rule'], ['column'], ['param'], ['severity']];   // hojas Columns y Quality del catálogo de datos
   const INV_PH = [['phase'], ['until']];   // columnas de fase de componentes y conexiones (solo si el diagrama tiene fases)
   const INV_PHASE = [['id'], ['name'], ['date'], ['goal'], ['components', 'int'], ['added', 'int'], ['retired', 'int'], ['monthly', 'money']];
   const phNm = (m, id) => (id ? m.phases?.find(p => p.id === id)?.name || '' : '');   // nombre de la fase («» si no hay)
@@ -7987,13 +8270,14 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     // Conexiones
     const open = typeof strideAll === 'function' ? (() => { try { return strideAll(m).filter(t => t.status === 'open'); } catch { return []; } })() : [];
     const ets = Array.isArray(m.edgeTypes) ? m.edgeTypes : [], etOf = id => ets.find(t => t.id === id); // del modelo que se exporta, no del lienzo
+    const lat = m.edges.some(e => e.latency != null && e.latency !== '');   // columna Latencia solo si alguna conexión la tiene
     const conn = m.edges.map(e => {
       const cb = typeof crossBorder === 'function' ? crossBorder(e, byId) : null, ct = etOf(e.style);
       return [e.id || '', nm(e.from), nm(e.to), String(e.label || '').replace(/\s*\n\s*/g, ' '), ct ? loc(ct.label) : edgeStyleLabel(e.style), T(EDGE_W[e.weight] ? `wt.${e.weight}` : 'wt.normal'), invYN(!!ct), e.encrypted === true ? T('enc.yes') : e.encrypted === false ? T('enc.no') : T('enc.unset'),
         (e.data || []).map(k => loc(DATA[k]?.short) || String(k).toUpperCase()).join(' '), (e.datasets || []).join('; '), invYN(!!cb), cb ? invYN(cb.approved) : '', open.filter(t => t.e === e || t.e.id === e.id).length,
-        ...(ph ? [phNm(m, e.phase), phNm(m, e.until)] : [])];
+        ...(lat ? [e.latency || ''] : []), ...(ph ? [phNm(m, e.phase), phNm(m, e.until)] : [])];
     });
-    const cn = [...INV_CONN, ...(ph ? INV_PH : [])];
+    const cn = [...INV_CONN, ...(lat ? [['latency']] : []), ...(ph ? INV_PH : [])];
     if (conn.length) out.push(mk('connections', cn, conn));
     // Tipos de conexión propios (solo si el diagrama los tiene)
     if (ets.length) out.push(mk('types', INV_TYPE, ets.map(t => [t.id, loc(t.label), t.dash || '', t.color || '', t.width ?? '', t.particles ?? '', m.edges.filter(e => e.style === t.id).length])));
@@ -8022,6 +8306,20 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     if (m.raid?.length) {
       const rl = l => [...(l?.decisions || []), ...(l?.requirements || []), links(l)].filter(Boolean).join('; ');
       out.push(mk('raid', INV_RAID, m.raid.map(x => [x.id, T(`raid.type1.${x.type}`), x.title, T(`raid.st.${raidState(x)}`), x.owner || '', x.probability ?? '', x.impact ?? '', raidScore(x) || '', x.mitigation || '', x.due || '', x.raised || '', rl(x.links), x.detail || ''])));
+    }
+    // Catálogo de datos (solo si hay conjuntos): una fila por conjunto (frescura real, costo estimado y contrato), y Columnas y Calidad si tienen filas
+    if (m.datasets?.length) {
+      const dsl = m.datasets, ownerOf = o => m.stakeholders?.find(s => s.id === o)?.name || o || '', pr = { prices: dsPrices() };
+      out.push(mk('datasets', INV_DS, dsl.map(d => {
+        const f = e2eOf(d.name, m), sto = storageEstimate(d, pr);
+        return [d.id, d.name, d.domain || '', d.layer ? layerInfo(d.layer).label : '', ownerOf(d.owner), d.steward || '', invYN(!!d.product), (d.classes || []).map(k => loc(DATA[k]?.short) || String(k).toUpperCase()).join(' '),
+          d.format || '', d.freshness || '', f.worst == null ? '' : fmtDur(f.worst / 1000), T(`inv.fr.${f.state}`), d.volume?.perDay ?? '', d.volume?.retentionDays ?? '', sto ? round2(sto.gb) : '', sto ? round2(sto.monthly) : '',
+          phNm(m, d.phase), d.contract?.version || '', d.contract ? T(`rep.cat.st.${d.contract.status}`) : '', (d.contract?.consumers || []).map(nm).join('; ')];
+      })));
+      const dc = dsl.flatMap(d => (d.schema || []).map(c => [d.id, d.name, c.name, c.type || '', invYN(!!c.key), invYN(!!c.pii), invYN(c.nullable !== false), c.desc || '']));
+      if (dc.length) out.push(mk('columns', INV_DSC, dc));
+      const dq = dsl.flatMap(d => (d.quality || []).map(q => [d.id, d.name, q.rule, q.column || '', q.param || '', q.severity ? sevLabel(q.severity) : '']));
+      if (dq.length) out.push(mk('quality', INV_DSQ, dq));
     }
     // Interesados (una fila por persona, con su RACI como «área:letra») y firmas de decisiones y versiones (una fila por firma); solo si hay datos
     if (m.stakeholders?.length) out.push(mk('stakeholders', INV_SH, m.stakeholders.map(s => [s.id, s.name, s.role || '', T(`people.org.${s.org}`), Object.entries(s.raci || {}).map(([k, v]) => `${k}:${v}`).join('; '), invYN(s.versions === true), invYN(!!s.inactive)])));
@@ -8287,6 +8585,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     else if (ev.key === 'Delete' || ev.key === 'Backspace') { if (S.sel) { ev.preventDefault(); deleteSelection(); } }
     else if (ev.key === 'Escape' && ADR.wide) { ADR.wide = null; renderAdr(true); }   // cierra la matriz de opciones ampliada
     else if (ev.key === 'Escape' && REQ.wide) { REQ.wide = false; renderReq(true); }   // y la de trazabilidad de requisitos
+    else if (ev.key === 'Escape' && DSX.wide) { DSX.wide = null; renderDs(true); }   // y el esquema de un conjunto
     else if (ev.key === 'Escape' && PEOPLE.wide) { PEOPLE.wide = false; renderPeople(true); }   // y la matriz RACI de interesados
     else if (ev.key === 'Escape' && filterMenu.open) filterMenu.open = false;
     else if (ev.key === 'Escape') { if (S.play) stopPlay(); else if (S.path) clearPath(); else if (S.connecting) cancelConnect(); else if (!S.sel && S.compare) compareVersion(null); else if (!S.sel && !S.flow && S.scope) scopeUp(); else select(null); }
@@ -8344,6 +8643,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     syncSecMarkers();
     const worst = FC.open.reduce((w, f) => (sevRank(f.severity) > sevRank(w) ? f.severity : w), 'low'), bd = $('#review-badge');
     if (bd) { bd.hidden = !FC.open.length; bd.textContent = FC.open.length > 99 ? '99+' : FC.open.length; bd.style.setProperty('--b', `var(--sev-${worst})`); bd.title = T('find.badge', FC.open.length); }
+    const bg = $('#review-badge-g'); if (bg && bd) { bg.hidden = bd.hidden; bg.textContent = bd.textContent; bg.title = bd.title; bg.style.setProperty('--b', bd.style.getPropertyValue('--b')); }
     renderFindings();
   }
   // Pastilla «⚠ n» arriba a la derecha de cada nodo con hallazgos abiertos de reglas (solo se ve en la vista Seguridad); evita la insignia
@@ -9182,6 +9482,251 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
   $('#inspector').addEventListener('click', ev => { const b = ev.target.closest('[data-raid-open]'); if (b) raidOpen(b.dataset.raidOpen); });
   $('#req-panel')?.addEventListener('click', ev => { const b = ev.target.closest('[data-raid-open]'); if (b) raidOpen(b.dataset.raidOpen); });   // y en la ficha del requisito
 
+  /* ---------- catálogo de datos: pestaña Datos (fichas de conjuntos: general, esquema, calidad, contrato y linaje) ---------- */
+  const DSX = { open: null, q: '', domain: '', layer: '', prod: '', cst: '', wide: null, sec: new Set(), free: null, focus: '' };   // ficha abierta, filtros, esquema ampliado, secciones abiertas
+  const dsPanel = $('#ds-panel');
+  const DS_TYPES = ['string', 'int', 'bigint', 'decimal', 'double', 'boolean', 'date', 'timestamp', 'array', 'struct'];
+  let dsMemo = new Map();   // frescura por nombre durante un repintado (calcular el linaje de cada ficha es lo más caro)
+  const dsFr = name => { const k = dsK(name); if (!dsMemo.has(k)) dsMemo.set(k, e2eOf(name)); return dsMemo.get(k); };
+  const dsFrText = f => [T('ds.fr.real', f.worst == null ? '?' : `${f.unknownHops ? '≥ ' : ''}${fmtDur(f.worst / 1000)}`), f.sla == null ? T('ds.fr.noSla') : T('ds.fr.sla', fmtDur(f.sla / 1000))].join(' · ');
+  const DS_FR = { pass: ['✓', 'var(--p-menta)', 'ds.fr.ok'], fail: ['✗', 'var(--p-coral)', 'ds.fr.bad'], unknown: ['?', 'var(--muted)', 'ds.fr.unk'] };
+  const dsOwnerLabel = ds => (S.model.stakeholders || []).find(s => s.id === ds.owner)?.name || ds.owner || '';
+  const dsRuleLabel = r => (T(`ds.rule.${r}`) !== `ds.rule.${r}` ? T(`ds.rule.${r}`) : r);
+  const dsSecKey = (id, s) => `${id}|${s}`;
+  const dsMatch = ds => (!DSX.domain || ds.domain === DSX.domain) && (!DSX.layer || ds.layer === DSX.layer) && (!DSX.prod || (DSX.prod === 'yes') === !!ds.product)
+    && (!DSX.cst || (DSX.cst === 'none' ? !ds.contract : ds.contract?.status === DSX.cst))
+    && (!DSX.q || [ds.id, ds.name, ds.domain, ds.description, dsOwnerLabel(ds), ds.steward, ...(ds.schema || []).map(c => c.name)].some(x => String(x || '').toLowerCase().includes(DSX.q.toLowerCase())));
+  const dsOpts = (items, cur) => items.map(([v, t]) => `<option value="${esc(v)}"${String(v) === String(cur ?? '') ? ' selected' : ''}>${esc(t)}</option>`).join('');
+  const dsSel = (attrs, cur, items, label) => `<select ${attrs} aria-label="${esc(label)}">${dsOpts(items, cur)}</select>`;
+  function renderDsBar(all, cat) {
+    const decl = cat.filter(c => c.declared), und = cat.filter(c => !c.declared), breach = decl.filter(c => dsFr(c.name).state === 'fail').length, products = all.filter(d => d.product).length;
+    const layers = Object.keys(DL).filter(k => all.some(d => d.layer === k) || DSX.layer === k), domains = [...new Set(all.map(d => d.domain).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+    if (DSX.domain && !domains.includes(DSX.domain)) DSX.domain = '';
+    const chip = (attr, k, on, label, color) => `<button class="fnd-chip${on ? ' on' : ''}" ${attr}="${esc(k)}" aria-pressed="${on}" style="--s:${color}">${esc(label)}</button>`;
+    const parts = [`<span>${esc(T('ds.sum.declared', decl.length))}</span>`, `<span>${esc(T('ds.sum.products', products))}</span>`, und.length ? `<span>${esc(T('ds.sum.undoc', und.length))}</span>` : '', breach ? `<span class="raid-late">${esc(T('ds.sum.breach', breach))}</span>` : ''];
+    $('#ds-bar').innerHTML = `<div class="raid-tools"><button class="btn small primary" data-ds-add="1" title="${esc(T('ds.add.tip'))}">+ ${esc(T('ds.add'))}</button></div>
+      ${all.length || und.length ? `<div class="raid-sum" aria-live="polite">${parts.filter(Boolean).join(' · ')}</div>
+      <div class="fnd-chips" role="group" aria-label="${esc(T('ds.fl.aria'))}">${layers.map(k => chip('data-ds-lay', k, DSX.layer === k, layerInfo(k).label, layerInfo(k).color)).join('')}${chip('data-ds-prodf', 'yes', DSX.prod === 'yes', T('ds.fl.prod'), 'var(--p-limon)')}${chip('data-ds-prodf', 'no', DSX.prod === 'no', T('ds.fl.noprod'), 'var(--muted)')}</div>
+      <div class="ds-filters">${dsSel('id="ds-fdom"', DSX.domain, [['', T('ds.fl.domain')], ...domains.map(d => [d, d])], T('ds.fl.domain'))}${dsSel('id="ds-fcst"', DSX.cst, [['', T('ds.fl.cst')], ['none', T('ds.fl.nocst')], ...DS_STATUS.map(s => [s, T(`ds.cst.${s}`)])], T('ds.fl.cst'))}</div>
+      <input class="search" id="ds-q" style="padding-left:10px;margin-bottom:6px" value="${esc(DSX.q)}" placeholder="${esc(T('ds.search'))}" aria-label="${esc(T('ds.search'))}" autocomplete="off">` : ''}`;
+  }
+  // Cabecera de la ficha (se repinta sola cuando cambia algo que ella muestra)
+  function dsHead(ds, on) {
+    const f = dsFr(ds.name), fr = DS_FR[f.state], li = ds.layer ? layerInfo(ds.layer) : null, se = storageEstimate(ds, { prices: dsPrices() });
+    const meta1 = [ds.domain, dsOwnerLabel(ds)].filter(Boolean).join(' · '), meta2 = [ds.freshness || f.worst != null ? dsFrText(f) : '', se ? T('ds.store', { gb: numFmt(se.gb, 1), cost: money(se.monthly) }) : ''].filter(Boolean).join(' · ');
+    return `<div class="ds-top"><div class="ds-hd"><button type="button" class="ds-toggle" data-ds-toggle="1" aria-expanded="${on}"><b class="raid-id">${esc(ds.id)}</b><span class="ds-title">${esc(ds.name)}</span>${li ? `<span class="ds-layer" style="--s:${li.color}">${esc(li.label)}</span>` : ''}<span class="ds-fr" style="--s:${fr[1]}" title="${esc(T(fr[2]))}">${fr[0]}</span></button><button type="button" class="ds-star${ds.product ? ' on' : ''}" data-ds-star="1" aria-pressed="${!!ds.product}" title="${esc(T('ds.product.tip'))}" aria-label="${esc(T('ds.product.tip'))}">★</button></div>
+      ${meta1 ? `<div class="raid-meta">${esc(meta1)}</div>` : ''}${meta2 ? `<div class="raid-meta ds-meta2">${esc(meta2)}</div>` : ''}</div>`;
+  }
+  function dsSchema(ds) {
+    const wide = DSX.wide === ds.id, cols = ds.schema || [], cb = (k, on, t) => `<input type="checkbox" data-dsck="${k}"${on ? ' checked' : ''} aria-label="${esc(t)}">`;
+    const rows = cols.map((c, i) => `<tr data-i="${i}"><td class="ds-sc-n">${i + 1}</td><td><input data-dsc="name" value="${esc(c.name)}" maxlength="120" aria-label="${esc(T('ds.col.name'))}" autocomplete="off" spellcheck="false"></td>
+      <td><input data-dsc="type" list="ds-types" value="${esc(c.type || '')}" maxlength="40" aria-label="${esc(T('ds.col.type'))}" autocomplete="off" spellcheck="false"></td>
+      <td>${cb('key', c.key, T('ds.col.key.tip'))}</td><td>${cb('pii', c.pii, T('ds.col.pii'))}</td><td>${cb('nullable', c.nullable !== false, T('ds.col.null.tip'))}</td>
+      <td><input data-dsc="desc" value="${esc(c.desc || '')}" maxlength="500" aria-label="${esc(T('ds.col.desc'))}" autocomplete="off"></td>
+      <td class="ds-sc-a"><button type="button" data-ds-colup="${i}" title="${esc(T('ds.col.up'))}" aria-label="${esc(T('ds.col.up'))}"${i ? '' : ' disabled'}>▲</button><button type="button" data-ds-coldn="${i}" title="${esc(T('ds.col.dn'))}" aria-label="${esc(T('ds.col.dn'))}"${i < cols.length - 1 ? '' : ' disabled'}>▼</button><button type="button" class="adr-x" data-ds-colrm="${i}" title="${esc(T('ds.col.rm'))}" aria-label="${esc(T('ds.col.rm'))}">×</button></td></tr>`).join('');
+    return `${wide ? '<div class="req-back" data-ds-wide="1"></div>' : ''}<div class="req-mx-box ds-sc-box${wide ? ' wide' : ''}"><div class="adr-opts-h"><span>${esc(T('ds.sc.title', ds.name))}</span><button type="button" class="btn small" data-ds-wide="1" title="${esc(T('adr.wide.tip'))}">${esc(T(wide ? 'adr.narrow' : 'adr.wide'))}</button></div>
+      ${cols.length ? `<div class="ds-sc-wrap"><table class="ds-sc"><thead><tr><th>#</th><th>${esc(T('ds.col.name'))}</th><th>${esc(T('ds.col.type'))}</th><th title="${esc(T('ds.col.key.tip'))}">${esc(T('ds.col.key'))}</th><th>${esc(T('ds.col.pii'))}</th><th title="${esc(T('ds.col.null.tip'))}">${esc(T('ds.col.null'))}</th><th>${esc(T('ds.col.desc'))}</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : `<p class="raid-hint">${esc(T('ds.col.empty'))}</p>`}
+      <div class="raid-row"><button type="button" class="btn small" data-ds-coladd="1">${esc(T('ds.col.add'))}</button></div></div>`;
+  }
+  function dsQuality(ds) {
+    const rules = dsHelpers().rules || DS_RULES, cols = (ds.schema || []).map(c => c.name);
+    return `${(ds.quality || []).map((q, i) => `<div class="ds-q" data-i="${i}">${dsSel('data-dsq="rule"', q.rule, [...new Set([...rules, q.rule])].map(r => [r, dsRuleLabel(r)]), T('ds.q.rule'))}
+      ${dsSel('data-dsq="column"', q.column || '', [['', T('ds.q.any')], ...[...new Set([...cols, q.column].filter(Boolean))].map(c => [c, c])], T('ds.q.col'))}
+      <input data-dsq="param" value="${esc(q.param || '')}" maxlength="200" placeholder="${esc(T('ds.q.param.ph'))}" aria-label="${esc(T('ds.q.param'))}" autocomplete="off" spellcheck="false">
+      ${dsSel('data-dsq="severity"', q.severity || '', [['', '–'], ...DS_SEV.map(s => [s, sevLabel(s)])], T('ds.q.sev'))}
+      <button type="button" class="adr-x" data-ds-qrm="${i}" title="${esc(T('ds.q.rm'))}" aria-label="${esc(T('ds.q.rm'))}">×</button></div>`).join('') || `<p class="raid-hint">${esc(T('ds.q.empty'))}</p>`}
+      <div class="raid-row"><button type="button" class="btn small" data-ds-qadd="1">${esc(T('ds.q.add'))}</button></div>`;
+  }
+  function dsContract(ds) {
+    const k = ds.contract;
+    if (!k) return `<p class="raid-hint">${esc(T('ds.k.none'))}</p><div class="raid-row"><button type="button" class="btn small" data-ds-knew="1">${esc(T('ds.k.new'))}</button></div>`;
+    const free = S.model.nodes.filter(n => !(k.consumers || []).includes(n.id)), name = id => S.model.nodes.find(n => n.id === id)?.label || id;
+    return `<div class="raid-two"><label>${esc(T('ds.k.version'))}<input data-dsk="version" value="${esc(k.version)}" maxlength="20" autocomplete="off"></label><label>${esc(T('ds.k.status'))}${dsSel('data-dsk="status"', k.status, DS_STATUS.map(s => [s, T(`ds.cst.${s}`)]), T('ds.k.status'))}</label></div>
+      <div class="raid-links-edit"><span>${esc(T('ds.k.consumers'))}</span>${(k.consumers || []).map(id => `<span class="raid-link"><button type="button" data-ds-focus="${esc(id)}" title="${esc(T('raid.go'))}">${esc(name(id))}</button><button type="button" class="raid-x" data-ds-krm="${esc(id)}" title="${esc(T('ds.k.rmCons'))}" aria-label="${esc(T('ds.k.rmCons'))}">×</button></span>`).join('')}
+        ${free.length ? dsSel('data-ds-kadd="1"', '', [['', T('ds.k.addCons')], ...free.map(n => [n.id, n.label])], T('ds.k.addCons')) : ''}</div>
+      <label>${esc(T('ds.k.terms'))}<textarea data-dsk="terms" rows="3" maxlength="2000" placeholder="${esc(T('ds.k.terms.ph'))}">${esc(k.terms || '')}</textarea></label>
+      <div class="raid-row"><button type="button" class="btn small primary" data-ds-export="1">${esc(T('ds.k.export'))}</button><button type="button" class="btn small" data-ds-kdel="1">${esc(T('ds.k.del'))}</button></div>`;
+  }
+  function dsLineage(ds) {
+    const f = dsFr(ds.name), es = dsEdges(S.model, ds.name), nm = id => S.model.nodes.find(n => n.id === id)?.label || id;
+    if (!es.length) return `<p class="raid-hint">${esc(T('ds.l.none'))}</p>`;
+    const hops = f.path.slice(1).map((b, i) => {
+      const a = f.path[i], e = es.find(x => (x.from === a && x.to === b) || (x.both && x.from === b && x.to === a)), s = e?.latency ? parseDur(e.latency) : null;
+      return `<span class="ds-hop${s == null ? ' unk' : ''}">${s == null ? '?' : esc(fmtDur(s))}</span><span class="ds-node">${esc(nm(b))}</span>`;
+    }).join('');
+    return `${f.path.length > 1 ? `<div class="raid-hint">${esc(T('ds.l.slowest'))}</div><div class="ds-path"><span class="ds-node">${esc(nm(f.path[0]))}</span>${hops}</div>` : `<p class="raid-hint">${esc(T('ds.l.nopath'))}</p>`}
+      <div class="raid-row"><button type="button" class="btn small" data-ds-lin="1">${esc(T('ds.l.show'))}</button></div>`;
+  }
+  function dsCard(ds) {
+    const on = DSX.open === ds.id, sec = (k, body, extra = '') => {
+      const o = DSX.sec.has(dsSecKey(ds.id, k));
+      return `<div class="ds-sec${o ? ' on' : ''}"><button type="button" class="ds-sec-h" data-ds-sec="${k}" aria-expanded="${o}"><span>${esc(T(`ds.sec.${k}`))}</span>${extra}</button>${o ? `<div class="ds-sec-b">${body}</div>` : ''}</div>`;
+    };
+    let form = '';
+    if (on) {
+      const shs = (S.model.stakeholders || []).filter(s => !s.inactive || s.id === ds.owner), isSh = shs.some(s => s.id === ds.owner), free = (!!ds.owner && !isSh) || DSX.free === ds.id;
+      const phases = S.model.phases || [], fmts = dsHelpers().formats || DS_FORMATS, vol = ds.volume || {};
+      const general = `<label>${esc(T('ds.f.desc'))}<textarea data-dsf="description" rows="3" maxlength="2000">${esc(ds.description || '')}</textarea></label>
+        <div class="raid-two"><label>${esc(T('ds.f.domain'))}<input data-dsf="domain" list="ds-domains" value="${esc(ds.domain || '')}" maxlength="60" autocomplete="off"></label><label>${esc(T('ds.f.layer'))}${dsSel('data-dss="layer"', ds.layer || '', [['', '–'], ...Object.keys(DL).map(k => [k, layerInfo(k).label])], T('ds.f.layer'))}</label></div>
+        <div class="raid-two"><label>${esc(T('ds.f.owner'))}${dsSel('data-ds-owner="1"', free ? '__free' : isSh ? ds.owner : '', [['', T('ds.f.owner.none')], ...shs.map(s => [s.id, s.name || s.id]), ['__free', T('ds.f.owner.free')]], T('ds.f.owner'))}${free ? `<input data-dsf="owner" value="${esc(isSh ? '' : ds.owner || '')}" maxlength="120" placeholder="${esc(T('ds.f.owner.ph'))}" aria-label="${esc(T('ds.f.owner'))}" autocomplete="off">` : ''}</label>
+          <label>${esc(T('ds.f.steward'))}<input data-dsf="steward" value="${esc(ds.steward || '')}" maxlength="120" autocomplete="off"></label></div>
+        <div class="raid-links-edit"><span>${esc(T('ds.f.classes'))}</span>${Object.keys(DATA).map(k => `<button type="button" class="fnd-chip${(ds.classes || []).includes(k) ? ' on' : ''}" data-ds-cls="${esc(k)}" aria-pressed="${(ds.classes || []).includes(k)}" style="--s:${colorVar(DATA[k].color) || 'var(--muted)'}">${esc(DATA[k].short || k)}</button>`).join('')}</div>
+        <div class="raid-two"><label>${esc(T('ds.f.format'))}${dsSel('data-dss="format"', ds.format || '', [['', '–'], ...fmts.map(f => [f, f === 'other' ? T('ds.fmt.other') : f])], T('ds.f.format'))}</label>
+          <label>${esc(T('ds.f.fresh'))}<input data-dsf="freshness" list="ds-dur" value="${esc(ds.freshness || '')}" placeholder="${esc(T('ds.f.fresh.ph'))}" autocomplete="off" spellcheck="false"></label></div>
+        <span class="cost-hint">${esc(T('ds.f.fresh.hint'))}</span>
+        <div class="raid-two"><label>${esc(T('ds.f.perDay'))}<input data-dsv="perDay" type="number" min="0" step="any" value="${vol.perDay ?? ''}"></label><label>${esc(T('ds.f.ret'))}<input data-dsv="retentionDays" type="number" min="0" step="1" value="${vol.retentionDays ?? ''}" placeholder="${DS_DEFAULT_DAYS}"></label></div>
+        ${phases.length ? `<label>${esc(T('ds.f.phase'))}${dsSel('data-dss="phase"', ds.phase || '', [['', T('ds.f.phase.any')], ...phases.map(p => [p.id, p.name || p.id])], T('ds.f.phase'))}</label>` : ''}`;
+      const n = (ds.schema || []).length, q = (ds.quality || []).length;
+      form = `<div class="raid-form"><label>${esc(T('ds.f.name'))}<input data-ds-name="1" value="${esc(ds.name)}" maxlength="120" autocomplete="off" spellcheck="false"></label>
+        ${sec('general', general)}${sec('schema', dsSchema(ds), n ? `<em>${n}</em>` : '')}${sec('quality', dsQuality(ds), q ? `<em>${q}</em>` : '')}${sec('contract', dsContract(ds), ds.contract ? `<em>${esc(ds.contract.version)} · ${esc(T(`ds.cst.${ds.contract.status}`))}</em>` : '')}${sec('lineage', dsLineage(ds))}
+        <button class="btn small danger" data-ds-del="1">${esc(T('ds.del'))}</button></div>`;
+    }
+    return `<div class="raid ds-card${on ? ' on' : ''}" data-id="${esc(ds.id)}" style="--s:${ds.layer ? layerInfo(ds.layer).color : 'var(--muted)'}">${dsHead(ds, on)}${form}</div>`;
+  }
+  function renderDsList(cat) {
+    const box = $('#ds-list');
+    if (!box || !S.model) return;
+    cat = cat || catalog(S.model);
+    const keep = box.parentElement?.scrollTop || 0, decl = cat.filter(c => c.declared), und = cat.filter(c => !c.declared && (!DSX.q || c.name.toLowerCase().includes(DSX.q.toLowerCase()))), shown = decl.filter(c => dsMatch(c.ds));
+    const domains = [...new Set(decl.map(c => c.ds.domain).filter(Boolean))];
+    box.innerHTML = `<datalist id="ds-types">${DS_TYPES.map(t => `<option value="${t}"></option>`).join('')}</datalist><datalist id="ds-dur">${DUR_TIERS.map(v => `<option value="${v}"></option>`).join('')}</datalist><datalist id="ds-domains">${domains.map(d => `<option value="${esc(d)}"></option>`).join('')}</datalist>`
+      + (!cat.length ? `<p class="fnd-empty">${esc(T('ds.empty'))}</p>` : (shown.length ? shown.map(c => dsCard(c.ds)).join('') : decl.length ? `<p class="fnd-empty">${esc(T('ds.noMatch'))} <button class="btn small" data-ds-clear="1">${esc(T('ver.f.clear'))}</button></p>` : ''))
+      + (und.length ? `<div class="ds-undoc"><h4>${esc(T('ds.undoc'))} <small>${und.length}</small></h4><p class="raid-hint">${esc(T('ds.undoc.hint'))}</p>${und.map(c => `<div class="ds-und"><button type="button" class="ds-und-n" data-lin="${esc(c.name)}" title="${esc(T('lin.show', { name: c.name }))}">${esc(c.name)}</button><small>${esc(T('ds.undoc.n', c.edges))}</small><button type="button" class="btn small" data-ds-doc="${esc(c.name)}">${esc(T('ds.undoc.doc'))}</button></div>`).join('')}</div>` : '');
+    if (box.parentElement) box.parentElement.scrollTop = keep;
+  }
+  function renderDs(force) {
+    if (!dsPanel || !S.model || !$('.pane[data-pane="data"]')?.classList.contains('on')) return;
+    const a = document.activeElement;
+    if (!force && a && dsPanel.contains(a) && a.matches('input, textarea, select')) return;   // no pisar lo que se está escribiendo
+    if (DSX.open && !dsById(DSX.open)) DSX.open = null;
+    if (DSX.wide && !dsById(DSX.wide)) DSX.wide = null;
+    dsMemo = new Map();
+    const cat = catalog(S.model);
+    renderDsBar(S.model.datasets || [], cat);
+    renderDsList(cat);
+    if (DSX.focus && force) { const f = $(DSX.focus, dsPanel); DSX.focus = ''; f?.focus(); if (f?.select) f.select(); }
+  }
+  // Abre una ficha (por id o nombre) en la pestaña Datos, quitando los filtros que la esconderían
+  function dsOpen(v) {
+    const ds = dsFind(v);
+    if (!ds) return;
+    DSX.open = ds.id; DSX.q = ''; DSX.domain = ''; DSX.layer = ''; DSX.prod = ''; DSX.cst = '';
+    DSX.sec.add(dsSecKey(ds.id, 'general'));
+    $('.tab[data-tab="data"]')?.click();   // el clic ya repinta la pestaña
+    $(`#ds-list .ds-card[data-id="${CSS.escape(ds.id)}"]`)?.scrollIntoView({ block: 'start' });
+    if (matchMedia('(max-width: 760px)').matches) $('#main').classList.add('open');
+  }
+  // Documenta un nombre que solo se usa en conexiones: crea el conjunto con la capa del destino de su primera conexión
+  function dsDocument(name) {
+    const have = dsFind(name);
+    if (have) return dsOpen(have.id);
+    const c = catalog(S.model).find(x => dsK(x.name) === dsK(name)), e = dsEdges(S.model, name)[0], to = e && S.model.nodes.find(n => n.id === e.to), ly = to ? layerOf(to).value : '';
+    if ((S.model.datasets || []).length >= DS_MAX) return void toast(T('ds.max', DS_MAX));
+    const id = addDataset({ name: c?.name || String(name), ...(ly ? { layer: ly } : {}) });
+    if (id) dsOpen(id);
+  }
+  function dsNew() {
+    if ((S.model.datasets || []).length >= DS_MAX) return void toast(T('ds.max', DS_MAX));
+    let n = 1, name = T('ds.new.name');
+    while ((S.model.datasets || []).some(d => dsK(d.name) === dsK(name))) name = `${T('ds.new.name')}_${++n}`;
+    const id = addDataset({ name });
+    if (id) { DSX.focus = '[data-ds-name]'; dsOpen(id); }
+  }
+  const dsRefreshHead = card => { const ds = card && dsById(card.dataset.id); if (!ds) return; dsMemo = new Map(); card.querySelector('.ds-top').outerHTML = dsHead(ds, DSX.open === ds.id); card.style.setProperty('--s', ds.layer ? layerInfo(ds.layer).color : 'var(--muted)'); };
+  const dsList = (ds, key) => (ds[key] || []).map(x => ({ ...x }));   // copia editable del esquema o de las reglas; todo pasa por cleanCatalog en updateDataset
+  dsPanel?.addEventListener('input', ev => {
+    const f = ev.target;
+    if (f.id === 'ds-q') { DSX.q = f.value; return renderDsList(); }
+    if (f.dataset?.dsf === 'freshness') f.setAttribute('aria-invalid', !!f.value.trim() && normDur(f.value) == null);
+  });
+  // Un cambio de campo = un paso de historial (updateDataset); los textos se aplican al salir del campo o con Intro
+  dsPanel?.addEventListener('change', ev => {
+    const f = ev.target, d0 = f.dataset;
+    if (f.id === 'ds-fdom') { DSX.domain = f.value; return renderDs(true); }
+    if (f.id === 'ds-fcst') { DSX.cst = f.value; return renderDs(true); }
+    const card = f.closest('.ds-card'), ds = card && dsById(card.dataset.id);
+    if (!ds) return;
+    const set = (patch, re) => { if (updateDataset(ds.id, patch)) { if (re) renderDs(true); else dsRefreshHead(card); } };
+    if (d0.dsName != null) {
+      const v = f.value.trim();
+      if (!v || v === ds.name) { f.value = ds.name; return; }
+      if (!renameDatasetApi(ds.id, v)) { toast(T('ds.rename.clash', v)); f.value = ds.name; return; }
+      return renderDs(true);
+    }
+    if (d0.dsf) {
+      let v = f.value;
+      if (d0.dsf === 'freshness') { v = v.trim(); if (v) { const n = normDur(v); if (n == null) return; f.value = v = n; } }
+      return set({ [d0.dsf]: v });
+    }
+    if (d0.dss) return set({ [d0.dss]: f.value }, true);
+    if (d0.dsOwner != null) { DSX.free = f.value === '__free' ? ds.id : null; return f.value === '__free' ? renderDs(true) : set({ owner: f.value }, true); }
+    if (d0.dsv) { const vol = { ...(ds.volume || {}) }; if (f.value === '') delete vol[d0.dsv]; else vol[d0.dsv] = +f.value; return set({ volume: vol }); }
+    const row = f.closest('[data-i]'), i = row ? +row.dataset.i : -1;
+    if (d0.dsc || d0.dsck) {
+      const sc = dsList(ds, 'schema'), c = sc[i];
+      if (!c) return;
+      if (d0.dsc) { const v = f.value.trim(); if (d0.dsc === 'name' && !v) { f.value = c.name; return; } if (v) c[d0.dsc] = v; else delete c[d0.dsc]; }
+      else c[d0.dsck] = f.checked;
+      return set({ schema: sc }, d0.dsc === 'name');   // un nombre nuevo cambia las columnas que ofrecen las reglas
+    }
+    if (d0.dsq) {
+      const q = dsList(ds, 'quality'), r = q[i];
+      if (!r) return;
+      if (f.value.trim()) r[d0.dsq] = f.value.trim(); else delete r[d0.dsq];
+      return set({ quality: q }, f.tagName === 'SELECT' && d0.dsq === 'rule');
+    }
+    if (d0.dsk) return set({ contract: { ...ds.contract, [d0.dsk]: f.value } }, d0.dsk === 'status');
+    if (d0.dsKadd != null && f.value) set({ contract: { ...ds.contract, consumers: [...(ds.contract.consumers || []), f.value] } }, true);
+  });
+  dsPanel?.addEventListener('click', async ev => {
+    const b = ev.target.closest('button');
+    if (!b) return;
+    const d0 = b.dataset, card = b.closest('.ds-card'), ds = card && dsById(card.dataset.id);
+    if (d0.dsAdd) return dsNew();
+    if (d0.dsLay != null) { DSX.layer = DSX.layer === d0.dsLay ? '' : d0.dsLay; return renderDs(true); }
+    if (d0.dsProdf != null) { DSX.prod = DSX.prod === d0.dsProdf ? '' : d0.dsProdf; return renderDs(true); }
+    if (d0.dsClear) { DSX.q = DSX.domain = DSX.layer = DSX.prod = DSX.cst = ''; return renderDs(true); }
+    if (d0.dsDoc) return dsDocument(d0.dsDoc);
+    if (d0.dsWide != null) { DSX.wide = DSX.wide ? null : card?.dataset.id || DSX.open; return renderDs(true); }
+    if (d0.lin) return void showLineage(d0.lin);
+    if (!ds) return;
+    const set = (patch, re = true) => { if (updateDataset(ds.id, patch) && re) renderDs(true); };
+    if (d0.dsToggle != null) { DSX.open = DSX.open === ds.id ? null : ds.id; DSX.wide = null; if (DSX.open) DSX.sec.add(dsSecKey(ds.id, 'general')); return renderDs(true); }
+    if (d0.dsStar != null) return set({ product: !ds.product });
+    if (d0.dsSec) { const k = dsSecKey(ds.id, d0.dsSec); if (!DSX.sec.delete(k)) DSX.sec.add(k); return renderDs(true); }
+    if (d0.dsCls) { const cl = ds.classes || []; return set({ classes: cl.includes(d0.dsCls) ? cl.filter(x => x !== d0.dsCls) : [...cl, d0.dsCls] }); }
+    if (d0.dsColadd != null) {
+      const sc = dsList(ds, 'schema');
+      if (sc.length >= DS_COLS) return void toast(T('ds.col.max', DS_COLS));
+      let n = sc.length + 1, nm = `${T('ds.col.new')}_${n}`;
+      while (sc.some(c => dsK(c.name) === dsK(nm))) nm = `${T('ds.col.new')}_${++n}`;
+      DSX.focus = `.ds-card[data-id="${ds.id}"] tr[data-i="${sc.length}"] [data-dsc="name"]`;
+      return set({ schema: [...sc, { name: nm }] });
+    }
+    for (const [a, fn] of [['dsColrm', (sc, i) => sc.splice(i, 1)], ['dsColup', (sc, i) => i > 0 && sc.splice(i - 1, 0, ...sc.splice(i, 1))], ['dsColdn', (sc, i) => i < sc.length - 1 && sc.splice(i + 1, 0, ...sc.splice(i, 1))]]) {
+      if (d0[a] != null) { const sc = dsList(ds, 'schema'); fn(sc, +d0[a]); return set({ schema: sc }); }
+    }
+    if (d0.dsQadd != null) {
+      const q = dsList(ds, 'quality');
+      if (q.length >= DS_RULES_MAX) return void toast(T('ds.q.max', DS_RULES_MAX));
+      const col = (ds.schema || []).find(c => c.key)?.name || (ds.schema || [])[0]?.name;
+      return set({ quality: [...q, { rule: (dsHelpers().rules || DS_RULES)[0] || 'not_null', ...(col ? { column: col } : {}) }] });
+    }
+    if (d0.dsQrm != null) { const q = dsList(ds, 'quality'); q.splice(+d0.dsQrm, 1); return set({ quality: q }); }
+    if (d0.dsKnew != null) return set({ contract: { version: '1.0.0', status: 'draft' } });
+    if (d0.dsKdel != null) { if (!await confirmBox({ title: T('ds.k.cf.title', ds.id), text: T('ds.k.cf.text'), ok: T('ds.k.del'), cancel: T('ver.cf.cancel'), danger: true })) return; return set({ contract: null }); }
+    if (d0.dsKrm) return set({ contract: { ...ds.contract, consumers: (ds.contract.consumers || []).filter(x => x !== d0.dsKrm) } });
+    if (d0.dsFocus) return focusTarget('node', d0.dsFocus);
+    if (d0.dsExport != null) return void exportContract(ds.id);
+    if (d0.dsLin != null) return void showLineage(ds.name);
+    if (d0.dsDel != null && await confirmBox({ title: T('ds.cf.title', ds.id), text: T('ds.cf.text', ds.name), ok: T('ds.del'), cancel: T('ver.cf.cancel'), danger: true })) { removeDataset(ds.id); renderDs(true); }
+  });
+  // Botones del inspector: abrir la ficha de un conjunto o documentarlo si no está declarado
+  $('#inspector').addEventListener('click', ev => {
+    const b = ev.target.closest('[data-ds-open], [data-ds-doc]');
+    if (b) { if (b.dataset.dsOpen) dsOpen(b.dataset.dsOpen); else dsDocument(b.dataset.dsDoc); }
+  });
+
   /* ---------- interesados: crear/cambiar/borrar, pestaña (fichas) y matriz RACI ---------- */
   const PEOPLE = { open: null, wide: false };   // ficha abierta; matriz RACI ampliada
   const SH_ORG_COLOR = { client: 'var(--p-cielo)', partner: 'var(--p-lavanda)', internal: 'var(--p-menta)' };
@@ -9477,6 +10022,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     if (c.metric === 'availability') return `${mt} ${nm(c.from)} → ${nm(c.to)} ≥ ${c.target != null ? `${numFmt(c.target, 4)}%` : '?'}`;
     if (c.metric === 'rpo' || c.metric === 'rto') return `${mt} ${nm(c.from)} → ${nm(c.to)} ≤ ${c.target != null ? `${numFmt(c.target, 2)} ${T('req.unit.h')}` : '?'}`;
     if (c.metric === 'cost') return `${mt} ≤ ${c.target != null ? money(c.target) : '?'}`;
+    if (c.metric === 'freshness') return `${mt}: ${c.ds || '?'} ≤ ${c.target != null ? `${numFmt(c.target, 2)} ${T('req.unit.h')}` : '?'}`;
     if (c.metric === 'encryption') return `${mt}: ${cn(c.cls)}`;
     return `${mt}: ${cn(c.cls)} → ${c.jur ? loc(JURS[c.jur]?.label) || c.jur : '?'}`;
   }
@@ -9522,9 +10068,10 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     const c = r.check || {}, m = S.model, ps = REQ_PARAMS[c.metric] || [];
     const sel = (attrs, cur, items, label) => `<select ${attrs} aria-label="${esc(label)}">${items.map(([v, t]) => `<option value="${esc(v)}"${String(v) === String(cur ?? '') ? ' selected' : ''}>${esc(t)}</option>`).join('')}</select>`;
     const nodes = [['', '–'], ...m.nodes.map(n => [n.id, n.label || n.id])];
-    const unit = { availability: '%', rpo: T('req.unit.h'), rto: T('req.unit.h'), cost: `${COST.currency} / ${T('adr.o.month')}` }[c.metric];
+    const unit = { availability: '%', rpo: T('req.unit.h'), rto: T('req.unit.h'), freshness: T('req.unit.h'), cost: `${COST.currency} / ${T('adr.o.month')}` }[c.metric];
     const fields = [
       ps.includes('from') ? `<label>${esc(T('req.chk.p.from'))}${sel('data-rc="from"', c.from, nodes, T('req.chk.p.from'))}</label><label>${esc(T('req.chk.p.to'))}${sel('data-rc="to"', c.to, nodes, T('req.chk.p.to'))}</label>` : '',
+      ps.includes('ds') ? `<label>${esc(T('req.chk.p.ds'))}${sel('data-rc="ds"', c.ds, [['', '–'], ...catalog(m).map(x => [x.name, x.name]), ...(c.ds && !catalog(m).some(x => x.key === dsK(c.ds)) ? [[c.ds, c.ds]] : [])], T('req.chk.p.ds'))}</label>` : '',
       ps.includes('target') ? `<label>${esc(T('req.chk.p.target'))} (${esc(unit)})<input type="number" min="0"${c.metric === 'availability' ? ' max="100"' : ''} step="any" data-rc="target" value="${c.target != null ? esc(c.target) : ''}" autocomplete="off"></label>` : '',
       ps.includes('cls') ? `<label>${esc(T('req.chk.p.cls'))}${sel('data-rc="cls"', c.cls, [['', '–'], ...Object.keys(DATA).map(k => [k, loc(DATA[k].label) || k])], T('req.chk.p.cls'))}</label>` : '',
       ps.includes('jur') ? `<label>${esc(T('req.chk.p.jur'))}${sel('data-rc="jur"', c.jur, [['', '–'], ...Object.keys(JURS).map(k => [k, loc(JURS[k].label) || k])], T('req.chk.p.jur'))}</label>` : ''
@@ -9759,6 +10306,47 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     return [...by.values()].sort((a, b) => (!a.team - !b.team) || a.team.localeCompare(b.team)).map(t => ({ ...t, owners: [...t.owners].sort(), stewards: [...t.stewards].sort() }));
   }
 
+  /* ---------- conjuntos de datos: API (todo pasa por cleanCatalog; deshacer como cualquier cambio) ---------- */
+  const dsCommit = (list, extra = {}) => { // list = nuevo m.datasets; extra = otros cambios del modelo (renombrar toca también las conexiones)
+    pushHistory();
+    Object.assign(S.model, extra);
+    if (list.length) S.model.datasets = list; else delete S.model.datasets;
+    changed(true);
+  };
+  function addDataset(d = {}) {
+    d = d && typeof d === 'object' ? d : {};
+    const cur = S.model.datasets || [];
+    if (cur.length >= DS_MAX || !dsText(d.name, 120) || cur.some(x => dsK(x.name) === dsK(d.name))) return '';
+    const list = cleanCatalog([...cur, { ...d, id: '' }], S.model, dsHelpers());
+    if (list.length !== cur.length + 1) return '';
+    dsCommit(list);
+    return list[list.length - 1].id;
+  }
+  function updateDataset(id, patch) {
+    const ds = dsById(id);
+    if (!ds || !patch || typeof patch !== 'object') return false;
+    const { id: _i, name: _n, ...rest } = patch;   // el id no cambia; el nombre se cambia con renameDataset (arrastra las conexiones)
+    const list = cleanCatalog(S.model.datasets.map(x => (x === ds ? { ...ds, ...rest } : x)), S.model, dsHelpers());
+    if (list.length !== S.model.datasets.length) return false;
+    dsCommit(list);
+    return true;
+  }
+  function removeDataset(id) {
+    const ds = dsById(id);
+    if (!ds) return false;
+    dsCommit(S.model.datasets.filter(x => x !== ds));
+    return true;
+  }
+  function renameDatasetApi(id, name) {
+    const m2 = renameDataset(S.model, id, name);
+    if (m2 === S.model) return false;
+    dsCommit(m2.datasets, { edges: m2.edges });
+    return true;
+  }
+  const catalogApi = () => catalog(S.model).map(c => ({ ...c, ds: c.ds ? clone(c.ds) : null, nodes: [...c.nodes] }));
+  const freshnessApi = name => { const r = e2eOf(name); return { ...r, path: [...r.path] }; };
+  const storageApi = id => { const ds = dsFind(id); return ds ? storageEstimate(ds, { prices: dsPrices() }) : null; };
+
   // API para extensiones futuras (consola o scripts propios)
   window.Diagramon = {
     get model() { return clone(S.model); },
@@ -9768,7 +10356,8 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     select: ids => select({ kind: 'multi', ids: [].concat(ids) }), align: alignNodes,
     showPath, clearPath,
     lineage: ds => { const r = showLineage(ds); return r ? { origins: [...r.origins], consumers: [...r.consumers], hops: r.hops, nodes: [...r.nodes], edges: [...r.edges] } : null; },
-    datasets: () => datasetList().map(d => ({ ...d })),
+    datasets: () => datasetList().map(d => ({ ...d })), contractYaml, contractsYaml,
+    catalog: catalogApi, dataset: v => { const d = dsFind(v); return d ? clone(d) : null; }, addDataset, updateDataset, removeDataset, renameDataset: renameDatasetApi, freshness: freshnessApi, storage: storageApi,
     saveVersion, openVersion, compareVersion, deleteVersion,
     costBreakdown: (by = 'team') => costBreakdown(S.model, by), compareCosts: (a = null, b = null) => { const A = cstSource(a || null), B = cstSource(b || null); return A && B ? cstCompare(A, B) : null; }, openCosts,
     setFilter, clearFilter, get filter() { return clone(S.filter); },

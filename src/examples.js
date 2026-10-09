@@ -364,25 +364,25 @@ window.DIAGRAMON_EXAMPLES = [
         { id: 'obs',     label: { en: 'Monitoring and cost', es: 'Monitoreo y costos' }, type: 'monitor', group: 'gGov', sub: { en: 'Operations, FinOps', es: 'Operación, FinOps' }, x: 1900, y: 950, desc: { en: 'Platform health, usage and cost visibility.', es: 'Salud de la plataforma, uso y visibilidad de costos.' } }
       ],
       edges: [
-        { from: 'erp', to: 'ingb', label: 'Batch', style: 'batch', encrypted: true, data: ['confidential'] },
-        { from: 'crm', to: 'ingb', label: 'Batch', style: 'batch', encrypted: true, data: ['pii'] },
-        { from: 'files', to: 'ingb', label: { en: 'Files', es: 'Archivos' }, style: 'batch', encrypted: true, data: ['internal'] },
-        { from: 'opdb', to: 'ingc', label: 'CDC', style: 'stream', encrypted: true, data: ['pii', 'confidential'] },
-        { from: 'evt', to: 'ings', label: { en: 'Events', es: 'Eventos' }, style: 'stream', encrypted: true, data: ['internal'] },
-        { from: 'ingb', to: 'bronze', style: 'data', encrypted: true, data: ['pii', 'confidential'] },
-        { from: 'ingc', to: 'bronze', style: 'data', encrypted: true, data: ['pii', 'confidential'] },
-        { from: 'ings', to: 'bronze', style: 'stream', encrypted: true, data: ['internal'] },
-        { from: 'bronze', to: 'silver', label: { en: 'clean · conform', es: 'limpiar · conformar' }, style: 'data', encrypted: true, data: ['pii', 'confidential'] },
-        { from: 'silver', to: 'gold', label: { en: 'model', es: 'modelar' }, style: 'data', encrypted: true, data: ['internal'] },
+        { from: 'erp', to: 'ingb', label: 'Batch', style: 'batch', encrypted: true, data: ['confidential'], datasets: ['erp_orders_raw', 'orders', 'sales_daily'], latency: '1d' },
+        { from: 'crm', to: 'ingb', label: 'Batch', style: 'batch', encrypted: true, data: ['pii'], datasets: ['crm_customers_raw', 'customers', 'customer_360'], latency: '1d' },
+        { from: 'files', to: 'ingb', label: { en: 'Files', es: 'Archivos' }, style: 'batch', encrypted: true, data: ['internal'], datasets: ['files_products_raw', 'products'], latency: '1d' },
+        { from: 'opdb', to: 'ingc', label: 'CDC', style: 'stream', encrypted: true, data: ['pii', 'confidential'], datasets: ['opdb_changes_raw'], latency: '15m' },
+        { from: 'evt', to: 'ings', label: { en: 'Events', es: 'Eventos' }, style: 'stream', encrypted: true, data: ['internal'], datasets: ['app_events_raw'], latency: '5m' },
+        { from: 'ingb', to: 'bronze', style: 'data', encrypted: true, data: ['pii', 'confidential'], datasets: ['erp_orders_raw', 'crm_customers_raw', 'files_products_raw', 'orders', 'customers', 'products', 'sales_daily', 'customer_360'], latency: '15m' },
+        { from: 'ingc', to: 'bronze', style: 'data', encrypted: true, data: ['pii', 'confidential'], datasets: ['opdb_changes_raw'], latency: '15m' },
+        { from: 'ings', to: 'bronze', style: 'stream', encrypted: true, data: ['internal'], datasets: ['app_events_raw'], latency: '5m' },
+        { from: 'bronze', to: 'silver', label: { en: 'clean · conform', es: 'limpiar · conformar' }, style: 'data', encrypted: true, data: ['pii', 'confidential'], datasets: ['orders', 'customers', 'products', 'sales_daily', 'customer_360'], latency: '1h' },
+        { from: 'silver', to: 'gold', label: { en: 'model', es: 'modelar' }, style: 'data', encrypted: true, data: ['internal'], datasets: ['orders', 'customers', 'products', 'sales_daily', 'customer_360'], latency: '1h' },
         { from: 'transf', to: 'silver', label: { en: 'builds', es: 'construye' }, style: 'control' },
         { from: 'transf', to: 'gold', label: { en: 'builds', es: 'construye' }, style: 'control' },
         { from: 'orch', to: 'ingb', label: { en: 'schedules', es: 'programa' }, style: 'control' },
         { from: 'orch', to: 'transf', label: { en: 'schedules', es: 'programa' }, style: 'control' },
-        { from: 'gold', to: 'sqlwh', style: 'data', encrypted: true, data: ['internal'] },
-        { from: 'sqlwh', to: 'sem', style: 'data', encrypted: true, data: ['internal'] },
-        { from: 'sem', to: 'bi', label: 'SQL', encrypted: true, data: ['internal'] },
-        { from: 'gold', to: 'ds', style: 'data', encrypted: true, data: ['internal'] },
-        { from: 'sqlwh', to: 'apps', label: 'API', encrypted: true, data: ['internal'] },
+        { from: 'gold', to: 'sqlwh', style: 'data', encrypted: true, data: ['internal'], datasets: ['sales_daily', 'customer_360'], latency: '15m' },
+        { from: 'sqlwh', to: 'sem', style: 'data', encrypted: true, data: ['internal'], datasets: ['sales_daily'], latency: '5m' },
+        { from: 'sem', to: 'bi', label: 'SQL', encrypted: true, data: ['internal'], datasets: ['sales_daily'], latency: '5m' },
+        { from: 'gold', to: 'ds', style: 'data', encrypted: true, data: ['internal'], datasets: ['customer_360'], latency: '1h' },
+        { from: 'sqlwh', to: 'apps', label: 'API', encrypted: true, data: ['internal'], datasets: ['customer_360'], latency: '5m' },
         { from: 'catalog', to: 'silver', label: { en: 'governs', es: 'gobierna' }, style: 'optional' },
         { from: 'dq', to: 'silver', label: { en: 'checks', es: 'verifica' }, style: 'optional' },
         { from: 'iam', to: 'catalog', label: { en: 'access', es: 'acceso' }, style: 'optional' },
@@ -459,6 +459,150 @@ window.DIAGRAMON_EXAMPLES = [
           raci: { en: { '*': 'R', Platform: 'A' }, es: { '*': 'R', Plataforma: 'A' } } },
         { id: 'SH-006', name: { en: 'Client sponsor', es: 'Patrocinador del cliente' }, role: { en: 'Executive sponsor', es: 'Patrocinador ejecutivo' }, org: 'client', versions: true,
           raci: { en: { '*': 'I' }, es: { '*': 'I' } } }
+      ],
+      // Catálogo de datasets: 10 conjuntos (3 capas + 2 productos de datos). Los nombres unen el catálogo con «datasets» de las aristas y no se traducen.
+      // Un solo dataset rompe su SLA a propósito (demo): sales_daily (SLA 4 h). Ruta que lo rompe: erp → ingesta batch (1d, carga nocturna)
+      // → bronce (15m) → plata (1h) → oro (1h) → almacén SQL (15m) → capa semántica (5m) → bi (5m), unas 26 h 40 min.
+      datasets: [
+        { id: 'DS-001', name: 'erp_orders_raw', layer: 'bronze', domain: { en: 'Sales', es: 'Ventas' }, format: 'parquet', freshness: '2d', volume: { perDay: 1.2, retentionDays: 365 },
+          description: { en: 'Orders as received from the ERP, unchanged. Kept for reprocessing and audit.', es: 'Pedidos tal como llegan del ERP, sin cambios. Se guardan para reprocesar y auditar.' },
+          owner: { en: 'Data platform', es: 'Plataforma de datos' }, steward: { en: 'Data engineering', es: 'Ingeniería de datos' },
+          schema: [
+            { name: 'order_id', type: 'string', key: true, nullable: false },
+            { name: 'customer_ref', type: 'string' },
+            { name: 'order_date', type: 'date' },
+            { name: 'amount', type: 'decimal', desc: { en: 'Net amount in EUR', es: 'Importe neto en EUR' } },
+            { name: 'currency', type: 'string' }
+          ],
+          quality: [
+            { rule: 'not_null', column: 'order_id', severity: 'high' },
+            { rule: 'unique', column: 'order_id', severity: 'high' },
+            { rule: 'range', column: 'amount', param: '0..10000000', severity: 'medium' }
+          ] },
+        { id: 'DS-002', name: 'crm_customers_raw', layer: 'bronze', domain: { en: 'Customers', es: 'Clientes' }, classes: ['pii'], format: 'parquet', freshness: '2d', volume: { perDay: 0.3, retentionDays: 730 },
+          description: { en: 'Customer records as received from the CRM. Personal data from the first load.', es: 'Registros de clientes tal como llegan del CRM. Datos personales desde la primera carga.' },
+          owner: 'SH-003', steward: { en: 'Data governance', es: 'Gobierno de datos' },
+          schema: [
+            { name: 'customer_id', type: 'string', key: true, nullable: false },
+            { name: 'email', type: 'string', pii: true, desc: { en: 'Customer e-mail', es: 'Correo del cliente' } },
+            { name: 'full_name', type: 'string', pii: true },
+            { name: 'country', type: 'string' },
+            { name: 'created_at', type: 'timestamp' }
+          ],
+          quality: [
+            { rule: 'not_null', column: 'customer_id', severity: 'high' },
+            { rule: 'regex', column: 'email', param: '^[^@]+@[^@]+$', severity: 'medium' }
+          ] },
+        { id: 'DS-003', name: 'files_products_raw', layer: 'bronze', domain: { en: 'Product', es: 'Producto' }, format: 'csv', freshness: '2d', volume: { perDay: 0.2, retentionDays: 365 },
+          description: { en: 'Product catalogue files from partners and spreadsheets, as received.', es: 'Archivos de catálogo de productos de socios y hojas de cálculo, tal como llegan.' },
+          owner: { en: 'Data platform', es: 'Plataforma de datos' }, steward: { en: 'Data engineering', es: 'Ingeniería de datos' },
+          schema: [
+            { name: 'sku', type: 'string', key: true, nullable: false },
+            { name: 'name', type: 'string' },
+            { name: 'category', type: 'string' },
+            { name: 'unit_price', type: 'decimal' }
+          ],
+          quality: [
+            { rule: 'unique', column: 'sku', severity: 'high' },
+            { rule: 'not_null', column: 'name', severity: 'medium' }
+          ] },
+        { id: 'DS-004', name: 'opdb_changes_raw', layer: 'bronze', phase: 'wave1', domain: { en: 'Operations', es: 'Operaciones' }, classes: ['pii', 'confidential'], format: 'delta', freshness: '1h', volume: { perDay: 0.8, retentionDays: 90 },
+          description: { en: 'Row-level changes captured from the operational database (inserts, updates, deletes).', es: 'Cambios a nivel de fila capturados de la base operacional (inserciones, actualizaciones, borrados).' },
+          owner: 'SH-001', steward: { en: 'Data engineering', es: 'Ingeniería de datos' },
+          schema: [
+            { name: 'change_id', type: 'string', key: true, nullable: false },
+            { name: 'row_id', type: 'string' },
+            { name: 'operation', type: 'string', desc: { en: 'insert, update or delete', es: 'insert, update o delete' } },
+            { name: 'changed_at', type: 'timestamp' },
+            { name: 'email', type: 'string', pii: true }
+          ],
+          quality: [
+            { rule: 'not_null', column: 'change_id', severity: 'high' },
+            { rule: 'accepted_values', column: 'operation', param: 'insert|update|delete', severity: 'medium' }
+          ] },
+        { id: 'DS-005', name: 'app_events_raw', layer: 'bronze', phase: 'wave2', domain: { en: 'Product', es: 'Producto' }, format: 'json', freshness: '1h', volume: { perDay: 4, retentionDays: 30 },
+          description: { en: 'Events from applications and devices. Only exists if streaming is confirmed.', es: 'Eventos de aplicaciones y dispositivos. Solo existe si se confirma el streaming.' },
+          owner: { en: 'Product teams', es: 'Equipos de producto' }, steward: { en: 'Data engineering', es: 'Ingeniería de datos' },
+          schema: [
+            { name: 'event_id', type: 'string', key: true, nullable: false },
+            { name: 'event_type', type: 'string' },
+            { name: 'user_ref', type: 'string' },
+            { name: 'occurred_at', type: 'timestamp' }
+          ],
+          quality: [
+            { rule: 'not_null', column: 'event_id', severity: 'high' },
+            { rule: 'accepted_values', column: 'event_type', param: 'view|click|purchase', severity: 'low' }
+          ] },
+        { id: 'DS-006', name: 'orders', layer: 'silver', domain: { en: 'Sales', es: 'Ventas' }, format: 'delta', freshness: '2d', volume: { perDay: 0.5, retentionDays: 730 },
+          description: { en: 'Deduplicated, typed orders. Base for the sales models.', es: 'Pedidos deduplicados y tipados. Base de los modelos de ventas.' },
+          owner: 'SH-003', steward: { en: 'Data engineering', es: 'Ingeniería de datos' },
+          schema: [
+            { name: 'order_id', type: 'string', key: true, nullable: false },
+            { name: 'customer_id', type: 'string' },
+            { name: 'order_date', type: 'date' },
+            { name: 'amount', type: 'decimal' },
+            { name: 'status', type: 'string', desc: { en: 'open, paid or cancelled', es: 'abierto, pagado o cancelado' } }
+          ],
+          quality: [
+            { rule: 'not_null', column: 'order_id', severity: 'high' },
+            { rule: 'accepted_values', column: 'status', param: 'open|paid|cancelled', severity: 'medium' },
+            { rule: 'range', column: 'amount', param: '0..10000000', severity: 'medium' }
+          ] },
+        { id: 'DS-007', name: 'customers', layer: 'silver', domain: { en: 'Customers', es: 'Clientes' }, classes: ['pii'], format: 'delta', freshness: '2d', volume: { perDay: 0.1, retentionDays: 730 },
+          description: { en: 'One row per customer, with personal data masked where the use case allows it.', es: 'Una fila por cliente, con los datos personales enmascarados cuando el caso de uso lo permite.' },
+          owner: 'SH-003', steward: { en: 'Data governance', es: 'Gobierno de datos' },
+          schema: [
+            { name: 'customer_id', type: 'string', key: true, nullable: false },
+            { name: 'email', type: 'string', pii: true, nullable: true, desc: { en: 'Masked for most readers', es: 'Enmascarado para la mayoría de lectores' } },
+            { name: 'full_name', type: 'string', pii: true },
+            { name: 'country', type: 'string' }
+          ],
+          quality: [
+            { rule: 'unique', column: 'customer_id', severity: 'high' },
+            { rule: 'regex', column: 'email', param: '^[^@]+@[^@]+$', severity: 'medium' }
+          ] },
+        { id: 'DS-008', name: 'products', layer: 'silver', domain: { en: 'Product', es: 'Producto' }, format: 'delta', freshness: '2d', volume: { perDay: 0.01, retentionDays: 365 },
+          description: { en: 'Conformed product list, one row per SKU.', es: 'Lista de productos conformada, una fila por SKU.' },
+          owner: { en: 'Product management', es: 'Gestión de producto' }, steward: { en: 'Data engineering', es: 'Ingeniería de datos' },
+          schema: [
+            { name: 'sku', type: 'string', key: true, nullable: false },
+            { name: 'name', type: 'string' },
+            { name: 'category', type: 'string' },
+            { name: 'unit_price', type: 'decimal' }
+          ],
+          quality: [
+            { rule: 'unique', column: 'sku', severity: 'high' },
+            { rule: 'range', column: 'unit_price', param: '0..100000', severity: 'low' }
+          ] },
+        { id: 'DS-009', name: 'sales_daily', layer: 'gold', product: true, domain: { en: 'Sales', es: 'Ventas' }, format: 'delta', freshness: '4h', volume: { perDay: 0.01, retentionDays: 1825 },
+          description: { en: 'Daily revenue by category, the data product behind the sales dashboards.', es: 'Ingresos diarios por categoría, el producto de datos detrás de los tableros de ventas.' },
+          owner: 'SH-003', steward: { en: 'Analytics', es: 'Analítica' },
+          schema: [
+            { name: 'sale_date', type: 'date', key: true, nullable: false },
+            { name: 'category', type: 'string', key: true },
+            { name: 'orders_count', type: 'int' },
+            { name: 'revenue', type: 'decimal', desc: { en: 'In EUR', es: 'En EUR' } }
+          ],
+          quality: [
+            { rule: 'not_null', column: 'sale_date', severity: 'high' },
+            { rule: 'range', column: 'revenue', param: '0..1000000000', severity: 'medium' }
+          ],
+          contract: { version: '1.0.0', status: 'agreed', consumers: ['bi'], terms: { en: 'Daily. One row per day and category. Revenue in EUR.', es: 'Diario. Una fila por día y categoría. Ingresos en EUR.' } } },
+        { id: 'DS-010', name: 'customer_360', layer: 'gold', product: true, domain: { en: 'Customers', es: 'Clientes' }, classes: ['pii'], format: 'delta', freshness: '2d', volume: { perDay: 0.1, retentionDays: 365 },
+          description: { en: 'One view per customer with value and last order, for data science and applications.', es: 'Una vista por cliente con valor y último pedido, para ciencia de datos y aplicaciones.' },
+          owner: 'SH-003', steward: { en: 'Analytics', es: 'Analítica' },
+          schema: [
+            { name: 'customer_id', type: 'string', key: true, nullable: false },
+            { name: 'email', type: 'string', pii: true },
+            { name: 'lifetime_value', type: 'decimal' },
+            { name: 'last_order_date', type: 'date' },
+            { name: 'segment', type: 'string' }
+          ],
+          quality: [
+            { rule: 'unique', column: 'customer_id', severity: 'high' },
+            { rule: 'not_null', column: 'segment', severity: 'low' }
+          ],
+          contract: { version: '1.0.0', status: 'draft', consumers: ['ds', 'apps'], terms: { en: 'To be agreed with the data science and application teams.', es: 'Por acordar con los equipos de ciencia de datos y aplicaciones.' } } }
       ]
     }
   }

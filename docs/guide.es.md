@@ -4,6 +4,7 @@
 
 **Contenido**
 
+- [El panel lateral](#el-panel-lateral)
 - [1. Tu primer diagrama](#1-tu-primer-diagrama)
 - [2. Conectar](#2-conectar)
 - [3. Editar y agrupar](#3-editar-y-agrupar)
@@ -15,6 +16,7 @@
   - [Linaje de datos](#linaje-de-datos)
   - [Residencia de datos](#residencia-de-datos)
   - [Capas del data lake](#capas-del-data-lake)
+  - [Catálogo de datos y contratos de datos](#catálogo-de-datos-y-contratos-de-datos)
 - [7. Observaciones de revisión](#7-observaciones-de-revisión)
   - [Revisión de seguridad automática](#revisión-de-seguridad-automática)
   - [Mapeo de cumplimiento](#mapeo-de-cumplimiento)
@@ -30,6 +32,10 @@
 - [Vistas](#vistas)
 - [Niveles C4 (drill-down)](#niveles-c4-drill-down)
 - [Atajos de teclado](#atajos-de-teclado)
+
+## El panel lateral
+
+El panel de la derecha tiene sus pestañas en dos filas. La primera fila tiene tres grupos: **Diseño** (*Componentes*, *Plantillas*, *Versiones*, *Texto*, *JSON*), **Gobierno** (*Revisión*, *ADR*, *Requisitos*, *RAID*, *Interesados*) y **Datos** (*Catálogo*). Haz clic en un grupo para abrir la pestaña que usaste por última vez en él. El contador de hallazgos abiertos también aparece en el grupo **Gobierno**, así lo ves aunque tengas abierto otro grupo. Dentro de una fila, las flechas se mueven entre las pestañas (y entre los grupos en la primera fila), **Inicio** va a la primera y **Fin** a la última. El panel mide 320 px de ancho por defecto; arrastra su borde para cambiarlo.
 
 ## 1. Tu primer diagrama
 
@@ -137,6 +143,49 @@ Un componente con capa lleva una franja de color en su borde izquierdo y una eti
 La leyenda **Capas** (exportaciones y ficha del documento, tecla **I**) lista las capas en uso; en la ficha del documento, una fila filtra por esa capa. El menú **Filtrar** tiene una sección *Capa* y la vista **Datos** resalta los componentes con capa.
 Las vistas *Contexto* y *Costo* ocultan las capas. Desde la consola: `Diagramon.layers()` y `Diagramon.setLayerNames('zones')`.
 
+### Catálogo de datos y contratos de datos
+
+Declara los conjuntos de datos que mueve tu arquitectura, con sus columnas, reglas de calidad y contrato, y comprueba que llegan dentro de su SLA de frescura. Un **conjunto declarado** es una ficha del catálogo. Un nombre escrito en una conexión es solo un nombre: mientras no se declare un conjunto con ese nombre, está **sin documentar**.
+
+- Abre la pestaña **Catálogo** (grupo **Datos**). **+ Conjunto** añade uno. La línea de resumen cuenta los conjuntos declarados, los productos de datos, los nombres sin documentar y los incumplimientos de SLA. Filtra por capa, por **★ Productos** o **No productos**, por dominio y por contrato, o escribe en el buscador.
+- Cada ficha tiene una cabecera con el id, el nombre, la capa, una insignia de frescura (**✓** cumple su SLA, **✗** no lo cumple, **?** desconocida) y una **★** que marca un producto de datos (haz clic para marcarlo o desmarcarlo). Debajo van el dominio y el dueño, la frescura real frente al SLA y la estimación de almacenamiento. Haz clic en la cabecera para abrir la ficha. Sus secciones son:
+  - **General**: descripción, dominio, capa, **Dueño** (un interesado, o *Otro (texto libre)…*), custodio, clases de datos, formato, **SLA de frescura**, volumen por día y retención, y la fase.
+  - **Esquema**: una fila por columna (nombre, tipo, **Clave**, **PII**, **Nulo**, descripción). **+ Columna**, los botones ▲ ▼ y ×, y **⤢ Ampliar** para una ventana grande.
+  - **Calidad**: **+ Regla** añade una regla con su columna, parámetro y severidad (no nulo, único, rango, patrón, valores aceptados, frescura o personalizada).
+  - **Contrato**: versión, estado (**Borrador**, **Acordado** u **Obsoleto**), consumidores (componentes) y términos. **Crear contrato**, **Exportar contrato** y **Quitar contrato**.
+  - **Linaje**: el camino más lento con la latencia de cada salto, y **Ver en el lienzo**, que resalta el linaje del conjunto.
+  - **Eliminar conjunto**, al pie, pide confirmación (puedes deshacerlo).
+  - Renombrar en el campo **Nombre** cambia también el nombre en cada conexión que lo lleva, en un solo paso de deshacer. Un nombre que ya usa otro conjunto se rechaza.
+- La lista **Sin documentar** al pie reúne los nombres de las conexiones que no tienen ficha. Haz clic en uno para ver su linaje, o pulsa **Documentar** para crear el conjunto; su capa es la del destino de su primera conexión.
+- Un **producto de datos** debe tener dueño y contrato; la pestaña Revisión lo indica si falta alguno.
+
+**Latencia** es un campo de cada conexión (**Latencia**, `15m`, `1h`, `1d`): el tiempo que tarda el dato en ese salto, como una ventana de lote o un intervalo de micro-lote. La **frescura de extremo a extremo** de un conjunto es la suma de las latencias a lo largo de su **camino más lento**, desde un origen de su linaje hasta un consumidor. Un salto sin latencia cuenta como cero y se muestra como **?** (el total se lee entonces *≥*). Es **desconocida** cuando el conjunto no tiene SLA o ningún camino tiene latencias. La ficha y el control de requisito **Frescura** (abajo) la usan.
+
+**Estimación de almacenamiento**: volumen por día × retención (365 días si no se indica), con el precio por GB-mes de su capa, según las tarifas orientativas de `src/config.js › datasets.storagePrice` (ver *Personalizar*). Es una estimación: aparece en la ficha, en el informe y en la comparación por fases (*Almac./mes*), y se mantiene aparte del costo de los componentes.
+
+**Fases**: un conjunto con fase existe desde esa fase en adelante, y la tabla de comparación de fases gana una columna *Conjuntos* cuando el diagrama tiene conjuntos, y una columna *Almac./mes* cuando algún conjunto tiene volumen.
+
+**Observaciones de revisión** (grupo *Catálogo de datos* de la pestaña **Revisión**):
+
+| Hallazgo | Gravedad | Salta cuando |
+|---|---|---|
+| Conjunto sin documentar | baja | Un nombre de las conexiones no tiene ficha (solo cuando el diagrama declara algún conjunto) |
+| Producto de datos sin dueño o sin contrato | media | Un producto de datos no tiene dueño, no tiene contrato, o no tiene ninguno de los dos |
+| Incumple el SLA de frescura | alta | La frescura de extremo a extremo supera el SLA del conjunto |
+| Columnas PII sin clasificar como PII | media | Una columna está marcada como PII pero el conjunto no tiene la clase *pii* |
+| Conjunto sensible en una conexión sin cifrar | alta | Un conjunto con clase sensible viaja por una conexión marcada *Sin cifrar* |
+| Consumidor fuera del linaje | baja | Un consumidor del contrato no lo alcanza el linaje del conjunto |
+| Sin reglas de calidad | baja | Un producto de datos o un conjunto de la capa oro no tiene reglas de calidad |
+
+**Exportación y consola**
+
+- **Exportar › Contratos de datos (YAML ODCS)** (solo aparece si el diagrama declara conjuntos) escribe un documento YAML por conjunto, separados por `---`. **Exportar contrato** de la ficha escribe un archivo para ese conjunto (`<nombre>.odcs.yaml`). El YAML sigue el Open Data Contract Standard **v3.2.0** y se escribe a mano, sin librerías. Los campos de Diagramon se asignan así: el nombre a `name` y al esquema; la versión y el estado (*borrador*, *acordado* como *active*, *obsoleto*); el dominio; la descripción al propósito y los términos al uso; las clases de datos a etiquetas; las columnas a las propiedades del esquema (tipo, clave, requerido, clasificación, descripción); las reglas de calidad a los chequeos de calidad; el SLA de frescura a la latencia y la retención a la retención del SLA; el dueño y el custodio a los miembros del equipo. Lo que el estándar no tiene campo (el id de Diagramon, la capa, el formato, los consumidores, la fase, el volumen diario y la marca de producto, como `dataProduct`) va a `customProperties`.
+- El **informe** tiene una sección *Catálogo de datos y contratos*: un resumen, una tabla de los conjuntos (dominio, capa, dueño, producto, frescura, contrato y almacenamiento), los nombres sin documentar y, para cada producto de datos, su esquema y sus reglas de calidad. El inventario de **Excel** añade una hoja *Conjuntos de datos* y las hojas *Columnas* y *Calidad* cuando tienen filas; la hoja *Conexiones* gana una columna *Latencia* cuando alguna conexión la tiene.
+- Desde la consola: `Diagramon.catalog()` (conjuntos declarados y nombres sin documentar, con sus conexiones y nodos), `Diagramon.dataset(idONombre)`, `Diagramon.addDataset({ name, … })` (devuelve el id nuevo, o una cadena vacía si se rechaza), `Diagramon.updateDataset(id, cambios)`, `Diagramon.removeDataset(id)`, `Diagramon.renameDataset(id, nombre)`, `Diagramon.freshness(nombre)` (`{ worst, path, hops, unknownHops, sla, state }`, tiempos en milisegundos), `Diagramon.storage(id)`, `Diagramon.contractYaml(idONombre)` y `Diagramon.contractsYaml()`. Los cambios se pueden deshacer con **`⌘Z`**.
+- Los diagramas sin conjuntos ni latencias exportan exactamente igual que antes.
+
+La plantilla *Lakehouse greenfield* trae diez conjuntos: cinco crudos en bronce, *orders*, *customers* y *products* en plata, y *sales_daily* y *customer_360* en oro como productos de datos. *sales_daily* está preparado para no cumplir su SLA de frescura, así que la pestaña **Revisión** muestra un hallazgo alto que conviene revisar.
+
 ## 7. Observaciones de revisión
 
 1. Selecciona un componente y pulsa **⚑ Levantar una observación**.
@@ -149,7 +198,7 @@ Diagramon recuerda el último nombre de revisor. Las exportaciones con leyenda l
 
 ### Revisión de seguridad automática
 
-Diagramon revisa el diagrama en busca de problemas de seguridad habituales y **solo avisa, nunca bloquea nada**. La pestaña **Revisión** (junto a *Versiones*) lista todos los hallazgos, agrupados por fuente y gravedad; su etiqueta muestra cuántos hay abiertos con el color del peor. El mismo número aparece en la línea sobre el lienzo (*⚑ N hallazgos*) y, en la vista **Seguridad**, cada componente con hallazgos lleva una pastilla *⚠ n*.
+Diagramon revisa el diagrama en busca de problemas de seguridad habituales y **solo avisa, nunca bloquea nada**. La pestaña **Revisión** (en el grupo **Gobierno**) lista todos los hallazgos, agrupados por fuente y gravedad; su etiqueta muestra cuántos hay abiertos con el color del peor. El mismo número aparece en la línea sobre el lienzo (*⚑ N hallazgos*) y, en la vista **Seguridad**, cada componente con hallazgos lleva una pastilla *⚠ n*.
 
 | Regla | Gravedad | Salta cuando |
 |---|---|---|
@@ -255,6 +304,7 @@ La pestaña **Requisitos** registra *lo que necesita el cliente*, para que cada 
   - *Costo*: el costo mensual total del diagrama no supera el objetivo.
   - *Cifrado*: toda conexión que lleva una clase de datos está marcada como cifrada; se listan las que fallan.
   - *Residencia*: ninguna conexión que cruza fronteras sin aprobar lleva una clase de datos sensible fuera de una jurisdicción (define antes las regiones de los componentes).
+  - *Frescura*: la frescura de extremo a extremo de un conjunto (la suma de las latencias de las conexiones de su camino más lento, ver *Catálogo de datos y contratos de datos*) no supera el objetivo en horas.
   Si faltan parámetros o no son válidos, el resultado es *desconocido* con el motivo.
 - **Hallazgos de revisión** (fuente *Requisitos*): un requisito *Acordado* **Debe** (medio) o **Debería** (bajo) sin decisión aceptada ni componente vinculado, y un requisito *Acordado* cuyo control falla (alto si es *Debe*, medio en los demás casos).
 - **Matriz** cambia la pestaña a una **matriz de trazabilidad**: una fila por requisito, una columna por decisión, ✓ donde están vinculados y las decisiones *aceptadas* resaltadas en verde. Haz clic en una celda para vincular o desvincular; **⤢ Ampliar** la abre en grande sobre el lienzo (**Cerrar** o Esc vuelve).
@@ -277,7 +327,7 @@ Abre la pestaña **RAID** para anotar *qué podría salir mal y qué estamos sup
 
 ### Interesados, RACI y aprobaciones
 
-Abre la pestaña **Interesados** (después de Versiones) para anotar a quienes deciden en el proyecto (arquitecto, CISO, dueño del dato, FinOps…) y qué aprueba cada uno. Cada interesado es una ficha con nombre, rol y una **organización** (*Cliente*, *Socio* o *Interno*), que se muestra como una pastilla de color. Usa **+ Interesado**, haz clic en una ficha para editarla, y el resumen cuenta los interesados y las áreas de decisión sin aprobador.
+Abre la pestaña **Interesados** (en el grupo **Gobierno**) para anotar a quienes deciden en el proyecto (arquitecto, CISO, dueño del dato, FinOps…) y qué aprueba cada uno. Cada interesado es una ficha con nombre, rol y una **organización** (*Cliente*, *Socio* o *Interno*), que se muestra como una pastilla de color. Usa **+ Interesado**, haz clic en una ficha para editarla, y el resumen cuenta los interesados y las áreas de decisión sin aprobador.
 
 - **Marcas de la ficha**: **Aprueba versiones** hace al interesado aprobador obligatorio de cada versión guardada. **Inactivo** (*dejó el proyecto*) significa que ya no se le exige nunca, pero sus firmas se conservan en el historial.
 - **Borrar** pide confirmación. Un interesado con firmas no se puede borrar, para que el historial de aprobaciones quede íntegro: el diálogo ofrece **Marcar inactivo** en su lugar.

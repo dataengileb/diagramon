@@ -71,7 +71,7 @@
              (es: req … tipo= prioridad= estado= fuente= control= clase= jurisdicción= enlaces=; tipos driver|impulsor, nfr|rnf, constraint|restricción, principle|principio;
              prioridades must|debe, should|debería, could|podría; estados draft|borrador, agreed|acordado, dropped|descartado). Un control (check=) es una función de aptitud
              que la app evalúa con lo que ya calcula (solo en requisitos acordados): availability|disponibilidad from= to= target=99.9 (es desde= hasta= objetivo=), rpo|rto from= to=
-             target=horas, cost|costo target=mensual, encryption|cifrado cls=pii, residency|residencia cls=pii jur=eu. links= lista ids de decisiones, nodos, grupos y conexiones (`origen->destino`).
+             target=horas, cost|costo target=mensual, encryption|cifrado cls=pii, residency|residencia cls=pii jur=eu, freshness|frescura ds=orders target=horas (es conjunto=). links= lista ids de decisiones, nodos, grupos y conexiones (`origen->destino`).
              El campo opcional va en la línea siguiente:   detail: "…"   (es: detalle:)
    Registro RAID: risk R-001: "Falta la licencia CDC" p=3 i=4 owner="PMO" status=open raised=2026-10-07 links=ADR-007,erp
              assumption A-001: "Volumen ≤ 2 TB/día" validation=pending due=2026-11-15 owner="Dueño del dato" links=ADR-002,REQ-003
@@ -86,7 +86,14 @@
    Interesados: stakeholder SH-001: "Ana Pérez" role="CISO" org=client raci="*:C,Seguridad:A,Data Platform:R" versions inactive
              (es: interesado … rol= org=cliente|socio|interno raci= versiones inactivo). raci= lista área:letra (R responsable, A aprueba, C consultado, I informado);
              `*` vale para todas las áreas; las áreas son las de las decisiones (ADR) y no pueden llevar comas; si alguna lleva espacios, la lista entera va entre comillas. `versions` = aprueba versiones; `inactive` = ya no participa.
-   El texto es la fuente de verdad de notas, zonas, fronteras, notas STRIDE, descartados, decisiones (ADR), requisitos, registro RAID, fases e interesados: borrarlos del texto los borra del diagrama.
+   Conjuntos de datos: dataset DS-001 orders: layer=silver domain=Sales owner=SH-003 product=yes classes=pii format=delta freshness=1h per_day=2 retention=365 phase=wave1 steward="Ana" desc="Pedidos del ERP"
+             (es: conjunto DS-001 orders: capa=plata dominio= dueño= producto=sí clases= formato= frescura= por_dia= retencion= fase= responsable= desc=; el nombre es la clave que une con
+             `datasets=` de las conexiones; si lleva espacios o `:` va entre comillas). Líneas de campo justo debajo, con sangría:
+               column order_id: string key   ·   column email: string pii nullable=no desc="Correo del cliente"   (es: columna … clave pii nulo=no desc=; el tipo con espacios va entre comillas)
+               rule not_null order_id severity=high   ·   rule range amount param="0..1000000"   (es: regla … severidad=baja|media|alta param=; reglas not_null unique range regex accepted_values freshness custom)
+               contract 1.0.0 status=agreed consumers=bi,api terms="Diario antes de las 06:00"   (es: contrato … estado=borrador|acordado|obsoleto consumidores= terminos=)
+             Latencia de una conexión: a -> b : carga latency=1h (es: latencia=1h; 15m, 4h, 1d…): el tiempo que tarda el dato en ese salto. Se escriben después de los interesados.
+   El texto es la fuente de verdad de notas, zonas, fronteras, notas STRIDE, descartados, decisiones (ADR), requisitos, registro RAID, fases, interesados y conjuntos de datos: borrarlos del texto los borra del diagrama.
    Comentario: líneas que empiezan por # o //
 
    Acepta las palabras clave en inglés y en español (title/título, group/grupo,
@@ -144,7 +151,7 @@
   const isDay = v => /^\d{4}-\d{2}-\d{2}$/.test(v) && !isNaN(new Date(`${v}T12:00Z`)) && new Date(`${v}T12:00Z`).toISOString().slice(0, 10) === v;
   // Opciones al final de una conexión: a -> b : etiqueta color=… data=pii encrypted=yes
   // (el valor puede ir entre comillas: datasets="sales orders,crm.customers")
-  const EDGE_OPT = /(?:^|\s)(color|style|estilo|weight|peso|data|datos|encrypted|cifrado|both|ambos|line|linea|línea|datasets|tablas|conjuntos|transfer|transferencia|threats|amenazas|phase|fase|until|hasta)=("(?:[^"\\]|\\.)*"|\S+)\s*$/i;
+  const EDGE_OPT = /(?:^|\s)(color|style|estilo|weight|peso|data|datos|encrypted|cifrado|both|ambos|line|linea|línea|datasets|tablas|conjuntos|latency|latencia|transfer|transferencia|threats|amenazas|phase|fase|until|hasta)=("(?:[^"\\]|\\.)*"|\S+)\s*$/i;
   /* ---------- amenazas STRIDE: threats="T=mitigated,I=accepted" ---------- */
   const TH_KEY = { en: 'threats', es: 'amenazas' };
   const TH_ST = { en: { mitigated: 'mitigated', accepted: 'accepted', na: 'na' }, es: { mitigated: 'mitigada', accepted: 'aceptada', na: 'na' } };
@@ -161,6 +168,24 @@
   /* ---------- linaje: datasets=a,b ---------- */
   const DS_KEY = { en: 'datasets', es: 'tablas' };
   const parseDatasets = v => [...new Set(String(v).replace(/^"([\s\S]*)"$/, (_, x) => { try { return JSON.parse(`"${x}"`); } catch { return x; } }).split(/[,;]/).map(s => s.trim()).filter(Boolean))];
+  /* ---------- conjuntos de datos: dataset ID nombre: layer= domain= owner= … + líneas column / rule / contract ---------- */
+  const DSET_RE = /^(dataset|conjunto)\s+([^\s:]+)\s+(?:("(?:[^"\\]|\\.)*")|([^\s:"]+))\s*:\s*(.*)$/i;
+  const DS_COL_RE = /^(column|columna)\s+(?:("(?:[^"\\]|\\.)*")|([^\s:"]+))\s*:\s*(.*)$/i, DS_RULE_RE = /^(rule|regla)\s+(\S+)(?:\s+(.*))?$/i, DS_CON_RE = /^(contract|contrato)\s+(\S+)(?:\s+(.*))?$/i;
+  const DS_KEYS = ['layer', 'capa', 'domain', 'dominio', 'owner', 'dueño', 'dueno', 'steward', 'responsable', 'product', 'producto', 'classes', 'clases', 'format', 'formato', 'freshness', 'frescura', 'per_day', 'por_dia', 'retention', 'retencion', 'retención', 'phase', 'fase', 'desc'];
+  const DS_COL_KEYS = ['nullable', 'nulo', 'desc'], DS_RULE_KEYS = ['severity', 'severidad', 'param'], DS_CON_KEYS = ['status', 'estado', 'consumers', 'consumidores', 'terms', 'terminos', 'términos'];
+  const DS_FORMATS = ['delta', 'iceberg', 'hudi', 'parquet', 'avro', 'json', 'csv', 'other'], DS_RULES = ['not_null', 'unique', 'range', 'regex', 'accepted_values', 'freshness', 'custom'];
+  const DS_ST_IN = { draft: 'draft', borrador: 'draft', agreed: 'agreed', acordado: 'agreed', acordada: 'agreed', deprecated: 'deprecated', obsoleto: 'deprecated', obsoleta: 'deprecated' };
+  const DS_ST_OUT = { en: {}, es: { draft: 'borrador', agreed: 'acordado', deprecated: 'obsoleto' } };
+  const DS_SEV_IN = { low: 'low', baja: 'low', bajo: 'low', medium: 'medium', media: 'medium', medio: 'medium', high: 'high', alta: 'high', alto: 'high' };
+  const DS_W = { en: { dataset: 'dataset', domain: 'domain', product: 'product', classes: 'classes', format: 'format', freshness: 'freshness', perDay: 'per_day', retention: 'retention', desc: 'desc', column: 'column', key: 'key', pii: 'pii', nullable: 'nullable',
+      rule: 'rule', severity: 'severity', param: 'param', contract: 'contract', status: 'status', consumers: 'consumers', terms: 'terms', latency: 'latency' },
+    es: { dataset: 'conjunto', domain: 'dominio', product: 'producto', classes: 'clases', format: 'formato', freshness: 'frescura', perDay: 'por_dia', retention: 'retencion', desc: 'desc', column: 'columna', key: 'clave', pii: 'pii', nullable: 'nulo',
+      rule: 'regla', severity: 'severidad', param: 'param', contract: 'contrato', status: 'estado', consumers: 'consumidores', terms: 'terminos', latency: 'latencia' } };
+  const DS_FLAG = { key: 'key', clave: 'key', pii: 'pii' };
+  const DS_DUR_UNITS = ['s', 'sec', 'seg', 'm', 'min', 'h', 'hr', 'hora', 'horas', 'hour', 'hours', 'd', 'dia', 'dias', 'day', 'days'];
+  // Duración «15m», «4 h», «1d», «0» (la misma forma que acepta la app)
+  const durOk = v => { const t = String(v ?? '').trim().toLowerCase().match(/^(\d+(?:[.,]\d+)?)\s*([a-záéíóú]*)$/); return !!t && (t[2] ? DS_DUR_UNITS.includes(t[2].normalize('NFD').replace(/[\u0300-\u036f]/g, '')) : +t[1].replace(',', '.') === 0); };
+  const dsName = n => (/[\s:"]/.test(n) || n === '' ? quote(n) : n);
   /* ---------- notas, zonas, fronteras de confianza, notas STRIDE y hallazgos descartados ---------- */
   const SEV_IN = { low: 'low', baja: 'low', bajo: 'low', medium: 'medium', media: 'medium', medio: 'medium', high: 'high', alta: 'high', alto: 'high', critical: 'critical', critica: 'critical', critico: 'critical' };
   const NOTE_KEYS = ['at', 'en', 'pos', 'size', 'tamaño', 'tamano', 'color', 'in', 'dentro'];
@@ -198,14 +223,14 @@
   const ADR_FIELD = { context: 'context', contexto: 'context', decision: 'decision', decisión: 'decision', consequences: 'consequences', consecuencias: 'consequences', history: 'history', historial: 'history', signoffs: 'signoffs', firmas: 'signoffs' };
   /* ---------- requisitos: req ID: "título" kind= priority= status= source= check= from= to= target= cls= jur= links= + línea detail ---------- */
   const REQ_RE = /^(?:req|requisito)\s+([^\s:]+)\s*:\s*(.*)$/i, REQ_FIELD_RE = /^(detail|detalle)\s*:\s*(.*)$/i;
-  const REQ_KEYS = ['kind', 'tipo', 'priority', 'prioridad', 'status', 'estado', 'source', 'fuente', 'check', 'control', 'from', 'desde', 'to', 'hasta', 'target', 'objetivo', 'cls', 'clase', 'jur', 'jurisdiccion', 'jurisdicción', 'links', 'enlaces'];
+  const REQ_KEYS = ['kind', 'tipo', 'priority', 'prioridad', 'status', 'estado', 'source', 'fuente', 'check', 'control', 'from', 'desde', 'to', 'hasta', 'target', 'objetivo', 'ds', 'conjunto', 'cls', 'clase', 'jur', 'jurisdiccion', 'jurisdicción', 'links', 'enlaces'];
   const REQ_KIND_IN = { driver: 'driver', impulsor: 'driver', nfr: 'nfr', rnf: 'nfr', constraint: 'constraint', restriccion: 'constraint', principle: 'principle', principio: 'principle' };
   const REQ_PRIO_IN = { must: 'must', debe: 'must', should: 'should', deberia: 'should', could: 'could', podria: 'could' };
   const REQ_ST_IN = { draft: 'draft', borrador: 'draft', agreed: 'agreed', acordado: 'agreed', acordada: 'agreed', dropped: 'dropped', descartado: 'dropped', descartada: 'dropped' };
-  const REQ_MET_IN = { availability: 'availability', disponibilidad: 'availability', rpo: 'rpo', rto: 'rto', cost: 'cost', costo: 'cost', coste: 'cost', encryption: 'encryption', cifrado: 'encryption', residency: 'residency', residencia: 'residency' };
-  const REQ_OUT = { en: {}, es: { driver: 'impulsor', nfr: 'rnf', constraint: 'restricción', principle: 'principio', must: 'debe', should: 'debería', could: 'podría', draft: 'borrador', agreed: 'acordado', dropped: 'descartado', availability: 'disponibilidad', cost: 'costo', encryption: 'cifrado', residency: 'residencia' } };
-  const REQ_W = { en: { kind: 'kind', priority: 'priority', status: 'status', source: 'source', check: 'check', from: 'from', to: 'to', target: 'target', cls: 'cls', jur: 'jur', links: 'links', detail: 'detail' },
-    es: { kind: 'tipo', priority: 'prioridad', status: 'estado', source: 'fuente', check: 'control', from: 'desde', to: 'hasta', target: 'objetivo', cls: 'clase', jur: 'jurisdicción', links: 'enlaces', detail: 'detalle' } };
+  const REQ_MET_IN = { availability: 'availability', disponibilidad: 'availability', rpo: 'rpo', rto: 'rto', cost: 'cost', costo: 'cost', coste: 'cost', encryption: 'encryption', cifrado: 'encryption', residency: 'residency', residencia: 'residency', freshness: 'freshness', frescura: 'freshness' };
+  const REQ_OUT = { en: {}, es: { driver: 'impulsor', nfr: 'rnf', constraint: 'restricción', principle: 'principio', must: 'debe', should: 'debería', could: 'podría', draft: 'borrador', agreed: 'acordado', dropped: 'descartado', availability: 'disponibilidad', cost: 'costo', encryption: 'cifrado', residency: 'residencia', freshness: 'frescura' } };
+  const REQ_W = { en: { kind: 'kind', priority: 'priority', status: 'status', source: 'source', check: 'check', from: 'from', to: 'to', target: 'target', ds: 'ds', cls: 'cls', jur: 'jur', links: 'links', detail: 'detail' },
+    es: { kind: 'tipo', priority: 'prioridad', status: 'estado', source: 'fuente', check: 'control', from: 'desde', to: 'hasta', target: 'objetivo', ds: 'conjunto', cls: 'clase', jur: 'jurisdicción', links: 'enlaces', detail: 'detalle' } };
   const adrText = v => { const t = v.trim(); return /^"(?:[^"\\]|\\.)*"$/.test(t) ? unquote(t) : t.replace(/\\n/g, '\n'); };
   /* ---------- registro RAID: risk|assumption|issue|dependency ID: "título" p= i= owner= status= validation= due= raised= links= + líneas detail/mitigation/history ---------- */
   const RAID_RE = /^(risk|riesgo|assumption|supuesto|issue|problema|dependency|dependencia)\s+([^\s:]+)\s*:\s*(.*)$/i;
@@ -270,8 +295,8 @@
       lvNest: (id, o) => `“${id}” is not a component of “${o}”, so “inside ${id}” cannot be nested there`,
       adrDup: id => `decision “${id}” is declared twice`, adrSt: v => `unknown decision status “${v}” (use proposed, accepted, rejected, deprecated or superseded)`, adrLink: v => `“${v}” is not a node, group or connection (use ids, source->target or version:<id>)`,
       reqDup: id => `requirement “${id}” is declared twice`, reqKind: v => `unknown requirement kind “${v}” (use driver, nfr, constraint or principle)`, reqPrio: v => `unknown priority “${v}” (use must, should or could)`,
-      reqStatus: v => `unknown requirement status “${v}” (use draft, agreed or dropped)`, reqMetric: v => `unknown check “${v}” (use availability, rpo, rto, cost, encryption or residency)`, reqNum: v => `invalid target “${v}” (a number, 0 or more)`,
-      reqNode: v => `“${v}” is not a node (use a component id in from= and to=)`, reqLink: v => `“${v}” is not a decision, node, group or connection (use ids or source->target)`, reqNoCheck: 'from=, to=, target=, cls= and jur= need check=… on the same line',
+      reqStatus: v => `unknown requirement status “${v}” (use draft, agreed or dropped)`, reqMetric: v => `unknown check “${v}” (use availability, rpo, rto, cost, encryption, residency or freshness)`, reqNum: v => `invalid target “${v}” (a number, 0 or more)`,
+      reqNode: v => `“${v}” is not a node (use a component id in from= and to=)`, reqLink: v => `“${v}” is not a decision, node, group or connection (use ids or source->target)`, reqNoCheck: 'from=, to=, target=, ds=, cls= and jur= need check=… on the same line',
       adrSign: v => `invalid sign-off “${v}” (use SH-001 approve|reject YYYY-MM-DD note="…"; separate entries with ;)`, adrSignBy: v => `“${v}” is not a stakeholder`,
       adrHist: v => `invalid history entry “${v}” (use status YYYY-MM-DD by="…" note="…"; separate entries with ;)`,
       raidDup: id => `item “${id}” is declared twice`, raidId: (id, p) => `invalid id “${id}” (use ${p}-001, ${p}-002…)`, raidNum: (k, v) => `invalid ${k} “${v}” (use a whole number from 1 to 5)`,
@@ -284,6 +309,10 @@
       adrCost: v => `invalid cost “${v}” (a number, 0 or more)`, adrRisk: v => `invalid risk “${v}” (use low, medium or high)`, adrScore: v => `invalid score “${v}” (use criterion:1..5, e.g. scores=cost:4,skills:5)`, adrScoreCrit: v => `score for “${v}”, which is not a criterion of this decision`,
       phaseId: id => `invalid phase id “${id}” (use letters, digits, - or _, up to 30 characters)`, phaseDup: id => `phase “${id}” is declared twice`, phaseDate: v => `invalid phase date “${v}” (use YYYY-MM or YYYY-MM-DD)`,
       phaseMax: n => `too many phases (at most ${n})`, phaseUnknown: id => `unknown phase “${id}” (declare it first with: phase ${id}: "Name")`, phaseOrder: (a, b) => `“until=${b}” must come after “phase=${a}” in the phase order`,
+      dsId: id => `invalid dataset id “${id}” (use DS-001, DS-002…)`, dsDup: id => `dataset “${id}” is declared twice`, dsName: n => `dataset name “${n}” is already used by another dataset`, dsBool: v => `invalid product value “${v}” (use yes or no)`,
+      dsFormat: v => `unknown format “${v}” (use delta, iceberg, hudi, parquet, avro, json, csv or other)`, dsDur: v => `invalid duration “${v}” (e.g. 15m, 4h, 1d)`, dsNum: (k, v) => `invalid ${k} “${v}” (a number, 0 or more)`,
+      dsRule: v => `unknown quality rule “${v}” (use not_null, unique, range, regex, accepted_values, freshness or custom)`, dsRuleSev: v => `invalid severity “${v}” (use low, medium or high)`, dsStatus: v => `unknown contract status “${v}” (use draft, agreed or deprecated)`,
+      dsConsumer: v => `“${v}” is not a node (use component ids in consumers=)`, dsNoDs: 'column, rule and contract lines go right below a dataset line', dsNullable: v => `invalid nullable value “${v}” (use yes or no)`,
       thEdge: (a, b) => `no connection ${a} -> ${b} for this threat note`, thNone: (a, b, k) => `${a} -> ${b} has no decided ${k} threat (add it with threats="${k}=mitigated")`
     },
     es: {
@@ -307,8 +336,8 @@
       lvNest: (id, o) => `«${id}» no es un componente de «${o}», así que «dentro ${id}» no puede anidarse ahí`,
       adrDup: id => `la decisión «${id}» está declarada dos veces`, adrSt: v => `estado de decisión desconocido «${v}» (usa propuesta, aceptada, rechazada, obsoleta o reemplazada)`, adrLink: v => `«${v}» no es un nodo, grupo ni conexión (usa ids, origen->destino o version:<id>)`,
       reqDup: id => `el requisito «${id}» está declarado dos veces`, reqKind: v => `tipo de requisito desconocido «${v}» (usa impulsor, rnf, restricción o principio)`, reqPrio: v => `prioridad desconocida «${v}» (usa debe, debería o podría)`,
-      reqStatus: v => `estado de requisito desconocido «${v}» (usa borrador, acordado o descartado)`, reqMetric: v => `control desconocido «${v}» (usa disponibilidad, rpo, rto, costo, cifrado o residencia)`, reqNum: v => `objetivo no válido «${v}» (un número, 0 o más)`,
-      reqNode: v => `«${v}» no es un nodo (usa el id de un componente en desde= y hasta=)`, reqLink: v => `«${v}» no es una decisión, nodo, grupo ni conexión (usa ids u origen->destino)`, reqNoCheck: 'desde=, hasta=, objetivo=, clase= y jurisdicción= necesitan control=… en la misma línea',
+      reqStatus: v => `estado de requisito desconocido «${v}» (usa borrador, acordado o descartado)`, reqMetric: v => `control desconocido «${v}» (usa disponibilidad, rpo, rto, costo, cifrado, residencia o frescura)`, reqNum: v => `objetivo no válido «${v}» (un número, 0 o más)`,
+      reqNode: v => `«${v}» no es un nodo (usa el id de un componente en desde= y hasta=)`, reqLink: v => `«${v}» no es una decisión, nodo, grupo ni conexión (usa ids u origen->destino)`, reqNoCheck: 'desde=, hasta=, objetivo=, conjunto=, clase= y jurisdicción= necesitan control=… en la misma línea',
       adrSign: v => `firma no válida «${v}» (usa SH-001 aprueba|rechaza AAAA-MM-DD nota="…"; separa las entradas con ;)`, adrSignBy: v => `«${v}» no es un interesado`,
       adrHist: v => `entrada de historial no válida «${v}» (usa estado AAAA-MM-DD por="…" nota="…"; separa las entradas con ;)`,
       raidDup: id => `el item «${id}» está declarado dos veces`, raidId: (id, p) => `id no válido «${id}» (usa ${p}-001, ${p}-002…)`, raidNum: (k, v) => `${k} no válido «${v}» (usa un número entero de 1 a 5)`,
@@ -321,6 +350,10 @@
       adrCost: v => `costo no válido «${v}» (un número, 0 o más)`, adrRisk: v => `riesgo no válido «${v}» (usa bajo, medio o alto)`, adrScore: v => `puntaje no válido «${v}» (usa criterio:1..5, p. ej. puntos=costo:4,habilidades:5)`, adrScoreCrit: v => `puntaje para «${v}», que no es un criterio de esta decisión`,
       phaseId: id => `id de fase no válido «${id}» (usa letras, dígitos, - o _, hasta 30 caracteres)`, phaseDup: id => `la fase «${id}» está declarada dos veces`, phaseDate: v => `fecha de fase no válida «${v}» (usa AAAA-MM o AAAA-MM-DD)`,
       phaseMax: n => `demasiadas fases (máximo ${n})`, phaseUnknown: id => `fase desconocida «${id}» (decláralo antes con: fase ${id}: "Nombre")`, phaseOrder: (a, b) => `«hasta=${b}» debe ir después de «fase=${a}» en el orden de las fases`,
+      dsId: id => `id de conjunto no válido «${id}» (usa DS-001, DS-002…)`, dsDup: id => `el conjunto «${id}» está declarado dos veces`, dsName: n => `el nombre de conjunto «${n}» ya lo usa otro conjunto`, dsBool: v => `valor de producto no válido «${v}» (usa sí o no)`,
+      dsFormat: v => `formato desconocido «${v}» (usa delta, iceberg, hudi, parquet, avro, json, csv u other)`, dsDur: v => `duración no válida «${v}» (p. ej. 15m, 4h, 1d)`, dsNum: (k, v) => `${k} no válido «${v}» (un número, 0 o más)`,
+      dsRule: v => `regla de calidad desconocida «${v}» (usa not_null, unique, range, regex, accepted_values, freshness o custom)`, dsRuleSev: v => `severidad no válida «${v}» (usa baja, media o alta)`, dsStatus: v => `estado de contrato desconocido «${v}» (usa borrador, acordado u obsoleto)`,
+      dsConsumer: v => `«${v}» no es un nodo (usa ids de componentes en consumidores=)`, dsNoDs: 'las líneas column, rule y contract van justo debajo de una línea de conjunto', dsNullable: v => `valor de nulo no válido «${v}» (usa sí o no)`,
       thEdge: (a, b) => `no hay conexión ${a} -> ${b} para esta nota de amenaza`, thNone: (a, b, k) => `${a} -> ${b} no tiene decidida la amenaza ${k} (añádela con amenazas="${k}=mitigada")`
     }
   };
@@ -348,7 +381,7 @@
   // Divide el resto de una línea en etiqueta, [tipo], "detalle" y clave=valor
   function tokens(rest, keys) {
     const out = { words: [], brackets: [], quotes: [], kv: {} };
-    const re = /\[([^\]]*)\]|("(?:[^"\\]|\\.)*")|([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ0-9-]*)=("(?:[^"\\]|\\.)*"|\S+)|(\S+)/g;
+    const re = /\[([^\]]*)\]|("(?:[^"\\]|\\.)*")|([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ0-9_-]*)=("(?:[^"\\]|\\.)*"|\S+)|(\S+)/g;
     let m;
     while ((m = re.exec(rest))) {
       if (m[1] != null) out.brackets.push(m[1].trim());
@@ -385,6 +418,8 @@
     model.stakeholders = [];
     const shSeen = new Set();
     model.phases = [];
+    model.datasets = [];
+    const dsSeen = new Set(), dsNames = new Set(), dsPhases = [], dsCons = []; let dsCur = null, dsOpen = false;
     const phRefs = [];   // phase= / until= de nodos, grupos y conexiones: se validan al final, cuando ya están todas las fases
     const phaseOf = (o, kv, ln) => { const a = (kv.phase ?? kv.fase)?.trim(), b = (kv.until ?? kv.hasta)?.trim(); if (a || b) phRefs.push({ o, a, b, ln }); };
     // Tipos propios declarados en cualquier línea (una conexión puede usarlos antes de que se declaren)
@@ -444,6 +479,7 @@
 
       const inAdr = adrOpen, inReq = reqOpen; adrOpen = false; reqOpen = false;
       const inRaid = raidOpen; raidOpen = false;
+      const inDs = dsOpen; dsOpen = false;
       let m;
       if (inRaid && raidCur && (m = line.match(RAID_FIELD_RE))) {   // campo del item RAID: detail: / mitigation: / history:
         raidOpen = true;
@@ -469,6 +505,74 @@
         const gv = (kv.goal ?? kv.objetivo)?.trim();
         if (gv) ph.goal = gv;
         model.phases.push(ph);
+        return;
+      }
+      if (inDs && dsCur && (m = line.match(DS_COL_RE))) {   // columna: column order_id: string key pii nullable=no desc="…"
+        dsOpen = true;
+        const name = (m[2] != null ? unquote(m[2]) : m[3]).trim(), tk = tokens(m[4], DS_COL_KEYS), flags = tk.words.filter(w => DS_FLAG[foldK(w)]), rest = tk.words.filter(w => !DS_FLAG[foldK(w)]), c = { name };
+        const ty = (tk.quotes[0] ?? rest[0] ?? '').trim();
+        if (ty) c.type = ty;
+        if (flags.some(w => DS_FLAG[foldK(w)] === 'key')) c.key = true;
+        if (flags.some(w => DS_FLAG[foldK(w)] === 'pii')) c.pii = true;
+        const nv = tk.kv.nullable ?? tk.kv.nulo;
+        if (nv != null) { const b = parseBool(nv.trim()); if (b === false) c.nullable = false; else if (b == null) err(ln, msg.dsNullable(nv)); }
+        const dv = tk.kv.desc?.trim();
+        if (dv) c.desc = dv;
+        (dsCur.schema ||= []).push(c);
+        return;
+      }
+      if (inDs && dsCur && (m = line.match(DS_RULE_RE))) {   // regla de calidad: rule not_null order_id severity=high param="…"
+        dsOpen = true;
+        const tk = tokens(m[3] || '', DS_RULE_KEYS), rule = foldK(m[2]), q = { rule };
+        if (!DS_RULES.includes(rule)) return err(ln, msg.dsRule(m[2]));
+        const col = (tk.quotes[0] ?? tk.words[0] ?? '').trim();
+        if (col) q.column = col;
+        const pv = tk.kv.param?.trim();
+        if (pv) q.param = pv;
+        const sv = tk.kv.severity ?? tk.kv.severidad;
+        if (sv != null) { const sev = DS_SEV_IN[foldK(sv)]; if (sev) q.severity = sev; else err(ln, msg.dsRuleSev(sv)); }
+        (dsCur.quality ||= []).push(q);
+        return;
+      }
+      if (inDs && dsCur && (m = line.match(DS_CON_RE))) {   // contrato: contract 1.0.0 status=agreed consumers=bi,api terms="…"
+        dsOpen = true;
+        const tk = tokens(m[3] || '', DS_CON_KEYS), c = { version: m[2].replace(/^"(.*)"$/, '$1'), status: 'draft' };
+        const sv = tk.kv.status ?? tk.kv.estado;
+        if (sv != null) { const st = DS_ST_IN[foldK(sv)]; if (st) c.status = st; else err(ln, msg.dsStatus(sv)); }
+        const cv = tk.kv.consumers ?? tk.kv.consumidores;
+        if (cv != null) { c.consumers = [...new Set(String(cv).split(',').map(x => x.trim()).filter(Boolean))]; c.consumers.forEach(id => dsCons.push({ ln, id })); }
+        const tv = (tk.kv.terms ?? tk.kv.terminos ?? tk.kv['términos'])?.trim();
+        if (tv) c.terms = tv;
+        dsCur.contract = c;
+        return;
+      }
+      if (!inDs && (DS_COL_RE.test(line) || DS_CON_RE.test(line) || (DS_RULE_RE.test(line) && DS_RULES.includes(foldK(line.split(/\s+/)[1]))))) return err(ln, msg.dsNoDs);
+      if ((m = line.match(DSET_RE))) {   // dataset DS-001 orders: layer=silver domain=Sales owner=SH-003 product=yes classes=pii format=delta freshness=1h per_day=2 retention=365 phase=wave1 steward="Ana" desc="…"
+        dsOpen = true;
+        const id = m[2], name = (m[3] != null ? unquote(m[3]) : m[4]).trim(), tk = tokens(m[5], DS_KEYS), kv = tk.kv, kvv = (...ks) => ks.map(k => kv[k]).find(v => v != null), d = { id, name };
+        if (!/^DS-\d+$/.test(id)) err(ln, msg.dsId(id));
+        if (dsSeen.has(id)) err(ln, msg.dsDup(id)); else dsSeen.add(id);
+        if (dsNames.has(name.toLowerCase())) err(ln, msg.dsName(name)); else dsNames.add(name.toLowerCase());
+        const lv = kvv('layer', 'capa');
+        if (lv != null) { const l = checkLayer(lv, ln); if (l) d.layer = l; }
+        const dm = kvv('domain', 'dominio')?.trim(); if (dm) d.domain = dm;
+        const ow = kvv('owner', 'dueño', 'dueno')?.trim(); if (ow) d.owner = ow;
+        const st = kvv('steward', 'responsable')?.trim(); if (st) d.steward = st;
+        const pv = kvv('product', 'producto');
+        if (pv != null) { const b = parseBool(pv.trim()); if (b) d.product = true; else if (b == null) err(ln, msg.dsBool(pv)); }
+        const cl = kvv('classes', 'clases');
+        if (cl != null) { const c = checkData(cl, ln); if (c?.length) d.classes = c; }
+        const fv = kvv('format', 'formato');
+        if (fv != null) { const f = fv.trim().toLowerCase(); if (DS_FORMATS.includes(f)) d.format = f; else err(ln, msg.dsFormat(fv)); }
+        const fr = kvv('freshness', 'frescura')?.trim();
+        if (fr) { if (durOk(fr)) d.freshness = fr; else err(ln, msg.dsDur(fr)); }
+        const pd = kvv('per_day', 'por_dia'), rt = kvv('retention', 'retencion', 'retención'), vol = {}, dwk = DS_W[ctx.lang === 'es' ? 'es' : 'en'];
+        if (pd != null) { const n = Number(pd.replace(',', '.')); if (pd.trim() !== '' && Number.isFinite(n) && n >= 0) vol.perDay = n; else err(ln, msg.dsNum(dwk.perDay, pd)); }
+        if (rt != null) { const n = Number(rt); if (rt.trim() !== '' && Number.isInteger(n) && n >= 0) vol.retentionDays = n; else err(ln, msg.dsNum(dwk.retention, rt)); }
+        if (Object.keys(vol).length) d.volume = vol;
+        const ph = kvv('phase', 'fase')?.trim(); if (ph) dsPhases.push({ d, id: ph, ln });
+        const dv = kv.desc?.trim(); if (dv) d.description = dv;
+        model.datasets.push(d); dsCur = d;
         return;
       }
       if ((m = line.match(RAID_RE))) {   // risk R-001: "título" p=3 i=4 owner= status= validation= due= raised= links=
@@ -603,13 +707,14 @@
         });
         const sv = kv('source', 'fuente')?.trim();
         if (sv) r.source = sv;
-        const mv = kv('check', 'control'), ps = { from: kv('from', 'desde'), to: kv('to', 'hasta'), target: kv('target', 'objetivo'), cls: kv('cls', 'clase'), jur: kv('jur', 'jurisdiccion', 'jurisdicción') };
+        const mv = kv('check', 'control'), ps = { from: kv('from', 'desde'), to: kv('to', 'hasta'), target: kv('target', 'objetivo'), ds: kv('ds', 'conjunto'), cls: kv('cls', 'clase'), jur: kv('jur', 'jurisdiccion', 'jurisdicción') };
         if (mv != null) {
           const mt = REQ_MET_IN[foldK(mv)];
           if (!mt) err(ln, msg.reqMetric(mv));
           else {
             const c = { metric: mt };
             ['from', 'to'].forEach(k => { if (ps[k] != null) { c[k] = ps[k].trim(); reqNodes.push({ ln, id: c[k] }); } });
+            if (ps.ds != null && ps.ds.trim()) c.ds = ps.ds.trim();
             if (ps.target != null) { const n = Number(ps.target.replace(',', '.')); if (ps.target.trim() !== '' && Number.isFinite(n) && n >= 0) c.target = n; else err(ln, msg.reqNum(ps.target)); }
             ['cls', 'jur'].forEach(k => { if (ps[k] != null) c[k] = ps[k].trim().toLowerCase(); });
             if (c.cls && ctx.dataClasses && !ctx.dataClasses.includes(c.cls)) err(ln, msg.data(c.cls));
@@ -769,6 +874,8 @@
         const trV = kv.transfer ?? kv.transferencia, tr = trV == null ? null : /^(ok|yes|y|true|si|sí|1|on)$/i.test(trV);
         if (trV != null && !tr) err(ln, msg.transfer(trV));
         const thV = kv.threats ?? kv.amenazas, th = thV == null ? null : parseThreats(thV);
+        const ltV = kv.latency ?? kv.latencia, lat = ltV == null ? null : (ltV.startsWith('"') ? unquote(ltV) : ltV).trim();
+        if (lat != null && !durOk(lat)) err(ln, msg.dsDur(lat));
 
         if (th) th.bad.forEach(b => err(ln, msg.threats(b)));
         // Etiqueta entre comillas (JSON) o con \n escapado = varias líneas
@@ -784,6 +891,7 @@
           if (color) e.color = color;
           if (data?.length) e.data = data;
           if (dsets.length) e.datasets = [...dsets];
+          if (lat && durOk(lat)) e.latency = lat;
           if (enc != null) e.encrypted = enc;
           if (route) e.route = route;
           if (both) e.both = true;
@@ -848,6 +956,10 @@
         if (a) { if (ix.has(a)) { o.phase = a; ia = ix.get(a); } else err(ln, msg.phaseUnknown(a)); }
         if (b) { if (!ix.has(b)) err(ln, msg.phaseUnknown(b)); else if (ix.get(b) > Math.max(ia, 0)) o.until = b; else err(ln, msg.phaseOrder(a || model.phases[0].id, b)); }
       }); }
+    // Conjuntos de datos: la fase y los consumidores del contrato deben existir (si no, se avisa y no se aplica)
+    { const ix = new Set(model.phases.map(p => p.id));
+      dsPhases.forEach(({ d, id, ln }) => { if (ix.has(id)) d.phase = id; else err(ln, msg.phaseUnknown(id)); });
+      dsCons.forEach(({ ln, id }) => { if (!nodes.has(id)) err(ln, msg.dsConsumer(id)); }); }
     // Notas de decisiones STRIDE: la conexión se busca por origen -> destino (la n-ésima si hay varias); la amenaza ya debe tener estado
     thLines.forEach(t => {
       const es = model.edges.filter(e => e.from === t.from && e.to === t.to), e = es[t.nth - 1];
@@ -987,7 +1099,7 @@
       const arrow = ARROW_OF[e.style] || '->';
       const tail = [e.label ? (EDGE_OPT.test(e.label) || /^".*"$/.test(e.label) || /[\n\\]/.test(e.label) ? quote(e.label) : e.label) : '', e.color ? `color=${bare(e.color)}` : '',
         e.style && !ARROW_OF[e.style] ? `${lang === 'es' ? 'estilo' : 'style'}=${bare((STYLE_OUT[lang] || {})[e.style] || e.style)}` : '', WEIGHT_OUT.en[e.weight] ? `${lang === 'es' ? 'peso' : 'weight'}=${(WEIGHT_OUT[lang] || WEIGHT_OUT.en)[e.weight]}` : '',
-        e.data?.length ? `${w.data}=${e.data.join(',')}` : '', e.datasets?.length ? `${DS_KEY[lang] || DS_KEY.en}=${bare(e.datasets.join(','))}` : '', e.encrypted != null ? `${w.encrypted}=${e.encrypted ? w.yes : w.no}` : '',
+        e.data?.length ? `${w.data}=${e.data.join(',')}` : '', e.datasets?.length ? `${DS_KEY[lang] || DS_KEY.en}=${bare(e.datasets.join(','))}` : '', e.latency ? `${(DS_W[lang] || DS_W.en).latency}=${bare(e.latency)}` : '', e.encrypted != null ? `${w.encrypted}=${e.encrypted ? w.yes : w.no}` : '',
         e.both ? `${w.both}=${w.yes}` : '', e.transferOk ? `${w.transfer}=${w.ok}` : '', e.threats && Object.keys(e.threats).length ? `${TH_KEY[lang] || TH_KEY.en}=${Object.entries(e.threats).map(([k, d]) => `${k}=${(TH_ST[lang] || TH_ST.en)[d.status] || d.status}`).join(',')}` : '', e.route ? `${w.line}=${e.route === 'elbow' ? w.elbowOne : w.curvedOne}` : '', e.phase ? `${w.phase}=${bare(e.phase)}` : '', e.until ? `${w.until}=${bare(e.until)}` : ''].filter(Boolean).join(' ');
       out.push(`${e.from} ${arrow} ${e.to}${tail ? ` : ${tail}` : ''}`);
     });
@@ -1036,7 +1148,7 @@
       const refs = [...(l.decisions || []), ...(l.nodes || []), ...(l.groups || []),
         ...(l.edges || []).map(id => m.edges.find(e => e.id === id)).filter(Boolean).map(e => `${e.from}->${e.to}${same(e).length > 1 ? `#${same(e).indexOf(e) + 1}` : ''}`)];
       out.push('', [`req ${r.id}: ${quote(r.title ?? '')}`, `${rw.kind}=${rv(r.kind || 'driver')}`, r.priority ? `${rw.priority}=${rv(r.priority)}` : '', `${rw.status}=${rv(r.status || 'draft')}`, r.source ? `${rw.source}=${bare(r.source)}` : '',
-        c ? `${rw.check}=${rv(c.metric)}` : '', c?.from != null ? `${rw.from}=${bare(c.from)}` : '', c?.to != null ? `${rw.to}=${bare(c.to)}` : '', c?.target != null ? `${rw.target}=${+c.target}` : '',
+        c ? `${rw.check}=${rv(c.metric)}` : '', c?.from != null ? `${rw.from}=${bare(c.from)}` : '', c?.to != null ? `${rw.to}=${bare(c.to)}` : '', c?.ds ? `${rw.ds}=${bare(c.ds)}` : '', c?.target != null ? `${rw.target}=${+c.target}` : '',
         c?.cls ? `${rw.cls}=${bare(c.cls)}` : '', c?.jur ? `${rw.jur}=${bare(c.jur)}` : '', refs.length ? `${rw.links}=${bare(refs.join(','))}` : ''].filter(Boolean).join(' '));
       if (r.detail) out.push(`  ${rw.detail}: ${quote(r.detail)}`);
     });
@@ -1058,6 +1170,19 @@
       const raci = Object.entries(s.raci || {}).map(([k, v]) => `${k}:${v}`).join(',');
       out.push('', [`${sw.stakeholder} ${s.id}: ${quote(s.name ?? '')}`, s.role ? `${sw.role}=${quote(s.role)}` : '', `${sw.org}=${(SH_ORG_OUT[lang] || {})[s.org || 'client'] || s.org || 'client'}`, raci ? `${sw.raci}=${bare(raci)}` : '',
         s.versions ? sw.versions : '', s.inactive ? sw.inactive : ''].filter(Boolean).join(' '));
+    });
+    // Conjuntos de datos: después de los interesados; una línea por conjunto y, debajo, columnas, reglas y contrato
+    const dw = DS_W[lang] || DS_W.en;
+    (m.datasets || []).forEach(d => {
+      const v = d.volume || {};
+      out.push('', [`${dw.dataset} ${d.id} ${dsName(d.name)}:`, d.layer ? `${w.layer}=${w.layerOf[d.layer] || d.layer}` : '', d.domain ? `${dw.domain}=${bare(d.domain)}` : '', d.owner ? `${w.owner}=${bare(d.owner)}` : '',
+        d.product ? `${dw.product}=${w.yes}` : '', d.classes?.length ? `${dw.classes}=${d.classes.join(',')}` : '', d.format ? `${dw.format}=${d.format}` : '', d.freshness ? `${dw.freshness}=${bare(d.freshness)}` : '',
+        v.perDay != null ? `${dw.perDay}=${v.perDay}` : '', v.retentionDays != null ? `${dw.retention}=${v.retentionDays}` : '', d.phase ? `${w.phase}=${bare(d.phase)}` : '', d.steward ? `${w.steward}=${bare(d.steward)}` : '',
+        d.description ? `${dw.desc}=${quote(d.description)}` : ''].filter(Boolean).join(' '));
+      (d.schema || []).forEach(c => out.push(`  ${[`${dw.column} ${dsName(c.name)}:`, c.type ? (/[\s"]/.test(c.type) ? quote(c.type) : c.type) : '', c.key ? dw.key : '', c.pii ? dw.pii : '', c.nullable === false ? `${dw.nullable}=${w.no}` : '', c.desc ? `${dw.desc}=${quote(c.desc)}` : ''].filter(Boolean).join(' ')}`));
+      (d.quality || []).forEach(q => out.push(`  ${[`${dw.rule} ${q.rule}`, q.column ? dsName(q.column) : '', q.param ? `${dw.param}=${quote(q.param)}` : '', q.severity ? `${dw.severity}=${w.sevOf[q.severity] || q.severity}` : ''].filter(Boolean).join(' ')}`));
+      if (d.contract) out.push(`  ${[`${dw.contract} ${/[\s"]/.test(d.contract.version || '') ? quote(d.contract.version) : d.contract.version || '1.0.0'}`, `${dw.status}=${(DS_ST_OUT[lang] || {})[d.contract.status] || d.contract.status || 'draft'}`,
+        d.contract.consumers?.length ? `${dw.consumers}=${bare(d.contract.consumers.join(','))}` : '', d.contract.terms ? `${dw.terms}=${quote(d.contract.terms)}` : ''].filter(Boolean).join(' ')}`);
     });
     return out.join('\n') + '\n';
   }

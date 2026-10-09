@@ -93,10 +93,10 @@
   @keyframes pop-in { from { opacity: 0; transform: translateY(-6px) scale(.98); } }
 
   /* Zona principal */
-  .main { position: relative; display: grid; grid-template-columns: var(--side, 296px) 1fr; min-height: 0; transition: grid-template-columns .3s ease; }
+  .main { position: relative; display: grid; grid-template-columns: var(--side, 320px) 1fr; min-height: 0; transition: grid-template-columns .3s ease; }
   .main.collapsed { grid-template-columns: 0 1fr; }
   .main.resizing { transition: none; user-select: none; cursor: col-resize; }
-  .resizer { position: absolute; top: 0; bottom: 0; left: calc(var(--side, 296px) - 3px); width: 6px; z-index: 6; cursor: col-resize; transition: background-color .2s; }
+  .resizer { position: absolute; top: 0; bottom: 0; left: calc(var(--side, 320px) - 3px); width: 6px; z-index: 6; cursor: col-resize; transition: background-color .2s; }
   .resizer:hover, .main.resizing .resizer { background: color-mix(in srgb, var(--accent) 45%, transparent); }
   .main.collapsed .resizer { display: none; }
   .sidebar {
@@ -105,8 +105,15 @@
     transition: background-color .4s, border-color .4s, transform .3s;
   }
   .main.collapsed .sidebar { border-right: 0; }
-  .tabs { display: flex; flex-wrap: wrap; gap: 4px; padding: 10px 12px 2px; flex: none; }
-  .tab { flex: 1 1 auto; padding: 0 6px; white-space: nowrap; height: 32px; border: 0; border-radius: 9px; background: transparent; color: var(--muted); font-size: 12.5px; font-weight: 650; cursor: pointer; transition: background-color .2s, color .2s; }
+  .tabgroups { display: flex; gap: 4px; padding: 10px 8px 0; flex: none; }
+  .tabg { flex: 1 1 0; padding: 0 8px; white-space: nowrap; height: 30px; border: 0; border-bottom: 2px solid transparent; border-radius: 9px 9px 0 0; background: transparent; color: var(--muted); font-size: 12px; font-weight: 750; letter-spacing: .02em; text-transform: uppercase; cursor: pointer; transition: background-color .2s, color .2s, border-color .2s; }
+  .tabg:hover { color: var(--text); }
+  .tabg.on { color: var(--text); border-bottom-color: var(--accent); }
+  .tabg[hidden] { display: none; }
+  .tabg:focus-visible, .tab:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .tabs { display: flex; flex-wrap: wrap; gap: 2px; padding: 6px 8px 2px; flex: none; }
+  .tab[hidden] { display: none; }
+  .tab { flex: 1 1 auto; padding: 0 2px; white-space: nowrap; height: 32px; border: 0; border-radius: 9px; background: transparent; color: var(--muted); font-size: 11.5px; font-weight: 650; cursor: pointer; transition: background-color .2s, color .2s; }
   .tab:hover { color: var(--text); }
   .tab.on { background: var(--surface2); color: var(--text); }
   .pane { flex: 1; min-height: 0; overflow: auto; padding: 10px 12px 16px; display: none; }
@@ -416,7 +423,7 @@
   .cost-sum span { flex-basis: 100%; font-size: 11px; }
 
   /* Revisión: contador en la pestaña y panel de hallazgos (resultado de las reglas automáticas y de las observaciones manuales) */
-  .tab-badge { display: inline-block; margin-left: 5px; min-width: 16px; padding: 0 5px; border-radius: 999px; background: var(--b, var(--muted)); color: var(--bg); font-size: 10.5px; font-weight: 800; line-height: 16px; font-variant-numeric: tabular-nums; vertical-align: 1px; }
+  .tab-badge { display: inline-block; margin-left: 4px; min-width: 16px; padding: 0 4px; border-radius: 999px; background: var(--b, var(--muted)); color: var(--bg); font-size: 10.5px; font-weight: 800; line-height: 16px; font-variant-numeric: tabular-nums; vertical-align: 1px; }
   .tab-badge[hidden] { display: none; }
   .fnd-chips { display: flex; flex-wrap: wrap; gap: 5px; margin: 0 0 8px; }
   .fnd-chip { padding: 2px 9px; border-radius: 999px; font: inherit; font-size: 11.5px; cursor: pointer; color: var(--s, var(--text)); background: color-mix(in srgb, var(--s, var(--muted)) 10%, transparent); border: 1px solid color-mix(in srgb, var(--s, var(--muted)) 35%, transparent); }
@@ -826,6 +833,42 @@
   .appr-log ol { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 3px; font-size: 11.5px; }
   .appr-log li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 6px; padding-left: 6px; border-left: 2px solid var(--s); } .appr-log time { color: var(--muted); font-variant-numeric: tabular-nums; } .appr-log em { font-style: normal; color: var(--muted); overflow-wrap: anywhere; }
   .appr-line { margin-top: 2px; font-size: 11.5px; font-weight: 650; color: var(--text); } .appr-line::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 6px; border-radius: 50%; background: var(--s); }
+  /* Pestaña Datos: fichas del catálogo (reutiliza las de RAID: .raid, .raid-form…) */
+  .ds-filters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin-bottom: 6px; }
+  .ds-filters select { min-width: 0; height: 28px; padding: 0 6px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface2); color: var(--text); font: 12px var(--font); }
+  .ds-hd { display: flex; align-items: center; gap: 4px; }
+  .ds-toggle { display: flex; align-items: center; gap: 7px; flex: 1; min-width: 0; padding: 0; border: 0; background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+  .ds-title { flex: 1; min-width: 0; font-size: 13px; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ds-card.on .ds-title { white-space: normal; overflow-wrap: anywhere; }
+  .ds-layer { flex: none; padding: 0 7px; border-radius: 999px; font-size: 10.5px; font-weight: 750; color: var(--s); background: color-mix(in srgb, var(--s) 14%, transparent); border: 1px solid color-mix(in srgb, var(--s) 40%, transparent); }
+  .ds-fr { flex: none; min-width: 16px; text-align: center; font-size: 13px; font-weight: 800; color: var(--s); }
+  .ds-star { flex: none; padding: 0 2px; border: 0; background: none; color: var(--muted); font-size: 15px; line-height: 1; opacity: .55; cursor: pointer; } .ds-star:hover { opacity: 1; } .ds-star.on { color: var(--p-limon); opacity: 1; }
+  .ds-meta2 { font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+  .ds-sec { border-top: 1px solid var(--border); min-width: 0; }
+  .ds-sec-h { display: flex; align-items: center; gap: 6px; width: 100%; padding: 6px 0; border: 0; background: none; color: var(--text); font: inherit; font-size: 12px; font-weight: 700; text-align: left; cursor: pointer; }
+  .ds-sec-h::before { content: "▸"; color: var(--muted); } .ds-sec.on .ds-sec-h::before { content: "▾"; }
+  .ds-sec-h em { margin-left: auto; font-style: normal; font-weight: 500; font-size: 11px; color: var(--muted); }
+  .ds-sec-b { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; padding-bottom: 8px; min-width: 0; }
+  .ds-sc-wrap { max-width: 100%; overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+  .ds-sc { border-collapse: collapse; width: max-content; min-width: 100%; font-size: 11.5px; }
+  .ds-sc th, .ds-sc td { padding: 2px 3px; border-bottom: 1px solid var(--border); text-align: center; font-weight: 500; vertical-align: middle; }
+  .ds-sc thead th { background: var(--surface2); color: var(--muted); font-size: 10.5px; font-weight: 700; } .ds-sc tr:last-child > td { border-bottom: 0; }
+  .ds-sc input[type="text"], .ds-sc input:not([type]) { width: 100%; min-width: 0; padding: 3px 5px; font-size: 12px; }
+  .ds-sc td:nth-child(2) input { min-width: 110px; } .ds-sc td:nth-child(3) input { min-width: 74px; } .ds-sc td:nth-child(7) input { min-width: 150px; }
+  .raid-form .ds-sc input[type="checkbox"] { width: auto; padding: 0; margin: 0; }
+  .ds-sc-n { color: var(--muted); font-variant-numeric: tabular-nums; width: 22px; }
+  .ds-sc-a { white-space: nowrap; } .ds-sc-a button { padding: 0 4px; border: 0; background: none; color: var(--muted); font: inherit; font-size: 11px; cursor: pointer; } .ds-sc-a button:hover:not(:disabled) { color: var(--accent); } .ds-sc-a button:disabled { opacity: .3; cursor: default; } .ds-sc-a .adr-x:hover { color: var(--p-coral); }
+  .ds-sc-box.wide .ds-sc { width: 100%; font-size: 13px; } .ds-sc-box.wide .ds-sc input[type="text"], .ds-sc-box.wide .ds-sc input:not([type]) { font-size: 13px; }
+  .ds-q { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 4px; padding: 6px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+  .ds-q .adr-x { grid-column: 3; grid-row: 1; align-self: center; padding: 0 5px; border: 0; background: none; color: var(--muted); font: inherit; cursor: pointer; } .ds-q .adr-x:hover { color: var(--p-coral); }
+  .ds-q input[data-dsq="param"] { grid-column: 1; } .ds-q input, .ds-q select { min-width: 0; box-sizing: border-box; padding: 4px 6px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface2); color: var(--text); font: 12px var(--font); }
+  .ds-path { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 3px; }
+  .ds-node { max-width: 100%; padding: 1px 8px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface2); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ds-hop { font-size: 10.5px; font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; } .ds-hop::before { content: "→ "; } .ds-hop::after { content: " →"; } .ds-hop.unk { color: var(--p-coral); }
+  .ds-undoc { margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--border); } .ds-undoc h4 { margin: 0 0 2px; font-size: 12px; } .ds-undoc h4 small { color: var(--muted); font-weight: 600; }
+  .ds-und { display: flex; align-items: center; gap: 8px; padding: 4px 0; min-width: 0; } .ds-und small { flex: none; color: var(--muted); font-size: 11px; }
+  .ds-und-n { flex: 1; min-width: 0; padding: 0; border: 0; background: none; color: var(--text); font: inherit; font-size: 12.5px; font-weight: 600; text-align: left; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .ds-und-n:hover { color: var(--accent); }
+  .ds-chip .ds-cat { padding: 3px 5px; color: var(--muted); } .ds-chip .ds-cat:hover { color: var(--accent); } .ds-chip:has(.ds-cat) .ds-name { padding-right: 4px; }
   .raid-form { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; margin-top: 9px; padding-top: 9px; border-top: 1px dashed var(--border); }
   .raid-form label { display: grid; gap: 4px; font-size: 11px; font-weight: 650; color: var(--muted); }
   .raid-form input, .raid-form select, .raid-form textarea { width: 100%; min-width: 0; box-sizing: border-box; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface2); color: var(--text); font: 12.5px var(--font); }
@@ -1243,6 +1286,7 @@
   .ph-body label { display: grid; gap: 3px; font-size: 11px; font-weight: 650; color: var(--muted); }
   .ph-body input, .ph-body textarea { width: 100%; min-width: 0; box-sizing: border-box; padding: 5px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface2); color: var(--text); font: 12.5px var(--font); resize: vertical; }
   .ph-body input[aria-invalid="true"] { border-color: var(--sev-high); }
+  #inspector input[data-lat][aria-invalid="true"] { border-color: var(--sev-high); }
   .ph-row .btn[disabled] { opacity: .35; cursor: default; }
   .ph-cmp { display: grid; gap: 4px; }
   .ph-cmp .cat { margin: 6px 2px 0; }
@@ -1329,6 +1373,7 @@
           <button data-export="copy"><span data-i18n="exp.copy"></span> <small data-i18n="exp.clip"></small></button>
           <button data-export="mermaid"><span data-i18n="exp.mermaid"></span> <small>.mmd</small></button>
           <button data-export="plantuml"><span data-i18n="exp.plantuml"></span> <small>.puml</small></button>
+          <button data-export="contracts" id="exp-contracts" hidden><span data-i18n="exp.contracts"></span> <small>.odcs.yaml</small></button>
           <button data-export="drawio"><span data-i18n="exp.drawio"></span> <small>.drawio</small></button>
           <button data-export="stride"><span data-i18n="exp.stride"></span> <small>.csv</small></button>
           <button data-export="share"><span data-i18n="exp.share"></span> <small data-i18n="exp.share.ext"></small></button>
@@ -1362,17 +1407,23 @@
 
   <div class="main" id="main">
     <aside class="sidebar">
+      <div class="tabgroups" role="tablist" data-i18n-aria="tabg.label">
+        <button class="tabg on" data-g="design" data-i18n="tabg.design"></button>
+        <button class="tabg" data-g="gov"><span data-i18n="tabg.gov"></span><b class="tab-badge" id="review-badge-g" hidden></b></button>
+        <button class="tabg" data-g="data" data-i18n="tabg.data" hidden></button>
+      </div>
       <div class="tabs" role="tablist">
-        <button class="tab on" data-tab="components" data-i18n="tab.components"></button>
-        <button class="tab" data-tab="templates" data-i18n="tab.templates"></button>
-        <button class="tab" data-tab="versions" data-i18n="tab.versions"></button>
-        <button class="tab" data-tab="people" data-i18n="tab.people" data-i18n-title="tab.people.tip"></button>
-        <button class="tab" data-tab="review"><span data-i18n="tab.review"></span><b class="tab-badge" id="review-badge" hidden></b></button>
-        <button class="tab" data-tab="adr" data-i18n="tab.adr" data-i18n-title="tab.adr.tip"></button>
-        <button class="tab" data-tab="req" data-i18n="tab.req" data-i18n-title="tab.req.tip"></button>
-        <button class="tab" data-tab="raid" data-i18n="tab.raid" data-i18n-title="tab.raid.tip"></button>
-        <button class="tab" data-tab="text" data-i18n="tab.text"></button>
-        <button class="tab" data-tab="code" data-i18n="tab.json"></button>
+        <button data-group="design" class="tab on" data-tab="components" data-i18n="tab.components"></button>
+        <button data-group="design" class="tab" data-tab="templates" data-i18n="tab.templates"></button>
+        <button data-group="design" class="tab" data-tab="versions" data-i18n="tab.versions"></button>
+        <button data-group="design" class="tab" data-tab="text" data-i18n="tab.text"></button>
+        <button data-group="design" class="tab" data-tab="code" data-i18n="tab.json"></button>
+        <button data-group="gov" class="tab" data-tab="review"><span data-i18n="tab.review"></span><b class="tab-badge" id="review-badge" hidden></b></button>
+        <button data-group="gov" class="tab" data-tab="adr" data-i18n="tab.adr" data-i18n-title="tab.adr.tip"></button>
+        <button data-group="gov" class="tab" data-tab="req" data-i18n="tab.req" data-i18n-title="tab.req.tip"></button>
+        <button data-group="gov" class="tab" data-tab="raid" data-i18n="tab.raid" data-i18n-title="tab.raid.tip"></button>
+        <button data-group="gov" class="tab" data-tab="people" data-i18n="tab.people" data-i18n-title="tab.people.tip"></button>
+        <button data-group="data" class="tab" data-tab="data" data-i18n="tab.data" data-i18n-title="tab.data.tip"></button>
       </div>
       <div class="pane on" data-pane="components">
         <label class="provider" id="provider-wrap" hidden>
@@ -1393,6 +1444,7 @@
       <div class="pane" data-pane="adr"><div id="adr-panel"><div id="adr-bar"></div><div id="adr-list"></div></div></div>
       <div class="pane" data-pane="req"><div id="req-panel"><div id="req-bar"></div><div id="req-list"></div></div></div>
       <div class="pane" data-pane="raid"><div id="raid-panel"><div id="raid-bar"></div><div id="raid-list"></div></div></div>
+      <div class="pane" data-pane="data"><div id="ds-panel"><div id="ds-bar"></div><div id="ds-list"></div></div></div>
       <div class="pane pane-code" data-pane="text">
         <details class="help"><summary data-i18n="text.help"></summary><pre data-i18n-html="text.guide"></pre></details>
         <div class="code"><div class="gutter" aria-hidden="true"></div><textarea id="text-src" class="code-input" spellcheck="false" data-i18n-aria="text.aria"></textarea></div>
@@ -1471,6 +1523,7 @@
 <script src="src/share.js"></script>
 <script src="src/export/mermaid.js"></script>
 <script src="src/export/plantuml.js"></script>
+<script src="src/export/datacontract.js"></script>
 <script src="src/export/drawio.js"></script>
 <script src="src/export/xlsx.js"></script>
 <script src="src/app.js"></script>
