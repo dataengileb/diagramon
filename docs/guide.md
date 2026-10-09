@@ -187,6 +187,32 @@ Declare the datasets your architecture moves, with their columns, quality rules 
 
 The *Lakehouse greenfield* template comes with ten datasets: five raw ones in bronze, *orders*, *customers* and *products* in silver, and *sales_daily* and *customer_360* in gold as data products. *sales_daily* is set up to miss its freshness SLA, so the **Review** tab shows a high finding to look at.
 
+#### Import a dbt manifest
+
+Many lakehouse teams already describe their tables in dbt. **Import** (or dropping the file on the canvas) accepts the `target/manifest.json` that `dbt compile` or `dbt build` writes (manifest schema v10 to v12). Everything happens in the browser: the file is read locally and nothing is sent anywhere. A small dialog asks how to apply it and previews the counts (datasets by layer, columns, quality rules, exposures) and warnings:
+
+- **Merge into this diagram's catalog** (the default when the diagram has components). Datasets are added or updated by name. What dbt provides replaces what was there (description, columns, quality rules, layer, domain, owner, freshness, product and contract when present); what dbt does not know (volume, phase, consumers, steward, an owner you set when dbt has none, the format you chose) is kept, and datasets that are not in dbt are untouched. No component or connection is created. The result is summarized as *N new · M updated · K unchanged*; importing the same file twice changes nothing the second time.
+- **New diagram with lineage** (the default for an empty diagram). Draws a readable diagram, never one component per model: one component per source system, one store per layer (Bronze, Silver, Gold, in groups tagged with the layer), one *dbt* component per layer change (bronze → silver, silver → gold, and bronze → gold only if a gold model reads bronze) and one component per exposure. Connections carry the dataset names, so lineage, the catalog and the freshness check work: source system to bronze, bronze to dbt (bronze → silver) to silver, silver to dbt (silver → gold) to gold, gold to the exposures that use it. The title is the dbt project name. It replaces the current diagram; **`⌘Z`** brings it back.
+
+How dbt maps to the catalog (the tunable parts are in `datasets.dbt` of `src/config.js`):
+
+| dbt | Diagramon |
+|---|---|
+| Source table, model, seed, snapshot | One dataset (name = table or model name; on a clash a source becomes `source_name__name`). Tests, analyses, ephemeral models and older model versions are skipped |
+| Folder, name prefix, source, `meta.layer` | Layer: sources are bronze; `staging` / `stg_` and `intermediate` / `int_` are silver; `marts` / `fct_` / `dim_` / `mart_` are gold; `meta.layer` wins. No match: no layer, reported in the preview and not drawn |
+| `description` | Description |
+| `meta.domain`, the model's `group`, or the first folder under `models/` | Domain |
+| `meta.owner`, else the group's owner | Owner (the stakeholder id when the name matches one, ignoring case) |
+| `access: public` or `meta.data_product: true` | Data product |
+| `config.contract.enforced` | Contract *agreed*, version from `latest_version` as semver (`2` becomes `2.0.0`; else `1.0.0`) |
+| `meta.format` | Format (default `delta`) |
+| Columns | Schema: type from `data_type`; *key* for a `primary_key` constraint or a `unique` + `not_null` pair of tests; *not nullable* for `not_null`; *pii* for `meta.pii` or the `pii` tag (the dataset also gets the *pii* class); `meta.classification` and tags that match a data class |
+| Tests | Quality rules: `not_null`, `unique` and `accepted_values` (values joined with commas) map directly; `relationships` becomes *custom* with `→ table.field`; any other test (dbt_utils, singular…) becomes *custom* named after the test. `error` is high, `warn` is medium |
+| Source `freshness` | Freshness SLA from `error_after` (else `warn_after`), as `30m`, `12h` or `1d` |
+| Exposures | Consumer components in the new diagram, and the consumers of the dataset contracts |
+
+The limits of the data model apply (500 datasets, 300 columns and 100 rules per dataset); anything over is left out and reported. The file may be up to 20 MB and 5,000 objects. From the console: `Diagramon.importDbt(text, { mode: 'merge' | 'new' })` applies it without the dialog and returns the summary. A sample is in `samples/dbt/`.
+
 ## 7. Review findings
 
 1. Select a component and click **⚑ Raise a review finding**.

@@ -1,0 +1,1035 @@
+{
+  "metadata": {
+    "dbt_schema_version": "https://schemas.getdbt.com/dbt/manifest/v12.json",
+    "dbt_version": "1.9.0",
+    "generated_at": "2026-10-01T06:00:00.000000Z",
+    "project_name": "shop_analytics",
+    "adapter_type": "databricks"
+  },
+  "nodes": {
+    "model.shop_analytics.stg_orders": {
+      "resource_type": "model",
+      "unique_id": "model.shop_analytics.stg_orders",
+      "package_name": "shop_analytics",
+      "name": "stg_orders",
+      "description": "Orders, typed and renamed.",
+      "original_file_path": "models/staging/shop/stg_orders.sql",
+      "fqn": [
+        "shop_analytics",
+        "staging",
+        "shop",
+        "stg_orders"
+      ],
+      "config": {
+        "materialized": "view",
+        "meta": {},
+        "tags": [],
+        "access": "protected",
+        "contract": {
+          "enforced": false
+        }
+      },
+      "meta": {},
+      "tags": [],
+      "group": null,
+      "access": "protected",
+      "columns": {
+        "order_id": {
+          "name": "order_id",
+          "description": "Order key",
+          "data_type": "string",
+          "meta": {},
+          "tags": [],
+          "constraints": []
+        },
+        "customer_id": {
+          "name": "customer_id",
+          "description": "",
+          "data_type": "string",
+          "meta": {},
+          "tags": [],
+          "constraints": []
+        },
+        "ordered_at": {
+          "name": "ordered_at",
+          "description": "",
+          "data_type": "timestamp",
+          "meta": {},
+          "tags": [],
+          "constraints": []
+        },
+        "amount": {
+          "name": "amount",
+          "description": "Gross amount",
+          "data_type": "decimal",
+          "meta": {},
+          "tags": [],
+          "constraints": []
+        }
+      },
+      "depends_on": {
+        "nodes": [
+          "source.shop_analytics.shop.orders"
+        ]
+      },
+      "version": null,
+      "latest_version": null
+    },
+    "model.shop_analytics.stg_customers": {
+      "resource_type": "model",
+      "unique_id": "model.shop_analytics.stg_customers",
+      "package_name": "shop_analytics",
+      "name": "stg_customers",
+      "description": "Customers, typed and renamed.",
+      "original_file_path": "models/staging/shop/stg_customers.sql",
+      "fqn": [
+        "shop_analytics",
+        "staging",
+        "shop",
+        "stg_customers"
+      ],
+      "config": {
+        "materialized": "view",
+        "meta": {},
+        "tags": [],
+        "access": "protected",
+        "contract": {
+          "enforced": false
+        }
+      },
+      "meta": {},
+      "tags": [],
+      "group": null,
+      "access": "protected",
+      "columns": {
+        "customer_id": {
+          "name": "customer_id",
+          "description": "",
+          "data_type": "string",
+          "meta": {},
+          "tags": [],
+          "constraints": []
+        },
+        "email": {
+          "name": "email",
+          "description": "Contact e-mail",
+          "data_type": "string",
+          "meta": {
+            "pii": true
+          },
+          "tags": [],
+          "constraints": []
+        },
+        "country": {
+          "name": "country",
+          "description": "",
+          "data_type": "string",
+          "meta": {},
+          "tags": [],
+          "constraints": []
+        },
+        "created_at": {
+          "name": "created_at",
+          "description": "",
+          "data_type": "timestamp",
+          "meta": {},
+          "tags": [],
+          "constraints": []
+        }
+      },
+      "depends_on": {
+        "nodes": [
+          "source.shop_analytics.shop.customers"
+        ]
+      },
+      "version": null,
+      "latest_version": null
+    },
+    "model.shop_analytics.stg_payments": {
+      "resource_type": "model",
+      "unique_id": "model.shop_analytics.stg_payments",
+      "package_name": "shop_analytics",
+      "name": "stg_payments",
+      "description": "Payments, typed and renamed.",
+      "original_file_path": "models/staging/payments/stg_payments.sql",
+      "fqn": [
+        "shop_analytics",
+        "staging",
+        "payments",
+        "stg_payments"
+      ],
+      "config": {
+        "materialized": "view",
+        "meta": {},
+        "tags": [],
+        "access": "protected",
+        "contract": {
+          "enforced": false
+        }
+      },
+      "meta": {},
+      "tags": [],
+      "group": null,
+      "access": "protected",
+      "columns": {
+        "payment_id": {
+          "name": "payment_id",
+          "description": "",
+          "data_type": "string",
+          "meta": {},
+          "tags": [],
+          "constraints": []
+        },
+        "order_id": {
+          "name": "order_id",
+          "description": "",
+          "data_type": "string",
+          "meta": {},
+          "tags": [],
+          "constraints": []
+        },
+        "method": {
+          "name": "method",
+          "description": "",
+          "data_type": "string",
+          "meta": {},
+          "tags": [],
+          "constraints": []
+        },
+        "paid_amount": {
+          "name": "paid_amount",
+          "description": "",
+          "data_type": "decimal",
+          "meta": {},
+          "tags": [],
+          "constraints": []
+        }
+      },
+      "depends_on": {
+        "nodes": [
+          "source.shop_analytics.payments_api.payments"
+        ]
+      },
+      "version": null,
+      "latest_version": null
+    },
+    "model.shop_analytics.stg_refunds": {
+      "resource_type": "model",
+      "unique_id": "model.shop_analytics.stg_refunds",
+      "package_name": "shop_analytics",
+      "name": "stg_refunds",
+      "description": "Refunds, typed and renamed.",
+      "original_file_path": "models/staging/payments/stg_refunds.sql",
+      "fqn": [
+        "shop_analytics",
+        "staging",
+        "payments",
+        "stg_refunds"
+      ],
+      "config": {
+        "materialized": "view",
+        "meta": {},
+        "tags": [],
+        "access": "protected",
+        "contract": {
+          "enforced": false
+        }
+      },
+      "meta": {},
+      "tags": [],
+      "group": null,
+      "access": "protected",
+      "columns": {
+        "refund_id": {
+          "name": "refund_id",
+          "description": "",
+          "data_type": "string",
+          "meta": {},
+          "tags": [],
+          "constraints": []
+        },
+        "payment_id": {
+          "name": "payment_id",
+          "description": "",
+          "data_type": "string",
+          "meta": {},
+          "tags": [],
+          "constraints": []
+        },
+        "refunded_amount": {
+          "name": "refunded_amount",
+          "description": "",
+          "data_type": "decimal",
+          "meta": {},
+          "tags": [],
+          "constraints": []
+        }
+      },
+      "depends_on": {
+        "nodes": [
+          "source.shop_analytics.payments_api.refunds"
+        ]
+      },
+      "version": null,
+      "latest_version": null
+    },
+    "model.shop_analytics.int_dedupe_payments": {
+      "resource_type": "model",
+      "unique_id": "model.shop_analytics.int_dedupe_payments",
+      "package_name": "shop_analytics",
+      "name": "int_dedupe_payments",
+      "description": "Helper that removes duplicate payments (not materialised).",
+      "original_file_path": "models/intermediate/int_dedupe_payments.sql",
+      "fqn": [
+        "shop_analytics",
+        "intermediate",
+        "int_dedupe_payments"
+      ],
+      "config": {
+        "materialized": "ephemeral",
+        "meta": {},
+        "tags": [],
+        "access": "protected",
+        "contract": {
+          "enforced": false
+        }
+      },
+      "meta": {},
+      "tags": [],
+      "group": null,
+      "access": "protected",
+      "columns": {},
+      "depends_on": {
+        "nodes": [
+          "model.shop_analytics.stg_payments"
+        ]
+      },
+      "version": null,
+      "latest_version": null
+    },
+    "model.shop_analytics.int_orders_payments": {
+      "resource_type": "model",
+      "unique_id": "model.shop_analytics.int_orders_payments",
+      "package_name": "shop_analytics",
+      "name": "int_orders_payments",
+      "description": "Orders joined with their net payments.",
+      "original_file_path": "models/intermediate/int_orders_payments.sql",
+      "fqn": [
+        "shop_analytics",
+        "intermediate",
+        "int_orders_payments"
+      ],
+      "config": {
+        "materialized": "table",
+        "meta": {},
+        "tags": [],
+        "access": "protected",
+        "contract": {
+          "enforced": false
+        }
+      },
+      "meta": {
+        "layer": "silver"
+      },
+      "tags": [],
+      "group": null,
+      "access": "protected",
+      "columns": {
+        "order_id": {
+          "name": "order_id",
+          "description": "",
+          "data_type": "string",
+          "meta": {},
+          "tags": [],
+          "constraints": []
+        },
+        "net_paid": {
+          "name": "net_paid",
+          "description": "",
+          "data_type": "decimal",
+          "meta": {},
+          "tags": [],
+          "constraints": []
+        }
+      },
+      "depends_on": {
+        "nodes": [
+          "model.shop_analytics.stg_orders",
+          "model.shop_analytics.int_dedupe_payments",
+          "model.shop_analytics.stg_refunds"
+        ]
+      },
+      "version": null,
+      "latest_version": null
+    },
+    "model.shop_analytics.fct_orders": {
+      "resource_type": "model",
+      "unique_id": "model.shop_analytics.fct_orders",
+      "package_name": "shop_analytics",
+      "name": "fct_orders",
+      "description": "One row per order with net revenue. Data product of the sales domain.",
+      "original_file_path": "models/marts/sales/fct_orders.sql",
+      "fqn": [
+        "shop_analytics",
+        "marts",
+        "sales",
+        "fct_orders"
+      ],
+      "config": {
+        "materialized": "table",
+        "meta": {},
+        "tags": [],
+        "access": "public",
+        "contract": {
+          "enforced": true
+        }
+      },
+      "meta": {
+        "domain": "Sales",
+        "owner": "Sales analytics"
+      },
+      "tags": [],
+      "group": "finance_analytics",
+      "access": "public",
+      "columns": {
+        "order_id": {
+          "name": "order_id",
+          "description": "Order key",
+          "data_type": "string",
+          "meta": {},
+          "tags": [],
+          "constraints": [
+            {
+              "type": "primary_key"
+            }
+          ]
+        },
+        "customer_id": {
+          "name": "customer_id",
+          "description": "",
+          "data_type": "string",
+          "meta": {},
+          "tags": [],
+          "constraints": []
+        },
+        "ordered_at": {
+          "name": "ordered_at",
+          "description": "",
+          "data_type": "timestamp",
+          "meta": {},
+          "tags": [],
+          "constraints": []
+        },
+        "net_revenue": {
+          "name": "net_revenue",
+          "description": "Net revenue in EUR",
+          "data_type": "decimal",
+          "meta": {},
+          "tags": [],
+          "constraints": []
+        }
+      },
+      "depends_on": {
+        "nodes": [
+          "model.shop_analytics.int_orders_payments",
+          "model.shop_analytics.stg_customers"
+        ]
+      },
+      "version": null,
+      "latest_version": null
+    },
+    "model.shop_analytics.dim_customers": {
+      "resource_type": "model",
+      "unique_id": "model.shop_analytics.dim_customers",
+      "package_name": "shop_analytics",
+      "name": "dim_customers",
+      "description": "One row per customer. Data product of the customer domain.",
+      "original_file_path": "models/marts/customers/dim_customers.sql",
+      "fqn": [
+        "shop_analytics",
+        "marts",
+        "customers",
+        "dim_customers"
+      ],
+      "config": {
+        "materialized": "table",
+        "meta": {},
+        "tags": [],
+        "access": "public",
+        "contract": {
+          "enforced": true
+        }
+      },
+      "meta": {
+        "classification": "pii"
+      },
+      "tags": [],
+      "group": "finance_analytics",
+      "access": "public",
+      "columns": {
+        "customer_id": {
+          "name": "customer_id",
+          "description": "Customer key",
+          "data_type": "string",
+          "meta": {},
+          "tags": [],
+          "constraints": []
+        },
+        "email": {
+          "name": "email",
+          "description": "",
+          "data_type": "string",
+          "meta": {
+            "pii": true
+          },
+          "tags": [],
+          "constraints": []
+        },
+        "country": {
+          "name": "country",
+          "description": "",
+          "data_type": "string",
+          "meta": {},
+          "tags": [],
+          "constraints": []
+        },
+        "lifetime_value": {
+          "name": "lifetime_value",
+          "description": "",
+          "data_type": "decimal",
+          "meta": {},
+          "tags": [],
+          "constraints": []
+        },
+        "segment": {
+          "name": "segment",
+          "description": "",
+          "data_type": "string",
+          "meta": {},
+          "tags": [],
+          "constraints": []
+        }
+      },
+      "depends_on": {
+        "nodes": [
+          "model.shop_analytics.stg_customers",
+          "model.shop_analytics.fct_orders"
+        ]
+      },
+      "version": 2,
+      "latest_version": 2
+    },
+    "seed.shop_analytics.country_codes": {
+      "resource_type": "seed",
+      "unique_id": "seed.shop_analytics.country_codes",
+      "package_name": "shop_analytics",
+      "name": "country_codes",
+      "description": "ISO country codes.",
+      "original_file_path": "seeds/country_codes.csv",
+      "config": {
+        "materialized": "seed",
+        "meta": {}
+      },
+      "meta": {},
+      "tags": [],
+      "columns": {
+        "code": {
+          "name": "code",
+          "description": "",
+          "data_type": "string",
+          "meta": {},
+          "tags": [],
+          "constraints": []
+        },
+        "name": {
+          "name": "name",
+          "description": "",
+          "data_type": "string",
+          "meta": {},
+          "tags": [],
+          "constraints": []
+        }
+      },
+      "depends_on": {
+        "nodes": []
+      }
+    },
+    "model.shop_analytics.dim_customers.v1": {
+      "resource_type": "model",
+      "unique_id": "model.shop_analytics.dim_customers.v1",
+      "package_name": "shop_analytics",
+      "name": "dim_customers",
+      "description": "One row per customer. Data product of the customer domain.",
+      "original_file_path": "models/marts/customers/dim_customers.sql",
+      "fqn": [
+        "shop_analytics",
+        "marts",
+        "customers",
+        "dim_customers"
+      ],
+      "config": {
+        "materialized": "table",
+        "meta": {},
+        "tags": [],
+        "access": "public",
+        "contract": {
+          "enforced": true
+        }
+      },
+      "meta": {
+        "classification": "pii"
+      },
+      "tags": [],
+      "group": "finance_analytics",
+      "access": "public",
+      "columns": {
+        "customer_id": {
+          "name": "customer_id",
+          "description": "Customer key",
+          "data_type": "string",
+          "meta": {},
+          "tags": [],
+          "constraints": []
+        },
+        "email": {
+          "name": "email",
+          "description": "",
+          "data_type": "string",
+          "meta": {
+            "pii": true
+          },
+          "tags": [],
+          "constraints": []
+        },
+        "country": {
+          "name": "country",
+          "description": "",
+          "data_type": "string",
+          "meta": {},
+          "tags": [],
+          "constraints": []
+        },
+        "lifetime_value": {
+          "name": "lifetime_value",
+          "description": "",
+          "data_type": "decimal",
+          "meta": {},
+          "tags": [],
+          "constraints": []
+        },
+        "segment": {
+          "name": "segment",
+          "description": "",
+          "data_type": "string",
+          "meta": {},
+          "tags": [],
+          "constraints": []
+        }
+      },
+      "depends_on": {
+        "nodes": [
+          "model.shop_analytics.stg_customers",
+          "model.shop_analytics.fct_orders"
+        ]
+      },
+      "version": 1,
+      "latest_version": 2
+    },
+    "test.shop_analytics.not_null_1.abc": {
+      "resource_type": "test",
+      "unique_id": "test.shop_analytics.not_null_1.abc",
+      "package_name": "shop_analytics",
+      "name": "not_null_1",
+      "config": {
+        "severity": "ERROR"
+      },
+      "depends_on": {
+        "nodes": [
+          "model.shop_analytics.fct_orders"
+        ]
+      },
+      "attached_node": "model.shop_analytics.fct_orders",
+      "column_name": "order_id",
+      "test_metadata": {
+        "name": "not_null",
+        "kwargs": {
+          "column_name": "order_id"
+        },
+        "namespace": null
+      }
+    },
+    "test.shop_analytics.unique_2.abc": {
+      "resource_type": "test",
+      "unique_id": "test.shop_analytics.unique_2.abc",
+      "package_name": "shop_analytics",
+      "name": "unique_2",
+      "config": {
+        "severity": "ERROR"
+      },
+      "depends_on": {
+        "nodes": [
+          "model.shop_analytics.fct_orders"
+        ]
+      },
+      "attached_node": "model.shop_analytics.fct_orders",
+      "column_name": "order_id",
+      "test_metadata": {
+        "name": "unique",
+        "kwargs": {
+          "column_name": "order_id"
+        },
+        "namespace": null
+      }
+    },
+    "test.shop_analytics.not_null_3.abc": {
+      "resource_type": "test",
+      "unique_id": "test.shop_analytics.not_null_3.abc",
+      "package_name": "shop_analytics",
+      "name": "not_null_3",
+      "config": {
+        "severity": "ERROR"
+      },
+      "depends_on": {
+        "nodes": [
+          "model.shop_analytics.dim_customers"
+        ]
+      },
+      "attached_node": "model.shop_analytics.dim_customers",
+      "column_name": "customer_id",
+      "test_metadata": {
+        "name": "not_null",
+        "kwargs": {
+          "column_name": "customer_id"
+        },
+        "namespace": null
+      }
+    },
+    "test.shop_analytics.unique_4.abc": {
+      "resource_type": "test",
+      "unique_id": "test.shop_analytics.unique_4.abc",
+      "package_name": "shop_analytics",
+      "name": "unique_4",
+      "config": {
+        "severity": "ERROR"
+      },
+      "depends_on": {
+        "nodes": [
+          "model.shop_analytics.dim_customers"
+        ]
+      },
+      "attached_node": "model.shop_analytics.dim_customers",
+      "column_name": "customer_id",
+      "test_metadata": {
+        "name": "unique",
+        "kwargs": {
+          "column_name": "customer_id"
+        },
+        "namespace": null
+      }
+    },
+    "test.shop_analytics.accepted_values_5.abc": {
+      "resource_type": "test",
+      "unique_id": "test.shop_analytics.accepted_values_5.abc",
+      "package_name": "shop_analytics",
+      "name": "accepted_values_5",
+      "config": {
+        "severity": "WARN"
+      },
+      "depends_on": {
+        "nodes": [
+          "model.shop_analytics.dim_customers"
+        ]
+      },
+      "attached_node": "model.shop_analytics.dim_customers",
+      "column_name": "segment",
+      "test_metadata": {
+        "name": "accepted_values",
+        "kwargs": {
+          "values": [
+            "new",
+            "regular",
+            "vip"
+          ],
+          "column_name": "segment"
+        },
+        "namespace": null
+      }
+    },
+    "test.shop_analytics.relationships_6.abc": {
+      "resource_type": "test",
+      "unique_id": "test.shop_analytics.relationships_6.abc",
+      "package_name": "shop_analytics",
+      "name": "relationships_6",
+      "config": {
+        "severity": "ERROR"
+      },
+      "depends_on": {
+        "nodes": [
+          "model.shop_analytics.fct_orders"
+        ]
+      },
+      "attached_node": "model.shop_analytics.fct_orders",
+      "column_name": "customer_id",
+      "test_metadata": {
+        "name": "relationships",
+        "kwargs": {
+          "to": "ref('dim_customers')",
+          "field": "customer_id",
+          "column_name": "customer_id"
+        },
+        "namespace": null
+      }
+    },
+    "test.shop_analytics.expression_is_true_7.abc": {
+      "resource_type": "test",
+      "unique_id": "test.shop_analytics.expression_is_true_7.abc",
+      "package_name": "shop_analytics",
+      "name": "expression_is_true_7",
+      "config": {
+        "severity": "WARN"
+      },
+      "depends_on": {
+        "nodes": [
+          "model.shop_analytics.fct_orders"
+        ]
+      },
+      "attached_node": "model.shop_analytics.fct_orders",
+      "test_metadata": {
+        "name": "expression_is_true",
+        "kwargs": {
+          "expression": "net_revenue >= 0"
+        },
+        "namespace": "dbt_utils"
+      }
+    },
+    "test.shop_analytics.not_null_8.abc": {
+      "resource_type": "test",
+      "unique_id": "test.shop_analytics.not_null_8.abc",
+      "package_name": "shop_analytics",
+      "name": "not_null_8",
+      "config": {
+        "severity": "ERROR"
+      },
+      "depends_on": {
+        "nodes": [
+          "model.shop_analytics.stg_orders"
+        ]
+      },
+      "attached_node": "model.shop_analytics.stg_orders",
+      "column_name": "order_id",
+      "test_metadata": {
+        "name": "not_null",
+        "kwargs": {
+          "column_name": "order_id"
+        },
+        "namespace": null
+      }
+    },
+    "test.shop_analytics.unique_9.abc": {
+      "resource_type": "test",
+      "unique_id": "test.shop_analytics.unique_9.abc",
+      "package_name": "shop_analytics",
+      "name": "unique_9",
+      "config": {
+        "severity": "ERROR"
+      },
+      "depends_on": {
+        "nodes": [
+          "model.shop_analytics.stg_orders"
+        ]
+      },
+      "attached_node": "model.shop_analytics.stg_orders",
+      "column_name": "order_id",
+      "test_metadata": {
+        "name": "unique",
+        "kwargs": {
+          "column_name": "order_id"
+        },
+        "namespace": null
+      }
+    },
+    "test.shop_analytics.not_null_10.abc": {
+      "resource_type": "test",
+      "unique_id": "test.shop_analytics.not_null_10.abc",
+      "package_name": "shop_analytics",
+      "name": "not_null_10",
+      "config": {
+        "severity": "WARN"
+      },
+      "depends_on": {
+        "nodes": [
+          "model.shop_analytics.stg_customers"
+        ]
+      },
+      "attached_node": "model.shop_analytics.stg_customers",
+      "column_name": "email",
+      "test_metadata": {
+        "name": "not_null",
+        "kwargs": {
+          "column_name": "email"
+        },
+        "namespace": null
+      }
+    },
+    "test.shop_analytics.assert_no_negative_refunds_11.abc": {
+      "resource_type": "test",
+      "unique_id": "test.shop_analytics.assert_no_negative_refunds_11.abc",
+      "package_name": "shop_analytics",
+      "name": "assert_no_negative_refunds",
+      "config": {
+        "severity": "ERROR"
+      },
+      "depends_on": {
+        "nodes": [
+          "model.shop_analytics.stg_refunds"
+        ]
+      },
+      "attached_node": "model.shop_analytics.stg_refunds"
+    }
+  },
+  "sources": {
+    "source.shop_analytics.shop.orders": {
+      "resource_type": "source",
+      "unique_id": "source.shop_analytics.shop.orders",
+      "package_name": "shop_analytics",
+      "source_name": "shop",
+      "name": "orders",
+      "description": "Orders as written by the shop backend.",
+      "loader": "fivetran",
+      "loaded_at_field": "_loaded_at",
+      "freshness": {
+        "warn_after": {
+          "count": 6,
+          "period": "hour"
+        },
+        "error_after": {
+          "count": 12,
+          "period": "hour"
+        }
+      },
+      "columns": {},
+      "meta": {},
+      "tags": [],
+      "original_file_path": "models/staging/sources.yml"
+    },
+    "source.shop_analytics.shop.customers": {
+      "resource_type": "source",
+      "unique_id": "source.shop_analytics.shop.customers",
+      "package_name": "shop_analytics",
+      "source_name": "shop",
+      "name": "customers",
+      "description": "Customer accounts of the shop.",
+      "loader": "fivetran",
+      "loaded_at_field": "_loaded_at",
+      "freshness": {
+        "warn_after": {
+          "count": 6,
+          "period": "hour"
+        },
+        "error_after": {
+          "count": 12,
+          "period": "hour"
+        }
+      },
+      "columns": {},
+      "meta": {},
+      "tags": [],
+      "original_file_path": "models/staging/sources.yml"
+    },
+    "source.shop_analytics.payments_api.payments": {
+      "resource_type": "source",
+      "unique_id": "source.shop_analytics.payments_api.payments",
+      "package_name": "shop_analytics",
+      "source_name": "payments_api",
+      "name": "payments",
+      "description": "Payments captured by the payment provider.",
+      "loader": "airbyte",
+      "loaded_at_field": "_loaded_at",
+      "freshness": {
+        "warn_after": {
+          "count": 12,
+          "period": "hour"
+        },
+        "error_after": {
+          "count": 1,
+          "period": "day"
+        }
+      },
+      "columns": {},
+      "meta": {},
+      "tags": [],
+      "original_file_path": "models/staging/sources.yml"
+    },
+    "source.shop_analytics.payments_api.refunds": {
+      "resource_type": "source",
+      "unique_id": "source.shop_analytics.payments_api.refunds",
+      "package_name": "shop_analytics",
+      "source_name": "payments_api",
+      "name": "refunds",
+      "description": "Refunds issued by the payment provider.",
+      "loader": "airbyte",
+      "loaded_at_field": "_loaded_at",
+      "freshness": {
+        "warn_after": {
+          "count": 1,
+          "period": "day"
+        },
+        "error_after": {
+          "count": null,
+          "period": null
+        }
+      },
+      "columns": {},
+      "meta": {},
+      "tags": [],
+      "original_file_path": "models/staging/sources.yml"
+    }
+  },
+  "groups": {
+    "group.shop_analytics.finance_analytics": {
+      "resource_type": "group",
+      "unique_id": "group.shop_analytics.finance_analytics",
+      "package_name": "shop_analytics",
+      "name": "finance_analytics",
+      "owner": {
+        "name": "Data Platform Team",
+        "email": "data-platform@example.com"
+      }
+    }
+  },
+  "exposures": {
+    "exposure.shop_analytics.sales_dashboard": {
+      "resource_type": "exposure",
+      "unique_id": "exposure.shop_analytics.sales_dashboard",
+      "name": "sales_dashboard",
+      "label": "Sales dashboard",
+      "type": "dashboard",
+      "owner": {
+        "name": "Sales leadership",
+        "email": "sales@example.com"
+      },
+      "depends_on": {
+        "nodes": [
+          "model.shop_analytics.fct_orders",
+          "model.shop_analytics.dim_customers"
+        ]
+      }
+    },
+    "exposure.shop_analytics.churn_model": {
+      "resource_type": "exposure",
+      "unique_id": "exposure.shop_analytics.churn_model",
+      "name": "churn_model",
+      "label": "Churn model",
+      "type": "ml",
+      "owner": {
+        "name": "Data science",
+        "email": "ds@example.com"
+      },
+      "depends_on": {
+        "nodes": [
+          "model.shop_analytics.dim_customers"
+        ]
+      }
+    }
+  }
+}

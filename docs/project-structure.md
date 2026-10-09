@@ -15,10 +15,11 @@
 | `src/export/datacontract.js` | Data contracts (Open Data Contract Standard, ODCS v3.2.0 YAML, one file per dataset or all in one), written by hand with no libraries |
 | `src/share.js` | Encrypted, self-contained HTML viewer for sharing |
 | `src/iac.js` | Infrastructure-as-code import (Terraform, CloudFormation, Kubernetes, Compose) |
-| `samples/` | Sample IaC files to try the import |
+| `src/dbt.js` | dbt manifest import (`manifest.json` to datasets, quality rules, freshness and a lineage diagram); pure, no DOM |
+| `samples/` | Sample IaC files and a dbt manifest (`samples/dbt/`) to try the imports |
 | `assets/icons/*.js` | Embedded official icons for AWS, Azure, Google Cloud, SAP BTP and Microsoft Fabric |
 | `tools/build-icons.py` | Builds `assets/icons/*.js` from the official packs |
 | `assets/icons/logos.js`, `tools/build-logos.py` | Azure, Google Cloud and SAP logos for groups, built from `tools/logos/` |
 | `assets/fonts/` | Bundled fonts (`.woff2`, OFL licenses) and the generated `fonts.js` |
 | `tools/build-fonts.py` | Builds `assets/fonts/fonts.js` from `assets/fonts/*.woff2` |
-| `tests/run.js` | Automated tests without dependencies (text format, exports, IaC import, translations, pure functions); run with `node tests/run.js` |
+| `tests/run.js` | Automated tests without dependencies (text format, exports, IaC and dbt import, translations, pure functions); run with `node tests/run.js` |

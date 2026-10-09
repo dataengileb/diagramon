@@ -166,7 +166,30 @@ window.DIAGRAMON_CONFIG = {
   datasets: {
     formats: ['delta', 'iceberg', 'hudi', 'parquet', 'avro', 'json', 'csv', 'other'],
     qualityRules: ['not_null', 'unique', 'range', 'regex', 'accepted_values', 'freshness', 'custom'],
-    storagePrice: { default: 0.023, bronze: 0.02, silver: 0.023, gold: 0.023 }
+    storagePrice: { default: 0.023, bronze: 0.02, silver: 0.023, gold: 0.023 },
+    /* Importar un manifest de dbt (target/manifest.json): cómo se traduce al catálogo y al diagrama.
+       layerRules: reglas de capa en orden, gana la primera que coincide: `folders` (alguna carpeta de la ruta del modelo bajo models/) o
+         `prefixes` (inicio del nombre). Las fuentes (sources) van a `sourceLayer`, las semillas (seeds) a `seedLayer`; `meta.layer` del modelo manda sobre todo.
+         Un modelo sin regla queda sin capa (se avisa y no se dibuja en el linaje).
+       domainFrom: de dónde sale el dominio, en orden: 'meta' (meta.domain), 'group' (grupo de dbt), 'folder' (carpeta de primer nivel bajo models/).
+       format: formato por defecto de las tablas (meta.format del modelo manda). contractVersion: versión si el modelo no trae latest_version.
+       severity: severidad de la regla según la del test de dbt (error o warn). publicAccess: valores de `access` que marcan un producto de datos.
+       skipMaterialized: materializaciones que no se importan (ephemeral no es una tabla).
+       exposureTypes: tipo de componente para cada tipo de exposición de dbt (exposureDefault para el resto).
+       maxBytes / maxNodes: tope del archivo y de objetos del manifest; maxDatasets / maxColumns / maxRules siguen los límites del modelo de datos; maxExposures: componentes de consumo que se dibujan. */
+    dbt: {
+      layerRules: [
+        { layer: 'silver', folders: ['staging', 'intermediate'], prefixes: ['stg_', 'int_'] },
+        { layer: 'gold', folders: ['marts'], prefixes: ['fct_', 'dim_', 'mart_'] }
+      ],
+      sourceLayer: 'bronze', seedLayer: 'bronze',
+      domainFrom: ['meta', 'group', 'folder'],
+      format: 'delta', contractVersion: '1.0.0',
+      severity: { error: 'high', warn: 'medium' },
+      publicAccess: ['public'], skipMaterialized: ['ephemeral'],
+      exposureTypes: { dashboard: 'user', application: 'web', ml: 'ai', notebook: 'ai', analysis: 'user' }, exposureDefault: 'external',
+      maxBytes: 20971520, maxNodes: 5000, maxDatasets: 500, maxColumns: 300, maxRules: 100, maxExposures: 40
+    }
   },
 
   /* Cumplimiento normativo: controles que se marcan en componentes y grupos (inspector › Cumplimiento) y la matriz que los cruza.

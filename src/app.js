@@ -8364,11 +8364,74 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     form.querySelector('input[name="k"]:checked').focus();
   }
 
+  /* ---------- importar un manifest de dbt (dbt.js): catálogo o diagrama con linaje ---------- */
+  const dbtCfg = () => ({ ...C.datasets?.dbt, layers: Object.keys(DL), aliases: DL_ALIAS, classes: Object.keys(DATA), stakeholders: (S.model.stakeholders || []).map(x => ({ id: x.id, name: x.name })) });
+  const dbtMsg = r => T(`dbt.err.${r.error}`, r.n);
+  // Aplica el manifest ya leído: mode 'merge' (fusiona con el catálogo; sin tocar componentes ni conexiones) o 'new' (diagrama nuevo con linaje). Un solo paso de deshacer.
+  function dbtApply(man, mode) {
+    const DBT = window.DiagramonDbt, cfg = dbtCfg();
+    if (mode === 'new') {
+      const r = DBT.toDiagram(man, cfg);
+      if (!r.stats.datasets || !r.diagram.nodes.length) { toast(T('dbt.err.empty'), 3200); return { error: 'empty' }; }
+      S.sel = null;
+      setModel(r.diagram, { history: true, animate: true, fit: true });
+      const sum = { mode, datasets: r.stats.datasets, columns: r.stats.columns, rules: r.stats.rules, exposures: r.stats.exposures, nodes: r.stats.nodes, edges: r.stats.edges, warnings: r.warnings };
+      toast(T('dbt.done.new', sum), 4200);
+      return sum;
+    }
+    const inc = DBT.toCatalog(man, cfg);
+    if (!inc.datasets.length) { toast(T('dbt.err.empty'), 3200); return { error: 'empty' }; }
+    const cur = S.model.datasets || [], list = cleanCatalog(DBT.merge(cur, inc.datasets), S.model, dsHelpers());
+    const before = new Map(cur.map(d => [dsK(d.name), JSON.stringify(d)])), after = new Map(list.map(d => [dsK(d.name), JSON.stringify(d)]));
+    let added = 0, updated = 0, unchanged = 0;
+    inc.datasets.forEach(d => { const k = dsK(d.name); if (!after.has(k)) return; if (!before.has(k)) added++; else if (before.get(k) !== after.get(k)) updated++; else unchanged++; });
+    const warnings = [...inc.warnings];
+    if (list.length >= DS_MAX && inc.datasets.some(d => !after.has(dsK(d.name)))) warnings.push({ code: 'cap.datasets', n: inc.datasets.filter(d => !after.has(dsK(d.name))).length });
+    if (added || updated) dsCommit(list);
+    const sum = { mode, added, updated, unchanged, datasets: inc.stats.datasets, columns: inc.stats.columns, rules: inc.stats.rules, exposures: inc.stats.exposures, warnings };
+    toast(T('dbt.done.merge', sum), 4200);
+    return sum;
+  }
+  // API sin diálogo: importDbt(texto, { mode: 'merge' | 'new' }) → resumen (o { error })
+  function importDbt(text, opts = {}) {
+    const DBT = window.DiagramonDbt, r = DBT ? DBT.parse(text, C.datasets?.dbt) : { error: 'bad' };
+    if (r.error) { toast(dbtMsg(r), 3200); return { error: r.error }; }
+    return dbtApply(r.manifest, opts.mode === 'new' || opts.mode === 'merge' ? opts.mode : S.model.nodes.length ? 'merge' : 'new');
+  }
+  // Lee el manifest y pregunta cómo importarlo (vista previa con cuentas y avisos)
+  function openDbtImport(text) {
+    const DBT = window.DiagramonDbt, r = DBT.parse(text, C.datasets?.dbt);
+    if (r.error) return toast(dbtMsg(r), 3200);
+    const man = r.manifest, pv = DBT.toCatalog(man, dbtCfg()), st = pv.stats;
+    if (!st.datasets) return toast(T('dbt.err.empty'), 3200);
+    const prev = document.activeElement, id = `dbt${Date.now()}`, back = document.createElement('div'), first = S.model.nodes.length ? 'merge' : 'new';
+    const layers = [...Object.keys(DL), ''].filter(k => st.byLayer[k]).map(k => k ? `${layerInfo(k).label} ${st.byLayer[k]}` : T('dbt.pv.nolayer', st.byLayer[k])).join(' · ');
+    const warns = pv.warnings.map(w => ({ ...w, key: `dbt.warn.${w.code}` }));
+    const mode = (k, on) => `<label class="sh-chk"><input type="radio" name="mode" value="${k}"${on ? ' checked' : ''}>${esc(T(`dbt.mode.${k}`))}</label><small class="dbt-d">${esc(T(`dbt.mode.${k}.d`))}</small>`;
+    back.className = 'cf-back';
+    back.innerHTML = `<form class="cf share" role="dialog" aria-modal="true" aria-labelledby="${id}t" aria-describedby="${id}d" autocomplete="off">
+      <h3 id="${id}t">${esc(T('dbt.title'))}</h3><p id="${id}d">${esc(T('dbt.lead', { project: pv.project, version: String(man.metadata?.dbt_schema_version || '').split('/').pop().replace(/\.json$/, '') }))}</p>
+      <fieldset class="sh-views"><legend>${esc(T('dbt.mode'))}</legend>${mode('merge', first === 'merge')}${mode('new', first === 'new')}</fieldset>
+      <fieldset class="sh-views"><legend>${esc(T('dbt.pv'))}</legend><small class="dbt-pv">${esc(T('dbt.pv.datasets', { n: st.datasets, layers }))}</small><small class="dbt-pv">${esc(T('dbt.pv.cols', { cols: st.columns, rules: st.rules, exps: st.exposures }))}</small>
+        ${warns.map(w => `<small class="dbt-warn" role="status">⚠ ${esc(T(w.key, w.n))}</small>`).join('')}</fieldset>
+      <div class="cf-actions"><button type="button" class="btn" data-dbt="no">${esc(T('ver.cf.cancel'))}</button><button type="submit" class="btn primary">${esc(T('dbt.go'))}</button></div></form>`;
+    const form = back.querySelector('form'), close = () => { document.removeEventListener('keydown', key, true); back.remove(); prev?.focus?.(); };
+    const key = ev => { if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); close(); } };
+    form.addEventListener('click', ev => { if (ev.target.closest('[data-dbt="no"]')) close(); });
+    back.addEventListener('mousedown', ev => { if (ev.target === back) close(); });
+    form.addEventListener('submit', ev => { ev.preventDefault(); const k = form.elements.mode.value; close(); dbtApply(man, k); });
+    document.addEventListener('keydown', key, true);
+    document.body.appendChild(back);
+    form.querySelector('input[name="mode"]:checked').focus();
+  }
+
   // Importa un diagrama de Diagramon (JSON) o infraestructura como código (iac.js).
   // Acepta File del navegador o { name, text }.
   async function importFiles(list) {
     const files = await Promise.all([...list].map(async f => ({ name: f.name || '', text: typeof f.text === 'string' ? f.text : await f.text() })));
     if (!files.length) return;
+    const dbtFile = window.DiagramonDbt && files.find(f => window.DiagramonDbt.detect(f.text));   // manifest de dbt: antes que el resto
+    if (dbtFile) return openDbtImport(dbtFile.text);
     if (files.length === 1) {
       let raw = null;
       try { raw = JSON.parse(files[0].text); } catch { /* puede ser YAML */ }
@@ -10383,7 +10446,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     adrScore: id => { const d = adrById(id); return d ? { options: Object.fromEntries((d.options || []).map(o => [o.id, adrScore(d, o)])), leader: adrLeader(d) || null, chosen: d.chosen || null } : null; },
     requirements: () => clone(S.model.requirements || []), addRequirement, updateRequirement, removeRequirement, checkRequirement,
     setScope: id => setScope(id), get scope() { return S.scope; }, scopes: () => scopeList().map(x => ({ ...x, path: [...x.path] })), exportLevels,
-    exportSVG, exportPNG, exportViews, exportJSON, shareEncrypted, exportOther, exportCtx, toggleRouting, importFiles, config: C, icons: ICONS
+    exportSVG, exportPNG, exportViews, exportJSON, shareEncrypted, exportOther, exportCtx, toggleRouting, importFiles, importDbt, config: C, icons: ICONS
   };
 
   init();

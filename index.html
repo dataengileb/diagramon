@@ -598,6 +598,9 @@
   .sh-views legend { padding: 0 4px; font-size: 12px; font-weight: 650; color: var(--muted); }
   .cf.share .sh-chk { display: flex; align-items: center; gap: 6px; color: var(--text); font-weight: 500; cursor: pointer; }
   .cf.share .sh-chk input { width: auto; height: auto; }
+  .cf.share .dbt-d, .cf.share .dbt-pv, .cf.share .dbt-warn { display: block; color: var(--muted); font-size: 12px; line-height: 1.4; margin: 0 0 8px 22px; overflow-wrap: anywhere; }
+  .cf.share .dbt-pv { margin-left: 0; color: var(--text); }
+  .cf.share .dbt-warn { margin-left: 0; color: var(--sev-medium); }
   .sh-size { flex-basis: 100%; font-size: 11px; color: var(--muted); }
   .sh-row { display: flex; gap: 6px; }
   .sh-row .btn { flex: none; height: 34px; }
@@ -1520,6 +1523,7 @@
 <script src="src/adr-kits.js"></script>
 <script src="src/examples.js"></script>
 <script src="src/iac.js"></script>
+<script src="src/dbt.js"></script>
 <script src="src/share.js"></script>
 <script src="src/export/mermaid.js"></script>
 <script src="src/export/plantuml.js"></script>
