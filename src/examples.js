@@ -392,7 +392,49 @@ window.DIAGRAMON_EXAMPLES = [
         { id: 'n5', x: 1520, y: -190, w: 340, h: 130, color: 'limon', text: { en: 'Undecided: serving and semantic layer.\nSee ADR-012.', es: 'Sin decidir: consumo y capa semántica.\nVer ADR-012.' } },
         { id: 'n6', x: 760, y: 1100, w: 700, h: 110, color: 'rosa', text: { en: 'Undecided: governance and operations.\nCatalog ADR-005 · quality ADR-011 · access ADR-013 · network and keys ADR-014 · IaC and CI/CD ADR-015 · operating model ADR-016 · FinOps ADR-017.', es: 'Sin decidir: gobierno y operaciones.\nCatálogo ADR-005 · calidad ADR-011 · acceso ADR-013 · red y claves ADR-014 · IaC y CI/CD ADR-015 · modelo operativo ADR-016 · FinOps ADR-017.' } }
       ],
-      decisions: (() => { const kit = (window.DIAGRAMON_ADR_KITS || []).find(k => k.id === 'lakehouse'); return kit ? kit.decisions.map((d, i) => ({ id: 'ADR-' + String(i + 1).padStart(3, '0'), status: 'proposed', date: '2026-10-07', criteria: d.criteria || kit.criteria, ...d })) : []; })()
+      decisions: (() => { const kit = (window.DIAGRAMON_ADR_KITS || []).find(k => k.id === 'lakehouse'); return kit ? kit.decisions.map((d, i) => ({ id: 'ADR-' + String(i + 1).padStart(3, '0'), status: 'proposed', date: '2026-10-07', criteria: d.criteria || kit.criteria, ...d })) : []; })(),
+      // Lo que saldría de un descubrimiento real (todos en borrador: se acuerdan con el cliente). Los controles (check) se evalúan al pasar a «acordado» y
+      // cuando el diagrama tiene los datos (SLA, regiones, costos): ahora cifrado de PII ya se puede comprobar.
+      requirements: [
+        { id: 'REQ-001', title: { en: 'BI dashboards refresh at least every hour', es: 'Los tableros de BI se actualizan al menos cada hora' }, kind: 'nfr', priority: 'must', status: 'draft', source: { en: 'Head of BI', es: 'Jefe de BI' },
+          detail: { en: 'Data freshness for business users: a source change is visible in the dashboards within one hour. Confirm which dashboards are in scope.', es: 'Frescura de datos para el negocio: un cambio en el origen se ve en los tableros en menos de una hora. Confirmar qué tableros entran en el alcance.' },
+          links: { decisions: ['ADR-006', 'ADR-007', 'ADR-012'], nodes: ['ingb', 'ingc', 'sqlwh', 'bi'] } },
+        { id: 'REQ-002', title: { en: 'Personal data stays in the EU', es: 'Los datos personales se quedan en la UE' }, kind: 'constraint', priority: 'must', status: 'draft', source: 'CISO',
+          detail: { en: 'No copy of personal data (customers, CRM) may be stored or processed outside the EU. Set a region on the components once the cloud is chosen.', es: 'Ninguna copia de datos personales (clientes, CRM) puede almacenarse ni procesarse fuera de la UE. Define la región de los componentes cuando se elija la nube.' },
+          check: { metric: 'residency', cls: 'pii', jur: 'eu' }, links: { decisions: ['ADR-001', 'ADR-014'], nodes: ['bronze', 'silver'] } },
+        { id: 'REQ-003', title: { en: 'Personal data is encrypted in transit', es: 'Los datos personales viajan cifrados' }, kind: 'constraint', priority: 'must', status: 'draft', source: { en: 'CISO', es: 'CISO' },
+          check: { metric: 'encryption', cls: 'pii' }, links: { decisions: ['ADR-014'], nodes: ['kms'] } },
+        { id: 'REQ-004', title: { en: 'Serving layer available 99.9% of the time', es: 'La capa de consumo disponible el 99,9 % del tiempo' }, kind: 'nfr', priority: 'should', status: 'draft', source: { en: 'Head of BI', es: 'Jefe de BI' },
+          detail: { en: 'From the gold tables to the BI tools. Fill in component SLAs to let the check compute it.', es: 'Desde las tablas oro hasta las herramientas de BI. Completa los SLA de los componentes para que el control lo calcule.' },
+          check: { metric: 'availability', from: 'gold', to: 'bi', target: 99.9 }, links: { decisions: ['ADR-012'], nodes: ['sqlwh', 'sem'] } },
+        { id: 'REQ-005', title: { en: 'The lake loses at most 4 hours of data on a failure', es: 'El lake pierde como máximo 4 horas de datos ante una falla' }, kind: 'nfr', priority: 'should', status: 'draft', source: { en: 'Data owner', es: 'Dueño de los datos' },
+          check: { metric: 'rpo', from: 'ingb', to: 'bronze', target: 4 }, links: { decisions: ['ADR-004'], nodes: ['bronze'] } },
+        { id: 'REQ-006', title: { en: 'Platform run cost under the agreed ceiling', es: 'El costo de operar la plataforma queda bajo el tope acordado' }, kind: 'constraint', priority: 'must', status: 'draft', source: 'CFO',
+          detail: { en: 'Monthly ceiling to be agreed. Add component costs and set the target in the check.', es: 'Tope mensual por acordar. Agrega los costos de los componentes y fija el objetivo en el control.' },
+          check: { metric: 'cost' }, links: { decisions: ['ADR-017'], nodes: ['obs'] } },
+        { id: 'REQ-007', title: { en: 'Open formats, no lock-in to a single vendor', es: 'Formatos abiertos, sin dependencia de un solo proveedor' }, kind: 'principle', priority: 'should', status: 'draft', source: { en: 'Architecture board', es: 'Comité de arquitectura' },
+          links: { decisions: ['ADR-002', 'ADR-003'], nodes: ['bronze', 'silver', 'gold'] } },
+        { id: 'REQ-008', title: { en: 'Built for a team that works in SQL and Python', es: 'Pensado para un equipo que trabaja en SQL y Python' }, kind: 'principle', priority: 'could', status: 'draft', source: { en: 'Head of data engineering', es: 'Jefe de ingeniería de datos' },
+          links: { decisions: ['ADR-009', 'ADR-016'] } }
+      ],
+      // Registro RAID de un descubrimiento típico: supuestos por validar, dos riesgos con mitigación y una dependencia (enlazados a las ADR del kit y a los componentes)
+      raid: [
+        { id: 'A-001', type: 'assumption', title: { en: 'Daily volume stays under 2 TB', es: 'El volumen diario se mantiene por debajo de 2 TB' }, detail: { en: 'Sizing of storage, compute and cost depends on it. Confirm with the data owners.', es: 'El dimensionamiento de almacenamiento, cómputo y costo depende de esto. Confirmar con los dueños del dato.' },
+          owner: { en: 'Data owners', es: 'Dueños del dato' }, validation: 'pending', due: '2026-11-15', raised: '2026-10-07', links: { decisions: ['ADR-002', 'ADR-004', 'ADR-017'], requirements: ['REQ-001', 'REQ-006'], nodes: ['bronze'] } },
+        { id: 'A-002', type: 'assumption', title: { en: 'The ERP can expose change data capture', es: 'El ERP puede exponer captura de cambios (CDC)' }, detail: { en: 'Depends on the ERP vendor, version and database. If not, CDC falls back to scheduled extracts.', es: 'Depende del proveedor, la versión y la base de datos del ERP. Si no, el CDC se sustituye por extracciones programadas.' },
+          owner: { en: 'ERP team', es: 'Equipo del ERP' }, validation: 'pending', due: '2026-11-15', raised: '2026-10-07', links: { decisions: ['ADR-007'], nodes: ['erp', 'ingc'] } },
+        { id: 'A-003', type: 'assumption', title: { en: 'The team already knows SQL and Python', es: 'El equipo ya conoce SQL y Python' }, detail: { en: 'Drives the choice of transformation and orchestration tools.', es: 'Condiciona la elección de herramientas de transformación y orquestación.' },
+          owner: { en: 'Data engineering lead', es: 'Líder de ingeniería de datos' }, validation: 'pending', due: '2026-11-30', raised: '2026-10-07', links: { decisions: ['ADR-009', 'ADR-010'], requirements: ['REQ-008'], nodes: ['transf', 'orch'] } },
+        { id: 'A-004', type: 'assumption', title: { en: 'A corporate cloud agreement already exists', es: 'Ya existe un acuerdo corporativo con la nube' }, owner: { en: 'Procurement', es: 'Compras' }, validation: 'pending', due: '2026-10-31', raised: '2026-10-07', links: { decisions: ['ADR-001', 'ADR-017'], requirements: ['REQ-006'] } },
+        { id: 'R-001', type: 'risk', title: { en: 'Change data capture licence is not available for the ERP', es: 'La licencia de captura de cambios no está disponible para el ERP' }, detail: { en: 'Vendors often charge extra for log-based CDC.', es: 'Los proveedores suelen cobrar aparte el CDC basado en logs.' },
+          owner: { en: 'PMO', es: 'PMO' }, status: 'open', probability: 3, impact: 4, mitigation: { en: 'Ask the vendor for a quote now. Fallback: incremental extracts by timestamp, with a nightly reconciliation.', es: 'Pedir cotización al proveedor ya. Alternativa: extracciones incrementales por marca de tiempo, con conciliación nocturna.' },
+          raised: '2026-10-07', links: { decisions: ['ADR-007'], nodes: ['erp', 'ingc'] } },
+        { id: 'R-002', type: 'risk', title: { en: 'Personal data reaches raw and curated layers unmasked', es: 'Datos personales llegan sin enmascarar a las capas cruda y curada' },
+          owner: { en: 'Data governance', es: 'Gobierno de datos' }, status: 'open', probability: 3, impact: 5, mitigation: { en: 'Classify sources first, mask or tokenise PII before the curated layer, and restrict raw access to the pipelines.', es: 'Clasificar las fuentes primero, enmascarar o tokenizar la PII antes de la capa curada y limitar el acceso a la capa cruda a los pipelines.' },
+          raised: '2026-10-07', links: { decisions: ['ADR-005', 'ADR-013'], requirements: ['REQ-002', 'REQ-003'], nodes: ['silver', 'iam'] } },
+        { id: 'D-001', type: 'dependency', title: { en: 'Network and identity teams provide private connectivity and SSO', es: 'Los equipos de red e identidad entregan conectividad privada y SSO' },
+          owner: { en: 'Network team', es: 'Equipo de red' }, status: 'open', due: '2026-11-30', raised: '2026-10-07', links: { decisions: ['ADR-013', 'ADR-014'], nodes: ['iam'] } }
+      ]
     }
   }
 ];

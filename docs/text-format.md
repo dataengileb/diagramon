@@ -59,7 +59,7 @@ api ~> queue : events
 | `# …` or `// …` | Comment |
 
 Keywords work in English and Spanish (`title`/`título`, `group`/`grupo`, `cost`/`costo`, `/month`/`/mes`…).
-The text is the source of truth for notes, zones, trust boundaries, STRIDE notes, dismissed findings and architecture decisions (ADR): deleting them from the text deletes them from the diagram. Versions are kept.
+The text is the source of truth for notes, zones, trust boundaries, STRIDE notes, dismissed findings, architecture decisions (ADR), requirements and the RAID log: deleting them from the text deletes them from the diagram. Versions are kept.
 ### Architecture decisions (ADR)
 
 An `adr` line starts a decision; the fields follow on the next lines, each with its text in quotes (`\n` = line break). Decisions are written at the end of the text.
@@ -89,6 +89,50 @@ adr ADR-003: "Open table format" status=proposed area="Storage"
   `criterion <id>: "Label" weight=1..5` (Spanish `criterio … peso=`; id `a-z 0-9 -`, up to 30 characters). `option <id>: "Title"` (`opción`; id letters, digits and `-`, up to 20) with the optional bare word `chosen` (`elegida`; only one option per decision), `cost=` monthly number (`costo=`), `risk=low|medium|high` (`riesgo=bajo|medio|alto`), `version=<id of a saved version>` (`versión=`; dropped if it does not exist), `scores=criterion:1..5,…` (`puntos=`; only criteria declared in the same decision) and quoted `summary=`, `pros=`, `cons=` (`resumen=`, `contras=`). Both languages are accepted when reading; the text is written in the active language. Errors report the line number.
 - A field only counts right after its `adr` line (or another field); any other line closes the decision. Deleting an `adr` block from the text deletes the decision. Versions are not in the text: `version:<id>` links are kept only for versions that already exist.
 
+### Requirements
+
+A `req` line records one requirement; its optional detail follows on the next line. Requirements are written after the decisions.
+
+```
+req REQ-001: "Personal data stays in the EU" kind=constraint priority=must status=agreed source="CISO" check=residency cls=pii jur=eu links=ADR-005,raw,raw->bi
+  detail: "No copy of personal data may be stored or processed outside the EU."
+req REQ-002: "Serving layer available 99.9%" kind=nfr priority=should status=draft check=availability from=gold to=bi target=99.9 links=ADR-012,sqlwh
+```
+
+- Header keys (Spanish in brackets): `kind=` (`tipo=`) with `driver`, `nfr`, `constraint` or `principle` (`impulsor`, `rnf`, `restricción`, `principio`); `priority=` (`prioridad=`) with `must`, `should` or `could` (`debe`, `debería`, `podría`); `status=` (`estado=`) with `draft`, `agreed` or `dropped` (`borrador`, `acordado`, `descartado`); `source=` (`fuente=`, who asked for it, up to 120 characters). Without `kind=` the requirement is a `driver`; without `status=`, a `draft`.
+- `links=` (`enlaces=`) is a comma-separated list of decision ids, component ids, group ids and connections written `source->target` (`#2` picks the second of several identical connections).
+- `check=` (`control=`) attaches a check that the app evaluates with what it already computes; it only runs for `agreed` requirements. The metric decides which parameters apply:
+
+| `check=` (Spanish) | Parameters | Passes when |
+|---|---|---|
+| `availability` (`disponibilidad`) | `from=` `to=` (`desde=` `hasta=`) component ids, `target=` (`objetivo=`) percent, e.g. `99.9` | composite availability of the route is at least the target |
+| `rpo`, `rto` | `from=` `to=`, `target=` hours | the worst RPO / RTO on the route is at most the target |
+| `cost` (`costo`) | `target=` monthly cost in the app currency | the total monthly cost is at most the target |
+| `encryption` (`cifrado`) | `cls=` (`clase=`) data class id, e.g. `pii` | every connection carrying that class is marked encrypted |
+| `residency` (`residencia`) | `cls=`, `jur=` (`jurisdicción=`) jurisdiction id, e.g. `eu` | no unapproved cross-border connection carries that class out of that jurisdiction |
+
+- The field line is `detail:` (`detalle:`) and counts only right after its `req` line. Both languages are accepted when reading; the text is written in the active language, so it round-trips exactly. Parameters without `check=`, unknown values, a `from=` / `to=` that is not a component and links to things that do not exist are reported with their line number. Deleting a `req` block from the text deletes the requirement.
+
+### RAID log (risks, assumptions, issues, dependencies)
+
+One line per item, written after the decisions and requirements. The first word is the type and the id starts with its letter: `R-` risk, `A-` assumption, `I-` issue, `D-` dependency. Text fields go on the next lines, in quotes (`\n` = line break).
+
+```
+risk R-001: "SAP CDC licence not available" p=3 i=4 owner="PMO" status=open raised=2026-10-07 links=ADR-007,erp
+  mitigation: "Ask the vendor for a quote now."
+  detail: "Vendors often charge extra for log-based CDC."
+assumption A-001: "Volume <= 2 TB/day" validation=pending due=2026-11-15 owner="Data owner" links=ADR-002,REQ-003
+  history: validated 2026-11-02 by="Ana" note="Checked with finance"; invalidated 2026-12-01
+issue I-001: "No access to the ERP test system" status=open due=2026-11-01
+dependency D-001: "Network team opens the private link" status=open due=2026-11-30 links=ADR-014,iam
+```
+
+- Keys (Spanish in brackets): `p=` probability and `i=` impact, 1 to 5, risks only; `owner=` (`dueño=`); `status=open|closed` (`estado=abierto|cerrado`) for risks, issues and dependencies; `validation=pending|validated|invalidated` (`validación=pendiente|validado|invalidado`) for assumptions; `due=` (`fecha=`, validate by / needed by, not for risks); `raised=` (`registrado=`); `links=` (`enlaces=`).
+- Type words: `risk`, `assumption`, `issue`, `dependency` (Spanish `riesgo`, `supuesto`, `problema`, `dependencia`).
+- `links=` is a comma-separated list of decision ids (`ADR-001`), requirement ids (`REQ-001`), component ids, group ids and connections written `source->target` (add `#2` for the second of several identical ones). Links to things that do not exist are errors, except requirement ids, which are checked when the diagram loads.
+- Fields: `detail:` (`detalle:`), `mitigation:` (`mitigación:`, risks) and `history:` (`historial:`, assumptions): validation changes oldest first, `validated|invalidated|pending YYYY-MM-DD by="…" note="…"` separated by `;` (Spanish `validado`, `invalidado`, `pendiente`, `por=`, `nota=`).
+- A field only counts right after its item line (or another field). Both languages are accepted when reading; the text is written in the active language. Deleting an item's lines deletes the item.
+
 A node that only appears in a connection is created for you. Errors are shown in red with their line number.
 The text does not store positions: existing nodes stay where they are, and new nodes are placed next to their neighbors.
 
@@ -114,6 +158,7 @@ The text does not store positions: existing nodes stay where they are, and new n
 - `review` on a node: `{ "status": "open" | "resolved", "note", "by", "raised", "due", "closed" }`, dates as `YYYY-MM-DD`.
 - `owner`, `steward`, `team` and `costCenter` (strings) on nodes and groups; a node without one inherits it from the nearest group that has it.
 - `data` is a list of data classes (`["pii", "pci"]`) on nodes and edges. `encrypted` (`true` or `false`) is the encryption in transit of an edge.
+- `requirements` (optional, only written when there are any) lists the requirements: `id`, `title`, `kind`, `status` and, optionally, `detail`, `priority`, `source`, `check` (`{ metric, from, to, target, cls, jur }`) and `links` (`decisions`, `nodes`, `edges`, `groups`).
 - Exported files also carry `versions` (each with `kind`: `version` or `env`, and its own `diagram`) and `active`.
 - `color` takes a palette key (`rosa`, `coral`, `melocoton`, `limon`, `menta`, `cielo`, `lavanda`, `lila`),
   its English name (`pink`, `coral`, `peach`, `lemon`, `mint`, `sky`, `lavender`, `lilac`) or any CSS color.
