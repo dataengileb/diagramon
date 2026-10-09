@@ -268,8 +268,8 @@ review db: "DB in a public subnet" by=Ana raised=2026-10-01 due=2026-11-15
       'ctx.flowFull': 'Show in Full view', 'ctx.noPath': 'Paths are not available in the Context view', 'ctx.noPlay': 'Flow playback is not available in the Context view',
 
       'tab.versions': 'Versions',
-      'tab.req': 'Reqs', 'tab.req.tip': 'Requirements and traceability',
-      'tab.people': 'People', 'tab.people.tip': 'Stakeholders and RACI per decision area',
+      'tab.req': 'Requirements', 'tab.req.tip': 'Requirements and traceability',
+      'tab.people': 'Stakeholders', 'tab.people.tip': 'Stakeholders and RACI per decision area',
       'people.add': 'Stakeholder', 'people.new': 'New stakeholder', 'people.delete': 'Delete stakeholder', 'people.empty': 'No stakeholders yet. Add the people who decide on this project (architect, CISO, data owner, FinOps…) and say who approves each decision area.',
       'people.sum': n => `${n} ${n === 1 ? 'stakeholder' : 'stakeholders'}`, 'people.sum.gaps': n => `${n} ${n === 1 ? 'area' : 'areas'} without an approver`,
       'people.org.client': 'Client', 'people.org.partner': 'Partner', 'people.org.internal': 'Internal',
@@ -784,8 +784,8 @@ revisión db: "BD en subred pública" por=Ana levantada=2026-10-01 compromiso=20
       'ctx.flowFull': 'Ver en vista Completa', 'ctx.noPath': 'Los caminos no están disponibles en la vista Contexto', 'ctx.noPlay': 'La reproducción del flujo no está disponible en la vista Contexto',
 
       'tab.versions': 'Versiones',
-      'tab.req': 'Reqs', 'tab.req.tip': 'Requisitos y trazabilidad',
-      'tab.people': 'Partes', 'tab.people.tip': 'Interesados y RACI por área de decisión',
+      'tab.req': 'Requisitos', 'tab.req.tip': 'Requisitos y trazabilidad',
+      'tab.people': 'Interesados', 'tab.people.tip': 'Interesados y RACI por área de decisión',
       'people.add': 'Interesado', 'people.new': 'Nuevo interesado', 'people.delete': 'Borrar interesado', 'people.empty': 'Aún no hay interesados. Añade a quienes deciden en este proyecto (arquitecto, CISO, dueño del dato, FinOps…) e indica quién aprueba cada área de decisión.',
       'people.sum': n => `${n} ${n === 1 ? 'interesado' : 'interesados'}`, 'people.sum.gaps': n => `${n} ${n === 1 ? 'área' : 'áreas'} sin aprobador`,
       'people.org.client': 'Cliente', 'people.org.partner': 'Socio', 'people.org.internal': 'Interno',

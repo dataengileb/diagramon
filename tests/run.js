@@ -958,7 +958,7 @@
     const idx = read('index.html'), i18n = read('src/i18n.js');
     const groups = idx.split('<button class="tabg').slice(1).map(x => x.split('data-g="')[1].split('"')[0]);
     assert(groups.join() === 'design,gov,data', 'groups design, gov, data');
-    const tabs = idx.split('<button data-group="').slice(1); assert(tabs.length === 10, 'ten tabs carry data-group');
+    const tabs = idx.split('<button data-group="').slice(1); assert(tabs.length === 10, 'ten tabs carry data-group'); assert(tabs.filter(x => x.startsWith('design')).length === 5 && tabs.filter(x => x.startsWith('gov')).length === 5, 'five tabs per group'); assert(idx.includes('data-group="design" class="tab" data-tab="versions"'), 'versions in design');
     tabs.forEach(x => assert(groups.includes(x.split('"')[0]) && x.includes('data-tab="'), 'tab in a known group'));
     ['tabg.label', 'tabg.design', 'tabg.gov', 'tabg.data'].forEach(k => assert(i18n.split(`'${k}':`).length === 3, `${k} defined once in en and once in es`));
     assert(idx.includes('id="review-badge-g"'), 'review badge mirrored on the group button');
