@@ -6598,16 +6598,36 @@
     if (matchMedia('(max-width: 760px)').matches) $('#main').classList.remove('open');
   });
 
-  $$('.tab').forEach(t => t.addEventListener('click', () => {
-    $$('.tab').forEach(x => x.classList.toggle('on', x === t));
+  /* ---------- pestañas agrupadas ---------- */
+  // Fila 1: grupos (.tabg[data-g]); fila 2: solo las pestañas (.tab[data-group]) del grupo activo. Añadir una pestaña a un grupo = `data-group` en el botón.
+  const TABG = $$('.tabg'), TABS = $$('.tab');
+  TABG.forEach(g => { g.hidden = !TABS.some(t => t.dataset.group === g.dataset.g); g.setAttribute('role', 'tab'); });
+  TABS.forEach(t => t.setAttribute('role', 'tab'));
+  function syncTabs(t) {
+    TABG.forEach(g => { const on = g.dataset.g === t.dataset.group; g.classList.toggle('on', on); g.setAttribute('aria-selected', on); g.tabIndex = on ? 0 : -1; });
+    TABS.forEach(x => { const on = x === t; x.classList.toggle('on', on); x.hidden = x.dataset.group !== t.dataset.group; x.setAttribute('aria-selected', on); x.tabIndex = on ? 0 : -1; });
+  }
+  TABS.forEach(t => t.addEventListener('click', () => {
+    syncTabs(t);
     $$('.pane').forEach(p => p.classList.toggle('on', p.dataset.pane === t.dataset.tab));
     store.set('tab', t.dataset.tab);
+    const last = store.get('tabg', {}); last[t.dataset.group] = t.dataset.tab; store.set('tabg', last);
     if (t.dataset.tab === 'review') renderFindings();
     else if (t.dataset.tab === 'adr') renderAdr(true);
     else if (t.dataset.tab === 'req') renderReq(true);
     else if (t.dataset.tab === 'raid') renderRaid(true);
     else if (t.dataset.tab === 'people') renderPeople(true);
   }));
+  TABG.forEach(g => g.addEventListener('click', () => {
+    const mine = TABS.filter(t => t.dataset.group === g.dataset.g), last = store.get('tabg', {})[g.dataset.g];
+    (mine.find(t => t.dataset.tab === last) || mine[0])?.click();
+  }));
+  // Flechas / Inicio / Fin dentro de cada fila (activan al mover, como un tablist automático)
+  [TABG, TABS].forEach(row => row.forEach(b => b.addEventListener('keydown', ev => {
+    const vis = row.filter(x => !x.hidden), i = vis.indexOf(b), n = { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: vis.length - 1 }[ev.key];
+    if (n === undefined) return;
+    ev.preventDefault(); const nb = vis[(n + vis.length) % vis.length]; nb.click(); nb.focus();
+  })));
 
   function codeBox(box, apply) {
     box.addEventListener('focus', beginEdit);
@@ -8344,6 +8364,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     syncSecMarkers();
     const worst = FC.open.reduce((w, f) => (sevRank(f.severity) > sevRank(w) ? f.severity : w), 'low'), bd = $('#review-badge');
     if (bd) { bd.hidden = !FC.open.length; bd.textContent = FC.open.length > 99 ? '99+' : FC.open.length; bd.style.setProperty('--b', `var(--sev-${worst})`); bd.title = T('find.badge', FC.open.length); }
+    const bg = $('#review-badge-g'); if (bg && bd) { bg.hidden = bd.hidden; bg.textContent = bd.textContent; bg.title = bd.title; bg.style.setProperty('--b', bd.style.getPropertyValue('--b')); }
     renderFindings();
   }
   // Pastilla «⚠ n» arriba a la derecha de cada nodo con hallazgos abiertos de reglas (solo se ve en la vista Seguridad); evita la insignia
