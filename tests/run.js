@@ -139,6 +139,19 @@
     const m = templates('en').find(x => /Lakehouse greenfield/.test(x.name)).model;
     eq({ nodes: m.nodes.length, edges: m.edges.length }, { nodes: 24, edges: 25 }, 'counts');
   });
+  test('lakehouse greenfield template has three ordered phases, and every phase field points to one of them', () => {
+    const m = templates('en').find(x => /Lakehouse greenfield/.test(x.name)).model;
+    const es = templates('es').find(x => /Lakehouse greenfield/.test(x.name)).model;
+    eq(m.phases.map(p => p.id), ['mvp', 'wave1', 'wave2'], 'phases in timeline order');
+    assert(m.phases.every(p => p.name && p.goal && p.date), 'every phase has name, date and goal');
+    assert(es.phases.every(p => p.name && p.goal && p.goal !== m.phases.find(x => x.id === p.id).goal), 'goals are translated');
+    const idx = id => m.phases.findIndex(p => p.id === id);
+    m.nodes.concat(m.edges, m.groups || []).forEach(el => {
+      if (el.phase) assert(idx(el.phase) >= 0, `${el.id || el.from} phase ${el.phase} exists`);
+      if (el.until) assert(idx(el.until) > (el.phase ? idx(el.phase) : -1), `${el.id || el.from} until ${el.until} comes after its phase`);
+    });
+    m.phases.forEach(p => assert(m.nodes.some(n => n.phase === p.id), `at least one node appears in ${p.id}`));
+  });
   test('every documented line kind parses (notes, zones, trust, threat, dismiss, levels, types, weight)', () => {
     const src = [
       'title: Syntax check',
