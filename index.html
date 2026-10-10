@@ -78,10 +78,12 @@
     position: fixed; margin-top: 6px; min-width: 210px; padding: 6px; z-index: 30;
     background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
     box-shadow: 0 14px 40px var(--shadow); animation: pop-in .18s ease-out;
+    max-height: calc(100vh - 70px); overflow-y: auto;
   }
   .menu-pop button { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px; border: 0; border-radius: 8px; background: none; cursor: pointer; text-align: left; font-size: 13px; }
   .menu-pop button:hover { background: var(--surface2); }
   .menu-pop small { margin-left: auto; color: var(--muted); }
+  .menu-group { padding: 6px 10px 2px; font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
   .menu-sep { height: 1px; margin: 6px 4px; background: var(--border); }
   .menu-check { display: flex; align-items: center; gap: 9px; padding: 7px 10px; font-size: 13px; cursor: pointer; border-radius: 8px; }
   .menu-check:hover { background: var(--surface2); }
@@ -1468,26 +1470,35 @@
       <details class="menu" id="export-menu">
         <summary class="tbtn" data-i18n-title="top.export"><svg viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg><span class="lbl" data-i18n="top.export"></span></summary>
         <div class="menu-pop">
+          <div class="menu-group" data-i18n="exp.g.images"></div>
           <button data-export="svg"><span data-i18n="exp.svg"></span> <small>.svg</small></button>
           <button data-export="png"><span data-i18n="exp.png"></span> <small>.png</small></button>
           <button data-export="svg-all"><span data-i18n="exp.svgAll"></span> <small data-i18n="exp.all.ext"></small></button>
           <button data-export="png-all"><span data-i18n="exp.pngAll"></span> <small data-i18n="exp.all.ext"></small></button>
           <button data-export="svg-levels" id="exp-levels-svg" hidden><span data-i18n="exp.levelsSvg"></span> <small data-i18n="exp.levels.ext"></small></button>
           <button data-export="png-levels" id="exp-levels-png" hidden><span data-i18n="exp.levelsPng"></span> <small data-i18n="exp.levels.ext"></small></button>
-          <button data-export="json"><span data-i18n="exp.json"></span> <small>.json</small></button>
-          <button data-export="copy"><span data-i18n="exp.copy"></span> <small data-i18n="exp.clip"></small></button>
-          <button data-export="mermaid"><span data-i18n="exp.mermaid"></span> <small>.mmd</small></button>
-          <button data-export="plantuml"><span data-i18n="exp.plantuml"></span> <small>.puml</small></button>
-          <button data-export="contracts" id="exp-contracts" hidden><span data-i18n="exp.contracts"></span> <small>.odcs.yaml</small></button>
-          <button data-export="drawio"><span data-i18n="exp.drawio"></span> <small>.drawio</small></button>
-          <button data-export="stride"><span data-i18n="exp.stride"></span> <small>.csv</small></button>
-          <button data-export="share"><span data-i18n="exp.share"></span> <small data-i18n="exp.share.ext"></small></button>
-          <button data-export="compliance"><span data-i18n="exp.compliance"></span> <small data-i18n="exp.compliance.ext"></small></button>
+          <div class="menu-sep"></div>
+          <div class="menu-group" data-i18n="exp.g.docs"></div>
           <button data-export="report"><span data-i18n="exp.report"></span> <small data-i18n="exp.report.ext"></small></button>
           <button data-export="status"><span data-i18n="exp.status"></span> <small data-i18n="exp.status.ext"></small></button>
           <button data-export="costs"><span data-i18n="exp.costs"></span> <small data-i18n="exp.costs.ext"></small></button>
+          <button data-export="compliance"><span data-i18n="exp.compliance"></span> <small data-i18n="exp.compliance.ext"></small></button>
+          <button data-export="stride"><span data-i18n="exp.stride"></span> <small>.csv</small></button>
+          <div class="menu-sep"></div>
+          <div class="menu-group" data-i18n="exp.g.tables"></div>
           <button data-export="inventory-xlsx"><span data-i18n="exp.inventoryX"></span> <small>.xlsx</small></button>
           <button data-export="inventory-csv"><span data-i18n="exp.inventoryC"></span> <small>.csv</small></button>
+          <div class="menu-sep"></div>
+          <div class="menu-group" data-i18n="exp.g.tools"></div>
+          <button data-export="drawio"><span data-i18n="exp.drawio"></span> <small>.drawio</small></button>
+          <button data-export="mermaid"><span data-i18n="exp.mermaid"></span> <small>.mmd</small></button>
+          <button data-export="plantuml"><span data-i18n="exp.plantuml"></span> <small>.puml</small></button>
+          <button data-export="contracts" id="exp-contracts" hidden><span data-i18n="exp.contracts"></span> <small>.odcs.yaml</small></button>
+          <div class="menu-sep"></div>
+          <div class="menu-group" data-i18n="exp.g.share"></div>
+          <button data-export="json"><span data-i18n="exp.json"></span> <small>.json</small></button>
+          <button data-export="copy"><span data-i18n="exp.copy"></span> <small data-i18n="exp.clip"></small></button>
+          <button data-export="share"><span data-i18n="exp.share"></span> <small data-i18n="exp.share.ext"></small></button>
           <div class="menu-sep"></div>
           <label class="menu-check"><input type="checkbox" id="exp-legend"><span data-i18n="exp.legend"></span></label>
           <label class="menu-field"><span data-i18n="leg.author"></span><input id="exp-author" autocomplete="off" data-i18n-placeholder="exp.author.ph"></label>
