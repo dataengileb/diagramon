@@ -60,6 +60,7 @@ api ~> cola : eventos
 | `tipo respaldo: "Tráfico de respaldo" trazo="6 3" color=cielo ancho=2 partículas=1` | Tipo de conexión propio de este diagrama (en inglés: `type backup: "…" dash=… width=… particles=…`). `id`: `a-z`, `0-9`, `-` (hasta 32, que no sea un nombre predefinido); `trazo`: de 1 a 6 números (`"12 4 2 4"`, vacío = continua); `color`: clave de la paleta o hex; `ancho` 1-4; `partículas` 0-4. Se usa con `a -> b : x estilo=respaldo` |
 | `a -> b -> c : etiqueta` | Cadena; la etiqueta va en la última flecha |
 | `líneas: codos` · `a -> b : x línea=curva` | Líneas en ángulo recto o curvas, para el diagrama o una conexión |
+| `a -> b : x bend=40,-20` | Línea movida a mano: desplazamiento en píxeles respecto al trazado automático (arrastra el punto de la conexión elegida) |
 | `autor: …` · `versión: …` | Salen en el cajetín de la exportación |
 | `revisión db: "BD en subred pública" por=Ana levantada=2026-10-01 compromiso=2026-11-15` | Observación de revisión (`estado=resuelta cerrada=…` al corregirla) |
 | `# …` o `// …` | Comentario |
