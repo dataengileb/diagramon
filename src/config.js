@@ -220,6 +220,47 @@ window.DIAGRAMON_CONFIG = {
     }
   },
 
+  /* Radar tecnológico: qué productos se aceptan, cuáles están a prueba, en pausa o en retirada, y cuándo termina su soporte.
+     entries: lista ORDENADA de { id, name?, match, ring, eos?, replaceWith?, note? }. Vacía por defecto: sin entradas no cambia nada.
+       · id: letras, dígitos, punto, guion o guion bajo (hasta 40). Un componente puede fijarse a una entrada con `radar: '<id>'` (o `radar: 'none'` para excluirlo).
+       · match: cómo se reconoce el producto en un componente; se cumplen TODOS los campos que pongas (al menos uno):
+           icon: 'azure/postgresql' (icono exacto) · type: 'db' (tipo) · text: 'oracle 11' (aparece en el nombre o el subtítulo, sin importar mayúsculas ni tildes).
+         Gana la primera entrada de la lista que coincida; pon las más específicas antes.
+       · ring: 'adopt' | 'trial' | 'hold' | 'retire' (anillos del radar; ver `rings`).
+       · eos: fin de soporte, 'AAAA-MM' (fin de ese mes) o 'AAAA-MM-DD'. replaceWith: producto que lo sustituye. note: motivo (una línea).
+       · name, replaceWith y note admiten texto simple o { en, es }.
+     Un diagrama puede añadir o corregir entradas con su propia lista `radar` en el JSON (misma forma; el id de config.js se sobrescribe). El texto del editor solo lleva `radar=<id>` por componente.
+     warnMonths: con cuántos meses de antelación avisa que termina el soporte.
+     rings: etiqueta, sigla y color de cada anillo (la pastilla del lienzo solo sale en «hold», en «retire» y cuando el soporte termina pronto o ya terminó).
+     rules: avisos que salen en Revisión (fuente «radar»); solo avisan, nunca bloquean.
+       · rdr.eos-passed: el soporte ya terminó (alta). · rdr.retire: anillo «retire» (alta).
+       · rdr.eos-soon: el soporte termina dentro de `warnMonths` (media).
+       · rdr.phase-after-eos: el componente sigue en una fase con fecha posterior al fin de su soporte (media).
+       · rdr.hold-added: una fase incorpora un componente en «hold» (baja).
+       · rdr.retire-retained: anillo «retire» pero marcado «retener» en la migración 6R (media). */
+  techRadar: {
+    warnMonths: 6,
+    rings: {
+      adopt:  { label: { en: 'Adopt', es: 'Adoptar' }, short: 'ADOPT', color: 'var(--p-menta, #7fd1ae)' },
+      trial:  { label: { en: 'Trial', es: 'Probar' }, short: 'TRIAL', color: 'var(--p-cielo, #6fb1ff)' },
+      hold:   { label: { en: 'Hold', es: 'En pausa' }, short: 'HOLD', color: 'var(--p-limon, #e6c84a)' },
+      retire: { label: { en: 'Retire', es: 'Retirar' }, short: 'RETIRE', color: 'var(--p-coral, #ff8a7a)' }
+    },
+    entries: [
+      // { id: 'oracle11', name: 'Oracle 11g', match: { text: 'oracle 11' }, ring: 'retire', eos: '2020-12', replaceWith: 'Oracle 19c', note: 'Sin parches de seguridad' },
+      // { id: 'postgres', name: 'PostgreSQL', match: { icon: 'azure/postgresql' }, ring: 'adopt' },
+      // { id: 'node16', name: 'Node.js 16', match: { text: 'node 16' }, ring: 'hold', eos: '2023-09' },
+    ],
+    rules: {
+      'rdr.eos-passed':       { enabled: true, severity: 'high' },
+      'rdr.retire':           { enabled: true, severity: 'high' },
+      'rdr.eos-soon':         { enabled: true, severity: 'medium' },
+      'rdr.phase-after-eos':  { enabled: true, severity: 'medium' },
+      'rdr.hold-added':       { enabled: true, severity: 'low' },
+      'rdr.retire-retained':  { enabled: true, severity: 'medium' }
+    }
+  },
+
   /* Cumplimiento normativo: controles que se marcan en componentes y grupos (inspector › Cumplimiento) y la matriz que los cruza.
      frameworks: mapa ORDENADO clave → { label, short, url?, controls: { '<id>': { label: { en, es } } } }.
        · El orden de las claves es el de la matriz y los filtros; `short` es la sigla corta (chips, columnas, CSV).

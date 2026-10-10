@@ -397,6 +397,19 @@ Indica qué se hace con cada componente al migrar la arquitectura: **Retener**, 
 - En la pestaña *Texto*: `app: Facturación disposición=rehospedar` (en inglés: `disposition=rehost`). JSON: `"disposition": "rehost"`.
 - Los valores, colores, iniciales y avisos están en `src/config.js › migration`; la séptima R, *Reubicar*, está ahí y viene apagada.
 
+### Radar tecnológico y fin de soporte
+
+Mantén una lista de qué productos se aceptan y cuáles van de salida, y míralo sobre el diagrama. Cada entrada dice cómo reconocer un producto (por **icono**, **tipo** o **texto** en el nombre o el subtítulo), su **anillo** (**Adoptar**, **Probar**, **En pausa** o **Retirar**) y, si quieres, la fecha de **fin de soporte**, un sustituto y una nota.
+
+- Las entradas viven en `src/config.js › techRadar.entries` (vacía por defecto, con ejemplos comentados), y un diagrama puede añadir las suyas en una lista `radar` del JSON (misma forma; el mismo `id` reemplaza al de `config.js`). Gana la primera entrada que coincida, y todos los campos que pongas en `match` deben coincidir.
+- Selecciona un componente. En **Radar tecnológico**, deja *Automático* para usar las reglas de coincidencia, elige una entrada para fijarlo o *Fuera del radar* para excluirlo. La línea de abajo muestra el anillo, el fin de soporte, el sustituto y la nota.
+- En el lienzo aparece una etiqueta arriba a la izquierda solo cuando algo pide atención: *HOLD*, *RETIRE* o *EOL* cuando el soporte ya terminó o termina dentro de `warnMonths` (6 por defecto). Pasa el puntero para ver el detalle.
+- El filtro **Radar tecnológico** de las lentes tiene *Requiere atención*, una ficha por anillo en uso y *Fuera del radar*.
+- El panel **Revisión** tiene una fuente *Radar tecnológico*: soporte ya terminado y anillo *Retirar* (alta), soporte que termina pronto y un componente que sigue en una fase con fecha posterior al fin de su soporte (media), una fase que incorpora un componente en *En pausa* (baja), y un componente en *Retirar* que la 6R marca como *Retener* (media). Solo avisan, se pueden descartar, y cada regla se apaga o se recalifica en `techRadar.rules`.
+- El **informe** tiene una sección *Radar tecnológico* (componentes por anillo, y cada componente reconocido con su producto, anillo, fin de soporte y sustituto); el inventario **Excel** y CSV gana las columnas *Radar tecnológico* y *Fin de soporte* cuando algún componente coincide.
+- En la pestaña *Texto*: `db: Core radar=oracle11` fija un componente a una entrada y `radar=none` lo excluye. Las entradas se guardan en el JSON y no se pierden al editar el texto.
+- Las fechas se comparan con la de hoy, así que los avisos cambian con el tiempo.
+
 ## 9. Notas adhesivas y zonas de riesgo
 
 Usa los dos botones junto al zoom (abajo a la derecha del lienzo).
