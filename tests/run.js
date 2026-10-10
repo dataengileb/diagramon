@@ -887,7 +887,7 @@
     eq(none.map(x => [x.cost, x.dCost]), [[null, null], [null, null], [null, null]], 'no cost anywhere'); eq(PHM.phaseRows({ nodes: [], edges: [], groups: [] }, h), [], 'no phases');
   });
   test('report and presentation wiring for phases', () => {
-    assert(/REP_SECS = \[[^\]]*'approvals', 'phases', 'migration', 'radar', 'versions'/.test(app), 'section after approvals; the migration and radar sections follow the phases'); assert(/phases: !!m\.phases\?\.length/.test(app), 'available with phases'); assert(app.includes("want('phases')") && app.includes('presentPhases'), 'section and API');
+    assert(/REP_SECS = \[[^\]]*'approvals', 'phases', 'estimation', 'migration', 'radar', 'versions'/.test(app), 'section after approvals; estimation, migration and radar follow the phases'); assert(/phases: !!m\.phases\?\.length/.test(app), 'available with phases'); assert(app.includes("want('phases')") && app.includes('presentPhases'), 'section and API');
     const i18n = read('src/i18n.js'); ['rep.s.phases', 'rep.k.phases', 'rep.h.phase', 'phase.present.tip', 'phase.present.step', 'phase.cmp.title', 'phase.cmp.cost'].forEach(k => assert(i18n.split(`'${k}'`).length - 1 === 2, `${k} in en and es`));
   });
   test('without phases the JSON, the snapshot and the text stay byte-identical', () => {
@@ -1583,6 +1583,57 @@
     assert(!/effort|estimation|extra/.test(serializeM(base)) && !/effort|esfuerzo/.test(TXT.stringify(base, 'en') + TXT.stringify(base, 'es')), 'no key anywhere');
     const withIt = serializeM({ ...base, estimation: { contingency: 10 }, phases: [{ id: 'p', name: 'P', extra: [{ label: 'QA', role: 'qa', days: 5 }] }], nodes: [{ ...base.nodes[0], effort: [{ role: 'dev', days: 3 }] }] });
     assert(/"effort": \[\{"role":"dev","days":3\}\]/.test(withIt) && /"estimation": \{"contingency":10\}/.test(withIt) && /"extra": \[/.test(withIt), withIt);
+  });
+
+  // Motor y avisos de la estimación, extraídos de app.js con una configuración de prueba (dos perfiles con tarifa, uno sin)
+  const mkEst = (cfg = {}) => {
+    const sources = [], C2 = { ...C, estimation: { hoursPerDay: 8, contingency: 0, roles: [{ id: 'dev', label: { en: 'Developer', es: 'Desarrollo' }, rate: 600 }, { id: 'qa', label: { en: 'QA', es: 'Pruebas' }, rate: 450 }, { id: 'pm', label: { en: 'PM' } }], rules: C.estimation.rules, ...cfg } };
+    const src = `${between('/* phaseModel:start */', '/* phaseModel:end */')};\n${app.slice(app.indexOf('  /* ---------- estimación de esfuerzo'), app.indexOf('  const phaseHelpers = {'))}`;
+    const api = new Function('C', 'loc', 'addFindingSource', 'SEVERITY', 'T', 'round2', `${src}; return { phaseEffort, effortHelpers, efInfo, efDaysOf, efCostOf, EF_ROLES };`)(
+      C2, v => (v && typeof v === 'object' ? v.en : v), (k, fn) => sources.push({ k, fn }), ['low', 'medium', 'high', 'critical'], (k, v) => `${k}${v == null ? '' : ':' + JSON.stringify(v)}`, v => Math.round(v * 100) / 100);
+    return { ...api, findings: m => sources.find(x => x.k === 'estimation').fn(m) };
+  };
+  const E = mkEst();
+  const efDoc = () => ({ phases: [{ id: 'p1', name: 'MVP', extra: [{ label: 'Project management', role: 'pm', days: 4 }] }, { id: 'p2', name: 'Wave 2' }], nodes: [
+    { id: 'a', label: 'A', effort: [{ role: 'dev', days: 10 }, { role: 'qa', days: 2 }] }, { id: 'b', label: 'B', effort: [{ role: 'dev', days: 5 }], phase: 'p1' }, { id: 'c', label: 'C', phase: 'p2', effort: [{ role: 'dev', days: 20 }] }, { id: 'd', label: 'D', phase: 'p2' }, { id: 'e', label: 'E', effort: [{ role: 'ghost', days: 1 }], phase: 'p2' }] });
+  test('phaseEffort: a component counts in the phase where it appears, no phase means the first, extra work in its own phase', () => {
+    const r = E.phaseEffort(efDoc(), E.effortHelpers).rows;
+    eq(r.map(x => [x.id, x.comps, x.estimated, x.days, x.extraDays]), [['p1', 2, 2, 21, 4], ['p2', 3, 2, 21, 0]], 'a and b in MVP (a has no phase), c, d and e in Wave 2');
+    eq(r[0].byRole, { dev: 15, qa: 2, pm: 4 }, 'days per role, extra included'); eq(r[1].missing, ['d'], 'the component with no effort');
+    const moved = efDoc(); moved.nodes[0].phase = 'p2';
+    eq(E.phaseEffort(moved, E.effortHelpers).rows.map(x => x.days), [9, 33], 'moving a component moves its days');
+  });
+  test('phaseEffort: costs use the daily rates, a role without rate adds days but no cost, contingency is added and the totals accumulate', () => {
+    const t = E.phaseEffort(efDoc(), E.effortHelpers);
+    eq(t.rows.map(x => [x.cost, x.contingency, x.total, x.cumulative]), [[9900, 0, 9900, 9900], [12000, 0, 12000, 21900]], 'dev 15×600 + qa 2×450, pm has no rate; wave 2: dev 20×600, ghost has no rate');
+    eq(t.rows.map(x => x.unrated), [['pm'], ['ghost']], 'roles with no rate'); eq(t.totals, { days: 42, extraDays: 4, cost: 21900, contingency: 0, total: 21900, daysTotal: 42 });
+    const withC = E.phaseEffort({ ...efDoc(), estimation: { contingency: 15 } }, E.effortHelpers);
+    eq(withC.pct, 15); eq(withC.rows.map(x => [x.contingency, x.total, x.daysTotal, x.cumulative, x.cumDays]), [[1485, 11385, 24.15, 11385, 24.15], [1800, 13800, 24.15, 25185, 48.3]], 'the document contingency, rounded to cents');
+    eq(mkEst({ contingency: 10 }).phaseEffort(efDoc(), mkEst({ contingency: 10 }).effortHelpers).pct, 10, 'config default'); eq(E.phaseEffort({ ...efDoc(), estimation: { contingency: 0 } }, mkEst({ contingency: 10 }).effortHelpers).pct, 0, 'the document wins, even with 0');
+    eq(E.phaseEffort({ phases: [{ id: 'p', name: 'P' }], nodes: [{ id: 'a', label: 'A' }] }, E.effortHelpers), null, 'no effort anywhere: nothing'); eq(E.phaseEffort({ nodes: [] }, E.effortHelpers), null);
+  });
+  test('phaseEffort: without phases there is one row; a diagram with only extra work still counts', () => {
+    const r = E.phaseEffort({ nodes: [{ id: 'a', label: 'A', effort: [{ role: 'dev', days: 3 }] }] }, E.effortHelpers).rows; eq(r.length, 1); eq([r[0].id, r[0].days, r[0].total], ['', 3, 1800]);
+    eq(E.phaseEffort({ phases: [{ id: 'p', name: 'P', extra: [{ label: 'QA', role: 'qa', days: 2 }] }], nodes: [{ id: 'a', label: 'A' }] }, E.effortHelpers).totals.total, 900);
+    eq(E.efDaysOf([{ role: 'dev', days: 1.25 }, { role: 'qa', days: 2 }]), 3.25); eq(E.efCostOf([{ role: 'dev', days: 2 }, { role: 'ghost', days: 9 }]), 1200); eq(E.efInfo('qa').label, 'QA'); eq(E.efInfo('ghost'), { id: 'ghost', known: false, label: 'ghost', rate: null });
+  });
+  test('findings: phases where only some components are estimated, roles with no rate; both can be switched off; nothing without effort', () => {
+    const f = E.findings(efDoc());
+    eq(f.map(x => x.id), ['estimation:unestimated:p2', 'estimation:norate:ghost'], 'p1 is fully estimated, p2 is missing d; pm only appears in extra work (no component to point at)');
+    eq(f.map(x => [x.source, x.rule, x.severity, x.target]), [['estimation', 'est.unestimated', 'low', { kind: 'node', id: 'd' }], ['estimation', 'est.no-rate', 'low', { kind: 'node', id: 'e' }]]);
+    eq(E.findings({ nodes: [{ id: 'a', label: 'A' }] }), []); eq(E.findings({ phases: [{ id: 'p', name: 'P' }], nodes: [{ id: 'a', label: 'A' }, { id: 'b', label: 'B' }] }), [], 'nobody estimated: nothing to compare');
+    const off = mkEst({ rules: { 'est.unestimated': { enabled: false }, 'est.no-rate': { enabled: true, severity: 'high' } } });
+    eq(off.findings(efDoc()).map(x => [x.rule, x.severity]), [['est.no-rate', 'high']]);
+  });
+  test('the app wires it: phase table, report section, inventory sheet and column, Review source and texts in both languages', () => {
+    assert(app.includes('${ph.length ? phaseEstimate() : \'\'}') && app.includes('function phaseEstimate()') && app.includes('<tfoot>'), 'phase table');
+    assert(app.includes("if (want('estimation'))") && app.includes("sec('estimation', blocks)") && app.includes('estimation: !!phaseEffort(m, effortHelpers)'), 'report');
+    assert(app.includes("mk('estimation', INV_EST") && app.includes("...(m.nodes.some(x => x.effort?.length) ? [['effort']] : [])") && app.includes('effort: efDaysOf(n.effort)'), 'inventory');
+    assert(app.includes("addFindingSource('estimation'"), 'Review');
+    const i18n = read('src/i18n.js');
+    ['find.src.estimation', 'est.all', 'est.f.unest.t', 'est.f.unest.fix', 'est.f.rate.t', 'est.f.rate.fix', 'est.title', 'est.cont', 'est.cont.none', 'est.comps', 'est.comps.tip', 'est.days.tip', 'est.extra', 'est.incl', 'est.build', 'est.cum', 'est.run', 'est.run.tip', 'est.sum', 'est.unrated', 'est.unrated.tip',
+      'rep.s.estimation', 'rep.h.estimated', 'rep.h.days', 'rep.h.build', 'rep.h.contingency', 'rep.h.total', 'rep.h.cumulative', 'rep.h.sum', 'inv.sheet.estimation', 'inv.c.estimated', 'inv.c.days', 'inv.c.extraDays', 'inv.c.build', 'inv.c.contingency', 'inv.c.total', 'inv.c.cumulative', 'inv.c.effort'].forEach(k => eq(i18n.split(`'${k}':`).length - 1, 2, `${k} once per language`));
+    assert(C.estimation.rules['est.unestimated'].enabled && C.estimation.rules['est.no-rate'].enabled, 'rules on by default');
   });
 
   /* ======================================================================

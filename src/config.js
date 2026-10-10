@@ -227,8 +227,17 @@ window.DIAGRAMON_CONFIG = {
        · Una fase puede llevar `extra: [{ label, role, days }]` para trabajo que no es un componente (gestión, pruebas, migración de datos); va en el JSON.
        · Un perfil que no está aquí se conserva en el diagrama, pero no tiene tarifa.
      hoursPerDay: horas de un día-persona (para mostrar horas). contingency: imprevistos por defecto, en % sobre el esfuerzo; el diagrama puede fijar los suyos con `estimation: { contingency }`.
-     El esfuerzo de un componente cuenta en la fase donde aparece (`phase`; sin fase, la primera). */
-  estimation: { hoursPerDay: 8, contingency: 0, roles: [] },
+     El esfuerzo de un componente cuenta en la fase donde aparece (`phase`; sin fase, la primera). rules: ver abajo. */
+  estimation: {
+    hoursPerDay: 8, contingency: 0, roles: [],
+    /* rules: avisos que salen en Revisión (fuente «estimación»); solo avisan, nunca bloquean.
+         · est.unestimated: una fase con componentes sin estimar mientras otros de la misma fase sí tienen esfuerzo.
+         · est.no-rate: un componente usa un perfil que no está en `roles` o no tiene tarifa. */
+    rules: {
+      'est.unestimated': { enabled: true, severity: 'low' },
+      'est.no-rate':     { enabled: true, severity: 'low' }
+    }
+  },
 
   /* Radar tecnológico: qué productos se aceptan, cuáles están a prueba, en pausa o en retirada, y cuándo termina su soporte.
      entries: lista ORDENADA de { id, name?, match, ring, eos?, replaceWith?, note? }. Vacía por defecto: sin entradas no cambia nada.

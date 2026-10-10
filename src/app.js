@@ -1891,13 +1891,42 @@
       return { id: p.id, name: p.name, date: p.date || '', goal: p.goal || '', nodes: st.nodes, edges: st.edges, added: d.added.length, retired: d.retired.length, addedIds: d.added, retiredIds: d.retired, cost, dCost, findings: st.findings, datasets: st.datasets, datasetIds: (phaseModel(m, i).datasets || []).map(x => x.id), storage: st.storage, ...(st.mig ? { mig: st.mig } : {}) };
     });
   }
+  // Esfuerzo por fase (D8): cada componente cuenta en la fase donde aparece (phase; sin fase, la primera) y el trabajo extra, en la suya. Sin fases hay una sola fila (id '').
+  // h.rate(role) = tarifa por día o null; h.contingency = % por defecto (m.estimation.contingency manda). Devuelve null si nada del diagrama tiene esfuerzo.
+  // Fila: { id, name, comps, estimated, missing: [ids sin esfuerzo], days, extraDays, byRole, cost, contingency, total, daysTotal, cumulative, cumDays, unrated: [perfiles sin tarifa] }
+  function phaseEffort(m, h) {
+    const ph = m.phases || [], r2 = v => Math.round(v * 100) / 100;
+    if (!m.nodes.some(n => n.effort?.length) && !ph.some(p => p.extra?.length)) return null;
+    const pct = m.estimation?.contingency ?? (Number.isFinite(+h.contingency) ? +h.contingency : 0), cols = ph.length ? ph : [{ id: '', name: '' }], first = cols[0].id;
+    let cum = 0, cumDays = 0;
+    const rows = cols.map(p => {
+      const here = m.nodes.filter(n => (n.phase || first) === p.id), by = {}, ex = p.extra || [];
+      here.forEach(n => (n.effort || []).forEach(e => { by[e.role] = r2((by[e.role] || 0) + e.days); }));
+      ex.forEach(e => { by[e.role] = r2((by[e.role] || 0) + e.days); });
+      const days = r2(Object.values(by).reduce((a, d) => a + d, 0)), cost = r2(Object.entries(by).reduce((a, [role, d]) => a + d * (h.rate(role) || 0), 0)), cc = r2(cost * pct / 100), total = r2(cost + cc), daysTotal = r2(days * (1 + pct / 100));
+      cum = r2(cum + total); cumDays = r2(cumDays + daysTotal);
+      return { id: p.id, name: p.name, comps: here.length, estimated: here.filter(n => n.effort?.length).length, missing: here.filter(n => !n.effort?.length).map(n => n.id), days, extraDays: r2(ex.reduce((a, e) => a + e.days, 0)), byRole: by, cost, contingency: cc, total, daysTotal, cumulative: cum, cumDays, unrated: Object.keys(by).filter(role => h.rate(role) == null) };
+    });
+    const sum = k => r2(rows.reduce((a, r) => a + r[k], 0));
+    return { pct, rows, totals: { days: sum('days'), extraDays: sum('extraDays'), cost: sum('cost'), contingency: sum('contingency'), total: sum('total'), daysTotal: sum('daysTotal') } };
+  }
   /* phaseModel:end */
   /* ---------- estimación de esfuerzo (días-persona por perfil; los perfiles y tarifas vienen de config.js › estimation) ---------- */
   const EST = { hoursPerDay: 8, contingency: 0, roles: [], ...C.estimation };
   const EF_ROLES = new Map((Array.isArray(EST.roles) ? EST.roles : []).filter(r => r && efRole(r.id)).map(r => [efRole(r.id), r]));
   const efInfo = id => { const r = EF_ROLES.get(id), rate = r ? Number(r.rate) : NaN; return { id, known: !!r, label: r ? loc(r.label) || id : id, rate: Number.isFinite(rate) && rate >= 0 ? rate : null }; };
   const efDaysOf = list => round2((list || []).reduce((a, e) => a + e.days, 0));
+  const effortHelpers = { rate: role => efInfo(role).rate, contingency: EST.contingency };
   const efCostOf = list => round2((list || []).reduce((a, e) => a + e.days * (efInfo(e.role).rate || 0), 0));
+  // Avisos de la estimación (config.js › estimation.rules): fase con componentes sin estimar mientras otros sí, y perfil sin tarifa; solo avisan
+  addFindingSource('estimation', m => {
+    const ER = EST.rules || {}, on = id => !!ER[id] && ER[id].enabled !== false, sev = id => (SEVERITY.includes(ER[id]?.severity) ? ER[id].severity : 'low');
+    const pe = phaseEffort(m, effortHelpers), out = [];
+    if (!pe) return out;
+    if (on('est.unestimated')) pe.rows.forEach(r => { if (r.estimated && r.missing.length) out.push({ id: `estimation:unestimated:${r.id || '-'}`, source: 'estimation', rule: 'est.unestimated', severity: sev('est.unestimated'), target: { kind: 'node', id: r.missing[0] }, title: T('est.f.unest.t', { n: r.missing.length, p: r.name || T('est.all') }), fix: T('est.f.unest.fix') }); });
+    if (on('est.no-rate')) { const seen = new Set(); m.nodes.forEach(n => (n.effort || []).forEach(e => { if (efInfo(e.role).rate == null && !seen.has(e.role)) { seen.add(e.role); out.push({ id: `estimation:norate:${e.role}`, source: 'estimation', rule: 'est.no-rate', severity: sev('est.no-rate'), target: { kind: 'node', id: n.id }, title: T('est.f.rate.t', { r: e.role }), fix: T('est.f.rate.fix') }); } })); }
+    return out;
+  });
   const phaseHelpers = { monthly: m => monthlyTotal(m.nodes), hasCost: m => m.nodes.some(hasCost), findings: m => findingsOf(m).filter(f => !f.dismissed), storage: ds => storageEstimate(ds, { prices: dsPrices() }) };
   const phaseCostText = (r, k = 'cost') => (r[k] == null ? '—' : k === 'cost' ? money(round2(r.cost)) : r.dCost === 0 ? money(0) : `${r.dCost > 0 ? '+' : '−'}${money(round2(Math.abs(r.dCost)))}`);
 
@@ -4641,8 +4670,19 @@
           <label>${T('phase.goal')}<textarea data-phf="goal" rows="2" placeholder="${esc(T('phase.goal.ph'))}">${esc(p.goal || '')}</textarea></label></div></div>`;
     };
     phaseBox.innerHTML = `<div class="ph-man"><div class="ph-title"><div class="cat">${esc(T('phase.title'))}</div><button class="btn small" data-phb="add">${esc(T('phase.add'))}</button></div>
-      ${ph.length ? ph.map(row).join('') : `<p class="empty-list">${esc(T('phase.empty'))}</p>`}${ph.length ? phaseCompare() : ''}</div>`;
+      ${ph.length ? ph.map(row).join('') : `<p class="empty-list">${esc(T('phase.empty'))}</p>`}${ph.length ? phaseCompare() : ''}${ph.length ? phaseEstimate() : ''}</div>`;
     markPhaseCmp();
+  }
+  // Estimación por fase bajo la comparación: componentes estimados, días, costo de construcción con imprevistos, acumulado y, para comparar, el costo mensual de operarla
+  function phaseEstimate() {
+    const pe = phaseEffort(S.model, effortHelpers);
+    if (!pe) return '';
+    const run = phaseRows(S.model, phaseHelpers), hasRate = pe.rows.some(r => r.cost > 0), roleTitle = r => Object.entries(r.byRole).map(([k, d]) => `${efInfo(k).label}${efInfo(k).known ? '' : ' ⚠'}: ${d}`).join(' · ');
+    const body = pe.rows.map((r, i) => `<tr><th scope="row">${esc(r.name)}${r.unrated.length ? `<small title="${esc(T('est.unrated.tip', r.unrated.join(', ')))}">⚠ ${esc(T('est.unrated'))}</small>` : ''}</th><td>${r.estimated}/${r.comps}</td><td title="${esc(roleTitle(r))}">${r.days}${r.extraDays ? `<small>+${r.extraDays} ${esc(T('est.extra'))}</small>` : ''}</td>
+      ${hasRate ? `<td>${esc(money(r.total))}${r.contingency ? `<small>${esc(T('est.incl', money(r.contingency)))}</small>` : ''}</td><td>${esc(money(r.cumulative))}</td>` : ''}<td>${esc(phaseCostText(run[i]))}</td></tr>`).join('');
+    const t = pe.totals;
+    return `<div class="ph-cmp"><div class="cat">${esc(T('est.title'))}${pe.pct ? ` · ${esc(T('est.cont', pe.pct))}` : ''}</div><div class="ph-cmp-box"><table><thead><tr><th>${esc(T('phase.cmp.phase'))}</th><th title="${esc(T('est.comps.tip'))}">${esc(T('est.comps'))}</th><th title="${esc(T('est.days.tip'))}">${esc(T('est.days'))}</th>${hasRate ? `<th>${esc(T('est.build'))}</th><th>${esc(T('est.cum'))}</th>` : ''}<th title="${esc(T('est.run.tip'))}">${esc(T('est.run'))}</th></tr></thead><tbody>${body}</tbody>
+      <tfoot><tr><th scope="row">${esc(T('est.sum'))}</th><td></td><td>${t.days}</td>${hasRate ? `<td>${esc(money(t.total))}</td><td></td>` : ''}<td></td></tr></tfoot></table></div></div>`;
   }
   // Comparación de fases bajo la lista: componentes, altas, bajas, costo mensual, cambio de costo y hallazgos abiertos; clic en una fila = elegir esa fase en el lienzo
   function phaseCompare() {
@@ -8128,7 +8168,7 @@
   // reportData() arma un modelo plano (secciones de bloques) y dos dibujantes lo pintan: reportMarkdown y reportHTML, así que los dos formatos no se desincronizan.
   // Bloques: { k: 'h3', t } · { k: 'p', t, muted? } · { k: 'kv', items: [[k, v]] } · { k: 'cards', items: [{ label, value, tone? }] }
   //          { k: 'table', head: [], rows: [[celda]], cls? } (celda = texto | { t, tone }) · { k: 'text', label, t } · { k: 'ul', items } · { k: 'img', alt, caption, svg?, uri?, file? }
-  const REP_SECS = ['summary', 'diagram', 'components', 'connections', 'data', 'owners', 'layers', 'datasets', 'costs', 'resilience', 'findings', 'compliance', 'threats', 'decisions', 'requirements', 'raid', 'approvals', 'phases', 'migration', 'radar', 'versions', 'notes', 'comments'];
+  const REP_SECS = ['summary', 'diagram', 'components', 'connections', 'data', 'owners', 'layers', 'datasets', 'costs', 'resilience', 'findings', 'compliance', 'threats', 'decisions', 'requirements', 'raid', 'approvals', 'phases', 'estimation', 'migration', 'radar', 'versions', 'notes', 'comments'];
   const REP_PAGE = ['diagram', 'components', 'findings', 'decisions']; // secciones que empiezan página al imprimir
   const repT = (k, v) => T(`rep.${k}`, v);
   const repSleep = ms => new Promise(r => setTimeout(r, ms));
@@ -8149,7 +8189,7 @@
       data: m.nodes.some(n => dataClassesOf(n, m).length || regionOf(n, m).value), owners: govTeamList(m).length > 0,
       layers: m.nodes.some(n => layerOf(n).value), migration: m.nodes.some(n => n.disposition), radar: m.nodes.some(n => radarOf(n, m)), costs: m.nodes.some(hasCost), resilience: m.nodes.some(hasRes) || spofList(m).length > 0, findings: findingsOf(m).length > 0,
       compliance: cmpModel(m).keys.length > 0, threats: strideAll(m).length > 0, decisions: !!m.decisions?.length, requirements: !!m.requirements?.length,
-      raid: !!m.raid?.length, approvals: !!m.stakeholders?.length, phases: !!m.phases?.length, datasets: !!m.datasets?.length,
+      raid: !!m.raid?.length, approvals: !!m.stakeholders?.length, phases: !!m.phases?.length, estimation: !!phaseEffort(m, effortHelpers), datasets: !!m.datasets?.length,
       versions: m.versions.length > 0, notes: (m.notes || []).length > 0 || (m.zones || []).some(z => z.kind !== 'trust'), comments: (m.comments || []).some(c => !c.internal && c.status !== 'resolved')
     };
   }
@@ -8486,6 +8526,18 @@
         if (im) blocks.push({ k: 'img', alt: `${m.title} — ${r.name}`, svg: im.svg, uri: im.uri, file: im.file });
       });
       sec('phases', blocks);
+    }
+
+    if (want('estimation')) {
+      // Una fila por fase: días por perfil, costo de construcción, imprevistos y acumulado; al final, el total y los perfiles sin tarifa
+      const pe = phaseEffort(m, effortHelpers), roles = [...new Set(pe.rows.flatMap(r => Object.keys(r.byRole)))], rated = pe.rows.some(r => r.cost > 0), phased = !!m.phases?.length;
+      const head = [...(phased ? [repT('h.phase')] : []), repT('h.estimated'), ...roles.map(k => `${efInfo(k).label}${efInfo(k).known ? '' : ' ⚠'}`), repT('h.days'), ...(rated ? [repT('h.build'), repT('h.contingency'), repT('h.total'), repT('h.cumulative')] : [])];
+      const row = r => [...(phased ? [r.name] : []), `${r.estimated}/${r.comps}`, ...roles.map(k => (r.byRole[k] ? String(r.byRole[k]) : '')), String(r.days), ...(rated ? [money(r.cost), r.contingency ? money(r.contingency) : '', money(r.total), money(r.cumulative)] : [])];
+      const t = pe.totals, tot = [...(phased ? [repT('h.sum')] : []), '', ...roles.map(k => String(round2(pe.rows.reduce((a, r) => a + (r.byRole[k] || 0), 0)))), String(t.days), ...(rated ? [money(t.cost), t.contingency ? money(t.contingency) : '', money(t.total), ''] : [])];
+      const blocks = [{ k: 'p', t: pe.pct ? T('est.cont', pe.pct) : T('est.cont.none') }, { k: 'table', cls: 'wide', head, rows: [...pe.rows.map(row), tot] }];
+      const bad = [...new Set(pe.rows.flatMap(r => r.unrated))];
+      if (bad.length) blocks.push({ k: 'p', t: T('est.unrated.tip', bad.join(', ')) });
+      sec('estimation', blocks);
     }
 
     if (want('migration')) {
@@ -8847,6 +8899,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
   const INV_RADAR = [['radar'], ['radarEos']];   // columnas Radar y Fin de soporte (solo si algún componente coincide con el radar)
   const INV_MIG = [['disposition']];   // columna Disposición (solo si algún componente la tiene)
   const INV_PH = [['phase'], ['until']];   // columnas de fase de componentes y conexiones (solo si el diagrama tiene fases)
+  const INV_EST = [['phase'], ['components', 'int'], ['estimated', 'int'], ['days'], ['extraDays'], ['build', 'money'], ['contingency', 'money'], ['total', 'money'], ['cumulative', 'money']];   // hoja Estimación (solo si algo tiene esfuerzo)
   const INV_PHASE = [['id'], ['name'], ['date'], ['goal'], ['components', 'int'], ['added', 'int'], ['retired', 'int'], ['monthly', 'money']];
   const phNm = (m, id) => (id ? m.phases?.find(p => p.id === id)?.name || '' : '');   // nombre de la fase («» si no hay)
   const INV_SIGN = [['kind'], ['object'], ['by'], ['stakeholder'], ['verdict'], ['date'], ['note']];
@@ -8892,6 +8945,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
         adrs: (m.decisions || []).filter(d => d.links?.nodes?.includes(n.id)).map(d => d.id).join(', '), compliance: comp, desc: n.desc || '',
         ...(typeof radarInfo === 'function' && radarEntries(m).length && m.nodes.some(x => radarOf(x, m)) ? (() => { const i = radarInfo(n, m, today()); return { radar: i ? `${i.name} · ${i.ring.label}` : '', radarEos: i?.eosDay || '' }; })() : {}),
         ...(m.nodes.some(x => x.disposition) ? { disposition: n.disposition && typeof mgInfo === 'function' ? mgInfo(n.disposition).label : '' } : {}),
+        ...(n.effort?.length ? { effort: efDaysOf(n.effort) } : {}),   // días-persona del componente (solo si lo tiene)
         ...(m.phases?.length ? { phase: phNm(m, n.phase), until: phNm(m, n.until) } : {})   // fase en la que aparece y en la que se retira (sin fases no hay claves)
       };
     });
@@ -8902,10 +8956,12 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     const mk = (key, cols, rows) => ({ key, name: T(`inv.sheet.${key}`), head: cols.map(([k]) => T(`inv.c.${k}`)), keys: cols.map(([k]) => k), fmt: cols.map(([, f]) => f || null), rows });
     const out = [], comp = inventoryRows(m);
     // Fases (solo si el diagrama las tiene): columnas Fase y Se retira en en componentes y conexiones
-    const ph = !!m.phases?.length, cc = [...INV_COMP, ...(m.nodes.some(x => x.disposition) ? INV_MIG : []), ...(radarEntries(m).length && m.nodes.some(x => radarOf(x, m)) ? INV_RADAR : []), ...(ph ? INV_PH : [])];
+    const ph = !!m.phases?.length, cc = [...INV_COMP, ...(m.nodes.some(x => x.disposition) ? INV_MIG : []), ...(radarEntries(m).length && m.nodes.some(x => radarOf(x, m)) ? INV_RADAR : []), ...(ph ? INV_PH : []), ...(m.nodes.some(x => x.effort?.length) ? [['effort']] : [])];
     out.push(mk('components', cc, comp.map(r => cc.map(([k]) => r[k]))));
     // Una fila por fase: lo que hay en ella y lo que entra y sale respecto de la anterior
     if (ph) out.push(mk('phases', INV_PHASE, m.phases.map((p, i) => { const s = phaseStats(m, i, { monthly: x => monthlyTotal(x.nodes), findings: () => [] }), d = phaseDiff(m, i); return [p.id, p.name, p.date || '', p.goal || '', s.nodes, d.added.length, d.retired.length, round2(s.cost)]; })));
+    // Estimación por fase (solo si algún componente o fase tiene esfuerzo)
+    { const pe = phaseEffort(m, effortHelpers); if (pe) out.push(mk('estimation', INV_EST, pe.rows.map(r => [r.name, r.comps, r.estimated, r.days, r.extraDays, r.cost, r.contingency, r.total, r.cumulative]))); }
     // Conexiones
     const open = typeof strideAll === 'function' ? (() => { try { return strideAll(m).filter(t => t.status === 'open'); } catch { return []; } })() : [];
     const ets = Array.isArray(m.edgeTypes) ? m.edgeTypes : [], etOf = id => ets.find(t => t.id === id); // del modelo que se exporta, no del lienzo
