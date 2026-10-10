@@ -411,6 +411,18 @@ Keep a list of which products are accepted and which are on their way out, and s
 - In the *Text* tab: `db: Core radar=oracle11` pins a component to an entry and `radar=none` excludes it. The entries themselves are kept in the JSON and are not lost when you edit the text.
 - Dates are compared with today's date, so the warnings change as time passes.
 
+### Comments
+
+Keep the discussion inside the document: threads with an author on a component, a connection, a group, a decision, a requirement or a version, or on the whole diagram.
+
+- Press the **speech bubble** button at the bottom right of the canvas (the number is the open threads), or select a component, connection or group and press **Comments** in the inspector. The dialog lists the threads with a filter (*Open*, *All*, *Resolved*); from the inspector it starts filtered to that element, and the **×** shows them all.
+- To comment, write your name (it is remembered), choose what it is about, write the text and press **Comment**. Each thread can be answered, **resolved** or reopened, marked **internal** and deleted (press twice to confirm). Every change is one undo step.
+- A component with open threads shows a small yellow bubble with their number on its left edge (hidden in the **Context** view and never in exported images).
+- Mark a thread **internal** when it is only for you: internal comments never leave the document (the files and reports that carry comments in the next steps skip them).
+- If an element is deleted, its threads move to *The whole diagram* and remember what they were about. Restoring a version keeps the comments, and saved versions do not carry them.
+- The **Review** panel has a *Comments* source: one low, dismissible notice per component, connection or group that still has open threads (`comments.rules` in `src/config.js`, where the limits also live).
+- JSON: a `comments` list, oldest first (`id`, `on: { kind, id }`, `author`, `date`, `text`, `status: "resolved"`, `internal`, `source: "client"`, `replies`). The *Text* tab does not show comments and does not lose them. A document without comments writes exactly what it wrote before.
+
 ## 9. Sticky notes and risk zones
 
 Use the two buttons next to the zoom controls (bottom right of the canvas).

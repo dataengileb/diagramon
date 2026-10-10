@@ -410,6 +410,18 @@ Mantén una lista de qué productos se aceptan y cuáles van de salida, y míral
 - En la pestaña *Texto*: `db: Core radar=oracle11` fija un componente a una entrada y `radar=none` lo excluye. Las entradas se guardan en el JSON y no se pierden al editar el texto.
 - Las fechas se comparan con la de hoy, así que los avisos cambian con el tiempo.
 
+### Comentarios
+
+Mantén la conversación dentro del documento: hilos con autor sobre un componente, una conexión, un grupo, una decisión, un requisito o una versión, o sobre todo el diagrama.
+
+- Pulsa el botón de la **burbuja de diálogo** abajo a la derecha del lienzo (el número son los hilos abiertos), o selecciona un componente, una conexión o un grupo y pulsa **Comentarios** en el inspector. El diálogo lista los hilos con un filtro (*Abiertos*, *Todos*, *Resueltos*); desde el inspector arranca filtrado por ese elemento, y la **×** los muestra todos.
+- Para comentar, escribe tu nombre (se recuerda), elige sobre qué es, escribe el texto y pulsa **Comentar**. Cada hilo se puede responder, **resolver** o reabrir, marcar como **interno** y borrar (pulsa dos veces para confirmar). Cada cambio es un paso de deshacer.
+- Un componente con hilos abiertos muestra una burbuja amarilla con su número en el borde izquierdo (se oculta en la vista **Contexto** y nunca sale en las imágenes exportadas).
+- Marca un hilo como **interno** cuando sea solo para ti: los comentarios internos nunca salen del documento (los archivos e informes que lleven comentarios en los siguientes pasos los omiten).
+- Si se borra un elemento, sus hilos pasan a *Todo el diagrama* y recuerdan de qué trataban. Restaurar una versión conserva los comentarios, y las versiones guardadas no los llevan.
+- El panel **Revisión** tiene una fuente *Comentarios*: un aviso bajo y descartable por cada componente, conexión o grupo que aún tenga hilos abiertos (`comments.rules` en `src/config.js`, donde también están los límites).
+- JSON: una lista `comments`, la más antigua primero (`id`, `on: { kind, id }`, `author`, `date`, `text`, `status: "resolved"`, `internal`, `source: "client"`, `replies`). La pestaña *Texto* no muestra los comentarios y tampoco los pierde. Un documento sin comentarios escribe exactamente lo mismo que antes.
+
 ## 9. Notas adhesivas y zonas de riesgo
 
 Usa los dos botones junto al zoom (abajo a la derecha del lienzo).

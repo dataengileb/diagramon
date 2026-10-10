@@ -1653,6 +1653,91 @@
     assert(/radar=oracle11/.test(read('src/text-lang.js')), 'documented in the text language header');
   });
 
+  /* ---------- comentarios: hilos sobre un elemento ---------- */
+  const CMSRC = between('/* commentModel:start */', '/* commentModel:end */');
+  const mkCm = (cfg = C) => {
+    const sources = [];
+    const api = new Function('C', 'isDay', 'addFindingSource', 'SEVERITY', 'T', `${CMSRC}; return { cleanComments, cmOpen, cmHas };`)(
+      cfg, v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) && new Date(`${v}T12:00`).toISOString().slice(0, 10) === v, (k, fn) => sources.push({ k, fn }), ['low', 'medium', 'high', 'critical'], (k, v) => `${k}${v == null ? '' : ':' + JSON.stringify(v)}`);
+    return { ...api, findings: m => sources.find(x => x.k === 'comments').fn(m) };
+  };
+  const CM = mkCm();
+  const cmDoc = () => ({ nodes: [{ id: 'a', label: 'A' }, { id: 'b', label: 'B' }], edges: [{ id: 'e1', from: 'a', to: 'b' }], groups: [{ id: 'g1', label: 'G' }], decisions: [{ id: 'ADR-001' }], requirements: [{ id: 'REQ-001' }], versions: [{ id: 'v1' }] });
+  test('cleanComments: keeps valid threads in order, trims text, drops empty ones, numbers the missing ids after the highest one', () => {
+    const out = CM.cleanComments([
+      { id: 'CM-007', on: { kind: 'node', id: 'a' }, author: '  Ana   Ruiz ', date: '2026-10-09', text: '  Why EC2?\r\nAnd cost.  ' },
+      { on: { kind: 'edge', id: 'e1' }, text: 'Encrypted?' },
+      { on: { kind: 'node', id: 'a' }, text: '   ' }, null, 'x', [], { text: 'general one' }
+    ], cmDoc());
+    eq(out.map(c => c.id), ['CM-007', 'CM-008', 'CM-009']);
+    eq(out[0], { id: 'CM-007', on: { kind: 'node', id: 'a' }, author: 'Ana Ruiz', date: '2026-10-09', text: 'Why EC2?\nAnd cost.' });
+    eq(out[2].on, { kind: 'general' });
+    eq(Object.keys(out[0]), ['id', 'on', 'author', 'date', 'text'], 'no empty keys');
+  });
+  test('cleanComments: duplicate or malformed ids are renumbered; all six target kinds are accepted when they exist', () => {
+    const out = CM.cleanComments(['node:a', 'edge:e1', 'group:g1', 'decision:ADR-001', 'requirement:REQ-001', 'version:v1'].map(k => { const [kind, id] = k.split(':'); return { id: 'CM-001', on: { kind, id }, text: k }; }), cmDoc());
+    eq(out.map(c => c.id), ['CM-001', 'CM-002', 'CM-003', 'CM-004', 'CM-005', 'CM-006']);
+    eq(out.map(c => c.on.kind), ['node', 'edge', 'group', 'decision', 'requirement', 'version']);
+    eq(CM.cleanComments([{ id: 'x1', on: { kind: 'node', id: 'a' }, text: 't' }], cmDoc())[0].id, 'CM-001');
+  });
+  test('cleanComments: a target that no longer exists (or has an unknown kind) becomes general and remembers the old id in was', () => {
+    const out = CM.cleanComments([{ on: { kind: 'node', id: 'gone' }, text: 'a' }, { on: { kind: 'planet', id: 'a' }, text: 'b' }, { on: { kind: 'node' }, text: 'c' }, { on: { kind: 'general' }, was: 'old', text: 'd' }], cmDoc());
+    eq(out.map(c => c.on), [{ kind: 'general' }, { kind: 'general' }, { kind: 'general' }, { kind: 'general' }]);
+    eq(out.map(c => c.was), ['gone', undefined, undefined, 'old']);
+    eq(CM.cleanComments(out, { ...cmDoc(), nodes: [{ id: 'gone' }] }).map(c => c.on.kind), ['general', 'general', 'general', 'general'], 'general threads stay general when the old element comes back');
+  });
+  test('cleanComments: status, internal and source only keep their one valid value; replies are cleaned and capped; dates must be real days', () => {
+    const rs = Array.from({ length: 60 }, (_, i) => ({ text: `r${i}` }));
+    const [c] = CM.cleanComments([{ on: { kind: 'node', id: 'a' }, text: 'q', status: 'resolved', internal: true, source: 'client', date: '2026-02-30', replies: [{ author: 'Bo', date: '2026-10-10', text: 'ok' }, { text: '' }, ...rs] }], cmDoc());
+    eq([c.status, c.internal, c.source, c.date], ['resolved', true, 'client', undefined]);
+    eq(c.replies.length, 50); eq(c.replies[0], { author: 'Bo', date: '2026-10-10', text: 'ok' });
+    const [d] = CM.cleanComments([{ on: { kind: 'node', id: 'a' }, text: 'q', status: 'open', internal: 'yes', source: 'me' }], cmDoc());
+    eq(Object.keys(d), ['id', 'on', 'text'], 'open, a non-true internal and a foreign source write nothing');
+  });
+  test('cleanComments: limits from config.js, and a non-array gives an empty list', () => {
+    const small = mkCm({ ...C, comments: { ...C.comments, max: 2, textMax: 5 } });
+    eq(small.cleanComments([{ text: 'abcdefgh' }, { text: 'b' }, { text: 'c' }], cmDoc()).map(c => c.text), ['abcde', 'b']);
+    eq([undefined, null, {}, 'x', 5].map(v => CM.cleanComments(v, cmDoc())), [[], [], [], [], []]);
+  });
+  test('cmOpen counts unresolved threads, for the whole document or for one element', () => {
+    const m = { comments: [{ id: 'CM-001', on: { kind: 'node', id: 'a' }, text: 'x' }, { id: 'CM-002', on: { kind: 'node', id: 'a' }, text: 'y', status: 'resolved' }, { id: 'CM-003', on: { kind: 'edge', id: 'e1' }, text: 'z' }] };
+    eq([CM.cmOpen(m).length, CM.cmOpen(m, 'node', 'a').length, CM.cmOpen(m, 'node', 'b').length, CM.cmOpen({}).length], [2, 1, 0, 0]);
+  });
+  test('findings: one per component, connection or group with open threads; resolved, general and other kinds give none; the rule can be switched off or re-rated', () => {
+    const doc = { ...cmDoc(), comments: [
+      { id: 'CM-001', on: { kind: 'node', id: 'a' }, text: '1' }, { id: 'CM-002', on: { kind: 'node', id: 'a' }, text: '2' }, { id: 'CM-003', on: { kind: 'node', id: 'b' }, text: '3', status: 'resolved' },
+      { id: 'CM-004', on: { kind: 'edge', id: 'e1' }, text: '4' }, { id: 'CM-005', on: { kind: 'decision', id: 'ADR-001' }, text: '5' }, { id: 'CM-006', on: { kind: 'general' }, text: '6' }] };
+    const f = CM.findings(doc);
+    eq(f.map(x => [x.id, x.source, x.rule, x.severity, x.target]), [
+      ['comments:open:node:a', 'comments', 'cmt.open', 'low', { kind: 'node', id: 'a' }], ['comments:open:edge:e1', 'comments', 'cmt.open', 'low', { kind: 'edge', id: 'e1' }]]);
+    eq(f[0].title, 'cmt.f.t:2'); eq(CM.findings(cmDoc()), []);
+    eq(mkCm({ ...C, comments: { ...C.comments, rules: { 'cmt.open': { enabled: false } } } }).findings(doc), []);
+    eq(mkCm({ ...C, comments: { ...C.comments, rules: { 'cmt.open': { severity: 'high' } } } }).findings(doc).map(x => x.severity), ['high', 'high']);
+  });
+  test('JSON: comments are written after the stakeholders, one thread per line, and a document without comments writes no key', () => {
+    const base = { title: 'X', formatVersion: 1, nodes: [{ id: 'a', label: 'A', type: 'generic', x: 0, y: 0 }], edges: [], groups: [], decisions: [] };
+    assert(!/comments/.test(serializeM(base)) && !/comment/i.test(TXT.stringify(base, 'en')), 'no key anywhere');
+    const j = serializeM({ ...base, comments: [{ id: 'CM-001', on: { kind: 'node', id: 'a' }, author: 'Ana', date: '2026-10-09', text: 'Hi', replies: [{ text: 'Yes' }] }] });
+    assert(j.includes('"comments": [\n    { "id": "CM-001", "on": {"kind":"node","id":"a"}, "author": "Ana", "date": "2026-10-09", "text": "Hi", "replies": [{"text":"Yes"}] }\n  ]'), j);
+    assert(j.indexOf('"edges"') < j.indexOf('"comments"'), 'after the layout keys');
+  });
+  test('the app wires it: normalize last, history prunes orphans, the editors and version restore keep them, badge, inspector, dialog, button, Review and i18n', () => {
+    assert(/const cm = cleanComments\(raw\.comments, m\); if \(cm\.length\) m\.comments = cm;/.test(app), 'normalize');
+    assert(app.includes('cleanComments(S.model.comments, S.model)'), 'changed() prunes');
+    assert(/Array\.isArray\(raw\.comments\) && S\.model\.comments/.test(app), 'editors keep them');
+    assert(app.includes('stakeholders: S.model.stakeholders, comments: S.model.comments'), 'restoring a version keeps them');
+    assert(!/comments/.test(between('const snapshotOf = m => {', '};')), 'version snapshots do not carry them');
+    assert(app.includes("class: 'node-cmt'") && app.includes('.node-cmt\')') && app.includes('${cmtField(t)}') && app.includes('function openComments(') && app.includes("$('#btn-comments')"), 'badge, export strip, inspector, dialog, button');
+    const html = read('index.html');
+    assert(html.includes('id="btn-comments"') && html.includes('id="cmt-n"') && html.includes('.cmt-dlg'), 'index.html');
+    const i18n = read('src/i18n.js');
+    ['top.comments', 'cmt.title', 'cmt.field', 'cmt.add', 'cmt.open.n', 'cmt.badge', 'cmt.flt.open', 'cmt.flt.all', 'cmt.flt.done', 'cmt.unscope', 'cmt.author', 'cmt.on', 'cmt.text', 'cmt.text.ph', 'cmt.post', 'cmt.general', 'cmt.was', 'cmt.anon',
+      'cmt.client', 'cmt.internal', 'cmt.resolved', 'cmt.go', 'cmt.reply', 'cmt.send', 'cmt.resolve', 'cmt.reopen', 'cmt.internal.on', 'cmt.internal.off', 'cmt.internal.tip', 'cmt.del', 'cmt.del.sure', 'cmt.none', 'cmt.none.filter', 'cmt.max',
+      'cmt.kind.node', 'cmt.kind.edge', 'cmt.kind.group', 'cmt.kind.decision', 'cmt.kind.requirement', 'cmt.kind.version', 'cmt.f.t', 'cmt.f.fix', 'find.src.comments']
+      .forEach(k => eq(i18n.split(`'${k}':`).length - 1, 2, `${k} once per language`));
+    assert(C.comments && C.comments.rules['cmt.open'].enabled === true, 'config.js');
+  });
+
   /* ---------- resumen ---------- */
   print(`\n${pass} passed, ${fail} failed`);
   return finish(fail === 0);

@@ -1038,6 +1038,39 @@
   .node-mig rect { fill: var(--surface); stroke: var(--mg); stroke-opacity: .9; stroke-width: 1.2; }
   .node-mig text { fill: var(--mg); font-size: 10.5px; font-weight: 800; }
   .vw-security .node-mig, .vw-physical .node-mig, .vw-min .node-mig { display: none; }
+  /* Comentarios: insignia con los hilos abiertos de un componente (borde izquierdo) y diálogo con todos los hilos */
+  .node-cmt { pointer-events: none; }
+  .node-cmt rect { fill: var(--p-limon); stroke: var(--surface); stroke-width: 1.5; }
+  .node-cmt text { fill: #3d3300; font-size: 10.5px; font-weight: 800; }
+  .vw-min .node-cmt { display: none; }
+  .cmt-btn { position: relative; }
+  .cmt-n { position: absolute; top: 1px; right: 0; min-width: 15px; padding: 0 4px; border-radius: 8px; background: var(--p-limon); color: #3d3300; font-size: 10px; font-weight: 800; line-height: 15px; text-align: center; }
+  .cmt-dlg { width: min(580px, 100%); max-height: 90vh; display: flex; flex-direction: column; }
+  .cmt-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .cmt-seg button { padding: 4px 10px; font-size: 11.5px; }
+  .cmt-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 4px 2px 9px; border-radius: 10px; background: var(--surface2); font-size: 11.5px; font-weight: 650; overflow-wrap: anywhere; }
+  .cmt-chip button { border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 14px; line-height: 1; padding: 0 4px; }
+  .cmt-list { flex: 1 1 auto; min-height: 60px; overflow-y: auto; display: grid; gap: 8px; align-content: start; margin-bottom: 10px; }
+  .cmt { padding: 9px 11px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); font-size: 12.5px; }
+  .cmt.done { opacity: .65; }
+  .cmt-h { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 10px; font-size: 11.5px; color: var(--muted); }
+  .cmt-h em { font-style: normal; font-weight: 700; color: var(--text); }
+  .cmt-on { padding: 0; border: 0; background: none; font: inherit; font-weight: 700; color: var(--accent); text-align: left; overflow-wrap: anywhere; }
+  button.cmt-on { cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+  span.cmt-on { color: var(--text); }
+  .cmt-t { margin-top: 4px; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.45; }
+  .cmt-r { margin: 6px 0 0 10px; padding-left: 9px; border-left: 2px solid var(--border); }
+  .cmt-rbox { display: grid; gap: 6px; margin-top: 8px; }
+  .cmt-rbox[hidden] { display: none; }
+  .cmt-a { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .cmt-empty { padding: 14px 0; text-align: center; }
+  .cmt-form { display: grid; gap: 8px; }
+  .cmt-form label { display: block; font-size: 11.5px; font-weight: 650; color: var(--muted); }
+  .cmt-form :is(input, select, textarea) { display: block; width: 100%; box-sizing: border-box; margin-top: 3px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); font: inherit; font-size: 12.5px; }
+  .cmt-form textarea, .cmt-rbox textarea { resize: vertical; min-height: 52px; }
+  .cmt-rbox textarea { width: 100%; box-sizing: border-box; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); font: inherit; font-size: 12.5px; }
+  .cmt-row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  @media (max-width: 520px) { .cmt-row2 { grid-template-columns: 1fr; } }
   /* Revisión automática: pastilla «⚠ n» con los hallazgos abiertos de un nodo (solo en la vista Seguridad) */
   .node-sec { display: none; pointer-events: none; }
   .vw-security .node-sec { display: inline; }
@@ -1493,6 +1526,7 @@
       <div class="zoombar">
         <button class="tbtn" id="btn-note" data-i18n-title="top.note" data-i18n-aria="top.note"><svg viewBox="0 0 24 24"><path d="M5 4h14v10l-5 6H5z"/><path d="M14 20v-6h5"/></svg></button>
         <button class="tbtn" id="btn-zone" data-i18n-title="top.zone" data-i18n-aria="top.zone"><svg viewBox="0 0 24 24"><path d="M12 3.5 21.5 20h-19z"/><path d="M12 10v4.5M12 17.2v.1"/></svg></button>
+        <button class="tbtn cmt-btn" id="btn-comments" data-i18n-title="top.comments" data-i18n-aria="top.comments"><svg viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/></svg><span class="cmt-n" id="cmt-n" hidden></span></button>
         <span class="sep"></span>
         <button class="tbtn" id="zoom-out" data-i18n-title="zoom.out">−</button>
         <span id="zoomv" data-i18n-title="zoom.reset">100%</span>

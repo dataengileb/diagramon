@@ -350,6 +350,60 @@
   });
   /* migration:end */
 
+  /* ---------- comentarios: hilos sobre un elemento (modelo) ---------- */
+  // m.comments = [{ id: 'CM-001', on: { kind, id? }, author?, date?: 'AAAA-MM-DD', text, status?: 'resolved', internal?: true, source?: 'client', was?, replies?: [{ author?, date?, text }] }]
+  // on.kind: node | edge | group | decision | requirement | version, o general (sin id). Un destino que ya no existe pasa a «general» y `was` guarda el id que tenía.
+  // El orden del arreglo es el cronológico (el más antiguo primero). internal: nunca sale del documento (archivos compartidos, informe). Sin comentarios no hay clave: JSON y exportaciones idénticos.
+  /* commentModel:start */
+  const CMC = C.comments || {}, CM_MAX = CMC.max || 500, CM_REPLIES = CMC.maxReplies || 50, CM_TEXT = CMC.textMax || 4000, CMR = CMC.rules || {};
+  const CM_KINDS = ['node', 'edge', 'group', 'decision', 'requirement', 'version'];
+  const cmHas = (m, on) => !!on && CM_KINDS.includes(on.kind) && ({ node: m.nodes, edge: m.edges, group: m.groups, decision: m.decisions, requirement: m.requirements, version: m.versions }[on.kind] || []).some(x => x.id === on.id);
+  const cmStr = (v, n) => String(v ?? '').replace(/\r\n?/g, '\n').trim().slice(0, n);
+  const cmWho = v => cmStr(v, 80).replace(/\s+/g, ' ');
+  function cleanComments(raw, m) {
+    const out = [], seen = new Set();
+    (Array.isArray(raw) ? raw : []).forEach(c => {
+      if (out.length >= CM_MAX || !c || typeof c !== 'object' || Array.isArray(c)) return;
+      const text = cmStr(c.text, CM_TEXT);
+      if (!text) return;
+      const on0 = c.on && typeof c.on === 'object' && !Array.isArray(c.on) ? c.on : {}, oid = cmStr(on0.id, 120);
+      let on = { kind: 'general' }, was = cmStr(c.was, 120);
+      if (CM_KINDS.includes(on0.kind) && oid) { if (cmHas(m, { kind: on0.kind, id: oid })) { on = { kind: on0.kind, id: oid }; was = ''; } else was = oid; }
+      const rid = cmStr(c.id, 40), o = { id: /^CM-\d+$/.test(rid) && !seen.has(rid) ? rid : '', on };
+      if (o.id) seen.add(o.id);
+      const author = cmWho(c.author);
+      if (author) o.author = author;
+      if (isDay(c.date)) o.date = c.date;
+      o.text = text;
+      if (c.status === 'resolved') o.status = 'resolved';
+      if (c.internal === true) o.internal = true;
+      if (c.source === 'client') o.source = 'client';
+      if (was) o.was = was;
+      const replies = (Array.isArray(c.replies) ? c.replies : []).filter(r => r && typeof r === 'object' && cmStr(r.text, CM_TEXT)).slice(0, CM_REPLIES).map(r => {
+        const x = {}, a = cmWho(r.author);
+        if (a) x.author = a;
+        if (isDay(r.date)) x.date = r.date;
+        x.text = cmStr(r.text, CM_TEXT);
+        return x;
+      });
+      if (replies.length) o.replies = replies;
+      out.push(o);
+    });
+    let n = Math.max(0, ...out.map(c => +c.id.slice(3) || 0));
+    out.forEach(c => { if (!c.id) c.id = `CM-${String(++n).padStart(3, '0')}`; });
+    return out;
+  }
+  const cmOpen = (m, kind, id) => (m.comments || []).filter(c => c.status !== 'resolved' && (kind == null || (c.on.kind === kind && c.on.id === id)));
+  // Hallazgos (fuente «comments»): hilos sin resolver sobre un componente, una conexión o un grupo (config.js › comments.rules)
+  addFindingSource('comments', m => {
+    const r = CMR['cmt.open'];
+    if (!r || r.enabled === false || !m.comments?.length) return [];
+    const per = new Map(), sev = SEVERITY.includes(r.severity) ? r.severity : 'low';
+    cmOpen(m).filter(c => ['node', 'edge', 'group'].includes(c.on.kind)).forEach(c => { const k = `${c.on.kind}:${c.on.id}`; per.set(k, { on: c.on, n: (per.get(k)?.n || 0) + 1 }); });
+    return [...per.values()].map(({ on, n }) => ({ id: `comments:open:${on.kind}:${on.id}`, source: 'comments', rule: 'cmt.open', severity: sev, target: { kind: on.kind, id: on.id }, title: T('cmt.f.t', n), fix: T('cmt.f.fix') }));
+  });
+  /* commentModel:end */
+
   /* ---------- radar tecnológico: anillo y fin de soporte de los productos usados (config.js › techRadar) ---------- */
   // Un componente se reconoce con una entrada del radar por su icono, su tipo o su texto (config.js), o se fija con radar: '<id>' ('none' lo excluye). Sin entradas no hay nada: JSON y exportaciones idénticos.
   // El diagrama puede traer sus propias entradas en m.radar (se suman a las de config.js; el mismo id las reemplaza). Es del diagrama (entra en las fotos de versiones).
@@ -835,6 +889,7 @@
     m.decisions = cleanDecisions(raw.decisions, m);
     { const rq = cleanRequirements(raw.requirements, m); if (rq.length) m.requirements = rq; }   // sin requisitos no hay clave: JSON y exportaciones idénticos
     m.raid = cleanRaid(raw.raid, m);   // después de los requisitos: sus ids ya están en m.requirements
+    { const cm = cleanComments(raw.comments, m); if (cm.length) m.comments = cm; }   // al final: sus destinos (nodos, conexiones, grupos, decisiones, requisitos y versiones) ya están limpios; sin comentarios no hay clave
     { const ds = cleanCatalog(raw.datasets, m, dsHelpers()); if (ds.length) m.datasets = ds; }   // después de nodos y fases (consumidores y fase deben existir); sin conjuntos no hay clave: JSON y exportaciones idénticos
     // Cada versión puede llevar las decisiones que había al guardarla (para compararlas); sus enlaces se limpian contra el diagrama de la versión
     m.versions.forEach(v => { if (v.decisions) v.decisions = cleanDecisions(v.decisions, { nodes: v.diagram.nodes || [], edges: v.diagram.edges || [], groups: v.diagram.groups || [], versions: m.versions, stakeholders: m.stakeholders }); });
@@ -2828,6 +2883,13 @@
       el('rect', { width: mw, height: 18, rx: 9 }, mgg);
       el('text', { x: mw / 2, y: 12.5, 'text-anchor': 'middle' }, mgg).textContent = mg.short;
     }
+    const cmN = S.model.comments?.length ? cmOpen(S.model, 'node', n.id).length : 0;
+    if (cmN) { // en el borde izquierdo, a media altura; las exportaciones no lo llevan
+      const cmg = el('g', { class: 'node-cmt', transform: `translate(0 ${H / 2})` }, b);
+      el('title', null, cmg).textContent = T('cmt.badge', cmN);
+      el('rect', { x: -11, y: -9, width: 22, height: 18, rx: 9 }, cmg);
+      el('text', { 'text-anchor': 'middle', y: 4 }, cmg).textContent = cmN > 9 ? '9+' : String(cmN);
+    }
     if (li) drawNodeLayer(b, li);
     if (inn) {
       const cg = el('g', { class: 'node-inner', transform: `translate(${w - 8 - cw} ${(H - 20) / 2})` }, b);
@@ -4063,6 +4125,7 @@
     return o;
   }
   ORDER.stakeholder = ['id', 'name', 'role', 'org', 'raci', 'versions', 'inactive'];
+  ORDER.comment = ['id', 'on', 'author', 'date', 'text', 'status', 'internal', 'source', 'was', 'replies'];
   function serialize(m, full = false) {
     const ordered = (o, keys) => { const r = {}; keys.forEach(k => k in o && (r[k] = o[k])); Object.keys(o).forEach(k => k in r || (r[k] = o[k])); return r; };
     const line = o => '{ ' + Object.entries(o)
@@ -4090,6 +4153,7 @@
     if (m.requirements?.length) body.push(arr('requirements', m.requirements, ORDER.requirement));
     if (m.raid?.length) body.push(arr('raid', m.raid, ORDER.raid));
     if (m.stakeholders?.length) body.push(arr('stakeholders', m.stakeholders, ORDER.stakeholder));
+    if (m.comments?.length) body.push(arr('comments', m.comments, ORDER.comment));
     // El archivo exportado lleva también las versiones; el editor JSON no las muestra
     if (full && m.versions?.length) {
       if (m.active) body.push(`  "active": ${JSON.stringify(m.active)}`);
@@ -4143,6 +4207,7 @@
       if (!Array.isArray(raw.requirements) && S.model.requirements) raw = { ...raw, requirements: S.model.requirements }; // igual que las decisiones: el texto siempre las trae; el JSON, si omite la clave, las conserva
       if (!Array.isArray(raw.raid)) raw = { ...raw, raid: S.model.raid };   // el texto siempre trae el registro RAID; el JSON, si omite la clave, lo conserva
       if (!Array.isArray(raw.stakeholders) && S.model.stakeholders) raw = { ...raw, stakeholders: S.model.stakeholders };   // igual: el texto siempre trae los interesados; el JSON, si omite la clave, los conserva
+      if (!Array.isArray(raw.comments) && S.model.comments) raw = { ...raw, comments: S.model.comments };   // el texto no lleva comentarios; el JSON, si omite la clave, los conserva
       if (!Array.isArray(raw.radar) && S.model.radar) raw = { ...raw, radar: S.model.radar };   // el texto solo lleva radar=<id> por componente: las entradas propias del radar se conservan
       if (!Array.isArray(raw.datasets) && S.model.datasets) raw = { ...raw, datasets: S.model.datasets };   // el texto siempre trae los conjuntos de datos; el JSON, si omite la clave, los conserva
       if (!Array.isArray(raw.decisions)) raw = { ...raw, decisions: S.model.decisions }; // el texto siempre trae las decisiones (ADR; borrarlas del texto las borra); el JSON, si omite la clave, las conserva
@@ -4185,6 +4250,7 @@
     if (S.model.decisions?.length) pruneAdrLinks();
     if (S.model.requirements?.length) pruneReqLinks();
     if (S.model.raid?.length) pruneRaidLinks();
+    if (S.model.comments?.length) { const cm = cleanComments(S.model.comments, S.model); if (cm.length) S.model.comments = cm; else delete S.model.comments; }   // destinos que ya no existen pasan a «general»
     if (S.model.datasets?.length) { const ds = cleanCatalog(S.model.datasets, S.model, dsHelpers()); if (ds.length) S.model.datasets = ds; else delete S.model.datasets; }   // consumidores y fase que ya no existen
     if (structural) render(false); else { updateGeometry(); applyCompare(); }
     syncEditor();
@@ -4195,6 +4261,7 @@
 
   function updateMeta() {
     const m = S.model;
+    { const nb = $('#cmt-n'); if (nb) { const n = cmOpen(m).length; nb.hidden = !n; nb.textContent = n > 99 ? '99+' : n; nb.title = T('cmt.badge', n); } }   // hilos sin resolver, junto al botón de comentarios
     $('#stage-h1').textContent = m.title;
     const costs = m.nodes.some(hasCost) ? `≈ ${money(round2(monthlyTotal(m.nodes)))}${T('cost.mo')}` : '';
     const byId = id => m.nodes.find(n => n.id === id), insecure = m.edges.filter(e => isInsecure(e, byId)).length;
@@ -5292,7 +5359,7 @@
     const v = findVersion(id);
     if (!v) return;
     S.sel = null;
-    setModel({ ...clone(v.diagram), versions: S.model.versions, active: v.id, decisions: S.model.decisions, requirements: S.model.requirements, raid: S.model.raid, stakeholders: S.model.stakeholders }, { current: true, history: true });
+    setModel({ ...clone(v.diagram), versions: S.model.versions, active: v.id, decisions: S.model.decisions, requirements: S.model.requirements, raid: S.model.raid, stakeholders: S.model.stakeholders, comments: S.model.comments }, { current: true, history: true });
     toast(T('ver.opened', { name: verLabel(v) }));
   }
   async function deleteVersion(id, { force } = {}) {
@@ -6356,6 +6423,7 @@
         ${reviewField(t)}
         ${raidField(t)}
         ${adrField(t)}
+        ${cmtField(t)}
         <label>${T('insp.desc')}<textarea data-field="desc" rows="3" placeholder="${esc(T('insp.desc.ph'))}">${esc(t.desc || '')}</textarea></label>
         <div class="field">${T('insp.reach')}<div class="seg">${modes.map(([k, l]) => `<button data-reach="${k}" class="${S.reach === k ? 'on' : ''}">${l}</button>`).join('')}</div></div>
         ${nodeDsField(t)}
@@ -6389,6 +6457,7 @@
         ${strideField(t)}
         ${raidField(t)}
         ${adrField(t)}
+        ${cmtField(t)}
         <div class="field">${T('insp.color')}${swatches(t.color)}</div>
         <div class="conns"><div class="conn-title">${T('insp.ends')}</div>
           <button class="conn" data-goto="${esc(a.id)}" style="--c:${nodeColor(a)}"><span class="dot"></span>${esc(a.label)}<em>${T('insp.source')}</em></button>
@@ -6438,6 +6507,7 @@
         ${cmpField(t, 'group')}
         ${raidField(t)}
         ${adrField(t)}
+        ${cmtField(t)}
         <div class="insp-actions"><button class="btn danger" data-act="delete">${T('insp.deleteGroup')}</button></div>`;
     }
 
@@ -6843,6 +6913,125 @@
     el('path', { d: `M${w - 2},7 L${w - 10},3 L${w - 10},11 Z` }, sv).style.fill = c;
     return sv;
   }
+  /* ---------- comentarios: diálogo con los hilos ---------- */
+  const CMD = { filter: 'open' };   // qué hilos se ven: open | all | done
+  const cmAuthorNow = () => store.get('commentAuthor', '') || S.model.meta?.author || store.get('reviewer', '') || '';
+  const cmTargetText = (m, on) => {
+    const nm = id => m.nodes.find(n => n.id === id)?.label || id;
+    if (on.kind === 'node') return nm(on.id);
+    if (on.kind === 'edge') { const e = m.edges.find(x => x.id === on.id); return e ? `${nm(e.from)} ${e.both ? '↔' : '→'} ${nm(e.to)}` : on.id; }
+    if (on.kind === 'group') return m.groups.find(g => g.id === on.id)?.label || on.id;
+    if (on.kind === 'decision') { const d = (m.decisions || []).find(x => x.id === on.id); return d ? `${d.id} · ${adrTitle(d)}` : on.id; }
+    if (on.kind === 'requirement') { const r = (m.requirements || []).find(x => x.id === on.id); return r ? `${r.id} · ${r.title}` : on.id; }
+    if (on.kind === 'version') { const v = (m.versions || []).find(x => x.id === on.id); return v ? verLabel(v) : on.id; }
+    return T('cmt.general');
+  };
+  // Resumen en el inspector del componente, la conexión o el grupo; los hilos se leen y escriben en el diálogo
+  const cmtField = t => {
+    const kind = S.sel?.kind;
+    if (!['node', 'edge', 'group'].includes(kind) || !t?.id) return '';
+    const all = (S.model.comments || []).filter(c => c.on.kind === kind && c.on.id === t.id), open = all.filter(c => c.status !== 'resolved').length;
+    return `<div class="field cmt-field">${T('cmt.field')}<div class="cmt-row"><button class="btn small" data-cmt="open">💬 ${esc(all.length ? T('cmt.open.n', { o: open, n: all.length }) : T('cmt.add'))}</button></div></div>`;
+  };
+  function openComments(scope = null) {
+    const prev = document.activeElement, back = document.createElement('div'), id = `cm${Date.now()}`;
+    let sc = scope, sure = null;
+    const m = () => S.model, byId = cid => (m().comments || []).find(c => c.id === cid);
+    back.className = 'cf-back';
+    back.innerHTML = `<div class="cf cmt-dlg" role="dialog" aria-modal="true" aria-labelledby="${id}t">
+      <h3 id="${id}t">${esc(T('cmt.title'))}</h3>
+      <div class="cmt-bar"><div class="seg cmt-seg" role="group">${['open', 'all', 'done'].map(k => `<button type="button" data-cmf="${k}">${esc(T(`cmt.flt.${k}`))}</button>`).join('')}</div><span class="cmt-scope"></span></div>
+      <div class="cmt-list" role="list"></div>
+      <form class="cmt-form" novalidate>
+        <div class="cmt-row2"><label>${esc(T('cmt.author'))}<input name="author" maxlength="80" autocomplete="off"></label><label>${esc(T('cmt.on'))}<select name="on"></select></label></div>
+        <label>${esc(T('cmt.text'))}<textarea name="text" rows="3" maxlength="${CM_TEXT}" placeholder="${esc(T('cmt.text.ph'))}"></textarea></label>
+        <div class="cf-actions"><button type="button" class="btn" data-cm="close">${esc(T('et.close'))}</button><button type="submit" class="btn primary">${esc(T('cmt.post'))}</button></div>
+      </form></div>`;
+    const list = back.querySelector('.cmt-list'), form = back.querySelector('form'), scopeBox = back.querySelector('.cmt-scope');
+    const fillTargets = () => {
+      const mm = m(), opt = (k, o, label) => `<option value="${esc(`${k}:${o}`)}"${sc && sc.kind === k && sc.id === o ? ' selected' : ''}>${esc(label)}</option>`;
+      const grp = (k, items, label) => (items.length ? `<optgroup label="${esc(T(`cmt.kind.${k}`))}">${items.map(x => opt(k, x.id, label(x))).join('')}</optgroup>` : '');
+      form.on.innerHTML = `<option value="general"${sc ? '' : ' selected'}>${esc(T('cmt.general'))}</option>`
+        + grp('node', mm.nodes, x => x.label) + grp('edge', mm.edges, x => cmTargetText(mm, { kind: 'edge', id: x.id })) + grp('group', mm.groups, x => x.label)
+        + grp('decision', mm.decisions || [], x => `${x.id} · ${adrTitle(x)}`) + grp('requirement', mm.requirements || [], x => `${x.id} · ${x.title}`) + grp('version', mm.versions || [], x => verLabel(x));
+    };
+    const drawList = () => {
+      const f = CMD.filter, rows = (m().comments || []).filter(c => (!sc || (c.on.kind === sc.kind && c.on.id === sc.id)) && (f === 'all' || (f === 'open') === (c.status !== 'resolved')));
+      back.querySelectorAll('[data-cmf]').forEach(b => b.classList.toggle('on', b.dataset.cmf === f));
+      scopeBox.innerHTML = sc ? `<span class="cmt-chip">${esc(cmTargetText(m(), sc))}<button type="button" data-cm="unscope" aria-label="${esc(T('cmt.unscope'))}" title="${esc(T('cmt.unscope'))}">×</button></span>` : '';
+      list.innerHTML = rows.length ? rows.map(c => {
+        const goes = ['node', 'edge', 'group'].includes(c.on.kind), label = c.on.kind === 'general' && c.was ? T('cmt.was', c.was) : cmTargetText(m(), c.on);
+        const who = x => `<b>${esc(x.author || T('cmt.anon'))}</b>${x.date ? ` · ${esc(fmtDay(x.date))}` : ''}`;
+        return `<div class="cmt${c.status === 'resolved' ? ' done' : ''}" role="listitem" data-cid="${esc(c.id)}">
+          <div class="cmt-h">${goes ? `<button type="button" class="cmt-on" data-cm="go" title="${esc(T('cmt.go'))}">${esc(label)}</button>` : `<span class="cmt-on">${esc(label)}</span>`}
+            <span>${who(c)}${c.source === 'client' ? ` · <em>${esc(T('cmt.client'))}</em>` : ''}${c.internal ? ` · <em>${esc(T('cmt.internal'))}</em>` : ''}${c.status === 'resolved' ? ` · <em>${esc(T('cmt.resolved'))}</em>` : ''}</span></div>
+          <div class="cmt-t">${esc(c.text)}</div>
+          ${(c.replies || []).map(r => `<div class="cmt-r"><div class="cmt-h"><span>${who(r)}</span></div><div class="cmt-t">${esc(r.text)}</div></div>`).join('')}
+          <div class="cmt-rbox" hidden><textarea rows="2" maxlength="${CM_TEXT}" aria-label="${esc(T('cmt.reply'))}"></textarea><button type="button" class="btn small primary" data-cm="send">${esc(T('cmt.send'))}</button></div>
+          <div class="cmt-a"><button type="button" class="btn small" data-cm="reply">${esc(T('cmt.reply'))}</button>
+            <button type="button" class="btn small" data-cm="toggle">${esc(T(c.status === 'resolved' ? 'cmt.reopen' : 'cmt.resolve'))}</button>
+            <button type="button" class="btn small" data-cm="internal" aria-pressed="${c.internal ? 'true' : 'false'}" title="${esc(T('cmt.internal.tip'))}">${esc(T(c.internal ? 'cmt.internal.off' : 'cmt.internal.on'))}</button>
+            <button type="button" class="btn small danger" data-cm="del">${esc(T(sure === c.id ? 'cmt.del.sure' : 'cmt.del'))}</button></div></div>`;
+      }).join('') : `<p class="cmt-empty">${esc(T((m().comments || []).length ? 'cmt.none.filter' : 'cmt.none'))}</p>`;
+    };
+    // Cada cambio es un paso de historial; el diagrama se repinta (insignias) y el resumen del inspector se actualiza
+    const edit = fn => {
+      pushHistory(); fn();
+      const l = cleanComments(m().comments, m());
+      if (l.length) m().comments = l; else delete m().comments;
+      changed(true); renderInspector(); drawList();
+    };
+    const close = () => { document.removeEventListener('keydown', key, true); back.remove(); prev?.focus?.(); };
+    const key = ev => { if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); close(); } };
+    back.addEventListener('mousedown', ev => { if (ev.target === back) close(); });
+    back.addEventListener('click', ev => {
+      const b = ev.target.closest('button');
+      if (!b) return;
+      if (b.dataset.cmf) { CMD.filter = b.dataset.cmf; sure = null; return drawList(); }
+      const act = b.dataset.cm, row = b.closest('[data-cid]'), c = row && byId(row.dataset.cid);
+      if (act === 'close') return close();
+      if (act === 'unscope') { sc = null; fillTargets(); return drawList(); }
+      if (!c) return;
+      if (act === 'go') { close(); return focusTarget(c.on.kind, c.on.id); }
+      if (act === 'reply') { const rb = row.querySelector('.cmt-rbox'); rb.hidden = false; return rb.querySelector('textarea').focus(); }
+      if (act === 'send') {
+        const text = row.querySelector('.cmt-rbox textarea').value.trim(), author = form.author.value.trim();
+        if (!text) return;
+        if ((c.replies || []).length >= CM_REPLIES) return toast(T('cmt.max', CM_REPLIES));
+        store.set('commentAuthor', author);
+        return edit(() => { c.replies = [...(c.replies || []), { ...(author ? { author } : {}), date: today(), text }]; });
+      }
+      if (act === 'toggle') return edit(() => { if (c.status === 'resolved') delete c.status; else c.status = 'resolved'; });
+      if (act === 'internal') return edit(() => { if (c.internal) delete c.internal; else c.internal = true; });
+      if (act === 'del') {
+        if (sure !== c.id) { sure = c.id; return drawList(); }   // dos pulsaciones: la primera pide confirmar
+        sure = null;
+        edit(() => { m().comments = m().comments.filter(x => x.id !== c.id); });
+      }
+    });
+    form.addEventListener('submit', ev => {
+      ev.preventDefault();
+      const text = form.text.value.trim(), author = form.author.value.trim();
+      if (!text) return form.text.focus();
+      if ((m().comments || []).length >= CM_MAX) return toast(T('cmt.max', CM_MAX));
+      const v = form.on.value, i = v.indexOf(':'), on = v === 'general' || i < 0 ? { kind: 'general' } : { kind: v.slice(0, i), id: v.slice(i + 1) };
+      store.set('commentAuthor', author);
+      if (CMD.filter === 'done') CMD.filter = 'open';
+      edit(() => { m().comments = [...(m().comments || []), { id: '', on, ...(author ? { author } : {}), date: today(), text }]; });
+      form.text.value = ''; form.text.focus();
+    });
+    form.author.value = cmAuthorNow();
+    fillTargets(); drawList();
+    document.addEventListener('keydown', key, true);
+    document.body.appendChild(back);
+    form.text.focus();
+  }
+  $('#btn-comments').addEventListener('click', () => openComments());
+  $('#inspector').addEventListener('click', ev => {
+    const b = ev.target.closest('button[data-cmt]');
+    if (b && ['node', 'edge', 'group'].includes(S.sel?.kind)) openComments({ kind: S.sel.kind, id: S.sel.id });
+  });
+
   function openEdgeTypes(opts = {}) {
     const prev = document.activeElement, back = document.createElement('div'), id = `et${Date.now()}`, apply = opts.apply || null;
     let editing = null, draft = { label: '', dash: '6 6', color: '', width: 1.8, particles: 1 };
@@ -7558,7 +7747,7 @@
     out.setAttribute('height', Ht);
     out.setAttribute('viewBox', `0 0 ${W} ${Ht}`);
     out.classList.remove('focusing', 'hovering', 'playing', 'dragging', 'panning', 'connecting', 'filtering');
-    out.querySelectorAll('.particle, .edge-hit, .node-halo, .guide, .marquee, .path-badge, .resize-handle, .zone-top-line').forEach(n => n.remove());
+    out.querySelectorAll('.particle, .edge-hit, .node-halo, .guide, .marquee, .path-badge, .resize-handle, .zone-top-line, .node-cmt').forEach(n => n.remove());
     out.querySelectorAll('.lit, .sel, .pulse, .pulse-node, .enter, .connect-src, .fdim').forEach(n => n.classList.remove('lit', 'sel', 'pulse', 'pulse-node', 'enter', 'connect-src', 'fdim'));
     const vp = out.querySelector('#viewport');
     vp.removeAttribute('id');
