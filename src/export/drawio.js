@@ -250,6 +250,13 @@
         return P + 'x-' + id;
       };
       const edgeCells = [];
+      // Desplazamiento manual de la flecha (bend): un punto de paso entre los centros de sus dos componentes
+      const bendPts = e => {
+        const A = here[e.from] && nodeById[e.from], B = here[e.to] && nodeById[e.to];
+        if (!e.bend || !A || !B) return '';
+        const sa = ctx.size(A), sb = ctx.size(B);
+        return `<Array as="points"><mxPoint x="${num((A.x + sa.w / 2 + B.x + sb.w / 2) / 2 + e.bend.x)}" y="${num((A.y + sa.h / 2 + B.y + sb.h / 2) / 2 + e.bend.y)}"/></Array>`;
+      };
       allEdges.forEach(e => {
         let src, dst;
         if (here[e.from] && here[e.to]) { src = P + 'n-' + e.from; dst = P + 'n-' + e.to; }
@@ -285,7 +292,7 @@
         attrs.push(...mt.attrs);
         { const ed = disAttr('edge', e.id); if (ed) attrs.push(ed); }
         if (mt.attrs.length) attrs.push(`tooltip="${esc(mt.tip)}"`);
-        edgeCells.push(`<object id="${P}e-${esc(e.id)}" ${attrs.join(' ')}><mxCell style="${esc(style)}" edge="1" parent="1" source="${esc(src)}" target="${esc(dst)}"><mxGeometry relative="1" as="geometry"/></mxCell></object>`);
+        edgeCells.push(`<object id="${P}e-${esc(e.id)}" ${attrs.join(' ')}><mxCell style="${esc(style)}" edge="1" parent="1" source="${esc(src)}" target="${esc(dst)}"><mxGeometry relative="1" as="geometry">${bendPts(e)}</mxGeometry></mxCell></object>`);
       });
 
       // Fantasmas: nodos de otro nivel conectados con este (entrantes a la izquierda, salientes a la derecha)

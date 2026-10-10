@@ -261,7 +261,7 @@ window.DiagramonUI.exportshare = { create(ctx) {
     out.setAttribute('height', Ht);
     out.setAttribute('viewBox', `0 0 ${W} ${Ht}`);
     out.classList.remove('focusing', 'hovering', 'playing', 'dragging', 'panning', 'connecting', 'filtering');
-    out.querySelectorAll('.particle, .edge-hit, .node-halo, .guide, .marquee, .path-badge, .resize-handle, .zone-top-line, .node-cmt').forEach(n => n.remove());
+    out.querySelectorAll('.particle, .edge-hit, .edge-handle, .node-halo, .guide, .marquee, .path-badge, .resize-handle, .zone-top-line, .node-cmt').forEach(n => n.remove());
     out.querySelectorAll('.lit, .sel, .pulse, .pulse-node, .enter, .connect-src, .fdim').forEach(n => n.classList.remove('lit', 'sel', 'pulse', 'pulse-node', 'enter', 'connect-src', 'fdim'));
     const vp = out.querySelector('#viewport');
     vp.removeAttribute('id');

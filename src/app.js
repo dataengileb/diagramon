@@ -630,6 +630,7 @@
       const enc = typeof o.encrypted === 'string' ? (/^(yes|true|si|sí)$/i.test(o.encrypted) ? true : /^(no|false)$/i.test(o.encrypted) ? false : null) : o.encrypted;
       if (enc === true || enc === false) o.encrypted = enc; else delete o.encrypted;
       if (o.route !== 'curved' && o.route !== 'elbow') delete o.route;
+      { const bx = Math.round(+o.bend?.x), by = Math.round(+o.bend?.y); if (Number.isFinite(bx) && Number.isFinite(by) && (bx || by) && Math.abs(bx) <= 5000 && Math.abs(by) <= 5000) o.bend = { x: bx, y: by }; else delete o.bend; }   // desplazamiento manual del trazado (arrastrar el punto de la flecha)
       if (o.weight !== 'high' && o.weight !== 'critical') delete o.weight;
       if (o.both === true || (typeof o.both === 'string' && /^(yes|true|si|sí)$/i.test(o.both))) o.both = true; else delete o.both;
       const dsl = cleanDatasets(o.datasets); if (dsl.length) o.datasets = dsl; else delete o.datasets;
@@ -1753,7 +1754,9 @@
     const parts = Array.from({ length: np ? (e.both ? Math.max(2, np) : np) : 0 }, () => el('circle', { class: 'particle', r: pr, cx: -9999, cy: -9999 }, g));
     const byId = id => S.model.nodes.find(n => n.id === id);
     if (isInsecure(e, byId)) g.classList.add('insecure');
-    const r = { g, e, hit, line, arrow, label: null, parts, len: 0, phase: Math.random(), xb: null, wpx: cfg.width * mu, ak: arrowK(mu), speed: wt === 'critical' ? 1.25 : wt === 'high' ? 1.12 : 1 };
+    const bh = el('circle', { class: 'edge-handle', r: 5 }, g); // tirador para mover la flecha (solo con la conexión elegida)
+    el('title', null, bh).textContent = T('edge.bend.tip');
+    const r = { g, e, hit, line, arrow, bh, label: null, parts, len: 0, phase: Math.random(), xb: null, wpx: cfg.width * mu, ak: arrowK(mu), speed: wt === 'critical' ? 1.25 : wt === 'high' ? 1.12 : 1 };
     R.edges.set(e.id, r);
     const tip = [wt && T(`wt.tip.${wt}`), e.datasets?.length && T('lin.tip', { list: e.datasets.join(', ') })].filter(Boolean).join('\n');
     if (tip) el('title', null, g).textContent = tip;
@@ -2002,7 +2005,15 @@
     R.nodes.set(n.id, g);
   }
 
-  function curvePath(a, b, off) {
+  // Con desplazamiento manual (bend) la curva pasa justo por el punto medio de los centros + bend
+  const bendPt = (a, b, bend) => ({ x: (a.x + a.w / 2 + b.x + b.w / 2) / 2 + bend.x, y: (a.y + a.h / 2 + b.y + b.h / 2) / 2 + bend.y });
+  function curvePath(a, b, off, bend) {
+    const d = curveBase(a, b, off);
+    if (!bend) return d;
+    const n = d.match(/-?\d+(?:\.\d+)?/g).map(Number), P = bendPt(a, b, bend), sx = n[0], sy = n[1], ex = n[n.length - 2], ey = n[n.length - 1];
+    return `M${sx},${sy} Q${2 * P.x - (sx + ex) / 2},${2 * P.y - (sy + ey) / 2} ${ex},${ey}`;
+  }
+  function curveBase(a, b, off) {
     const hgap = Math.max(b.x - (a.x + a.w), a.x - (b.x + b.w));
     const vgap = Math.max(b.y - (a.y + a.h), a.y - (b.y + b.h));
     if (hgap >= vgap) {
@@ -2020,7 +2031,7 @@
   }
   /* ---------- conectores en ángulo recto que esquivan los nodos ---------- */
   // Prueba varios caminos de 1, 3 o 5 tramos y se queda con el más corto que no pisa ningún nodo
-  function elbowPath(a, b, off, obstacles, eoff = off) {
+  function elbowPath(a, b, off, obstacles, eoff = off, bend = null) {
     const hgap = Math.max(b.x - (a.x + a.w), a.x - (b.x + b.w));
     const vgap = Math.max(b.y - (a.y + a.h), a.y - (b.y + b.h));
     const flip = hgap < vgap; // en vertical se trabaja con x e y cambiados
@@ -2036,6 +2047,13 @@
     });
     // El primer y el último tramo salen del nodo de origen y llegan al de destino: esos dos no cuentan
     const hits = pts => pts.slice(1).reduce((n, q, i) => n + (blocks(pts[i][0], pts[i][1], q[0], q[1], i === 0 || i === pts.length - 2 ? obs : [...obs, A, B]) ? 1 : 0), 0);
+    if (bend) { // tramo central en la posición elegida a mano (solo cuenta la coordenada perpendicular a los extremos)
+      const P = bendPt(a, b, bend);
+      let bx = flip ? P.y : P.x;
+      if ((ex - sx) * dir > STUB * 2) bx = Math.min(Math.max(bx, Math.min(sx, ex) + STUB), Math.max(sx, ex) - STUB);
+      else bx = dir > 0 ? Math.max(bx, sx + STUB) : Math.min(bx, sx - STUB);
+      return roundPath([[sx, sy], [bx, sy], [bx, ey], [ex, ey]].map(([x, y]) => (flip ? [y, x] : [x, y])));
+    }
     const cands = [];
     if (Math.abs(sy - ey) < 1) cands.push([[sx, sy], [ex, ey]]);
     const lo = Math.min(sx, ex), hi = Math.max(sx, ex);
@@ -2131,11 +2149,12 @@
       if (VW.sc.edges.has(r.e.id)) return;
       const e = r.e, a = rect(e.from), b = rect(e.to), off = pairs.has(e.to + '\0' + e.from) ? 7 + Math.max(0, ((r.wpx || 1.8) - 1.8) / 2) : 0, pt = ports.get(e.id);
       const d = e.from === e.to ? loopPath(a)
-        : pt ? elbowPath(a, b, pt.s, allRects.filter(o => o.id !== e.from && o.id !== e.to), pt.t) : curvePath(a, b, off);
+        : pt ? elbowPath(a, b, pt.s, allRects.filter(o => o.id !== e.from && o.id !== e.to), pt.t, e.bend) : curvePath(a, b, off, e.bend);
       r.hit.setAttribute('d', d);
       r.line.setAttribute('d', d);
       r.len = r.line.getTotalLength();
       r.arrow.setAttribute('d', arrowD(r.line, r.len, e.both, r.ak));
+      { const hp = r.line.getPointAtLength(r.len / 2); r.bh.setAttribute('cx', hp.x); r.bh.setAttribute('cy', hp.y); }
       if (r.label || r.ds) {
         const mp = r.line.getPointAtLength(r.len / 2);
         r.label?.setAttribute('transform', `translate(${mp.x} ${mp.y})`);
@@ -2499,8 +2518,9 @@
     const byId = new Map(m.nodes.map(n => [n.id, n]));
     const hideN = new Set(), hideE = new Set(), hideG = new Set(), top = new Set();
     const nodeCls = new Map(), edgeCls = new Map(), nodeVar = new Map(), edgeVar = new Map(), ownVar = new Map();
+    const boxed = new Set();   // nodos que solo están ocultos por estar dentro de una caja cerrada: siguen contando para su tarjeta
     if (collapse) { // cajas cerradas: dentro de un grupo todo se oculta; las conexiones reales se sustituyen por las agregadas
-      m.nodes.forEach(n => { if (n.group) hideN.add(n.id); });
+      m.nodes.forEach(n => { if (n.group) { hideN.add(n.id); boxed.add(n.id); } });
       m.edges.forEach(e => hideE.add(e.id));
       m.groups.forEach(g => (g.parent ? hideG : top).add(g.id));
     } else if (v.groups === 'logical') m.groups.forEach(g => { if (groupKind(g) === 'physical') hideG.add(g.id); });
@@ -2513,7 +2533,7 @@
     VW.sc = sc;
     // Fases: lo que aún no existe en la fase elegida es un fantasma (se oculta si se apagan los fantasmas) y lo retirado se oculta; las conexiones siguen a sus extremos
     const pv = phaseView();
-    pv.hide.nodes.forEach(id => hideN.add(id)); pv.hide.edges.forEach(id => hideE.add(id)); pv.hide.groups.forEach(id => hideG.add(id));
+    pv.hide.nodes.forEach(id => { hideN.add(id); boxed.delete(id); }); sc.nodes.forEach(id => boxed.delete(id)); pv.hide.edges.forEach(id => hideE.add(id)); pv.hide.groups.forEach(id => hideG.add(id));
     VW.ph = pv;
 
     if (emph === 'security') {
@@ -2573,6 +2593,7 @@
     R.nodes.forEach((g, id) => { g.classList.toggle('pghost', pv.ghost.nodes.has(id)); g.classList.toggle('ph-new', pv.fresh.has(id)); });
     R.edges.forEach((r, id) => r.g.classList.toggle('pghost', pv.ghost.edges.has(id)));
     R.groups.forEach((r, id) => r.g.classList.toggle('pghost', pv.ghost.groups.has(id)));
+    VW.boxed = boxed;
     VW.hideNodes = hideN; VW.hideEdges = hideE; VW.hideGroups = hideG;
     // Atenuados (no ocultos): los muestra la pastilla de la vista
     const dim = cls => [...cls].filter(([id, c]) => /\bv-dim\b/.test(c)).length;
@@ -2949,7 +2970,7 @@
     const topOf = gid => { let g = gmap.get(gid), i = 0; while (g?.parent && gmap.has(g.parent) && i++ < 50) g = gmap.get(g.parent); return g; };
     // Representante visible de cada nodo: la caja cerrada de su grupo de primer nivel, o él mismo
     const reps = new Map(), repOf = new Map();
-    scopeModel().nodes.filter(n => !VW.hideNodes.has(n.id)).forEach(n => {
+    scopeModel().nodes.filter(n => !VW.hideNodes.has(n.id) || VW.boxed.has(n.id)).forEach(n => {
       const tg = n.group && topOf(n.group), b = tg && R.gbox.get(tg.id), k = b ? `g:${tg.id}` : `n:${n.id}`;
       // La caja cerrada es una tarjeta compacta centrada en el centro del grupo (no del tamaño del grupo)
       const card = b && { w: Math.min(b.w, 300), h: Math.min(b.h, 128) };
@@ -3205,7 +3226,7 @@
   const ORDER = {
     group: ['id', 'label', 'icon', 'color', 'parent', 'kind', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'controls', 'in', 'phase', 'until'],
     node: ['id', 'label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'x', 'y', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'exposure', 'backup', 'controls', 'in', 'c4', 'sla', 'rpo', 'rto', 'replicas', 'disposition', 'radar', 'effort', 'ref', 'iac', 'phase', 'until'],
-    edge: ['id', 'from', 'to', 'label', 'style', 'weight', 'route', 'both', 'color', 'data', 'encrypted', 'datasets', 'latency', 'transferOk', 'threats', 'phase', 'until'],
+    edge: ['id', 'from', 'to', 'label', 'style', 'weight', 'route', 'bend', 'both', 'color', 'data', 'encrypted', 'datasets', 'latency', 'transferOk', 'threats', 'phase', 'until'],
     note: ['id', 'x', 'y', 'w', 'h', 'text', 'color', 'in'],
     zone: ['id', 'x', 'y', 'w', 'h', 'label', 'severity', 'desc', 'kind', 'trust', 'in'],
     requirement: ['id', 'title', 'kind', 'detail', 'priority', 'status', 'source', 'check', 'links'],
@@ -3563,21 +3584,37 @@
   }
   function setFilter(f) { S.filter = f || {}; applyFilter(); }
   const clearFilter = () => setFilter({});
+  // Las 15 secciones se agrupan en 4 bloques plegables; abiertos: los que tienen fichas activas y los que abre el usuario
+  const FLT_GROUPS = [['security', ['data', 'review', 'compliance']], ['infra', ['provider', 'category', 'group', 'layer', 'region']], ['gov', ['team', 'owner', 'steward', 'costCenter']], ['plan', ['cost', 'disposition', 'radar']]];
+  const fltOpen = new Set(), fltQuery = $('#filter-q');
   function renderFilterMenu() {
-    const opts = filterOptions(), box = $('#filter-body');
-    box.innerHTML = FLT_SECTIONS.filter(s => opts[s].length).map(s => `<div class="flt-sec"><div class="cat">${esc(T(`flt.sec.${s}`))}</div><div class="flt-chips">${
-      opts[s].map(o => `<button class="flt-chip${(S.filter[s] || []).includes(o.k) ? ' on' : ''}" data-s="${s}" data-k="${esc(o.k)}" aria-pressed="${(S.filter[s] || []).includes(o.k)}">${esc(o.label)}</button>`).join('')}</div></div>`).join('');
-    $('#filter-clear').hidden = !Object.keys(S.filter).length;
+    const opts = filterOptions(), box = $('#filter-body'), q = fold(fltQuery.value.trim()), active = Object.keys(S.filter).length;
+    const chip = (s, o) => { const on = (S.filter[s] || []).includes(o.k); return `<button class="flt-chip${on ? ' on' : ''}" data-s="${s}" data-k="${esc(o.k)}" aria-pressed="${on}">${esc(o.label)}</button>`; };
+    const act = FLT_SECTIONS.flatMap(s => (S.filter[s] || []).map(k => ({ s, k, label: opts[s].find(o => o.k === k)?.label || k })));
+    const groups = FLT_GROUPS.map(([g, secs]) => {
+      const body = secs.filter(s => opts[s].length).map(s => {
+        const list = opts[s].filter(o => !q || fold(`${o.label} ${T(`flt.sec.${s}`)}`).includes(q));
+        return list.length ? `<div class="flt-sec"><div class="cat">${esc(T(`flt.sec.${s}`))}</div><div class="flt-chips">${list.map(o => chip(s, o)).join('')}</div></div>` : '';
+      }).join('');
+      if (!body) return '';
+      const n = secs.reduce((t, s) => t + (S.filter[s] || []).length, 0), open = q || n || fltOpen.has(g);
+      return `<div class="flt-grp${open ? ' open' : ''}"><button class="flt-grp-h" data-g="${g}" aria-expanded="${!!open}"><span class="flt-car" aria-hidden="true"></span>${esc(T(`flt.grp.${g}`))}${n ? `<span class="flt-n">${n}</span>` : ''}</button>${open ? `<div class="flt-grp-b">${body}</div>` : ''}</div>`;
+    }).join('');
+    box.innerHTML = (act.length ? `<div class="flt-act"><div class="flt-chips">${act.map(a => `<button class="flt-chip on" data-s="${a.s}" data-k="${esc(a.k)}" title="${esc(T(`flt.sec.${a.s}`))}">${esc(a.label)} ✕</button>`).join('')}</div></div>` : '') + (groups || `<p class="menu-note">${esc(T('flt.nomatch'))}</p>`);
+    $('#filter-clear').hidden = !active;
   }
   function placeFilterMenu() {
     const r = filterMenu.querySelector('summary').getBoundingClientRect(), pop = filterMenu.querySelector('.menu-pop');
     pop.style.top = `${r.bottom}px`;
     pop.style.right = `${Math.max(8, innerWidth - r.right)}px`;
   }
-  filterMenu.addEventListener('toggle', () => { if (filterMenu.open) { renderFilterMenu(); placeFilterMenu(); } });
+  fltQuery.addEventListener('input', renderFilterMenu);
+  filterMenu.addEventListener('toggle', () => { if (filterMenu.open) { fltQuery.value = ''; renderFilterMenu(); placeFilterMenu(); } });
   document.addEventListener('pointerdown', ev => { if (filterMenu.open && !filterMenu.contains(ev.target)) filterMenu.open = false; });
   filterMenu.addEventListener('click', ev => {
     if (ev.target.closest('#filter-clear')) return clearFilter();
+    const h = ev.target.closest('.flt-grp-h');
+    if (h) { fltOpen.has(h.dataset.g) ? fltOpen.delete(h.dataset.g) : fltOpen.add(h.dataset.g); return renderFilterMenu(); }
     const b = ev.target.closest('.flt-chip');
     if (!b) return;
     const { s, k } = b.dataset, cur = S.filter[s] || [];
@@ -5296,6 +5333,16 @@
       cancelConnect(); setScope(scopeOf(gid)); select({ kind: 'node', id: gid });
       return;
     }
+    const bendEl = ev.button === 0 && !S.connecting && ev.target.closest('.edge-handle');
+    if (bendEl) { // mover el trazado de la conexión elegida; doble clic = volver al trazado automático
+      const e = S.model.edges.find(x => x.id === bendEl.parentNode.dataset.id), p0 = toWorld(ev.clientX, ev.clientY), now0 = performance.now();
+      if (!e) return;
+      if (S.lastDown?.key === 'h:' + e.id && now0 - S.lastDown.t < 350) { S.lastDown = null; if (e.bend) { pushHistory(); delete e.bend; updateGeometry(); syncEditor(); save(); } return; }
+      S.lastDown = { key: 'h:' + e.id, t: now0, x: ev.clientX, y: ev.clientY };
+      S.drag = { kind: 'bend', e, start: p0, b0: e.bend || { x: 0, y: 0 }, moved: false, orig: [], click: { kind: 'edge', id: e.id } };
+      svg.setPointerCapture(ev.pointerId);
+      return;
+    }
     const nodeEl = ev.target.closest('.node'), tagEl = ev.target.closest('.group-tag'), edgeEl = ev.target.closest('.edge:not(.ctx-edge)');
     const ctxEl = ev.target.closest('.ctx-box'), flowEl = ev.target.closest('.ctx-edge');
     const p = toWorld(ev.clientX, ev.clientY), now = performance.now();
@@ -5379,6 +5426,12 @@
       d.moved = true;
       pushHistory();
       svg.classList.add('dragging');
+    }
+    if (d.kind === 'bend') {
+      const bx = Math.round(d.b0.x + dx), by = Math.round(d.b0.y + dy);
+      if (bx || by) d.e.bend = { x: bx, y: by }; else delete d.e.bend;
+      updateGeometry();
+      return;
     }
     if (d.kind === 'item') { d.o.x = snap(d.ox + dx); d.o.y = snap(d.oy + dy); updateItems(); return; }
     if (d.kind === 'resize') { d.o.w = Math.max(60, snap(d.ow + dx)); d.o.h = Math.max(40, snap(d.oh + dy)); drawItems(); return; }

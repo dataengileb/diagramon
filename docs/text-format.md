@@ -60,6 +60,7 @@ api ~> queue : events
 | `type backup: "Backup traffic" dash="6 3" color=sky width=2 particles=1` | Your own connection type for this diagram (Spanish: `tipo backup: "…" trazo=… ancho=… partículas=…`). `id`: `a-z`, `0-9`, `-` (up to 32, not a built-in name); `dash`: 1-6 numbers (`"12 4 2 4"`, empty = solid); `color`: palette key or hex; `width` 1-4; `particles` 0-4. Use it with `a -> b : x style=backup` |
 | `a -> b -> c : label` | Chain; the label goes on the last arrow |
 | `lines: elbow` · `a -> b : x line=curved` | Elbow or curved lines, for the diagram or one connection |
+| `a -> b : x bend=40,-20` | Hand-moved line: offset in pixels from the automatic route (drag the dot on a selected connection) |
 | `author: …` · `version: …` | Shown in the export's title block |
 | `review db: "DB in a public subnet" by=Ana raised=2026-10-01 due=2026-11-15` | Review finding (`status=resolved closed=…` when fixed) |
 | `# …` or `// …` | Comment |
