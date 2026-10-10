@@ -572,10 +572,33 @@
     return best ? [fitText(best.a, f, max), fitText(best.b, f, max)] : [fitText(t, f, max)];
   };
 
+  /* ---------- versión del formato: migraciones al abrir ---------- */
+  // El JSON lleva formatVersion (entero). Sin él es la versión 0: todo lo guardado antes de que existiera el campo. No confundir con meta.version, la versión del documento que escribe el autor.
+  // Cada migración { to, up(doc) → doc } es pura y se aplica a la raíz y a cada foto guardada (versions[].diagram), que pueden venir en cualquier formato. Para cambiar el modelo: sube FORMAT_VERSION y añade una migración; no edites las anteriores.
+  /* migrate:start */
+  const FORMAT_VERSION = 1;
+  const MIGRATIONS = [
+    { to: 1, up: doc => doc }   // 0 → 1: sin cambios en los datos; solo estrena el campo y el mecanismo
+  ];
+  // → { raw, from, to, newer }. `newer` = el archivo viene de una versión más nueva que la de esta app: se abre igual, pero lo que no conoce se perderá al guardar
+  function migrate(raw) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { raw, from: 0, to: FORMAT_VERSION, newer: false };
+    const v = Math.floor(+raw.formatVersion);
+    const from = Number.isFinite(v) && v > 0 ? v : 0;
+    if (from > FORMAT_VERSION) return { raw, from, to: from, newer: true };
+    let doc = raw;
+    MIGRATIONS.filter(m => m.to > from).sort((a, b) => a.to - b.to).forEach(m => {
+      doc = m.up(doc);
+      if (Array.isArray(doc.versions)) doc = { ...doc, versions: doc.versions.map(x => (x && typeof x === 'object' && x.diagram && typeof x.diagram === 'object' ? { ...x, diagram: m.up(x.diagram) } : x)) };
+    });
+    return { raw: { ...doc, formatVersion: FORMAT_VERSION }, from, to: FORMAT_VERSION, newer: false };
+  }
+  /* migrate:end */
+
   /* ---------- modelo ---------- */
   function normalize(raw) {
     raw = raw && typeof raw === 'object' ? raw : {};
-    const m = { title: String(raw.title || T('model.untitled')), groups: [], nodes: [], edges: [] };
+    const m = { formatVersion: FORMAT_VERSION, title: String(raw.title || T('model.untitled')), groups: [], nodes: [], edges: [] };
     if (raw.direction === 'LR' || raw.direction === 'TB') m.direction = raw.direction;
     if (raw.routing === 'elbow') m.routing = 'elbow';
     if (raw.layerNames === 'zones') m.layerNames = 'zones';
@@ -3904,6 +3927,7 @@
       ? `  "${name}": [\n${list.map(o => '    ' + line(ordered(o, keys))).join(',\n')}\n  ]`
       : `  "${name}": []`;
     const head = [`  "title": ${JSON.stringify(m.title)}`];
+    if (m.formatVersion) head.unshift(`  "formatVersion": ${m.formatVersion}`);   // normalize siempre lo pone: todo JSON que escribe la app lleva su versión de formato
     if (m.direction) head.push(`  "direction": ${JSON.stringify(m.direction)}`);
     if (m.routing) head.push(`  "routing": ${JSON.stringify(m.routing)}`);
     if (m.layerNames === 'zones') head.push(`  "layerNames": "zones"`);
@@ -3974,6 +3998,13 @@
       if (!Array.isArray(raw.stakeholders) && S.model.stakeholders) raw = { ...raw, stakeholders: S.model.stakeholders };   // igual: el texto siempre trae los interesados; el JSON, si omite la clave, los conserva
       if (!Array.isArray(raw.datasets) && S.model.datasets) raw = { ...raw, datasets: S.model.datasets };   // el texto siempre trae los conjuntos de datos; el JSON, si omite la clave, los conserva
       if (!Array.isArray(raw.decisions)) raw = { ...raw, decisions: S.model.decisions }; // el texto siempre trae las decisiones (ADR; borrarlas del texto las borra); el JSON, si omite la clave, las conserva
+    }
+    // Archivos, guardado local y editor JSON pasan por las migraciones. No pasan el texto del editor, las plantillas, las versiones guardadas y el diagrama nuevo (opts.current): ya vienen en el formato actual
+    if (opts.fromEditor === 'json' && raw && typeof raw === 'object' && raw.formatVersion == null) raw = { ...raw, formatVersion: FORMAT_VERSION };   // JSON pegado sin el campo: se da por actual
+    if (!opts.current && opts.fromEditor !== 'text') {
+      const mg = migrate(raw);
+      raw = mg.raw;
+      if (mg.newer) toast(T('toast.newerFormat', { v: mg.from, app: FORMAT_VERSION }), 9000);
     }
     S.model = normalize(raw);
     ensurePositions(S.model);
@@ -5103,7 +5134,7 @@
     const v = findVersion(id);
     if (!v) return;
     S.sel = null;
-    setModel({ ...clone(v.diagram), versions: S.model.versions, active: v.id, decisions: S.model.decisions, requirements: S.model.requirements, raid: S.model.raid, stakeholders: S.model.stakeholders }, { history: true });
+    setModel({ ...clone(v.diagram), versions: S.model.versions, active: v.id, decisions: S.model.decisions, requirements: S.model.requirements, raid: S.model.raid, stakeholders: S.model.stakeholders }, { current: true, history: true });
     toast(T('ver.opened', { name: verLabel(v) }));
   }
   async function deleteVersion(id, { force } = {}) {
@@ -6811,7 +6842,7 @@
     const b = ev.target.closest('.ex');
     if (!b) return;
     S.sel = null;
-    setModel(I.deep(EXAMPLES[+b.dataset.ex].diagram), { history: true, animate: true, fit: true });
+    setModel(I.deep(EXAMPLES[+b.dataset.ex].diagram), { current: true, history: true, animate: true, fit: true });
     toast(T('toast.template', { name: loc(EXAMPLES[+b.dataset.ex].name) }));
     if (matchMedia('(max-width: 760px)').matches) $('#main').classList.remove('open');
   });
@@ -6968,7 +6999,7 @@
   });
   $('#btn-new').addEventListener('click', () => {
     S.sel = null;
-    setModel({ title: T('model.new') }, { history: true, fit: true });
+    setModel({ title: T('model.new') }, { current: true, history: true, fit: true });
     toast(T('toast.newCanvas'));
   });
   $('#btn-import').addEventListener('click', () => $('#file').click());
@@ -8374,7 +8405,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
       const r = DBT.toDiagram(man, cfg);
       if (!r.stats.datasets || !r.diagram.nodes.length) { toast(T('dbt.err.empty'), 3200); return { error: 'empty' }; }
       S.sel = null;
-      setModel(r.diagram, { history: true, animate: true, fit: true });
+      setModel(r.diagram, { current: true, history: true, animate: true, fit: true });
       const sum = { mode, datasets: r.stats.datasets, columns: r.stats.columns, rules: r.stats.rules, exposures: r.stats.exposures, nodes: r.stats.nodes, edges: r.stats.edges, warnings: r.warnings };
       toast(T('dbt.done.new', sum), 4200);
       return sum;
@@ -8447,7 +8478,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     if (!res.nodes) return toast(T('toast.iacEmpty', { format: res.format }), 3200);
     if (S.scope) { importIntoScope(res.diagram); toast(T('toast.iac', res), 4200); return res; } // dentro de un nivel C4: se añade a ese nivel
     S.sel = null;
-    setModel(res.diagram, { history: true, animate: true, fit: true });
+    setModel(res.diagram, { current: true, history: true, animate: true, fit: true });
     toast(T('toast.iac', res), 4200);
     return res;
   }
@@ -10349,7 +10380,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     $('#btn-anim').classList.toggle('on', S.anim);
     const saved = store.get('model', null);
     S.scope = store.get('scope', null);  // se recupera el nivel C4 abierto si sigue existiendo
-    setModel(saved && Array.isArray(saved.nodes) ? saved : I.deep(EXAMPLES[0]?.diagram || { title: T('model.new') }), { animate: true, keepScope: true });
+    setModel(saved && Array.isArray(saved.nodes) ? saved : I.deep(EXAMPLES[0]?.diagram || { title: T('model.new') }), { animate: true, keepScope: true, current: !(saved && Array.isArray(saved.nodes)) });
     fitView(false);
     requestAnimationFrame(tick);
   }

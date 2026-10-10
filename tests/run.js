@@ -1393,6 +1393,61 @@
       .forEach(k => eq(src.split(`'${k}':`).length - 1, 2, `${k}`));
   });
 
+  /* ======================================================================
+     Versión del formato: formatVersion y migraciones al abrir
+     ====================================================================== */
+  section('Format version');
+  const MIGSRC = between('/* migrate:start */', '/* migrate:end */');
+  const MIG = new Function(`${MIGSRC}; return { migrate, FORMAT_VERSION, MIGRATIONS };`)();
+  // La app con dos migraciones, para probar el encadenado y las fotos de versiones: 1 → 2 renombra title a name
+  const MIG2 = new Function(`${MIGSRC.replace('const FORMAT_VERSION = 1;', 'const FORMAT_VERSION = 2;').replace('{ to: 1, up: doc => doc }', '{ to: 1, up: doc => doc }, { to: 2, up: doc => { const { title, ...rest } = doc; return { ...rest, name: title }; } }')}; return migrate;`)();
+  test('a file without formatVersion is version 0: it migrates to the current one and keeps its data', () => {
+    const raw = { title: 'Old', nodes: [{ id: 'a' }], edges: [], groups: [] };
+    const r = MIG.migrate(raw);
+    eq([r.from, r.to, r.newer, r.raw.formatVersion], [0, MIG.FORMAT_VERSION, false, MIG.FORMAT_VERSION]);
+    eq({ ...r.raw, formatVersion: undefined }, { ...raw, formatVersion: undefined }, 'data unchanged by the 0 → 1 migration');
+    assert(!('formatVersion' in raw), 'the input is not mutated');
+  });
+  test('migrating twice changes nothing; invalid or non-numeric versions count as 0; non-objects pass through', () => {
+    const once = MIG.migrate({ title: 'X', nodes: [] }).raw;
+    eq(MIG.migrate(once).raw, once);
+    eq(MIG.migrate({ title: 'X', formatVersion: 'abc' }).from, 0);
+    eq(MIG.migrate({ title: 'X', formatVersion: -3 }).from, 0);
+    eq([MIG.migrate(null).raw, MIG.migrate([1]).raw], [null, [1]]);
+  });
+  test('a file from a newer format is flagged and left untouched', () => {
+    const raw = { title: 'Future', formatVersion: MIG.FORMAT_VERSION + 4, nodes: [], extra: { a: 1 } };
+    const r = MIG.migrate(raw);
+    eq([r.newer, r.from], [true, MIG.FORMAT_VERSION + 4]);
+    assert(r.raw === raw, 'same object, nothing applied');
+  });
+  test('migrations run in order, from the file version onwards, on the root and on every saved version snapshot', () => {
+    const doc = { title: 'T', versions: [{ id: 'v1', diagram: { title: 'S1', nodes: [] } }, { id: 'v2' }, null] };
+    const r = MIG2(doc);
+    eq([r.from, r.to, r.raw.formatVersion], [0, 2, 2]);
+    eq([r.raw.name, 'title' in r.raw], ['T', false], 'root migrated');
+    eq([r.raw.versions[0].diagram.name, 'title' in r.raw.versions[0].diagram], ['S1', false], 'snapshot migrated');
+    eq([r.raw.versions[1], r.raw.versions[2]], [{ id: 'v2' }, null], 'entries without a diagram are kept');
+    const mid = MIG2({ title: 'T', formatVersion: 1 });
+    eq([mid.from, mid.raw.name], [1, 'T'], 'a version-1 file only gets the 1 → 2 migration');
+    const cur = { name: 'N', formatVersion: 2 };
+    eq(MIG2(cur).raw, cur, 'a current file is unchanged');
+  });
+  test('the app wires it: normalize stamps the version, serialize writes it first, setModel migrates external sources only, the newer-format notice exists', () => {
+    const app2 = read('src/app.js');
+    assert(/const m = \{ formatVersion: FORMAT_VERSION, title:/.test(app2), 'normalize');
+    assert(/if \(m\.formatVersion\) head\.unshift\(/.test(app2), 'serialize');
+    assert(/if \(!opts\.current && opts\.fromEditor !== 'text'\) \{\s*const mg = migrate\(raw\);/.test(app2), 'setModel');
+    assert(/toast\(T\('toast\.newerFormat'/.test(app2), 'notice');
+    const i18n = read('src/i18n.js');
+    eq(i18n.split("'toast.newerFormat':").length - 1, 2, 'toast.newerFormat in en and es');
+  });
+  test('JSON writes formatVersion as its first key; a model without it writes none (old tests stay byte-identical)', () => {
+    const base = { title: 'X', nodes: [{ id: 'a', label: 'A', type: 'generic', x: 0, y: 0 }], edges: [], groups: [], decisions: [] };
+    assert(serializeM({ ...base, formatVersion: 1 }).startsWith('{\n  "formatVersion": 1,\n  "title": "X"'), 'first key');
+    assert(!/formatVersion/.test(serializeM(base)), 'absent without the field');
+  });
+
   /* ---------- resumen ---------- */
   print(`\n${pass} passed, ${fail} failed`);
   return finish(fail === 0);
