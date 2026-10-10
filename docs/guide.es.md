@@ -419,6 +419,10 @@ Indica cuántos días-persona cuesta construir cada componente, por perfil, para
 - Un perfil que no está en `config.js` se conserva y se marca con ⚠: no tiene tarifa, así que suma días pero no costo.
 - En la pestaña *Texto*: `api: API de pedidos esfuerzo=dev:10,devops:3` (en inglés: `effort=dev:10,devops:3`). Los decimales llevan punto. JSON: `"effort": [{ "role": "dev", "days": 10 }]`.
 - El trabajo que no es un componente (gestión, pruebas, migración de datos) va en el JSON, por fase: `"extra": [{ "label": "Pruebas", "role": "qa", "days": 5 }]`, y el documento puede fijar sus propios imprevistos con `"estimation": { "contingency": 15 }` (porcentaje sobre el esfuerzo). La pestaña Texto no lleva estas dos cosas, pero al editar el texto se conservan.
+- **Estimación por fase**: bajo la comparación de fases (pestaña *Versiones*) aparece una segunda tabla en cuanto algo tiene esfuerzo: por fase, cuántos componentes están estimados de los que aparecen en ella, los días-persona (pasa el cursor para ver el reparto por perfil; el trabajo extra se anota aparte), el costo de construcción con los imprevistos, el total a la fecha y, al lado, el costo mensual de operar esa fase, para comparar construir con operar. Las columnas de costo solo salen si algún perfil tiene tarifa.
+- Los **imprevistos** son un porcentaje sobre el esfuerzo: `estimation.contingency` de `config.js` es el valor por defecto y el documento puede fijar el suyo en el JSON; un valor `0` del documento gana al por defecto.
+- El panel **Revisión** tiene una fuente *Estimación* con dos avisos de severidad baja y descartables: una fase donde unos componentes tienen esfuerzo y otros no, y un perfil sin tarifa diaria. Los dos se pueden apagar en `config.js › estimation.rules`.
+- El **informe** tiene una sección *Estimación de esfuerzo* (una fila por fase con días por perfil, costo de construcción, imprevistos, total y total a la fecha, más una fila de total), y el inventario en **Excel** gana una hoja *Estimación* y una columna *Esfuerzo (días)* en Componentes.
 - Sin esfuerzo no cambia nada: ni clave en el JSON ni columna en ningún sitio.
 
 ### Comentarios

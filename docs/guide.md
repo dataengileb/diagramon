@@ -420,6 +420,10 @@ Say how many person-days each component takes to build, by role, so the phases c
 - A role that is not in `config.js` is kept and marked ⚠: it has no rate, so it adds days but no cost.
 - In the *Text* tab: `api: Orders API effort=dev:10,devops:3` (Spanish: `esfuerzo=dev:10,devops:3`). Decimals use a point. JSON: `"effort": [{ "role": "dev", "days": 10 }]`.
 - Work that is not a component (management, testing, data migration) goes in the JSON, per phase: `"extra": [{ "label": "Testing", "role": "qa", "days": 5 }]`, and the document can set its own contingency with `"estimation": { "contingency": 15 }` (percent on top of the effort). The Text tab does not carry these two, but editing the text keeps them.
+- **Estimation by phase**: under the phase comparison (*Versions* tab) a second table appears as soon as something has effort: per phase, how many components are estimated out of those that appear in it, the person-days (hover for the split by role, with the extra work noted apart), the build cost with the contingency, the total to date, and the monthly running cost of that phase next to it, so building and running can be compared. The cost columns show only when some role has a rate.
+- The **contingency** is a percentage on top of the effort: `estimation.contingency` in `config.js` is the default and the document can set its own in the JSON; a document value of `0` wins over the default.
+- The **Review** panel has an *Estimation* source with two low, dismissible warnings: a phase where some components have effort and others do not, and a role with no daily rate. Both can be switched off in `config.js › estimation.rules`.
+- The **report** has an *Effort estimation* section (a row per phase with days per role, build cost, contingency, total and total to date, plus a total row), and the **Excel** inventory gets an *Estimation* sheet and an *Effort (days)* column in Components.
 - Without effort nothing changes: no key in the JSON, no column anywhere.
 
 ### Comments
