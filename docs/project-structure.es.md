@@ -23,3 +23,15 @@
 | `assets/fonts/` | Tipografías incluidas (`.woff2`, licencias OFL) y el `fonts.js` generado |
 | `tools/build-fonts.py` | Genera `assets/fonts/fonts.js` desde `assets/fonts/*.woff2` |
 | `tests/run.js` | Pruebas automáticas sin dependencias (formato de texto, exportaciones, importación de IaC y de dbt, traducciones, funciones puras); se ejecutan con `node tests/run.js` |
+
+## Cambiar el formato del archivo
+
+Todo JSON que escribe la app empieza con `formatVersion`. Los archivos anteriores al campo cuentan como versión 0, y uno con un número mayor que el de la app se abre con un aviso, porque lo que esta versión no conoce se pierde al guardar.
+
+Cuando un cambio del modelo rompería los archivos viejos (una clave renombrada o movida, un significado distinto), y no cuando solo añades un campo opcional:
+
+1. En `src/app.js`, sube `FORMAT_VERSION` y añade `{ to: <número nuevo>, up: doc => … }` a `MIGRATIONS` (entre los marcadores `/* migrate:start */` y `/* migrate:end */`).
+2. `up` debe ser pura: recibe un documento y devuelve el convertido sin tocar el original. Se aplica al documento raíz y a cada foto de versión guardada (`versions[].diagram`), en orden, a partir de la versión del archivo.
+3. Añade una prueba en la sección «Format version» de `tests/run.js` con un documento en el formato viejo y el resultado esperado.
+
+Las plantillas, las versiones guardadas, los diagramas nuevos y la pestaña Texto ya están en el formato actual y no pasan por las migraciones. Los archivos, el guardado local y la pestaña JSON sí pasan por ellas.
