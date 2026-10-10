@@ -303,9 +303,7 @@
      6. Decisiones (ADR): opciones, criterios y puntuación
      ====================================================================== */
   section('ADR options');
-  const adrSrc = between('/* adrModel:start */', '/* adrModel:end */');
-  const apprSrc = between('/* approvalModel:start */', '/* approvalModel:end */');   // cleanDecisions llama a cleanSignoffs
-  const ADRM = new Function('isDay', 'today', `${apprSrc}; ${adrSrc}; return { adrScore, adrFull, adrLeader, cleanDecisions };`)(v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v), () => '2026-01-01');
+  const ADRM = win.DiagramonModels.decisions({ isDay: v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v), today: () => '2026-01-01' });   // src/models/decisions.js
   const adrModel = { nodes: [{ id: 'a' }], edges: [], groups: [], versions: [{ id: 'v2' }] };
   const adrDec = () => ({
     id: 'ADR-001', title: 'Open table format', status: 'proposed', date: '2026-10-07', context: 'c', decision: '', consequences: '', area: 'Storage',
@@ -753,7 +751,7 @@
      ====================================================================== */
   section('Approvals');
   const isDayT = v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
-  const APPM = new Function('isDay', `${apprSrc}; return { approversFor, approvalState, cleanSignoffs };`)(isDayT);
+  const APPM = win.DiagramonModels.decisions({ isDay: isDayT, today: () => '2026-01-01' });
   const people = () => [
     { id: 'SH-001', name: 'Ana', raci: { '*': 'C', Security: 'A' } }, { id: 'SH-002', name: 'Luis', raci: { platform: 'A' } },
     { id: 'SH-003', name: 'Eva', raci: { '*': 'A' }, versions: true }, { id: 'SH-004', name: 'Old', raci: { '*': 'A' }, versions: true, inactive: true }, { id: 'SH-005', name: 'Read', raci: { '*': 'I' } }];
