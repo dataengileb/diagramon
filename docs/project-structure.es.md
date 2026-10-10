@@ -16,6 +16,7 @@
 | `src/share.js` | Visor HTML cifrado y autosuficiente para compartir |
 | `src/iac.js` | Importación de infraestructura como código (Terraform, CloudFormation, Kubernetes, Compose) |
 | `src/workspace.js` | Espacio de trabajo (una carpeta de diagramas): reconoce los archivos de Diagramon, los resume (título, cantidades, versión de formato, `docId`) y nombra los archivos nuevos; puro, sin DOM. La lectura y escritura de la carpeta está en `src/app.js` |
+| `src/drift.js` | Diseño frente a realidad (puro, sin DOM): une los componentes de un diagrama con los recursos de la infraestructura importada por su dirección `iac`, propone (nunca aplica) uniones por nombre y tipo, y lista las diferencias de región, réplicas, exposición pública y copia de seguridad. |
 | `src/dbt.js` | Importación del manifest de dbt (`manifest.json` a conjuntos, reglas de calidad, frescura y un diagrama de linaje); puro, sin DOM |
 | `samples/` | Archivos de IaC y un manifest de dbt (`samples/dbt/`) de ejemplo para probar las importaciones |
 | `assets/icons/*.js` | Iconos oficiales de AWS, Azure, Google Cloud, SAP BTP y Microsoft Fabric, incrustados |

@@ -663,6 +663,27 @@ window.DiagramonIaC = (() => {
     return 'node';
   }
 
+  // Lo que dice la infraestructura desplegada de un recurso (para compararla con el diseño): { region?, replicas?, exposure?: 'public'|'internal', backup?: boolean }
+  // Solo lo que el recurso afirma de forma explícita; lo que no dice no se inventa.
+  function factsOf(r) {
+    const v = isObj(r.values) ? r.values : {}, f = {};
+    const pick = (...ks) => { for (const k of ks) if (v[k] !== undefined && v[k] !== null && v[k] !== '') return v[k]; return undefined; };
+    const bool = x => (x === true || x === 'true' ? true : x === false || x === 'false' ? false : null);
+    if (str(r.region)) f.region = str(r.region);
+    const rep = r.badge ? +String(r.badge).slice(1) : +pick('desired_capacity', 'DesiredCapacity', 'desired_count', 'DesiredCount', 'number_cache_clusters', 'NumCacheClusters', 'instance_count');
+    if (rep >= 1) f.replicas = rep;
+    const pub = bool(pick('publicly_accessible', 'PubliclyAccessible', 'associate_public_ip_address', 'AssociatePublicIpAddress'));
+    const lbInternal = bool(pick('internal'));
+    const scheme = str(pick('Scheme', 'scheme'));
+    if (pub != null) f.exposure = pub ? 'public' : 'internal';
+    else if (/(^|_)lb$|loadbalancer/i.test(r.type) && lbInternal != null) f.exposure = lbInternal ? 'internal' : 'public';
+    else if (/LoadBalancer/.test(r.type) && /internet-facing/.test(scheme)) f.exposure = 'public';
+    else if (/LoadBalancer/.test(r.type) && /internal/.test(scheme)) f.exposure = 'internal';
+    const ret = pick('backup_retention_period', 'BackupRetentionPeriod');
+    if (ret !== undefined && Number.isFinite(+ret)) f.backup = +ret > 0;
+    return f;
+  }
+
   function assemble(list, fmt) {
     const cfn = fmt === 'cloudformation';
     const byKey = new Map(list.map(r => [r.key, r]));
@@ -816,8 +837,10 @@ window.DiagramonIaC = (() => {
       // Sin nombre propio: el servicio hace de nombre y el identificador va debajo
       const label = r.named === false && r.row ? row.svc : r.name;
       const sub = r.named === false && r.row ? [r.name, r.detail] : [row.svc, r.detail];
-      const n = { id: safeId(r.key, nid), label, type: row.type, sub: sub.filter(Boolean).join(' · '), group: placeOf(r), desc: `${r.key} (${r.type})` };
+      const n = { id: safeId(r.key, nid), label, type: row.type, sub: sub.filter(Boolean).join(' · '), group: placeOf(r), desc: `${r.key} (${r.type})`, iac: r.key };
       if (row.icon) n.icon = row.icon;
+      const facts = factsOf(r);
+      if (Object.keys(facts).length) n.facts = facts;
       const data = dataFromTags(r.tags);
       if (data.length) n.data = data;
       if (r.badge) n.badge = r.badge;
@@ -1253,6 +1276,7 @@ window.DiagramonIaC = (() => {
       n.id = safeId(`${ns(o)}.${o.metadata.name}${o.kind === 'Deployment' ? '' : '.' + o.kind.toLowerCase()}`, nid);
       n.group = groupFor(o);
       n.desc = `${o.kind} ${ns(o)}/${o.metadata.name}`;
+      n.iac = `${o.kind} ${ns(o)}/${o.metadata.name}`;
       nid.set(keyOf(o), n.id);
       nodes.push(n);
       return n.id;
@@ -1276,6 +1300,7 @@ window.DiagramonIaC = (() => {
       const replicas = +o.spec?.replicas;
       const n = { label: o.metadata.name, type: imageType(main.image, fallback), sub: [o.kind, o.kind === 'CronJob' ? o.spec?.schedule : shortImage(main.image)].filter(Boolean).join(' · ') };
       if (replicas > 1) n.badge = `x${replicas}`;
+      if (replicas >= 1) n.facts = { replicas };
       node(o, n);
     });
     const services = objs.filter(o => o.kind === 'Service');
@@ -1291,7 +1316,7 @@ window.DiagramonIaC = (() => {
       const type = s.spec?.type || 'ClusterIP';
       const ports = (s.spec?.ports || []).map(p => p.port).filter(Boolean).join(', ');
       if (type === 'LoadBalancer' || type === 'NodePort') {
-        const id = node(s, { label: s.metadata.name, type: 'lb', sub: `Service · ${type}${ports ? ' :' + ports : ''}` });
+        const id = node(s, { label: s.metadata.name, type: 'lb', sub: `Service · ${type}${ports ? ' :' + ports : ''}`, facts: { exposure: 'public' } });
         targets.forEach(t => edge(id, t, ports ? { label: ':' + String(ports).split(',')[0] } : {}));
         svcTargets.set(keyOf(s), [id]);
       } else if (type === 'ExternalName') {
@@ -1392,6 +1417,9 @@ window.DiagramonIaC = (() => {
       const n = { id: safeId(name, nid), label: s.container_name || name, type: imageType(s.image || name, 'container'), sub: [what, ports.length ? ':' + ports.join(', :') : ''].filter(Boolean).join(' · '), group: nets.get(netsOf(s)[0]) || 'compose', desc: `service ${name}` };
       const rep = +s.deploy?.replicas || +s.scale;
       if (rep > 1) n.badge = `x${rep}`;
+      n.iac = `service ${name}`;
+      n.facts = { ...(rep >= 1 ? { replicas: rep } : {}), ...(ports.length ? { exposure: 'public' } : {}) };
+      if (!Object.keys(n.facts).length) delete n.facts;
       nid.set(name, n.id);
       nodes.push(n);
     });

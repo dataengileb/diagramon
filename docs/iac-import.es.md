@@ -20,6 +20,8 @@ Qué obtienes:
 - **Clasificación de datos** desde etiquetas como `DataClassification = pii`.
 - **Menos ruido**: los recursos de apoyo (IAM, políticas, rutas, grupos de seguridad, asociaciones…) se ocultan, pero se usan para ubicar y conectar el resto.
 
+- **Cada componente recuerda su recurso**: la importación guarda la dirección del recurso en el campo `iac` del componente (`aws_db_instance.orders`, un id lógico de CloudFormation, `Deployment shop/web`, `service api`). Es opcional, viaja en el JSON y sobrevive a las ediciones de texto, y es lo que permite que una comparación posterior con la infraestructura desplegada una cada componente con su recurso en lugar de adivinar por el nombre.
+
 ![Data lake de AWS importado desde terraform show -json](iac-data-lake.png)
 
 Pruébalo con los archivos de [`samples/`](../samples): un data lake simple en AWS (en Terraform y en CloudFormation), una tienda web en Azure (`azure-web-shop`, `terraform show -json`), una plataforma de datos en Google Cloud (`gcp-data-platform`, `terraform show -json`), una tienda en Kubernetes y un stack de Docker Compose.

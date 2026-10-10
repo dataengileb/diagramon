@@ -884,6 +884,7 @@
       if (cleanRegion(o.region)) o.region = cleanRegion(o.region); else delete o.region;
       { const l = cleanLayer(o.layer); if (l) o.layer = l; else delete o.layer; }
       { const dp = cleanDisposition(o.disposition); if (dp) o.disposition = dp; else delete o.disposition; }
+      { const ia = typeof o.iac === 'string' ? o.iac.replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, 200) : ''; if (ia) o.iac = ia; else delete o.iac; }   // recurso de infraestructura como código que representa (dirección Terraform, id de CloudFormation…)
       { const rf = window.DiagramonWorkspace?.cleanRef(o.ref); if (rf) o.ref = rf; else delete o.ref; }   // enlace al diagrama donde se detalla (espacio de trabajo)
       { const ef = cleanEffort(o.effort); if (ef.length) o.effort = ef; else delete o.effort; }
       { const rr = cleanRadarRef(o.radar); if (rr) o.radar = rr; else delete o.radar; }
@@ -4319,7 +4320,7 @@
 
   const ORDER = {
     group: ['id', 'label', 'icon', 'color', 'parent', 'kind', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'controls', 'in', 'phase', 'until'],
-    node: ['id', 'label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'x', 'y', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'exposure', 'backup', 'controls', 'in', 'c4', 'sla', 'rpo', 'rto', 'replicas', 'disposition', 'radar', 'effort', 'ref', 'phase', 'until'],
+    node: ['id', 'label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'x', 'y', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'exposure', 'backup', 'controls', 'in', 'c4', 'sla', 'rpo', 'rto', 'replicas', 'disposition', 'radar', 'effort', 'ref', 'iac', 'phase', 'until'],
     edge: ['id', 'from', 'to', 'label', 'style', 'weight', 'route', 'both', 'color', 'data', 'encrypted', 'datasets', 'latency', 'transferOk', 'threats', 'phase', 'until'],
     note: ['id', 'x', 'y', 'w', 'h', 'text', 'color', 'in'],
     zone: ['id', 'x', 'y', 'w', 'h', 'label', 'severity', 'desc', 'kind', 'trust', 'in'],
@@ -4430,6 +4431,7 @@
       if (!Array.isArray(raw.comments) && S.model.comments) raw = { ...raw, comments: S.model.comments };   // el texto no lleva comentarios; el JSON, si omite la clave, los conserva
       if (opts.fromEditor === 'text' && S.model.estimation && raw.estimation == null) raw = { ...raw, estimation: S.model.estimation };   // los imprevistos y el trabajo extra de cada fase solo viven en el JSON: el texto no los lleva
       if (opts.fromEditor === 'text' && Array.isArray(raw.phases) && (S.model.phases || []).some(p => p.extra)) raw = { ...raw, phases: raw.phases.map(p => { const old = p && (S.model.phases || []).find(q => q.id === p.id); return old?.extra && !p.extra ? { ...p, extra: old.extra } : p; }) };
+      if (opts.fromEditor === 'text' && Array.isArray(raw.nodes) && S.model.nodes.some(n => n.iac)) { const ic = new Map(S.model.nodes.filter(n => n.iac).map(n => [n.id, n.iac])); raw = { ...raw, nodes: raw.nodes.map(n => (n && ic.has(n.id) && n.iac == null ? { ...n, iac: ic.get(n.id) } : n)) }; }   // el texto no lleva el enlace con la infraestructura: se conserva por id
       if (opts.fromEditor === 'text' && Array.isArray(raw.nodes) && S.model.nodes.some(n => n.ref)) { const rf = new Map(S.model.nodes.filter(n => n.ref).map(n => [n.id, n.ref])); raw = { ...raw, nodes: raw.nodes.map(n => (n && rf.has(n.id) && n.ref == null ? { ...n, ref: rf.get(n.id) } : n)) }; }   // el texto no lleva los enlaces entre diagramas: se conservan por id
       if (!Array.isArray(raw.radar) && S.model.radar) raw = { ...raw, radar: S.model.radar };   // el texto solo lleva radar=<id> por componente: las entradas propias del radar se conservan
       if (!Array.isArray(raw.datasets) && S.model.datasets) raw = { ...raw, datasets: S.model.datasets };   // el texto siempre trae los conjuntos de datos; el JSON, si omite la clave, los conserva
