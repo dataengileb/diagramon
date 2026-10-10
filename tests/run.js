@@ -294,7 +294,7 @@
     assert(r && r.value > 0.9 && r.value <= 1, `value ${r && r.value}`); assert(Date.now() - t0 < 5000, 'too slow');
   });
   // v2: el código de la interfaz está repartido entre src/app.js y src/ui/*.js; cada clave T('...') literal debe existir en inglés y en español
-  const UI_FILES = ['src/ui/dialogs.js', 'src/ui/panel.js', 'src/ui/tabs.js', 'src/ui/sidebar.js', 'src/ui/topbar.js', 'src/ui/raid.js', 'src/ui/people.js', 'src/ui/reqs.js', 'src/ui/datatab.js'];
+  const UI_FILES = ['src/ui/dialogs.js', 'src/ui/panel.js', 'src/ui/tabs.js', 'src/ui/sidebar.js', 'src/ui/topbar.js', 'src/ui/raid.js', 'src/ui/people.js', 'src/ui/reqs.js', 'src/ui/datatab.js', 'src/ui/adr.js'];
   test('interface files: every literal T() key is defined in English and Spanish', () => {
     const i18nSrc = read('src/i18n.js');
     for (const f of ['src/app.js', ...UI_FILES]) {
