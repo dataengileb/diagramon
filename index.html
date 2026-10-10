@@ -1035,6 +1035,9 @@
   .node-region { pointer-events: none; }
   .node-region rect { fill: var(--surface); stroke: var(--c); stroke-opacity: .45; stroke-width: 1; }
   .node-region text { fill: var(--muted); font-size: 10.5px; font-weight: 700; }
+  .node-mig rect { fill: var(--surface); stroke: var(--mg); stroke-opacity: .9; stroke-width: 1.2; }
+  .node-mig text { fill: var(--mg); font-size: 10.5px; font-weight: 800; }
+  .vw-security .node-mig, .vw-physical .node-mig, .vw-min .node-mig { display: none; }
   /* Revisión automática: pastilla «⚠ n» con los hallazgos abiertos de un nodo (solo en la vista Seguridad) */
   .node-sec { display: none; pointer-events: none; }
   .vw-security .node-sec { display: inline; }
@@ -1255,6 +1258,9 @@
   .docbar-leg li.layer-row b { margin-left: auto; color: var(--muted); font-weight: 650; font-variant-numeric: tabular-nums; }
   .layer-seg button { padding: 5px 1px; font-size: 11px; line-height: 1.2; }
   .layer-seg button[data-layer].on:not([data-layer=""]) { color: var(--lc); }
+  .disp-seg { flex-wrap: wrap; gap: 2px; }
+  .disp-seg button { flex: 1 1 auto; padding: 5px 7px; font-size: 11px; line-height: 1.2; }
+  .disp-seg button[data-disp].on:not([data-disp=""]) { color: var(--lc); }
   .layer-names { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
   .layer-names > span { flex: none; font-size: 11px; color: var(--muted); }
   .layer-names .seg { flex: 1; margin-top: 0; padding: 2px; }
@@ -1304,6 +1310,8 @@
   .ph-cmp tbody tr.on > * { background: color-mix(in srgb, var(--accent) 16%, var(--surface)); }
   .ph-cmp td.up { color: var(--ok, #2e9e6a); } .ph-cmp td.dn { color: var(--sev-high); }
   .ph-fs { display: flex; gap: 3px; justify-content: flex-end; }
+  .ph-mig { white-space: nowrap; }
+  .mg-chip { display: inline-block; margin-right: 3px; padding: 0 5px; border: 1px solid var(--mg); border-radius: 8px; color: var(--mg); font-size: 10.5px; font-weight: 700; }
   .ph-f { min-width: 17px; padding: 0 4px; border-radius: 8px; text-align: center; font-weight: 700; font-size: 10.5px; color: #1b1b24; }
   .ph-f.sev-high { background: var(--sev-high); } .ph-f.sev-medium { background: var(--sev-medium); } .ph-f.sev-low { background: var(--sev-low); } .ph-f.zero { opacity: .3; }
   .diagramon-svg .node.fdim, .diagramon-svg .edge.fdim, .diagramon-svg .group.fdim { opacity: .12; }

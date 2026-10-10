@@ -192,6 +192,34 @@ window.DIAGRAMON_CONFIG = {
     }
   },
 
+  /* Disposición de migración por componente (las «6R»): qué se hace con cada componente al migrar. Se elige en el inspector, en el filtro «Disposición»
+     y en la pestaña Texto (`disposition=rehost`); en el diagrama se guarda como `disposition: 'rehost'`.
+     dispositions: mapa ORDENADO clave → { enabled?, label: { en, es }, alias?: [palabras que se aceptan al leer el texto], short, color, hint: { en, es } }.
+       · Las seis primeras son las 6R clásicas; `relocate` (la séptima de AWS) viene apagada: pon `enabled: true` para ofrecerla.
+         Un valor apagado se descarta al leer el JSON y da error en la pestaña Texto.
+       · El orden de las claves es el de los filtros, el informe y la tabla comparativa de fases.
+       · `short` es la sigla de la pastilla del lienzo; `color` admite variables de la paleta (var(--p-…)) o cualquier color CSS.
+     rules: avisos de coherencia que salen en Revisión (fuente «migración»); solo avisan, nunca bloquean.
+       · mig.retire-no-until: marcado «retirar» sin fase de retiro (solo si el diagrama tiene fases).
+       · mig.until-kept: tiene fase de retiro pero está marcado retener, rehospedar o replataformar (`keepers`).
+       · mig.change-no-decision: marcado recomprar o refactorizar sin una decisión (ADR) enlazada (`needsDecision`). Apagado por defecto. */
+  migration: {
+    dispositions: {
+      retain:     { label: { en: 'Retain', es: 'Retener' }, alias: ['keep', 'mantener'], short: 'R', color: 'var(--p-menta, #7fd1ae)', hint: { en: 'Stays as is for now', es: 'Se queda como está por ahora' } },
+      rehost:     { label: { en: 'Rehost', es: 'Rehospedar' }, alias: ['lift-and-shift', 'liftandshift'], short: 'RH', color: 'var(--p-cielo, #6fb1ff)', hint: { en: 'Lift and shift to the new platform with no changes', es: 'Se mueve tal cual a la nueva plataforma' } },
+      replatform: { label: { en: 'Replatform', es: 'Replataformar' }, alias: ['lift-tinker-and-shift'], short: 'RP', color: 'var(--p-lavanda, #b79cff)', hint: { en: 'Moves with small changes to use managed services', es: 'Se mueve con cambios pequeños para usar servicios gestionados' } },
+      refactor:   { label: { en: 'Refactor', es: 'Refactorizar' }, alias: ['rearchitect', 'redisenar'], short: 'RF', color: 'var(--p-limon, #e6c84a)', hint: { en: 'Redesigned to be cloud native', es: 'Se rediseña para la nube' } },
+      repurchase: { label: { en: 'Repurchase', es: 'Recomprar' }, alias: ['replace', 'reemplazar', 'sustituir'], short: 'RC', color: 'var(--p-coral, #ff8a7a)', hint: { en: 'Replaced by a different product or SaaS', es: 'Se sustituye por otro producto o SaaS' } },
+      retire:     { label: { en: 'Retire', es: 'Retirar' }, alias: ['decommission', 'apagar', 'eliminar'], short: 'RT', color: 'var(--muted, #8b93a1)', hint: { en: 'Switched off; it is not migrated', es: 'Se apaga; no se migra' } },
+      relocate:   { enabled: false, label: { en: 'Relocate', es: 'Reubicar' }, alias: ['move'], short: 'RL', color: 'var(--p-rosa, #ff9fd1)', hint: { en: 'Moved to another host without changes (AWS 7th R)', es: 'Cambia de anfitrión sin cambios (la séptima R de AWS)' } }
+    },
+    rules: {
+      'mig.retire-no-until':    { enabled: true, severity: 'low' },
+      'mig.until-kept':         { enabled: true, severity: 'low', keepers: ['retain', 'rehost', 'replatform'] },
+      'mig.change-no-decision': { enabled: false, severity: 'low', needsDecision: ['repurchase', 'refactor'] }
+    }
+  },
+
   /* Cumplimiento normativo: controles que se marcan en componentes y grupos (inspector › Cumplimiento) y la matriz que los cruza.
      frameworks: mapa ORDENADO clave → { label, short, url?, controls: { '<id>': { label: { en, es } } } }.
        · El orden de las claves es el de la matriz y los filtros; `short` es la sigla corta (chips, columnas, CSV).

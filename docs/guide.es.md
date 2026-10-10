@@ -384,6 +384,19 @@ Un greenfield no se construye de golpe. Planifica la construcción en **fases**:
 - **Excel**: las hojas Componentes y Conexiones reciben las columnas **Fase** y **Se retira en**, y una hoja **Fases** tiene una fila por fase: ID, nombre, fecha, objetivo, componentes, nuevos, retirados y total mensual. Solo los diagramas con fases las tienen.
 - Desde la consola: `Diagramon.phases()`, `addPhase({ name, date, goal })` (devuelve el id nuevo), `updatePhase(id, patch)`, `removePhase(id)`, `setPhase(i | id | null)` (la fase mostrada; `null` = Todas), `Diagramon.phase` (el índice mostrado, `-1` = Todas), `phaseModel(i)` (una copia del diagrama tal como está en la fase `i`) y `phaseStats(i)` (componentes, conexiones, costo mensual y hallazgos abiertos de esa fase).
 
+### Disposición de migración (6R)
+
+Indica qué se hace con cada componente al migrar la arquitectura: **Retener**, **Rehospedar**, **Replataformar**, **Refactorizar**, **Recomprar** o **Retirar**.
+
+- Selecciona un componente (o varios). En **Migración (6R)** elige uno de los botones; *Ninguna* la quita. Pasa el puntero por un botón para ver su significado en una línea.
+- El componente muestra una pastilla abajo a la derecha con sus iniciales (*RH* para rehospedar). Se oculta en las vistas **Contexto**, **Seguridad** y **Física**.
+- El filtro **Migración (6R)** de las lentes atenúa todo lo que tenga otra disposición (o ninguna).
+- La tabla comparativa de fases gana una columna **6R** con el reparto de cada fase, por ejemplo *RH 3 · RT 1*. Fases y 6R dicen cosas distintas: la fase dice *cuándo*, la disposición dice *qué*.
+- El panel **Revisión** tiene una fuente *Migración* con tres avisos, todos de severidad baja y descartables: un componente por retirar que ninguna fase retira, un componente marcado retener, rehospedar o replataformar que una fase retira y (apagado por defecto) un componente por recomprar o refactorizar sin una decisión enlazada.
+- El **informe** tiene una sección *Estrategia de migración (6R)* (recuentos, y cada componente con las fases en que aparece y en que se retira); el inventario **Excel** y CSV gana una columna *Migración (6R)*; al comparar versiones sale la disposición cambiada. Los diagramas que no la usan se exportan exactamente igual que antes.
+- En la pestaña *Texto*: `app: Facturación disposición=rehospedar` (en inglés: `disposition=rehost`). JSON: `"disposition": "rehost"`.
+- Los valores, colores, iniciales y avisos están en `src/config.js › migration`; la séptima R, *Reubicar*, está ahí y viene apagada.
+
 ## 9. Notas adhesivas y zonas de riesgo
 
 Usa los dos botones junto al zoom (abajo a la derecha del lienzo).

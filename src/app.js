@@ -318,6 +318,38 @@
   const csvCell = v => { const t = v == null ? '' : String(v); return /[",\r\n]/.test(t) || /^[=+\-@]/.test(t) ? `"${(/^[=+\-@]/.test(t) ? "'" : '') + t.replace(/"/g, '""')}"` : t; };
   const toCSV = rows => '\ufeff' + rows.map(r => r.map(csvCell).join(',')).join('\r\n');
 
+  /* ---------- disposición de migración (6R): qué se hace con cada componente al migrar (config.js › migration) ---------- */
+  // Un nodo puede llevar disposition: 'retain' | 'rehost' | 'replatform' | 'refactor' | 'repurchase' | 'retire' (y 'relocate' si config.js lo enciende). Sin él no hay clave: JSON y exportaciones idénticos.
+  // Es del diagrama (entra en las fotos de versiones). Se acepta también el nombre en español y los alias de config.js; un valor desconocido se descarta.
+  /* migration:start */
+  const MGC = C.migration || {}, MGR = MGC.rules || {};
+  const MG = Object.fromEntries(Object.entries(MGC.dispositions || {}).filter(([, d]) => d && d.enabled !== false));
+  const mgNorm = x => fold(x).replace(/[\s_-]+/g, '');
+  const MG_BY = new Map();
+  Object.entries(MG).forEach(([k, d]) => [d.label?.en, d.label?.es, ...(d.alias || [])].forEach(w => { if (w) MG_BY.set(mgNorm(w), k); }));
+  Object.keys(MG).forEach(k => MG_BY.set(mgNorm(k), k));   // la clave manda sobre cualquier alias
+  const cleanDisposition = v => (typeof v === 'string' ? MG_BY.get(mgNorm(v)) || null : null);
+  const mgInfo = k => { const d = MG[k]; return d ? { k, label: loc(d.label) || k, short: d.short || k.slice(0, 2).toUpperCase(), color: colorVar(d.color) || 'var(--muted)', hint: loc(d.hint) || '' } : null; };
+  // Reparto { rehost: 3, retire: 1 } como «RH 3 · RT 1», en el orden de config.js (texto plano; el título lleva el nombre completo)
+  const mgText = c => Object.keys(MG).filter(k => c?.[k]).map(k => `${mgInfo(k).short} ${c[k]}`).join(' · ');
+  const mgChips = c => Object.keys(MG).filter(k => c?.[k]).map(k => { const i = mgInfo(k); return `<span class="mg-chip" style="--mg:${esc(i.color)}" title="${esc(i.label)}">${esc(i.short)} ${c[k]}</span>`; }).join(' ');
+  // Avisos de coherencia entre la disposición y las fases / decisiones (config.js › migration.rules); solo avisan
+  addFindingSource('migration', m => {
+    if (!m.nodes.some(n => n.disposition)) return [];
+    const out = [], on = id => !!MGR[id] && MGR[id].enabled !== false, sev = id => (SEVERITY.includes(MGR[id]?.severity) ? MGR[id].severity : 'low');
+    const phased = !!m.phases?.length, withAdr = new Set((m.decisions || []).flatMap(d => d.links?.nodes || []));
+    const add = (rule, n, title, fix) => out.push({ id: `migration:${rule}:node:${n.id}`, source: 'migration', rule: `mig.${rule}`, severity: sev(`mig.${rule}`), target: { kind: 'node', id: n.id }, title, fix });
+    m.nodes.forEach(n => {
+      const d = mgInfo(n.disposition);
+      if (!d) return;
+      if (on('mig.retire-no-until') && n.disposition === 'retire' && phased && !n.until) add('retire-no-until', n, T('mig.f.retire.t', n.label), T('mig.f.retire.fix'));
+      if (on('mig.until-kept') && n.until && (MGR['mig.until-kept'].keepers || []).includes(n.disposition)) add('until-kept', n, T('mig.f.kept.t', { n: n.label, d: d.label }), T('mig.f.kept.fix'));
+      if (on('mig.change-no-decision') && (MGR['mig.change-no-decision'].needsDecision || []).includes(n.disposition) && !withAdr.has(n.id)) add('change-no-decision', n, T('mig.f.adr.t', { n: n.label, d: d.label }), T('mig.f.adr.fix'));
+    });
+    return out;
+  });
+  /* migration:end */
+
   /* ---------- cumplimiento normativo (ISO 27001, SOC 2, GDPR, HIPAA, PCI DSS) ---------- */
   // controls: { 'iso27001:A.8.24': 'met' | 'partial' | 'gap' | 'na' } en nodos y grupos; los nodos heredan de sus grupos (gana el más cercano y, al final, el propio).
   // Catálogo, sugerencias y cómo añadir marcos o controles: config.js › compliance
@@ -657,6 +689,7 @@
       if (cleanReview(o.review)) o.review = cleanReview(o.review); else delete o.review;
       if (cleanRegion(o.region)) o.region = cleanRegion(o.region); else delete o.region;
       { const l = cleanLayer(o.layer); if (l) o.layer = l; else delete o.layer; }
+      { const dp = cleanDisposition(o.disposition); if (dp) o.disposition = dp; else delete o.disposition; }
       { const ex = cleanExposure(o.exposure); if (ex) o.exposure = ex; else delete o.exposure; const bk = cleanBackup(o.backup); if (bk != null) o.backup = bk; else delete o.backup; }
       { const c = cleanControls(o.controls); if (c) o.controls = c; else delete o.controls; }
       { const sl = cleanSla(o.sla); if (sl != null) o.sla = sl; else delete o.sla; const rp = cleanReplicas(o.replicas); if (rp != null) o.replicas = rp; else delete o.replicas;
@@ -1631,7 +1664,9 @@
     const pm = phaseModel(m, i), f = { high: 0, medium: 0, low: 0 };
     (h.findings(pm) || []).forEach(x => { const k = x.severity === 'critical' || x.severity === 'high' ? 'high' : x.severity === 'medium' ? 'medium' : 'low'; f[k]++; });
     const dss = pm.datasets || [], sto = h.storage ? dss.map(d => h.storage(d)).filter(Boolean) : [];
-    return { nodes: pm.nodes.length, edges: pm.edges.length, cost: h.monthly(pm), findings: f, datasets: dss.length, storage: sto.length ? sto.reduce((s, x) => s + x.monthly, 0) : null };
+    const mig = {};
+    pm.nodes.forEach(n => { if (n.disposition) mig[n.disposition] = (mig[n.disposition] || 0) + 1; });   // reparto 6R de los componentes presentes (sin ninguno, la clave no existe)
+    return { nodes: pm.nodes.length, edges: pm.edges.length, cost: h.monthly(pm), findings: f, datasets: dss.length, storage: sto.length ? sto.reduce((s, x) => s + x.monthly, 0) : null, ...(Object.keys(mig).length ? { mig } : {}) };
   }
   // Tabla comparativa: una fila por fase (orden = línea de tiempo). cost = null si ningún componente de la fase tiene costo (h.hasCost(modelo)); dCost = cambio respecto de la fase anterior
   function phaseRows(m, h) {
@@ -1640,7 +1675,7 @@
       const st = phaseStats(m, i, h), d = phaseDiff(m, i), cost = h.hasCost && !h.hasCost(phaseModel(m, i)) ? null : st.cost;
       const dCost = i > 0 && (cost != null || prev != null) ? (cost || 0) - (prev || 0) : null;
       prev = cost;
-      return { id: p.id, name: p.name, date: p.date || '', goal: p.goal || '', nodes: st.nodes, edges: st.edges, added: d.added.length, retired: d.retired.length, addedIds: d.added, retiredIds: d.retired, cost, dCost, findings: st.findings, datasets: st.datasets, datasetIds: (phaseModel(m, i).datasets || []).map(x => x.id), storage: st.storage };
+      return { id: p.id, name: p.name, date: p.date || '', goal: p.goal || '', nodes: st.nodes, edges: st.edges, added: d.added.length, retired: d.retired.length, addedIds: d.added, retiredIds: d.retired, cost, dCost, findings: st.findings, datasets: st.datasets, datasetIds: (phaseModel(m, i).datasets || []).map(x => x.id), storage: st.storage, ...(st.mig ? { mig: st.mig } : {}) };
     });
   }
   /* phaseModel:end */
@@ -2681,6 +2716,13 @@
       el('title', null, pg).textContent = T('phase.new.tip');
       el('rect', { width: pw, height: 18, rx: 9 }, pg);
       el('text', { x: pw / 2, y: 12.5, 'text-anchor': 'middle' }, pg).textContent = tx;
+    }
+    const mg = n.disposition && mgInfo(n.disposition);
+    if (mg) { // abajo a la derecha, a caballo del borde (se oculta en las vistas que ya usan ese sitio: región en Seguridad y Física)
+      const mw = Math.ceil(textW(mg.short, FONT.badge)) + 14, mgg = el('g', { class: 'node-mig', style: `--mg:${mg.color}`, transform: `translate(${w - mw - 8} ${H - 9})` }, b);
+      el('title', null, mgg).textContent = `${T('mig.label')}: ${mg.label}`;
+      el('rect', { width: mw, height: 18, rx: 9 }, mgg);
+      el('text', { x: mw / 2, y: 12.5, 'text-anchor': 'middle' }, mgg).textContent = mg.short;
     }
     if (li) drawNodeLayer(b, li);
     if (inn) {
@@ -3894,7 +3936,7 @@
 
   const ORDER = {
     group: ['id', 'label', 'icon', 'color', 'parent', 'kind', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'controls', 'in', 'phase', 'until'],
-    node: ['id', 'label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'x', 'y', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'exposure', 'backup', 'controls', 'in', 'c4', 'sla', 'rpo', 'rto', 'replicas', 'phase', 'until'],
+    node: ['id', 'label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'x', 'y', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'exposure', 'backup', 'controls', 'in', 'c4', 'sla', 'rpo', 'rto', 'replicas', 'disposition', 'phase', 'until'],
     edge: ['id', 'from', 'to', 'label', 'style', 'weight', 'route', 'both', 'color', 'data', 'encrypted', 'datasets', 'latency', 'transferOk', 'threats', 'phase', 'until'],
     note: ['id', 'x', 'y', 'w', 'h', 'text', 'color', 'in'],
     zone: ['id', 'x', 'y', 'w', 'h', 'label', 'severity', 'desc', 'kind', 'trust', 'in'],
@@ -4124,7 +4166,7 @@
   /* ---------- filtros ("lentes"): atenúan lo que no coincide ---------- */
   // Filtro: { data: [clase | '@insecure'], review: ['open','overdue'], provider, category, group, cost: ['cost'] }
   // Dentro de una sección las fichas suman (O); entre secciones se combinan (Y)
-  const FLT_SECTIONS = ['data', 'review', 'provider', 'category', 'group', 'cost', 'team', 'owner', 'steward', 'costCenter', 'region', 'layer', 'compliance'];
+  const FLT_SECTIONS = ['data', 'review', 'provider', 'category', 'group', 'cost', 'team', 'owner', 'steward', 'costCenter', 'region', 'layer', 'disposition', 'compliance'];
   const providerOf = n => { const p = String(n.icon || '').split('/')[0]; return n.icon && ICONS[p] ? p : 'generic'; };
   const topGroups = m => m.groups.filter(g => !g.parent || !m.groups.some(x => x.id === g.parent));
   // Sección «región»: una ficha por jurisdicción usada (según la región efectiva) y «sin región» si falta en algún nodo
@@ -4153,6 +4195,7 @@
       ...Object.fromEntries(GOV_FIELDS.map(f => [f, govFilterOpts(m, f)])),
       region: regionOptions(m),
       layer: layerOptions(m),
+      disposition: Object.keys(MG).filter(k => m.nodes.some(n => n.disposition === k)).map(k => ({ k, label: mgInfo(k).label })).concat(m.nodes.some(n => n.disposition) && m.nodes.some(n => !n.disposition) ? [{ k: '@none', label: T('mig.none') }] : []),
       compliance: cmpOptions(m)
     };
   }
@@ -4187,6 +4230,7 @@
       if (GOV_FIELDS.includes(s)) { const e = govOf(n, s).value; return v.some(k => (k === '@none' ? !e : k === e)); }
       if (s === 'region') return v.includes(jurOf(regionOf(n).value)?.key || '@none');
       if (s === 'layer') { const l = layerOf(n).value; return v.some(k => (k === '@none' ? !l : k === l)); }
+      if (s === 'disposition') return v.some(k => (k === '@none' ? !n.disposition : k === n.disposition));
       if (s === 'compliance') return cmpMatch(n, v);
       return hasCost(n);
     });
@@ -4349,10 +4393,10 @@
   }
   // Comparación de fases bajo la lista: componentes, altas, bajas, costo mensual, cambio de costo y hallazgos abiertos; clic en una fila = elegir esa fase en el lienzo
   function phaseCompare() {
-    const rows = phaseRows(S.model, phaseHelpers), hasDs = !!S.model.datasets?.length, hasSto = rows.some(r => r.storage != null), f = (n, k) => `<span class="ph-f sev-${k}${n ? '' : ' zero'}" title="${esc(sevLabel(k))}">${n}</span>`;
+    const rows = phaseRows(S.model, phaseHelpers), hasDs = !!S.model.datasets?.length, hasSto = rows.some(r => r.storage != null), hasMig = rows.some(r => r.mig), f = (n, k) => `<span class="ph-f sev-${k}${n ? '' : ' zero'}" title="${esc(sevLabel(k))}">${n}</span>`;
     const body = rows.map((r, i) => `<tr data-pc="${i}" tabindex="0" role="button" title="${esc(T('phase.cmp.pick'))}"><th scope="row">${esc(r.name)}${r.date ? `<small>${esc(fmtPhaseDate(r.date))}</small>` : ''}</th><td>${r.nodes}</td><td class="up">${r.added ? '+' + r.added : '0'}</td><td class="dn">${r.retired ? '−' + r.retired : '0'}</td>
-      <td>${esc(phaseCostText(r))}</td><td class="${r.dCost > 0 ? 'dn' : r.dCost < 0 ? 'up' : ''}">${esc(phaseCostText(r, 'dCost'))}</td>${hasDs ? `<td>${r.datasets}</td>` : ''}${hasSto ? `<td title="${esc(T('phase.cmp.storage.tip'))}">${r.storage == null ? '—' : esc(money(round2(r.storage)))}</td>` : ''}<td class="ph-fs">${f(r.findings.high, 'high')}${f(r.findings.medium, 'medium')}${f(r.findings.low, 'low')}</td></tr>`).join('');
-    return `<div class="ph-cmp"><div class="cat">${esc(T('phase.cmp.title'))}</div><div class="ph-cmp-box"><table><thead><tr><th>${esc(T('phase.cmp.phase'))}</th><th title="${esc(T('phase.cmp.nodes.tip'))}">${esc(T('phase.cmp.nodes'))}</th><th>${esc(T('phase.cmp.added'))}</th><th>${esc(T('phase.cmp.retired'))}</th><th>${esc(T('phase.cmp.cost'))}</th><th title="${esc(T('phase.cmp.delta.tip'))}">${esc(T('phase.cmp.delta'))}</th>${hasDs ? `<th>${esc(T('phase.cmp.datasets'))}</th>` : ''}${hasSto ? `<th title="${esc(T('phase.cmp.storage.tip'))}">${esc(T('phase.cmp.storage'))}</th>` : ''}<th>${esc(T('phase.cmp.findings'))}</th></tr></thead><tbody>${body}</tbody></table></div></div>`;
+      <td>${esc(phaseCostText(r))}</td><td class="${r.dCost > 0 ? 'dn' : r.dCost < 0 ? 'up' : ''}">${esc(phaseCostText(r, 'dCost'))}</td>${hasDs ? `<td>${r.datasets}</td>` : ''}${hasSto ? `<td title="${esc(T('phase.cmp.storage.tip'))}">${r.storage == null ? '—' : esc(money(round2(r.storage)))}</td>` : ''}${hasMig ? `<td class="ph-mig">${mgChips(r.mig)}</td>` : ''}<td class="ph-fs">${f(r.findings.high, 'high')}${f(r.findings.medium, 'medium')}${f(r.findings.low, 'low')}</td></tr>`).join('');
+    return `<div class="ph-cmp"><div class="cat">${esc(T('phase.cmp.title'))}</div><div class="ph-cmp-box"><table><thead><tr><th>${esc(T('phase.cmp.phase'))}</th><th title="${esc(T('phase.cmp.nodes.tip'))}">${esc(T('phase.cmp.nodes'))}</th><th>${esc(T('phase.cmp.added'))}</th><th>${esc(T('phase.cmp.retired'))}</th><th>${esc(T('phase.cmp.cost'))}</th><th title="${esc(T('phase.cmp.delta.tip'))}">${esc(T('phase.cmp.delta'))}</th>${hasDs ? `<th>${esc(T('phase.cmp.datasets'))}</th>` : ''}${hasSto ? `<th title="${esc(T('phase.cmp.storage.tip'))}">${esc(T('phase.cmp.storage'))}</th>` : ''}${hasMig ? `<th title="${esc(T('mig.cmp.tip'))}">${esc(T('mig.cmp'))}</th>` : ''}<th>${esc(T('phase.cmp.findings'))}</th></tr></thead><tbody>${body}</tbody></table></div></div>`;
   }
   function markPhaseCmp() { const cur = phaseNow(); phaseBox.querySelectorAll('tr[data-pc]').forEach(tr => { const on = +tr.dataset.pc === cur; tr.classList.toggle('on', on); tr.setAttribute('aria-pressed', on); }); }
   const phaseSlug = s => fold(String(s ?? '')).replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 24) || 'phase';
@@ -5169,7 +5213,7 @@
 
   // Diferencias entre lo guardado (a) y el lienzo (b). La posición no cuenta como cambio.
   const DIFF_FIELDS = {
-    node: ['label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'exposure', 'backup', 'controls', 'in', 'c4', 'sla', 'rpo', 'rto', 'replicas', 'phase', 'until'],
+    node: ['label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'exposure', 'backup', 'controls', 'in', 'c4', 'sla', 'rpo', 'rto', 'replicas', 'disposition', 'phase', 'until'],
     edge: ['label', 'style', 'weight', 'route', 'both', 'color', 'data', 'encrypted', 'datasets', 'latency', 'transferOk', 'threats', 'phase', 'until'],
     group: ['label', 'icon', 'color', 'parent', 'kind', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'controls', 'in', 'phase', 'until'],
     type: ['label', 'dash', 'color', 'width', 'particles'] // tipos de conexión propios (model.edgeTypes), por id
@@ -5346,7 +5390,7 @@
     if (!(d.count.a + d.count.r + d.count.c + d.typeN)) return `<p class="ver-sum">${esc(T('ver.same'))}</p>`;
     const FIELD = { label: 'insp.name', sub: 'insp.detail', type: 'insp.type', icon: 'insp.icon', group: 'insp.group', color: 'insp.color', badge: 'field.badge',
       cost: 'cost.label', costPeriod: 'cost.period', costYears: 'cost.yearsAria', desc: 'insp.desc', style: 'insp.style', weight: 'wt.label', parent: 'insp.parent',
-      data: 'data.label', encrypted: 'enc.label', route: 'insp.route', both: 'insp.dir', review: 'rev.label', kind: 'gkind.label', phase: 'phase.label', until: 'phase.until', exposure: 'sec.expo.label', backup: 'sec.backup.label', controls: 'cmp.title', in: 'c4.in', c4: 'c4.label', sla: 'res.sla', rpo: 'res.rpo', rto: 'res.rto', replicas: 'res.replicas', latency: 'ds.latency', dash: 'et.dash', width: 'et.width', particles: 'et.particles' };
+      data: 'data.label', encrypted: 'enc.label', route: 'insp.route', both: 'insp.dir', review: 'rev.label', kind: 'gkind.label', phase: 'phase.label', until: 'phase.until', disposition: 'mig.label', exposure: 'sec.expo.label', backup: 'sec.backup.label', controls: 'cmp.title', in: 'c4.in', c4: 'c4.label', sla: 'res.sla', rpo: 'res.rpo', rto: 'res.rto', replicas: 'res.replicas', latency: 'ds.latency', dash: 'et.dash', width: 'et.width', particles: 'et.particles' };
     const fields = (fs, kind) => fs.map(f => T(kind === 'edge' && f === 'label' ? 'insp.label' : kind === 'type' && f === 'label' ? 'et.label' : FIELD[f] || f).toLowerCase()).join(', ');
     const names = new Map([...S.compare.base.nodes, ...S.model.nodes].map(n => [n.id, n.label]));
     const edgeName = e => `${names.get(e.from) || e.from} ${e.both ? '↔' : '→'} ${names.get(e.to) || e.to}`;
@@ -5979,6 +6023,16 @@
   };
   // Capa del data lake (nodos y grupos, también varios a la vez): ninguna / una de config.js › dataLayers.
   // «Ninguna» pasa a «Heredada (Oro)» cuando el grupo aporta una; abajo, el nombre que usa todo el documento
+  // Disposición de migración (6R): una ficha por valor; sin elegir, el componente no lleva clave
+  const dispField = items => {
+    const list = [].concat(items).filter(x => 'type' in x), keys = Object.keys(MG);   // solo componentes (la selección múltiple puede traer grupos)
+    if (!keys.length || !list.length) return '';
+    const own = new Set(list.map(x => x.disposition || '')), cur = own.size === 1 ? [...own][0] : null, info = cur ? mgInfo(cur) : null;
+    return `<div class="field">${T('mig.label')}<div class="seg disp-seg">
+      <button data-disp="" class="${cur === '' ? 'on' : ''}">${esc(T('mig.none'))}</button>${keys.map(k => { const i = mgInfo(k);
+        return `<button data-disp="${esc(k)}" class="${cur === k ? 'on' : ''}" style="--lc:${esc(i.color)}" title="${esc(i.hint)}">${esc(i.label)}</button>`; }).join('')}</div>
+      <span class="cost-hint">${esc(cur === null ? T('mig.mixed') : info ? info.hint : T('mig.hint'))}</span></div>`;
+  };
   const layerField = items => {
     const list = [].concat(items), keys = Object.keys(DL);
     if (!keys.length) return '';
@@ -6137,6 +6191,7 @@
         ${resField(t)}
         ${regionField(t)}
         ${layerField(t)}
+        ${dispField(t)}
         ${cmpField(t, 'multi')}
         ${priced.length ? `<p class="cost-sum">${T('insp.selCost')} <b>≈ ${money(round2(monthlyTotal(t)))}${T('cost.mo')}</b><span>${T('insp.withCost', { a: priced.length, b: t.length })}</span></p>` : ''}
         <p class="note">${T('insp.multiNote')}</p>
@@ -6169,6 +6224,7 @@
         ${resField(t)}
         ${regionField(t)}
         ${layerField(t)}
+        ${dispField(t)}
         ${secField(t)}
         ${cmpField(t, 'node')}
         ${reviewField(t)}
@@ -6454,6 +6510,10 @@
     } else if (b.dataset.layer != null && t) {
       pushHistory();
       (Array.isArray(t) ? t : [t]).forEach(x => { if (b.dataset.layer && DL[b.dataset.layer]) x.layer = b.dataset.layer; else delete x.layer; });
+      changed(true); renderInspector();
+    } else if (b.dataset.disp != null && t) {
+      pushHistory();
+      (Array.isArray(t) ? t : [t]).filter(x => 'type' in x).forEach(x => { if (b.dataset.disp && MG[b.dataset.disp]) x.disposition = b.dataset.disp; else delete x.disposition; });
       changed(true); renderInspector();
     } else if ((b.dataset.expo != null || b.dataset.bak != null) && t && !Array.isArray(t)) {
       pushHistory();
@@ -6917,6 +6977,7 @@
     providers: Object.keys(ICONS),
     dataClasses: Object.keys(DATA),
     layers: Object.fromEntries([...Object.keys(DL), ...Object.keys(DL_ALIAS)].map(k => [fold(k), cleanLayer(k)]).filter(([, v]) => v)),
+    dispositions: Object.fromEntries(MG_BY),
     views: VIEW_KEYS,
     get stakeholders() { return (S.model?.stakeholders || []).map(x => x.id); },   // ids para validar las firmas (signoffs:) del texto
     lang: I.lang
@@ -7550,7 +7611,7 @@
   // reportData() arma un modelo plano (secciones de bloques) y dos dibujantes lo pintan: reportMarkdown y reportHTML, así que los dos formatos no se desincronizan.
   // Bloques: { k: 'h3', t } · { k: 'p', t, muted? } · { k: 'kv', items: [[k, v]] } · { k: 'cards', items: [{ label, value, tone? }] }
   //          { k: 'table', head: [], rows: [[celda]], cls? } (celda = texto | { t, tone }) · { k: 'text', label, t } · { k: 'ul', items } · { k: 'img', alt, caption, svg?, uri?, file? }
-  const REP_SECS = ['summary', 'diagram', 'components', 'connections', 'data', 'owners', 'layers', 'datasets', 'costs', 'resilience', 'findings', 'compliance', 'threats', 'decisions', 'requirements', 'raid', 'approvals', 'phases', 'versions', 'notes'];
+  const REP_SECS = ['summary', 'diagram', 'components', 'connections', 'data', 'owners', 'layers', 'datasets', 'costs', 'resilience', 'findings', 'compliance', 'threats', 'decisions', 'requirements', 'raid', 'approvals', 'phases', 'migration', 'versions', 'notes'];
   const REP_PAGE = ['diagram', 'components', 'findings', 'decisions']; // secciones que empiezan página al imprimir
   const repT = (k, v) => T(`rep.${k}`, v);
   const repSleep = ms => new Promise(r => setTimeout(r, ms));
@@ -7569,7 +7630,7 @@
     return {
       summary: true, diagram: m.nodes.length > 0, components: m.nodes.length > 0, connections: m.edges.length > 0,
       data: m.nodes.some(n => dataClassesOf(n, m).length || regionOf(n, m).value), owners: govTeamList(m).length > 0,
-      layers: m.nodes.some(n => layerOf(n).value), costs: m.nodes.some(hasCost), resilience: m.nodes.some(hasRes) || spofList(m).length > 0, findings: findingsOf(m).length > 0,
+      layers: m.nodes.some(n => layerOf(n).value), migration: m.nodes.some(n => n.disposition), costs: m.nodes.some(hasCost), resilience: m.nodes.some(hasRes) || spofList(m).length > 0, findings: findingsOf(m).length > 0,
       compliance: cmpModel(m).keys.length > 0, threats: strideAll(m).length > 0, decisions: !!m.decisions?.length, requirements: !!m.requirements?.length,
       raid: !!m.raid?.length, approvals: !!m.stakeholders?.length, phases: !!m.phases?.length, datasets: !!m.datasets?.length,
       versions: m.versions.length > 0, notes: (m.notes || []).length > 0 || (m.zones || []).some(z => z.kind !== 'trust')
@@ -7910,6 +7971,17 @@
       sec('phases', blocks);
     }
 
+    if (want('migration')) {
+      // Recuento por disposición y una fila por componente con su disposición y las fases de entrada y de retiro (si hay fases)
+      const ph = !!m.phases?.length, cnt = {};
+      m.nodes.forEach(n => { if (n.disposition) cnt[n.disposition] = (cnt[n.disposition] || 0) + 1; });
+      const blocks = [{ k: 'table', head: [repT('h.disposition'), repT('h.nodes')], rows: Object.keys(MG).filter(k => cnt[k]).map(k => [mgInfo(k).label, String(cnt[k])]) }];
+      const head = [repT('h.component'), repT('h.disposition'), ...(ph ? [repT('h.phaseIn'), repT('h.phaseOut')] : []), repT('h.cost')];
+      const rows = Object.keys(MG).flatMap(k => m.nodes.filter(n => n.disposition === k).map(n => [n.label, mgInfo(k).label, ...(ph ? [phNm(m, n.phase), phNm(m, n.until)] : []), hasCost(n) ? money(round2(perMonth(n))) : '']));
+      blocks.push({ k: 'table', head, rows, cls: 'wide' });
+      sec('migration', blocks);
+    }
+
     if (want('versions')) {
       const blocks = [{ k: 'table', cls: 'wide', head: [repT('h.version'), repT('h.env'), repT('h.status'), repT('h.author'), repT('h.created'), repT('h.updated'), repT('h.decided'), repT('h.note')], rows: m.versions.map(v => [
         verLabel(v) + (v.id === m.active ? ` ★ ${repT('activeMark')}` : ''), v.kind === 'env' ? loc(C.environments?.[v.env]?.label) || v.env : '', { t: T(`ver.st.${v.status}`), tone: `vs-${v.status}` }, v.author || '', fmtDay(v.created), fmtDay(v.updated),
@@ -8240,6 +8312,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
   const INV_SH = [['id'], ['name'], ['role'], ['org'], ['raci'], ['versions'], ['inactive']];
   const INV_DS = [['id'], ['name'], ['domain'], ['layer'], ['owner'], ['steward'], ['product'], ['data'], ['format'], ['freshness'], ['e2e'], ['frState'], ['perDay'], ['retention', 'int'], ['estGb'], ['estMonthly', 'money'], ['phase'], ['contractVersion'], ['status'], ['consumers']];
   const INV_DSC = [['dsId'], ['dsName'], ['column'], ['type'], ['key'], ['pii'], ['nullable'], ['desc']], INV_DSQ = [['dsId'], ['dsName'], ['rule'], ['column'], ['param'], ['severity']];   // hojas Columns y Quality del catálogo de datos
+  const INV_MIG = [['disposition']];   // columna Disposición (solo si algún componente la tiene)
   const INV_PH = [['phase'], ['until']];   // columnas de fase de componentes y conexiones (solo si el diagrama tiene fases)
   const INV_PHASE = [['id'], ['name'], ['date'], ['goal'], ['components', 'int'], ['added', 'int'], ['retired', 'int'], ['monthly', 'money']];
   const phNm = (m, id) => (id ? m.phases?.find(p => p.id === id)?.name || '' : '');   // nombre de la fase («» si no hay)
@@ -8284,6 +8357,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
         cost: hasCost(n) ? +n.cost : '', period: pc ? T(PERIODS[pc].label) + (pc === 'multi' ? ` · ${T('cost.years', yearsOf(n))}` : '') : '', perMonth: pm, perYear: pm === '' ? '' : round2(perMonth(n) * 12),
         review: n.review ? T(`rev.tag.${reviewState(n.review)}`) : '', findings: my,
         adrs: (m.decisions || []).filter(d => d.links?.nodes?.includes(n.id)).map(d => d.id).join(', '), compliance: comp, desc: n.desc || '',
+        ...(m.nodes.some(x => x.disposition) ? { disposition: n.disposition && typeof mgInfo === 'function' ? mgInfo(n.disposition).label : '' } : {}),
         ...(m.phases?.length ? { phase: phNm(m, n.phase), until: phNm(m, n.until) } : {})   // fase en la que aparece y en la que se retira (sin fases no hay claves)
       };
     });
@@ -8294,7 +8368,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     const mk = (key, cols, rows) => ({ key, name: T(`inv.sheet.${key}`), head: cols.map(([k]) => T(`inv.c.${k}`)), keys: cols.map(([k]) => k), fmt: cols.map(([, f]) => f || null), rows });
     const out = [], comp = inventoryRows(m);
     // Fases (solo si el diagrama las tiene): columnas Fase y Se retira en en componentes y conexiones
-    const ph = !!m.phases?.length, cc = [...INV_COMP, ...(ph ? INV_PH : [])];
+    const ph = !!m.phases?.length, cc = [...INV_COMP, ...(m.nodes.some(x => x.disposition) ? INV_MIG : []), ...(ph ? INV_PH : [])];
     out.push(mk('components', cc, comp.map(r => cc.map(([k]) => r[k]))));
     // Una fila por fase: lo que hay en ella y lo que entra y sale respecto de la anterior
     if (ph) out.push(mk('phases', INV_PHASE, m.phases.map((p, i) => { const s = phaseStats(m, i, { monthly: x => monthlyTotal(x.nodes), findings: () => [] }), d = phaseDiff(m, i); return [p.id, p.name, p.date || '', p.goal || '', s.nodes, d.added.length, d.retired.length, round2(s.cost)]; })));

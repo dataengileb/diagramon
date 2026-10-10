@@ -50,6 +50,7 @@ api ~> queue : events
 | `a: A phase=mvp until=wave2` · `a -> b : x phase=wave1` · `group g "G" phase=mvp {` | Phase in which a node, connection or group appears (Spanish: `fase=`) and, if temporary, the phase in which it is retired (`until=`, Spanish `hasta=`) |
 | `layer=gold` (`bronze`, `silver`, `gold`; also `raw`, `curated`, `serving`) | Data lake layer of a node or group (Spanish: `capa=oro`); nodes inherit it from their group |
 | `layers: zones` | Show Raw / Curated / Serving instead of Bronze / Silver / Gold (Spanish: `capas: zonas`) |
+| `disposition=rehost` (`retain`, `rehost`, `replatform`, `refactor`, `repurchase`, `retire`) | Migration disposition (6R) of a node (Spanish: `disposición=rehospedar`; `retener`, `rehospedar`, `replataformar`, `refactorizar`, `recomprar`, `retirar`). The aliases of `config.js › migration` also work, and an unknown value is an error on its line |
 | `exposure=public` (`internal`) · `backup=yes` (`no`) | Override the deduced exposure and backup of a node (Spanish: `exposición=pública` / `interna`, `respaldo=sí` / `no`) |
 | `controls="iso27001:A.8.24=met,pcidss:4.2=gap"` | Compliance controls of a node or group (Spanish: `controles=`, states `cumple` `parcial` `brecha` `na`); each is `framework:id=met\|partial\|gap\|na`; nodes inherit from their group |
 | `a -> b` · `a => b` · `a ~> b` · `a ..> b` | Request · data · event · optional |
