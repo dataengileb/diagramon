@@ -1019,6 +1019,8 @@
   .edge.w-critical .edge-line { stroke-opacity: .95; filter: drop-shadow(0 0 3px color-mix(in srgb, var(--c) 65%, transparent)); }
   [data-theme="light"] .edge.w-critical .edge-line { filter: drop-shadow(0 0 2px color-mix(in srgb, var(--c) 45%, transparent)); }
   .edge:hover .edge-line, .edge.lit .edge-line { stroke-opacity: 1; stroke-width: calc(var(--w, 1.8px) + .8px); }
+  .edge-handle { display: none; fill: var(--c); stroke: var(--bg, #fff); stroke-width: 2; cursor: move; }
+  .edge.sel .edge-handle { display: block; }
   .edge.sel .edge-line { stroke-opacity: 1; stroke-width: calc(var(--w, 1.8px) + 1.4px); }
   .edge.pulse .edge-line { stroke-opacity: 1; stroke-width: calc(var(--w, 1.8px) + 1.6px); filter: drop-shadow(0 0 6px var(--c)); }
   .particle { fill: var(--c); pointer-events: none; filter: drop-shadow(0 0 3px var(--c)); }

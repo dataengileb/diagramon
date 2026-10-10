@@ -165,7 +165,7 @@
   const isDay = v => /^\d{4}-\d{2}-\d{2}$/.test(v) && !isNaN(new Date(`${v}T12:00Z`)) && new Date(`${v}T12:00Z`).toISOString().slice(0, 10) === v;
   // Opciones al final de una conexión: a -> b : etiqueta color=… data=pii encrypted=yes
   // (el valor puede ir entre comillas: datasets="sales orders,crm.customers")
-  const EDGE_OPT = /(?:^|\s)(color|style|estilo|weight|peso|data|datos|encrypted|cifrado|both|ambos|line|linea|línea|datasets|tablas|conjuntos|latency|latencia|transfer|transferencia|threats|amenazas|phase|fase|until|hasta)=("(?:[^"\\]|\\.)*"|\S+)\s*$/i;
+  const EDGE_OPT = /(?:^|\s)(color|style|estilo|weight|peso|data|datos|encrypted|cifrado|both|ambos|line|linea|línea|bend|desvio|desvío|datasets|tablas|conjuntos|latency|latencia|transfer|transferencia|threats|amenazas|phase|fase|until|hasta)=("(?:[^"\\]|\\.)*"|\S+)\s*$/i;
   /* ---------- amenazas STRIDE: threats="T=mitigated,I=accepted" ---------- */
   const TH_KEY = { en: 'threats', es: 'amenazas' };
   const TH_ST = { en: { mitigated: 'mitigated', accepted: 'accepted', na: 'na' }, es: { mitigated: 'mitigada', accepted: 'aceptada', na: 'na' } };
@@ -296,7 +296,7 @@
       edge: 'incomplete connection', id: id => `invalid id “${id || '(empty)'}”`,
       cost: v => `invalid cost “${v}” (e.g. 120/month, 0.1/hour, 1400/year, 5000/3years)`,
       data: v => `unknown data class “${v}” (e.g. pii, pci, confidential)`, enc: v => `invalid encrypted value “${v}” (use yes or no)`,
-      route: v => `invalid line style “${v}” (use curved or elbow)`, transfer: v => `invalid transfer value “${v}” (use ok)`, threats: v => `invalid threat “${v}” (use e.g. T=mitigated; letters S T R I D E; mitigated, accepted or na)`,
+      bend: v => `invalid bend “${v}” (use x,y in pixels, e.g. bend=40,-20)`, route: v => `invalid line style “${v}” (use curved or elbow)`, transfer: v => `invalid transfer value “${v}” (use ok)`, threats: v => `invalid threat “${v}” (use e.g. T=mitigated; letters S T R I D E; mitigated, accepted or na)`,
       day: v => `invalid date “${v}” (use YYYY-MM-DD)`, status: v => `invalid status “${v}” (use open or resolved)`,
       effort: v => `invalid effort “${v}” (use role:days, e.g. effort=dev:10,devops:3)`,
       ctl: v => `invalid control “${v}” (use framework:id=met|partial|gap|na, e.g. iso27001:A.8.24=met)`,
@@ -339,7 +339,7 @@
       edge: 'conexión incompleta', id: id => `id no válido «${id || '(vacío)'}»`,
       cost: v => `costo no válido «${v}» (ej.: 120/mes, 0.1/hora, 1400/año, 5000/3años)`,
       data: v => `clasificación de datos desconocida «${v}» (ej.: pii, pci, confidential)`, enc: v => `valor de cifrado no válido «${v}» (usa sí o no)`,
-      route: v => `estilo de línea no válido «${v}» (usa curvas o codos)`, transfer: v => `valor de transferencia no válido «${v}» (usa ok)`, threats: v => `amenaza no válida «${v}» (usa p. ej. T=mitigada; letras S T R I D E; mitigada, aceptada o na)`,
+      bend: v => `desvío no válido «${v}» (usa x,y en píxeles, p. ej. bend=40,-20)`, route: v => `estilo de línea no válido «${v}» (usa curvas o codos)`, transfer: v => `valor de transferencia no válido «${v}» (usa ok)`, threats: v => `amenaza no válida «${v}» (usa p. ej. T=mitigada; letras S T R I D E; mitigada, aceptada o na)`,
       day: v => `fecha no válida «${v}» (usa AAAA-MM-DD)`, status: v => `estado no válido «${v}» (usa abierta o resuelta)`,
       effort: v => `esfuerzo no válido «${v}» (usa perfil:días, ej.: esfuerzo=dev:10,devops:3)`,
       ctl: v => `control no válido «${v}» (usa marco:id=cumple|parcial|brecha|na, ej.: iso27001:A.8.24=cumple)`,
@@ -892,6 +892,8 @@
         if (encV != null && enc == null) err(ln, msg.enc(encV));
         const routeV = kv.line ?? kv.linea ?? kv['línea'], route = routeV == null ? null : parseRoute(routeV);
         if (routeV != null && !route) err(ln, msg.route(routeV));
+        const bendV = kv.bend ?? kv.desvio ?? kv['desvío'], bendM = bendV == null ? null : bendV.match(/^(-?\d+)\s*[,;/]\s*(-?\d+)$/);
+        if (bendV != null && !bendM) err(ln, msg.bend(bendV));
         const bothV = kv.both ?? kv.ambos, both = bothV == null ? null : parseBool(bothV);
         if (bothV != null && both == null) err(ln, msg.enc(bothV));
         const stV = kv.style ?? kv.estilo, stl = stV == null ? null : parseStyle(stV);
@@ -921,6 +923,7 @@
           if (lat && durOk(lat)) e.latency = lat;
           if (enc != null) e.encrypted = enc;
           if (route) e.route = route;
+          if (bendM && (+bendM[1] || +bendM[2])) e.bend = { x: +bendM[1], y: +bendM[2] };
           if (both) e.both = true;
           if (tr) e.transferOk = true;
           if (th && Object.keys(th.threats).length) e.threats = JSON.parse(JSON.stringify(th.threats));
@@ -1135,7 +1138,7 @@
       const tail = [e.label ? (EDGE_OPT.test(e.label) || /^".*"$/.test(e.label) || /[\n\\]/.test(e.label) ? quote(e.label) : e.label) : '', e.color ? `color=${bare(e.color)}` : '',
         e.style && !ARROW_OF[e.style] ? `${lang === 'es' ? 'estilo' : 'style'}=${bare((STYLE_OUT[lang] || {})[e.style] || e.style)}` : '', WEIGHT_OUT.en[e.weight] ? `${lang === 'es' ? 'peso' : 'weight'}=${(WEIGHT_OUT[lang] || WEIGHT_OUT.en)[e.weight]}` : '',
         e.data?.length ? `${w.data}=${e.data.join(',')}` : '', e.datasets?.length ? `${DS_KEY[lang] || DS_KEY.en}=${bare(e.datasets.join(','))}` : '', e.latency ? `${(DS_W[lang] || DS_W.en).latency}=${bare(e.latency)}` : '', e.encrypted != null ? `${w.encrypted}=${e.encrypted ? w.yes : w.no}` : '',
-        e.both ? `${w.both}=${w.yes}` : '', e.transferOk ? `${w.transfer}=${w.ok}` : '', e.threats && Object.keys(e.threats).length ? `${TH_KEY[lang] || TH_KEY.en}=${Object.entries(e.threats).map(([k, d]) => `${k}=${(TH_ST[lang] || TH_ST.en)[d.status] || d.status}`).join(',')}` : '', e.route ? `${w.line}=${e.route === 'elbow' ? w.elbowOne : w.curvedOne}` : '', e.phase ? `${w.phase}=${bare(e.phase)}` : '', e.until ? `${w.until}=${bare(e.until)}` : ''].filter(Boolean).join(' ');
+        e.both ? `${w.both}=${w.yes}` : '', e.transferOk ? `${w.transfer}=${w.ok}` : '', e.threats && Object.keys(e.threats).length ? `${TH_KEY[lang] || TH_KEY.en}=${Object.entries(e.threats).map(([k, d]) => `${k}=${(TH_ST[lang] || TH_ST.en)[d.status] || d.status}`).join(',')}` : '', e.route ? `${w.line}=${e.route === 'elbow' ? w.elbowOne : w.curvedOne}` : '', e.bend ? `bend=${e.bend.x},${e.bend.y}` : '', e.phase ? `${w.phase}=${bare(e.phase)}` : '', e.until ? `${w.until}=${bare(e.until)}` : ''].filter(Boolean).join(' ');
       out.push(`${e.from} ${arrow} ${e.to}${tail ? ` : ${tail}` : ''}`);
     });
     const reviewed = m.nodes.filter(n => n.review);
