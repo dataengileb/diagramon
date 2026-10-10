@@ -70,3 +70,75 @@ Each step must keep existing diagrams byte-identical when they have no group end
 - Do it step by step, one area per pull request, with no behavior change. The browser check and the automated tests must pass after each step.
 
 **Why it is risky.** The blocks share a lot of state through closures: `S`, `R`, `VW`, `C`, `T` and many small helpers. A careless split can break features that are rarely exercised, such as the encrypted viewer, the report or C4 ghosts.
+
+## Custom rules written by the user
+
+**Status: not planned for now.** Most of the people who use Diagramon work with small teams, where the built-in Review rules are enough.
+
+**The need.** A team may want its own checks, for example «every database has an owner and a backup» or «nothing tagged *pci* may sit in a public group», without waiting for a new built-in rule.
+
+**Today (workaround).** The built-in rules are switched on or off and given a severity in `src/config.js` (blocks `rules`, `sec.*`, and so on). To add a new kind of check you have to write code in `src/app.js` and register it with `addFindingSource`.
+
+**Proposed design.** A small declarative list of rules stored in the diagram (or in the workspace manifest to share them): *what to look at* (components, connections or groups, filtered by type, tag or field), *the condition* (a field is missing, equals or is not one of some values) and *the message and severity*. They would run as one more Review source (`custom`). No scripting: only data, so a rule cannot run code from an imported file.
+
+**Why not now.** It adds a rule language to document, validate and keep stable, and a way to get it wrong that is hard to debug. The built-in rules already cover the usual cases, and `addFindingSource` is a short path for a contributor who needs one more.
+
+## Verifiable signatures on approvals
+
+**Status: not planned for now.**
+
+**The need.** Where an approval has legal or audit weight, someone may need to prove *who* approved *which exact version*, and that it was not changed afterwards.
+
+**Today (workaround).** An approval records the stakeholder, the verdict, a date and a note. Anyone who can edit the file could type any name, so the record is a convenience for a small team that already trusts each other, not proof. If you need proof, keep the exported file in a system that signs or timestamps documents (a signed commit, a document-signing service).
+
+**Proposed design.** Sign the approved snapshot (the version, as it is serialized) with a key the approver controls, using the browser's Web Crypto (for example ECDSA P-256): the approval stores the public key, the signature and the hash of the snapshot. Viewing the version would verify it and show *signature valid* or *the version changed after it was signed*. Key storage and who may sign would be settings in the workspace manifest.
+
+**Why not now.** The hard part is not the cryptography but trust: how an approver gets a key, how it is tied to a person, what happens when it is lost. Without that, a signature looks stronger than it is. With small clients it is easier to check directly that the person who approved is the person who says so.
+
+## ArchiMate export
+
+**Status: not planned for now.**
+
+**The need.** Enterprise architecture teams that model in ArchiMate tools (Archi and others) would like to start from a Diagramon diagram instead of redrawing it.
+
+**Today (workaround).** Export to draw.io, Mermaid or PlantUML, or to Excel (the inventory), and rebuild the model in the other tool.
+
+**Proposed design.** An exporter in `src/export/` that writes the ArchiMate *Open Exchange File Format* (XML): components become application or technology elements depending on their type, connections become flow or serving relationships, groups become grouping elements, and the layers (business, application, technology) follow the `layer` field when it is set. Importing is a separate, larger step and is not part of this idea.
+
+**Why not now.** The mapping from Diagramon's types to ArchiMate's strict element and relationship rules needs decisions that only someone who uses ArchiMate daily can make well, and an incorrect mapping produces models that tools reject or that mislead.
+
+## Structurizr export and import
+
+**Status: not planned for now.**
+
+**The need.** Teams that describe their architecture as code with the C4 model in Structurizr would like to move between that text and a Diagramon diagram.
+
+**Today (workaround).** Diagramon already has C4 levels (`in` on components and groups) and its Mermaid, PlantUML and draw.io exports keep the C4 nesting as containers. The *Text* tab is a plain text description of the whole diagram.
+
+**Proposed design.** An exporter that writes a Structurizr DSL workspace (people, software systems, containers and components from the C4 levels, relationships with their labels). An importer for the same subset would come second, keeping only what Diagramon can represent and listing what it dropped.
+
+**Why not now.** The DSL is a full language (views, styles, includes, scripts). A partial importer that silently ignores parts of it would be worse than none, and the export alone has little to offer people who do not already use Structurizr.
+
+## Backstage catalog export
+
+**Status: not planned for now.**
+
+**The need.** Teams with a Backstage developer portal want their components, owners and dependencies from a Diagramon diagram in the catalog, without typing them twice.
+
+**Today (workaround).** The inventory (Excel or CSV) lists every component with its owner, team and layer; it can be turned into `catalog-info.yaml` files with a short script.
+
+**Proposed design.** An exporter that writes one `catalog-info.yaml` document per component (`kind: Component` or `Resource` depending on the type), with `spec.owner` from the owner or team field, `spec.system` from the group, and `dependsOn` from the connections. Fields Backstage requires and Diagramon does not have (such as `lifecycle`) would get a visible default.
+
+**Why not now.** Backstage catalogs have local conventions (owner names, system names, annotations) that must match the portal. Without knowing them the export would need editing anyway, and the people who need it are in teams larger than the ones Diagramon is aimed at.
+
+## Merge two edited copies of a diagram
+
+**Status: not planned for now.**
+
+**The need.** Two people edit the same diagram at the same time and later need to combine their work.
+
+**Today (workaround).** Save a version before sharing (see *Versions*), then compare the two files with the version comparison and copy the changes by hand. In a workspace folder, keep one person responsible for each diagram.
+
+**Proposed design.** A three-way merge by element id: take the common ancestor (a saved version both started from) and the two copies, apply changes that touch different elements automatically and ask for a decision where both changed the same field of the same element. The comparison already knows which fields matter (`DIFF_FIELDS`), so it can be the base. Positions (`x`, `y`) would be taken from whichever side moved the element.
+
+**Why not now.** A wrong merge silently loses someone's work, so it needs a careful conflict screen and many tests. For one or two authors per diagram, the version comparison plus a short conversation is enough.
