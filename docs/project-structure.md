@@ -23,3 +23,15 @@
 | `assets/fonts/` | Bundled fonts (`.woff2`, OFL licenses) and the generated `fonts.js` |
 | `tools/build-fonts.py` | Builds `assets/fonts/fonts.js` from `assets/fonts/*.woff2` |
 | `tests/run.js` | Automated tests without dependencies (text format, exports, IaC and dbt import, translations, pure functions); run with `node tests/run.js` |
+
+## Changing the file format
+
+Every JSON the app writes starts with `formatVersion`. Files from before the field existed count as version 0, and a file with a higher number than the app's opens with a warning, because anything this version does not know is lost on save.
+
+When a change to the model would break old files (a renamed or moved key, a changed meaning), and not when you only add an optional field:
+
+1. In `src/app.js`, raise `FORMAT_VERSION` and add `{ to: <new number>, up: doc => … }` to `MIGRATIONS` (between the `/* migrate:start */` and `/* migrate:end */` markers).
+2. `up` must be pure: it receives a document and returns the converted one without touching the original. It runs on the root document and on every saved version snapshot (`versions[].diagram`), in order, starting after the file's version.
+3. Add a test in the "Format version" section of `tests/run.js` with a document in the old shape and the expected result.
+
+Templates, saved versions, new diagrams and the Text tab already come in the current format and skip the migrations. Files, local saves and the JSON tab go through them.
