@@ -39,6 +39,7 @@
              (los nodos heredan la capa de su grupo) · línea `layers: zones` / `capas: zonas` muestra Raw/Curated/Serving en vez de Bronze/Silver/Gold
    Migración: nodo … disposition=rehost (disposición=rehospedar): retain|rehost|replatform|refactor|repurchase|retire · retener|rehospedar|replataformar|refactorizar|recomprar|retirar
              (las 6R; también aceptan los alias de config.js › migration, y relocate|reubicar si ese valor está encendido)
+   Radar:    nodo … radar=oracle11 (fija el componente a una entrada del radar tecnológico de config.js › techRadar o del diagrama; radar=none lo excluye; sin él se reconoce solo)
    Seguridad: nodo … exposure=public|internal (exposición=pública|interna: sustituye a la deducida) · backup=yes|no (respaldo=sí|no)
    Cumplimiento: nodo o grupo … controls="iso27001:A.8.24=met,pcidss:4.2=gap" (es: controles=; estados met|partial|gap|na · cumple|parcial|brecha|na;
              cada control es marco:id=estado, los nodos heredan de sus grupos; sin espacios no hacen falta comillas)
@@ -125,7 +126,7 @@
   const PHASE_LINE_KEYS = ['date', 'fecha', 'goal', 'objetivo'];
   const PHASE_ID = /^[A-Za-z0-9_-]{1,30}$/, PHASE_MAX = 12;
   const isPhaseDay = v => { const r = /^(\d{4})-(\d{2})(?:-(\d{2}))?$/.exec(v); if (!r) return false; const mo = +r[2], d = r[3] == null ? 1 : +r[3]; return mo >= 1 && mo <= 12 && d >= 1 && d <= new Date(Date.UTC(+r[1], mo, 0)).getUTCDate(); };
-  const NODE_KEYS = ['color', 'badge', 'desc', 'sub', 'x', 'y', 'costo', 'cost', 'data', 'datos', 'region', 'región', 'country', 'pais', 'país', 'layer', 'capa', 'disposition', 'disposición', 'disposicion', 'exposure', 'exposición', 'exposicion', 'backup', 'respaldo', 'controls', 'controles', 'in', 'dentro', 'c4', 'sla', 'rpo', 'rto', 'replicas', 'réplicas', ...PHASE_KEYS];
+  const NODE_KEYS = ['color', 'badge', 'desc', 'sub', 'x', 'y', 'costo', 'cost', 'data', 'datos', 'region', 'región', 'country', 'pais', 'país', 'layer', 'capa', 'disposition', 'disposición', 'disposicion', 'radar', 'exposure', 'exposición', 'exposicion', 'backup', 'respaldo', 'controls', 'controles', 'in', 'dentro', 'c4', 'sla', 'rpo', 'rto', 'replicas', 'réplicas', ...PHASE_KEYS];
   /* ---------- gobierno: dueño, responsable, equipo, centro de costo ---------- */
   const GOV_KEYS = { owner: 'owner', dueño: 'owner', dueno: 'owner', steward: 'steward', responsable: 'steward', team: 'team', equipo: 'team',
     costcenter: 'costCenter', centro: 'costCenter', centrocosto: 'costCenter', centrodecosto: 'costCenter' };
@@ -288,6 +289,7 @@
       day: v => `invalid date “${v}” (use YYYY-MM-DD)`, status: v => `invalid status “${v}” (use open or resolved)`,
       ctl: v => `invalid control “${v}” (use framework:id=met|partial|gap|na, e.g. iso27001:A.8.24=met)`,
       layer: v => `unknown layer “${v}” (use bronze, silver or gold; also raw, curated or serving)`, lnames: v => `invalid layer naming “${v}” (use medallion or zones)`,
+      radar: v => `invalid radar entry “${v}” (use an entry id from the tech radar, or none)`,
       disp: v => `unknown disposition “${v}” (use retain, rehost, replatform, refactor, repurchase or retire)`, expo: v => `invalid exposure “${v}” (use public or internal)`, backup: v => `invalid backup value “${v}” (use yes or no)`,
       view: v => `unknown view “${v}”`, gkind: v => `invalid group type “${v}” (use logical or physical)`,
       c4: v => `unknown C4 type “${v}” (use person, system, container, component or external)`, inRef: id => `“in” points to “${id}”, which is not a component`,
@@ -329,6 +331,7 @@
       day: v => `fecha no válida «${v}» (usa AAAA-MM-DD)`, status: v => `estado no válido «${v}» (usa abierta o resuelta)`,
       ctl: v => `control no válido «${v}» (usa marco:id=cumple|parcial|brecha|na, ej.: iso27001:A.8.24=cumple)`,
       layer: v => `capa desconocida «${v}» (usa bronce, plata u oro; también crudo, curado o consumo)`, lnames: v => `nombres de capa no válidos «${v}» (usa medallón o zonas)`,
+      radar: v => `entrada de radar no válida «${v}» (usa el id de una entrada del radar tecnológico, o ninguno)`,
       disp: v => `disposición desconocida «${v}» (usa retener, rehospedar, replataformar, refactorizar, recomprar o retirar)`, expo: v => `exposición no válida «${v}» (usa pública o interna)`, backup: v => `valor de respaldo no válido «${v}» (usa sí o no)`,
       view: v => `vista desconocida «${v}»`, gkind: v => `tipo de grupo no válido «${v}» (usa lógico o físico)`,
       c4: v => `tipo C4 desconocido «${v}» (usa persona, sistema, contenedor, componente o externo)`, inRef: id => `«dentro» apunta a «${id}», que no es un componente`,
@@ -941,6 +944,7 @@
         if (lv != null) { const l = checkLayer(lv, ln); if (l) n.layer = l; }
         const dpv = tk.kv.disposition ?? tk.kv.disposición ?? tk.kv.disposicion;
         if (dpv != null) { const d = checkDisp(dpv, ln); if (d) n.disposition = d; }
+        if (tk.kv.radar != null) { const rv = tk.kv.radar.trim(); if (/^(none|ninguno|ninguna)$/i.test(rv)) n.radar = 'none'; else if (/^[A-Za-z0-9_.-]{1,40}$/.test(rv)) n.radar = rv; else err(ln, msg.radar(rv)); }
         const ev = tk.kv.exposure ?? tk.kv.exposición ?? tk.kv.exposicion;
         if (ev != null) { if (/^(public|publico|público|pública|publica|external|externa?)$/i.test(ev.trim())) n.exposure = 'public'; else if (/^(internal|interno|interna|private|privado|privada)$/i.test(ev.trim())) n.exposure = 'internal'; else err(ln, msg.expo(ev)); }
         const bv = tk.kv.backup ?? tk.kv.respaldo;
@@ -1064,6 +1068,7 @@
       if (n.region) p.push(`${w.region}=${bare(n.region)}`);
       if (n.layer) p.push(`${w.layer}=${w.layerOf[n.layer] || n.layer}`);
       if (n.disposition) p.push(`${w.disposition}=${w.dispOf[n.disposition] || n.disposition}`);
+      if (n.radar) p.push(`radar=${bare(n.radar)}`);
       if (n.exposure) p.push(`${w.exposure}=${w.expoOf[n.exposure] || n.exposure}`);
       if (typeof n.backup === 'boolean') p.push(`${w.backup}=${n.backup ? w.yes : w.no}`);
       if (n.sla != null) p.push(`sla=${n.sla}`);

@@ -398,6 +398,19 @@ Say what happens to each component when the architecture is migrated: **Retain**
 - In the *Text* tab: `app: Billing app disposition=rehost` (Spanish: `disposición=rehospedar`). JSON: `"disposition": "rehost"`.
 - The values, colors, initials and warnings are in `src/config.js › migration`; the seventh R, *Relocate*, is there and off by default.
 
+### Tech radar and end of support
+
+Keep a list of which products are accepted and which are on their way out, and see it on the diagram. Each entry says how to recognise a product (by **icon**, **type** or **text** in the name or subtitle), its **ring** (**Adopt**, **Trial**, **Hold** or **Retire**), and optionally the **end of support** date, a replacement and a note.
+
+- Entries live in `src/config.js › techRadar.entries` (empty by default, with commented examples), and a diagram can add its own in a `radar` list in the JSON (same shape; the same `id` replaces the one from `config.js`). The first entry that matches a component wins, and every field you give in `match` must match.
+- Select a component. Under **Tech radar**, leave *Automatic* to use the matching rules, pick an entry to pin it, or choose *Not in the radar* to exclude it. The line below shows the ring, the end of support, the replacement and the note.
+- On the canvas a small tag appears at the top left only when something needs attention: *HOLD*, *RETIRE*, or *EOL* when support has ended or ends within `warnMonths` (6 by default). Hover it for the details.
+- The **Tech radar** filter in the lenses has *Needs attention*, one chip per ring in use, and *Not in the radar*.
+- The **Review** panel has a *Tech radar* source: support already ended and ring *Retire* (high), support ending soon and a component still present in a phase dated after the end of its support (medium), a phase that adds a component on *Hold* (low), and a component in *Retire* that the 6R marks as *Retain* (medium). They only warn, can be dismissed, and each rule can be turned off or re-rated in `techRadar.rules`.
+- The **report** has a *Tech radar* section (components per ring, and each recognised component with its product, ring, end of support and replacement); the **Excel** and CSV inventory get *Tech radar* and *End of support* columns when some component matches.
+- In the *Text* tab: `db: Core radar=oracle11` pins a component to an entry and `radar=none` excludes it. The entries themselves are kept in the JSON and are not lost when you edit the text.
+- Dates are compared with today's date, so the warnings change as time passes.
+
 ## 9. Sticky notes and risk zones
 
 Use the two buttons next to the zoom controls (bottom right of the canvas).

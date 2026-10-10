@@ -350,6 +350,99 @@
   });
   /* migration:end */
 
+  /* ---------- radar tecnológico: anillo y fin de soporte de los productos usados (config.js › techRadar) ---------- */
+  // Un componente se reconoce con una entrada del radar por su icono, su tipo o su texto (config.js), o se fija con radar: '<id>' ('none' lo excluye). Sin entradas no hay nada: JSON y exportaciones idénticos.
+  // El diagrama puede traer sus propias entradas en m.radar (se suman a las de config.js; el mismo id las reemplaza). Es del diagrama (entra en las fotos de versiones).
+  /* radar:start */
+  const RDC = C.techRadar || {}, RDR = RDC.rules || {};
+  const RD_KEYS = ['adopt', 'trial', 'hold', 'retire'], RD_ID = /^[A-Za-z0-9_.-]{1,40}$/, RD_MAX = 60;
+  const rdRingInfo = k => { if (!RD_KEYS.includes(k)) return null; const r = RDC.rings?.[k] || {}; return { k, label: loc(r.label) || k, short: r.short || k.toUpperCase(), color: colorVar(r.color) || 'var(--muted)' }; };
+  const rdFold = x => fold(x).replace(/\s+/g, ' ').trim();
+  const rdDay = (y, mo, d) => `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  // Fin de soporte 'AAAA-MM' (último día de ese mes) o 'AAAA-MM-DD' → 'AAAA-MM-DD'; '' si no es una fecha válida
+  const rdEos = v => {
+    const r = /^(\d{4})-(\d{2})(?:-(\d{2}))?$/.exec(String(v ?? '').trim());
+    if (!r) return '';
+    const y = +r[1], mo = +r[2], last = mo >= 1 && mo <= 12 ? new Date(Date.UTC(y, mo, 0)).getUTCDate() : 0, d = r[3] == null ? last : +r[3];
+    return d >= 1 && d <= last ? rdDay(y, mo, d) : '';
+  };
+  const rdPhaseDay = v => { const r = /^(\d{4})-(\d{2})(?:-(\d{2}))?$/.exec(String(v ?? '')); return r ? `${r[1]}-${r[2]}-${r[3] || '01'}` : ''; };
+  const rdPlus = (day, n) => { const d = new Date(`${day}T12:00`); d.setMonth(d.getMonth() + n); return rdDay(d.getFullYear(), d.getMonth() + 1, d.getDate()); };
+  // Textos: simples o { en, es }; se guardan limpios y se traducen al mostrarlos
+  const rdText = (v, max) => {
+    if (v && typeof v === 'object' && !Array.isArray(v)) { const o = {}; Object.entries(v).forEach(([k, t]) => { const x = /^[a-z]{2}$/.test(k) ? rdText(t, max) : ''; if (x) o[k] = x; }); return Object.keys(o).length ? o : ''; }
+    return typeof v === 'string' || typeof v === 'number' ? String(v).replace(/\s+/g, ' ').trim().slice(0, max) : '';
+  };
+  function cleanRadarEntry(e) {
+    if (!e || typeof e !== 'object' || Array.isArray(e)) return null;
+    const id = String(e.id ?? '').trim(), ring = String(e.ring ?? '').trim().toLowerCase();
+    if (!RD_ID.test(id) || !RD_KEYS.includes(ring)) return null;
+    const mt = e.match && typeof e.match === 'object' ? e.match : {}, match = {};
+    ['icon', 'type', 'text'].forEach(k => { const t = rdText(mt[k], 80); if (t && typeof t === 'string') match[k] = t; });
+    if (!Object.keys(match).length) return null;
+    const o = { id, ring, match };
+    [['name', 80], ['replaceWith', 80], ['note', 200]].forEach(([k, max]) => { const t = rdText(e[k], max); if (t) o[k] = t; });
+    { const eos = String(e.eos ?? '').trim(); if (rdEos(eos)) o.eos = eos; }
+    return o;
+  }
+  function cleanRadarList(raw) {
+    const seen = new Set(), out = [];
+    (Array.isArray(raw) ? raw : []).forEach(x => { const e = cleanRadarEntry(x); if (e && !seen.has(e.id) && out.length < RD_MAX) { seen.add(e.id); out.push(e); } });
+    return out;
+  }
+  // radar de un componente: un id (lo fija a esa entrada) o 'none' (false también); cualquier otra cosa no es nada
+  const cleanRadarRef = v => (v === false || (typeof v === 'string' && v.trim().toLowerCase() === 'none') ? 'none' : typeof v === 'string' && RD_ID.test(v.trim()) ? v.trim() : null);
+  const RD_BASE = cleanRadarList(RDC.entries);
+  let rdMemo = { key: null, list: RD_BASE };
+  const radarEntries = m => {
+    const d = m?.radar;
+    if (!d?.length) return RD_BASE;
+    if (rdMemo.key !== d) rdMemo = { key: d, list: [...RD_BASE.map(b => d.find(x => x.id === b.id) || b), ...d.filter(x => !RD_BASE.some(b => b.id === x.id))] };
+    return rdMemo.list;
+  };
+  const radarOf = (n, m) => {
+    if (!n || n.radar === 'none') return null;
+    const list = radarEntries(m);
+    if (!list.length) return null;
+    if (n.radar) return list.find(e => e.id === n.radar) || null;
+    const hay = rdFold(`${n.label || ''} ${n.sub || ''}`);
+    return list.find(e => (!e.match.icon || n.icon === e.match.icon) && (!e.match.type || n.type === e.match.type) && (!e.match.text || hay.includes(rdFold(e.match.text)))) || null;
+  };
+  // Estado del soporte: none (sin fecha) · ok · soon (termina dentro de warnMonths) · ended (la fecha ya pasó)
+  const radarStatus = (e, now) => {
+    const eos = e?.eos ? rdEos(e.eos) : '';
+    if (!eos) return 'none';
+    return eos < now ? 'ended' : eos <= rdPlus(now, Math.max(0, Math.min(60, +RDC.warnMonths >= 0 ? +RDC.warnMonths : 6))) ? 'soon' : 'ok';
+  };
+  const radarInfo = (n, m, now) => {
+    const e = radarOf(n, m), ring = e && rdRingInfo(e.ring);
+    return e && ring ? { entry: e, ring, name: loc(e.name) || e.id, eos: e.eos || '', eosDay: e.eos ? rdEos(e.eos) : '', status: radarStatus(e, now), replaceWith: loc(e.replaceWith) || '', note: loc(e.note) || '' } : null;
+  };
+  // Avisos del radar en Revisión (config.js › techRadar.rules); solo avisan
+  addFindingSource('radar', m => {
+    if (!radarEntries(m).length) return [];
+    const out = [], now = today(), on = id => !!RDR[id] && RDR[id].enabled !== false, sev = id => (SEVERITY.includes(RDR[id]?.severity) ? RDR[id].severity : 'low');
+    const ph = m.phases || [], phIx = id => ph.findIndex(p => p.id === id);
+    m.nodes.forEach(n => {
+      const i = radarInfo(n, m, now);
+      if (!i) return;
+      const v = { n: n.label, p: i.name, d: i.eosDay ? fmtDay(i.eosDay) : '', r: i.replaceWith };
+      const add = (rule, fix = '') => out.push({ id: `radar:${rule}:node:${n.id}`, source: 'radar', rule: `rdr.${rule}`, severity: sev(`rdr.${rule}`), target: { kind: 'node', id: n.id }, title: T(`radar.f.${rule}.t`, v), fix: fix || T(i.replaceWith ? 'radar.f.fix.replace' : 'radar.f.fix.plan', v) });
+      const ended = i.status === 'ended';
+      if (ended) { if (on('rdr.eos-passed')) add('eos-passed'); }
+      else if (i.entry.ring === 'retire') { if (on('rdr.retire')) add('retire'); }
+      else if (i.status === 'soon' && on('rdr.eos-soon')) add('eos-soon');
+      if (!ended && i.eosDay && ph.length && on('rdr.phase-after-eos')) {
+        const last = n.until ? phIx(n.until) - 1 : ph.length - 1, pd = last >= 0 ? rdPhaseDay(ph[last].date) : '';
+        if (pd && pd > i.eosDay) out.push({ id: `radar:phase-after-eos:node:${n.id}`, source: 'radar', rule: 'rdr.phase-after-eos', severity: sev('rdr.phase-after-eos'), target: { kind: 'node', id: n.id }, title: T('radar.f.phase-after-eos.t', { ...v, f: ph[last].name || ph[last].id }), fix: T('radar.f.fix.phase', v) });
+      }
+      if (i.entry.ring === 'hold' && n.phase && phIx(n.phase) > 0 && on('rdr.hold-added')) add('hold-added', T('radar.f.fix.hold', v));
+      if (i.entry.ring === 'retire' && n.disposition === 'retain' && on('rdr.retire-retained')) add('retire-retained', T('radar.f.fix.migrate', v));
+    });
+    return out;
+  });
+  /* radar:end */
+
   /* ---------- cumplimiento normativo (ISO 27001, SOC 2, GDPR, HIPAA, PCI DSS) ---------- */
   // controls: { 'iso27001:A.8.24': 'met' | 'partial' | 'gap' | 'na' } en nodos y grupos; los nodos heredan de sus grupos (gana el más cercano y, al final, el propio).
   // Catálogo, sugerencias y cómo añadir marcos o controles: config.js › compliance
@@ -634,6 +727,7 @@
     if (raw.direction === 'LR' || raw.direction === 'TB') m.direction = raw.direction;
     if (raw.routing === 'elbow') m.routing = 'elbow';
     if (raw.layerNames === 'zones') m.layerNames = 'zones';
+    { const rd = cleanRadarList(raw.radar); if (rd.length) m.radar = rd; }   // entradas propias del radar tecnológico; sin ellas no hay clave
     { const ph = cleanPhases(raw.phases); if (ph.length) m.phases = ph; }   // sin fases no hay clave: JSON y exportaciones idénticos
     { const et = cleanEdgeTypes(raw.edgeTypes); if (et.length) m.edgeTypes = et; }
     { const dm = cleanDismissed(raw.dismissed); if (dm) m.dismissed = dm; }
@@ -690,6 +784,7 @@
       if (cleanRegion(o.region)) o.region = cleanRegion(o.region); else delete o.region;
       { const l = cleanLayer(o.layer); if (l) o.layer = l; else delete o.layer; }
       { const dp = cleanDisposition(o.disposition); if (dp) o.disposition = dp; else delete o.disposition; }
+      { const rr = cleanRadarRef(o.radar); if (rr) o.radar = rr; else delete o.radar; }
       { const ex = cleanExposure(o.exposure); if (ex) o.exposure = ex; else delete o.exposure; const bk = cleanBackup(o.backup); if (bk != null) o.backup = bk; else delete o.backup; }
       { const c = cleanControls(o.controls); if (c) o.controls = c; else delete o.controls; }
       { const sl = cleanSla(o.sla); if (sl != null) o.sla = sl; else delete o.sla; const rp = cleanReplicas(o.replicas); if (rp != null) o.replicas = rp; else delete o.replicas;
@@ -2332,6 +2427,15 @@
     const ds = decisionsOf('nodes', n.id).filter(d => d.status === 'proposed' || d.status === 'accepted');
     return ds.length ? [{ short: `ADR ${ds.length}`, label: ds.map(d => `${d.id} · ${d.title || d.id} (${T(`adr.st.${d.status}`)})`).join('\n'), color: 'var(--p-lavanda)', cls: 'dt-adr' }] : [];
   };
+  // Etiqueta del radar tecnológico: solo cuando pide atención (en pausa, en retirada, o soporte terminado o por terminar); el tooltip lleva el detalle
+  const radarTip = i => [`${T('radar.label')}: ${i.name} · ${i.ring.label}`, i.eosDay ? T(i.status === 'ended' ? 'radar.eos.ended' : 'radar.eos.on', fmtDay(i.eosDay)) : '', i.replaceWith ? T('radar.replace', i.replaceWith) : '', i.note].filter(Boolean).join('\n');
+  const radarTags = n => {
+    const i = radarInfo(n, S.model, today());
+    if (!i) return [];
+    const ended = i.status === 'ended', ringTag = i.entry.ring === 'retire' || i.entry.ring === 'hold';
+    if (!ended && !ringTag && i.status !== 'soon') return [];
+    return [{ short: ended || (i.status === 'soon' && i.entry.ring !== 'retire') ? T('radar.eol') : i.ring.short, label: radarTip(i), color: ended ? 'var(--p-coral)' : i.entry.ring === 'retire' ? i.ring.color : i.status === 'soon' ? 'var(--p-limon)' : i.ring.color, cls: 'dt-radar' }];
+  };
   // Candado cerrado (cifrado) o abierto (sin cifrar), de 10 px de ancho
   function lockIcon(parent, x, on) {
     const g = el('g', { class: `edge-lock ${on ? 'on' : 'off'}`, transform: `translate(${x} 0)` }, parent);
@@ -2670,7 +2774,7 @@
     };
     if (sub) { paint(true, ' nd-full'); paint(false, ' nd-min'); } else paint(false, '');
     // Arriba a la izquierda: la observación de revisión (si hay) y las clasificaciones de datos
-    const dt = [...(n.review ? [{ ...reviewTag(n.review), cls: 'dt-review' }] : []), ...dataTags(n).map(t => ({ ...t, cls: 'dt-data' })), ...adrTags(n)];
+    const dt = [...(n.review ? [{ ...reviewTag(n.review), cls: 'dt-review' }] : []), ...dataTags(n).map(t => ({ ...t, cls: 'dt-data' })), ...adrTags(n), ...radarTags(n)];
     const rg = regionOf(n).value;
     const ly = layerOf(n), li = ly.value ? layerInfo(ly.value) : null;
     el('title', null, g).textContent = [n.sub ? `${n.label} · ${n.sub}` : n.label, n.c4 ? `${T('c4.label')}: ${c4Label(n.c4)}` : '', inn ? T('c4.inner.tip', inn) : '', ...dt.map(t => t.label), govTip(n), cmpTip(n), li ? T('layer.tip', { l: li.label }) : '', resTip(n), rg ? T('res.tip', regionLabel(rg)) : ''].filter(Boolean).join('\n');
@@ -3936,7 +4040,7 @@
 
   const ORDER = {
     group: ['id', 'label', 'icon', 'color', 'parent', 'kind', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'controls', 'in', 'phase', 'until'],
-    node: ['id', 'label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'x', 'y', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'exposure', 'backup', 'controls', 'in', 'c4', 'sla', 'rpo', 'rto', 'replicas', 'disposition', 'phase', 'until'],
+    node: ['id', 'label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'x', 'y', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'exposure', 'backup', 'controls', 'in', 'c4', 'sla', 'rpo', 'rto', 'replicas', 'disposition', 'radar', 'phase', 'until'],
     edge: ['id', 'from', 'to', 'label', 'style', 'weight', 'route', 'both', 'color', 'data', 'encrypted', 'datasets', 'latency', 'transferOk', 'threats', 'phase', 'until'],
     note: ['id', 'x', 'y', 'w', 'h', 'text', 'color', 'in'],
     zone: ['id', 'x', 'y', 'w', 'h', 'label', 'severity', 'desc', 'kind', 'trust', 'in'],
@@ -3973,6 +4077,7 @@
     if (m.direction) head.push(`  "direction": ${JSON.stringify(m.direction)}`);
     if (m.routing) head.push(`  "routing": ${JSON.stringify(m.routing)}`);
     if (m.layerNames === 'zones') head.push(`  "layerNames": "zones"`);
+    if (m.radar?.length) head.push(`  "radar": [\n${m.radar.map(e => '    ' + JSON.stringify(e)).join(',\n')}\n  ]`);
     if (m.phases?.length) head.push(arr('phases', m.phases, ORDER.phase));
     if (m.datasets?.length) head.push(`  "datasets": [\n${m.datasets.map(d => '    ' + line(dsOrdered(d, ordered))).join(',\n')}\n  ]`);
     if (m.edgeTypes?.length) head.push(`  "edgeTypes": ${JSON.stringify(m.edgeTypes)}`);
@@ -4038,6 +4143,7 @@
       if (!Array.isArray(raw.requirements) && S.model.requirements) raw = { ...raw, requirements: S.model.requirements }; // igual que las decisiones: el texto siempre las trae; el JSON, si omite la clave, las conserva
       if (!Array.isArray(raw.raid)) raw = { ...raw, raid: S.model.raid };   // el texto siempre trae el registro RAID; el JSON, si omite la clave, lo conserva
       if (!Array.isArray(raw.stakeholders) && S.model.stakeholders) raw = { ...raw, stakeholders: S.model.stakeholders };   // igual: el texto siempre trae los interesados; el JSON, si omite la clave, los conserva
+      if (!Array.isArray(raw.radar) && S.model.radar) raw = { ...raw, radar: S.model.radar };   // el texto solo lleva radar=<id> por componente: las entradas propias del radar se conservan
       if (!Array.isArray(raw.datasets) && S.model.datasets) raw = { ...raw, datasets: S.model.datasets };   // el texto siempre trae los conjuntos de datos; el JSON, si omite la clave, los conserva
       if (!Array.isArray(raw.decisions)) raw = { ...raw, decisions: S.model.decisions }; // el texto siempre trae las decisiones (ADR; borrarlas del texto las borra); el JSON, si omite la clave, las conserva
     }
@@ -4166,7 +4272,13 @@
   /* ---------- filtros ("lentes"): atenúan lo que no coincide ---------- */
   // Filtro: { data: [clase | '@insecure'], review: ['open','overdue'], provider, category, group, cost: ['cost'] }
   // Dentro de una sección las fichas suman (O); entre secciones se combinan (Y)
-  const FLT_SECTIONS = ['data', 'review', 'provider', 'category', 'group', 'cost', 'team', 'owner', 'steward', 'costCenter', 'region', 'layer', 'disposition', 'compliance'];
+  const FLT_SECTIONS = ['data', 'review', 'provider', 'category', 'group', 'cost', 'team', 'owner', 'steward', 'costCenter', 'region', 'layer', 'disposition', 'radar', 'compliance'];
+  // Sección «radar»: «requiere atención» (anillo pausa o retirada, o soporte terminado o por terminar), un anillo por cada uno usado y «sin radar» si falta en algún componente
+  const radarOptions = m => {
+    if (!radarEntries(m).length) return [];
+    const now = today(), infos = m.nodes.map(n => radarInfo(n, m, now)), used = new Set(infos.filter(Boolean).map(i => i.entry.ring));
+    return [...(m.nodes.some(n => radarTags(n).length) ? [{ k: '@attn', label: T('radar.attn') }] : []), ...RD_KEYS.filter(k => used.has(k)).map(k => ({ k, label: rdRingInfo(k).label })), ...(used.size && infos.some(i => !i) ? [{ k: '@none', label: T('radar.noneFlt') }] : [])];
+  };
   const providerOf = n => { const p = String(n.icon || '').split('/')[0]; return n.icon && ICONS[p] ? p : 'generic'; };
   const topGroups = m => m.groups.filter(g => !g.parent || !m.groups.some(x => x.id === g.parent));
   // Sección «región»: una ficha por jurisdicción usada (según la región efectiva) y «sin región» si falta en algún nodo
@@ -4196,6 +4308,7 @@
       region: regionOptions(m),
       layer: layerOptions(m),
       disposition: Object.keys(MG).filter(k => m.nodes.some(n => n.disposition === k)).map(k => ({ k, label: mgInfo(k).label })).concat(m.nodes.some(n => n.disposition) && m.nodes.some(n => !n.disposition) ? [{ k: '@none', label: T('mig.none') }] : []),
+      radar: radarOptions(m),
       compliance: cmpOptions(m)
     };
   }
@@ -4231,6 +4344,7 @@
       if (s === 'region') return v.includes(jurOf(regionOf(n).value)?.key || '@none');
       if (s === 'layer') { const l = layerOf(n).value; return v.some(k => (k === '@none' ? !l : k === l)); }
       if (s === 'disposition') return v.some(k => (k === '@none' ? !n.disposition : k === n.disposition));
+      if (s === 'radar') { const i = radarInfo(n, S.model, today()); return v.some(k => (k === '@none' ? !i : k === '@attn' ? !!radarTags(n).length : i?.entry.ring === k)); }
       if (s === 'compliance') return cmpMatch(n, v);
       return hasCost(n);
     });
@@ -5099,7 +5213,7 @@
   const findVersion = id => S.model.versions.find(v => v.id === id);
   // Solo lo que se dibuja: sin versiones y con posiciones redondeadas
   const snapshotOf = m => {
-    const d = clone({ title: m.title, ...(m.direction ? { direction: m.direction } : {}), ...(m.routing ? { routing: m.routing } : {}), ...(m.layerNames ? { layerNames: m.layerNames } : {}), ...(m.phases?.length ? { phases: m.phases } : {}), ...(m.datasets?.length ? { datasets: m.datasets } : {}), ...(m.edgeTypes?.length ? { edgeTypes: m.edgeTypes } : {}), ...(m.dismissed ? { dismissed: m.dismissed } : {}), groups: m.groups, nodes: m.nodes, edges: m.edges, ...(m.notes?.length ? { notes: m.notes } : {}), ...(m.zones?.length ? { zones: m.zones } : {}) });
+    const d = clone({ title: m.title, ...(m.direction ? { direction: m.direction } : {}), ...(m.routing ? { routing: m.routing } : {}), ...(m.layerNames ? { layerNames: m.layerNames } : {}), ...(m.radar?.length ? { radar: m.radar } : {}), ...(m.phases?.length ? { phases: m.phases } : {}), ...(m.datasets?.length ? { datasets: m.datasets } : {}), ...(m.edgeTypes?.length ? { edgeTypes: m.edgeTypes } : {}), ...(m.dismissed ? { dismissed: m.dismissed } : {}), groups: m.groups, nodes: m.nodes, edges: m.edges, ...(m.notes?.length ? { notes: m.notes } : {}), ...(m.zones?.length ? { zones: m.zones } : {}) });
     d.nodes.forEach(n => { n.x = Math.round(n.x); n.y = Math.round(n.y); });
     return d;
   };
@@ -5213,7 +5327,7 @@
 
   // Diferencias entre lo guardado (a) y el lienzo (b). La posición no cuenta como cambio.
   const DIFF_FIELDS = {
-    node: ['label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'exposure', 'backup', 'controls', 'in', 'c4', 'sla', 'rpo', 'rto', 'replicas', 'disposition', 'phase', 'until'],
+    node: ['label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'exposure', 'backup', 'controls', 'in', 'c4', 'sla', 'rpo', 'rto', 'replicas', 'disposition', 'radar', 'phase', 'until'],
     edge: ['label', 'style', 'weight', 'route', 'both', 'color', 'data', 'encrypted', 'datasets', 'latency', 'transferOk', 'threats', 'phase', 'until'],
     group: ['label', 'icon', 'color', 'parent', 'kind', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'controls', 'in', 'phase', 'until'],
     type: ['label', 'dash', 'color', 'width', 'particles'] // tipos de conexión propios (model.edgeTypes), por id
@@ -5390,7 +5504,7 @@
     if (!(d.count.a + d.count.r + d.count.c + d.typeN)) return `<p class="ver-sum">${esc(T('ver.same'))}</p>`;
     const FIELD = { label: 'insp.name', sub: 'insp.detail', type: 'insp.type', icon: 'insp.icon', group: 'insp.group', color: 'insp.color', badge: 'field.badge',
       cost: 'cost.label', costPeriod: 'cost.period', costYears: 'cost.yearsAria', desc: 'insp.desc', style: 'insp.style', weight: 'wt.label', parent: 'insp.parent',
-      data: 'data.label', encrypted: 'enc.label', route: 'insp.route', both: 'insp.dir', review: 'rev.label', kind: 'gkind.label', phase: 'phase.label', until: 'phase.until', disposition: 'mig.label', exposure: 'sec.expo.label', backup: 'sec.backup.label', controls: 'cmp.title', in: 'c4.in', c4: 'c4.label', sla: 'res.sla', rpo: 'res.rpo', rto: 'res.rto', replicas: 'res.replicas', latency: 'ds.latency', dash: 'et.dash', width: 'et.width', particles: 'et.particles' };
+      data: 'data.label', encrypted: 'enc.label', route: 'insp.route', both: 'insp.dir', review: 'rev.label', kind: 'gkind.label', phase: 'phase.label', until: 'phase.until', disposition: 'mig.label', radar: 'radar.label', exposure: 'sec.expo.label', backup: 'sec.backup.label', controls: 'cmp.title', in: 'c4.in', c4: 'c4.label', sla: 'res.sla', rpo: 'res.rpo', rto: 'res.rto', replicas: 'res.replicas', latency: 'ds.latency', dash: 'et.dash', width: 'et.width', particles: 'et.particles' };
     const fields = (fs, kind) => fs.map(f => T(kind === 'edge' && f === 'label' ? 'insp.label' : kind === 'type' && f === 'label' ? 'et.label' : FIELD[f] || f).toLowerCase()).join(', ');
     const names = new Map([...S.compare.base.nodes, ...S.model.nodes].map(n => [n.id, n.label]));
     const edgeName = e => `${names.get(e.from) || e.from} ${e.both ? '↔' : '→'} ${names.get(e.to) || e.to}`;
@@ -6033,6 +6147,16 @@
         return `<button data-disp="${esc(k)}" class="${cur === k ? 'on' : ''}" style="--lc:${esc(i.color)}" title="${esc(i.hint)}">${esc(i.label)}</button>`; }).join('')}</div>
       <span class="cost-hint">${esc(cur === null ? T('mig.mixed') : info ? info.hint : T('mig.hint'))}</span></div>`;
   };
+  // Radar tecnológico: fija el componente a una entrada del radar, deja que se reconozca solo o lo excluye; con un solo componente muestra lo que dice el radar
+  const radarField = items => {
+    const list = [].concat(items).filter(x => 'type' in x), m = S.model, ents = radarEntries(m);
+    if (!list.length || (!ents.length && !list.some(x => x.radar))) return '';
+    const own = new Set(list.map(x => x.radar || '')), cur = own.size === 1 ? [...own][0] : null;
+    const opts = [['', T('radar.auto')], ...ents.map(e => [e.id, `${loc(e.name) || e.id} · ${rdRingInfo(e.ring).label}`]), ...(cur && cur !== 'none' && !ents.some(e => e.id === cur) ? [[cur, `${cur} ⚠`]] : []), ['none', T('radar.none')]];
+    const one = list.length === 1 ? radarInfo(list[0], m, today()) : null;
+    const detail = one ? `<span class="cost-hint"><span class="mg-chip" style="--mg:${esc(one.ring.color)}">${esc(one.ring.label)}</span>${esc([one.eosDay ? T(one.status === 'ended' ? 'radar.eos.ended' : 'radar.eos.on', fmtDay(one.eosDay)) : '', one.replaceWith ? T('radar.replace', one.replaceWith) : '', one.note].filter(Boolean).join(' · '))}</span>` : `<span class="cost-hint">${esc(list.length === 1 ? T('radar.hint') : cur === null ? T('radar.mixed') : T('radar.hint'))}</span>`;
+    return `<div class="field"><label>${T('radar.label')}<select data-radar>${cur === null ? `<option value="__mixed" selected>${T('insp.mixed')}</option>` : ''}${opts.map(([v, l]) => `<option value="${esc(v)}"${cur === v ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select></label>${detail}</div>`;
+  };
   const layerField = items => {
     const list = [].concat(items), keys = Object.keys(DL);
     if (!keys.length) return '';
@@ -6192,6 +6316,7 @@
         ${regionField(t)}
         ${layerField(t)}
         ${dispField(t)}
+        ${radarField(t)}
         ${cmpField(t, 'multi')}
         ${priced.length ? `<p class="cost-sum">${T('insp.selCost')} <b>≈ ${money(round2(monthlyTotal(t)))}${T('cost.mo')}</b><span>${T('insp.withCost', { a: priced.length, b: t.length })}</span></p>` : ''}
         <p class="note">${T('insp.multiNote')}</p>
@@ -6225,6 +6350,7 @@
         ${regionField(t)}
         ${layerField(t)}
         ${dispField(t)}
+        ${radarField(t)}
         ${secField(t)}
         ${cmpField(t, 'node')}
         ${reviewField(t)}
@@ -6455,6 +6581,14 @@
   });
   inspector.addEventListener('input', ev => { if (ev.target.matches('input[data-field], textarea[data-field]')) onField(ev.target); });
   inspector.addEventListener('change', ev => { if (ev.target.matches('select[data-field]')) onField(ev.target); });
+  inspector.addEventListener('change', ev => {
+    if (!ev.target.matches('select[data-radar]') || ev.target.value === '__mixed') return;
+    const t = selTarget(), v = ev.target.value;
+    if (!t) return;
+    pushHistory();
+    (Array.isArray(t) ? t : [t]).filter(x => 'type' in x).forEach(x => { if (v) x.radar = v; else delete x.radar; });
+    changed(true); renderInspector();
+  });
   inspector.addEventListener('change', ev => { if (ev.target.matches('select[data-c4-into]') && ev.target.value) moveToScope(selIds(), ev.target.value); });
   // Añadir conjuntos de datos a la conexión elegida (Intro o coma; también al elegir de la lista o salir del campo)
   function addDatasets(inp) {
@@ -7611,7 +7745,7 @@
   // reportData() arma un modelo plano (secciones de bloques) y dos dibujantes lo pintan: reportMarkdown y reportHTML, así que los dos formatos no se desincronizan.
   // Bloques: { k: 'h3', t } · { k: 'p', t, muted? } · { k: 'kv', items: [[k, v]] } · { k: 'cards', items: [{ label, value, tone? }] }
   //          { k: 'table', head: [], rows: [[celda]], cls? } (celda = texto | { t, tone }) · { k: 'text', label, t } · { k: 'ul', items } · { k: 'img', alt, caption, svg?, uri?, file? }
-  const REP_SECS = ['summary', 'diagram', 'components', 'connections', 'data', 'owners', 'layers', 'datasets', 'costs', 'resilience', 'findings', 'compliance', 'threats', 'decisions', 'requirements', 'raid', 'approvals', 'phases', 'migration', 'versions', 'notes'];
+  const REP_SECS = ['summary', 'diagram', 'components', 'connections', 'data', 'owners', 'layers', 'datasets', 'costs', 'resilience', 'findings', 'compliance', 'threats', 'decisions', 'requirements', 'raid', 'approvals', 'phases', 'migration', 'radar', 'versions', 'notes'];
   const REP_PAGE = ['diagram', 'components', 'findings', 'decisions']; // secciones que empiezan página al imprimir
   const repT = (k, v) => T(`rep.${k}`, v);
   const repSleep = ms => new Promise(r => setTimeout(r, ms));
@@ -7630,7 +7764,7 @@
     return {
       summary: true, diagram: m.nodes.length > 0, components: m.nodes.length > 0, connections: m.edges.length > 0,
       data: m.nodes.some(n => dataClassesOf(n, m).length || regionOf(n, m).value), owners: govTeamList(m).length > 0,
-      layers: m.nodes.some(n => layerOf(n).value), migration: m.nodes.some(n => n.disposition), costs: m.nodes.some(hasCost), resilience: m.nodes.some(hasRes) || spofList(m).length > 0, findings: findingsOf(m).length > 0,
+      layers: m.nodes.some(n => layerOf(n).value), migration: m.nodes.some(n => n.disposition), radar: m.nodes.some(n => radarOf(n, m)), costs: m.nodes.some(hasCost), resilience: m.nodes.some(hasRes) || spofList(m).length > 0, findings: findingsOf(m).length > 0,
       compliance: cmpModel(m).keys.length > 0, threats: strideAll(m).length > 0, decisions: !!m.decisions?.length, requirements: !!m.requirements?.length,
       raid: !!m.raid?.length, approvals: !!m.stakeholders?.length, phases: !!m.phases?.length, datasets: !!m.datasets?.length,
       versions: m.versions.length > 0, notes: (m.notes || []).length > 0 || (m.zones || []).some(z => z.kind !== 'trust')
@@ -7982,6 +8116,17 @@
       sec('migration', blocks);
     }
 
+    if (want('radar')) {
+      // Recuento por anillo y una fila por componente reconocido: producto, anillo, fin de soporte y sustituto
+      const now = today(), rows = m.nodes.map(n => ({ n, i: radarInfo(n, m, now) })).filter(x => x.i), cnt = {};
+      rows.forEach(({ i }) => { cnt[i.entry.ring] = (cnt[i.entry.ring] || 0) + 1; });
+      const blocks = [{ k: 'table', head: [repT('h.ring'), repT('h.nodes')], rows: RD_KEYS.filter(k => cnt[k]).map(k => [rdRingInfo(k).label, String(cnt[k])]) }];
+      const ordered = RD_KEYS.flatMap(k => rows.filter(x => x.i.entry.ring === k));
+      blocks.push({ k: 'table', cls: 'wide', head: [repT('h.component'), repT('h.radarProduct'), repT('h.ring'), repT('h.eos'), repT('h.replaceWith')], rows: ordered.map(({ n, i }) => [n.label, i.name, i.ring.label,
+        i.eosDay ? { t: fmtDay(i.eosDay), tone: i.status === 'ended' ? 'sev-high' : i.status === 'soon' ? 'sev-medium' : '' } : '', i.replaceWith]) });
+      sec('radar', blocks);
+    }
+
     if (want('versions')) {
       const blocks = [{ k: 'table', cls: 'wide', head: [repT('h.version'), repT('h.env'), repT('h.status'), repT('h.author'), repT('h.created'), repT('h.updated'), repT('h.decided'), repT('h.note')], rows: m.versions.map(v => [
         verLabel(v) + (v.id === m.active ? ` ★ ${repT('activeMark')}` : ''), v.kind === 'env' ? loc(C.environments?.[v.env]?.label) || v.env : '', { t: T(`ver.st.${v.status}`), tone: `vs-${v.status}` }, v.author || '', fmtDay(v.created), fmtDay(v.updated),
@@ -8312,6 +8457,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
   const INV_SH = [['id'], ['name'], ['role'], ['org'], ['raci'], ['versions'], ['inactive']];
   const INV_DS = [['id'], ['name'], ['domain'], ['layer'], ['owner'], ['steward'], ['product'], ['data'], ['format'], ['freshness'], ['e2e'], ['frState'], ['perDay'], ['retention', 'int'], ['estGb'], ['estMonthly', 'money'], ['phase'], ['contractVersion'], ['status'], ['consumers']];
   const INV_DSC = [['dsId'], ['dsName'], ['column'], ['type'], ['key'], ['pii'], ['nullable'], ['desc']], INV_DSQ = [['dsId'], ['dsName'], ['rule'], ['column'], ['param'], ['severity']];   // hojas Columns y Quality del catálogo de datos
+  const INV_RADAR = [['radar'], ['radarEos']];   // columnas Radar y Fin de soporte (solo si algún componente coincide con el radar)
   const INV_MIG = [['disposition']];   // columna Disposición (solo si algún componente la tiene)
   const INV_PH = [['phase'], ['until']];   // columnas de fase de componentes y conexiones (solo si el diagrama tiene fases)
   const INV_PHASE = [['id'], ['name'], ['date'], ['goal'], ['components', 'int'], ['added', 'int'], ['retired', 'int'], ['monthly', 'money']];
@@ -8357,6 +8503,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
         cost: hasCost(n) ? +n.cost : '', period: pc ? T(PERIODS[pc].label) + (pc === 'multi' ? ` · ${T('cost.years', yearsOf(n))}` : '') : '', perMonth: pm, perYear: pm === '' ? '' : round2(perMonth(n) * 12),
         review: n.review ? T(`rev.tag.${reviewState(n.review)}`) : '', findings: my,
         adrs: (m.decisions || []).filter(d => d.links?.nodes?.includes(n.id)).map(d => d.id).join(', '), compliance: comp, desc: n.desc || '',
+        ...(typeof radarInfo === 'function' && radarEntries(m).length && m.nodes.some(x => radarOf(x, m)) ? (() => { const i = radarInfo(n, m, today()); return { radar: i ? `${i.name} · ${i.ring.label}` : '', radarEos: i?.eosDay || '' }; })() : {}),
         ...(m.nodes.some(x => x.disposition) ? { disposition: n.disposition && typeof mgInfo === 'function' ? mgInfo(n.disposition).label : '' } : {}),
         ...(m.phases?.length ? { phase: phNm(m, n.phase), until: phNm(m, n.until) } : {})   // fase en la que aparece y en la que se retira (sin fases no hay claves)
       };
@@ -8368,7 +8515,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     const mk = (key, cols, rows) => ({ key, name: T(`inv.sheet.${key}`), head: cols.map(([k]) => T(`inv.c.${k}`)), keys: cols.map(([k]) => k), fmt: cols.map(([, f]) => f || null), rows });
     const out = [], comp = inventoryRows(m);
     // Fases (solo si el diagrama las tiene): columnas Fase y Se retira en en componentes y conexiones
-    const ph = !!m.phases?.length, cc = [...INV_COMP, ...(m.nodes.some(x => x.disposition) ? INV_MIG : []), ...(ph ? INV_PH : [])];
+    const ph = !!m.phases?.length, cc = [...INV_COMP, ...(m.nodes.some(x => x.disposition) ? INV_MIG : []), ...(radarEntries(m).length && m.nodes.some(x => radarOf(x, m)) ? INV_RADAR : []), ...(ph ? INV_PH : [])];
     out.push(mk('components', cc, comp.map(r => cc.map(([k]) => r[k]))));
     // Una fila por fase: lo que hay en ella y lo que entra y sale respecto de la anterior
     if (ph) out.push(mk('phases', INV_PHASE, m.phases.map((p, i) => { const s = phaseStats(m, i, { monthly: x => monthlyTotal(x.nodes), findings: () => [] }), d = phaseDiff(m, i); return [p.id, p.name, p.date || '', p.goal || '', s.nodes, d.added.length, d.retired.length, round2(s.cost)]; })));

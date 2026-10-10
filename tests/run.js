@@ -884,7 +884,7 @@
     eq(none.map(x => [x.cost, x.dCost]), [[null, null], [null, null], [null, null]], 'no cost anywhere'); eq(PHM.phaseRows({ nodes: [], edges: [], groups: [] }, h), [], 'no phases');
   });
   test('report and presentation wiring for phases', () => {
-    assert(/REP_SECS = \[[^\]]*'approvals', 'phases', 'migration', 'versions'/.test(app), 'section after approvals; the migration section follows the phases'); assert(/phases: !!m\.phases\?\.length/.test(app), 'available with phases'); assert(app.includes("want('phases')") && app.includes('presentPhases'), 'section and API');
+    assert(/REP_SECS = \[[^\]]*'approvals', 'phases', 'migration', 'radar', 'versions'/.test(app), 'section after approvals; the migration and radar sections follow the phases'); assert(/phases: !!m\.phases\?\.length/.test(app), 'available with phases'); assert(app.includes("want('phases')") && app.includes('presentPhases'), 'section and API');
     const i18n = read('src/i18n.js'); ['rep.s.phases', 'rep.k.phases', 'rep.h.phase', 'phase.present.tip', 'phase.present.step', 'phase.cmp.title', 'phase.cmp.cost'].forEach(k => assert(i18n.split(`'${k}'`).length - 1 === 2, `${k} in en and es`));
   });
   test('without phases the JSON, the snapshot and the text stay byte-identical', () => {
@@ -1511,9 +1511,9 @@
   });
   test('the app wires it: normalize cleans it, JSON and diff know the field, inspector, filter, pill, report, inventory and Review use it', () => {
     assert(/const dp = cleanDisposition\(o\.disposition\); if \(dp\) o\.disposition = dp; else delete o\.disposition;/.test(app), 'normalize');
-    assert(/'replicas', 'disposition', 'phase', 'until'\],\n    edge: \['id'/.test(app), 'ORDER.node');
-    assert(/'replicas', 'disposition', 'phase', 'until'\],\n    edge: \['label'/.test(app), 'DIFF_FIELDS.node');
-    assert(app.includes("'layer', 'disposition', 'compliance']") && app.includes("if (s === 'disposition')"), 'filter');
+    assert(/'replicas', 'disposition', 'radar', 'phase', 'until'\],\n    edge: \['id'/.test(app), 'ORDER.node');
+    assert(/'replicas', 'disposition', 'radar', 'phase', 'until'\],\n    edge: \['label'/.test(app), 'DIFF_FIELDS.node');
+    assert(app.includes("'layer', 'disposition', 'radar', 'compliance']") && app.includes("if (s === 'disposition')"), 'filter');
     assert(app.includes('${dispField(t)}') && app.includes('b.dataset.disp != null'), 'inspector');
     assert(app.includes("class: 'node-mig'") && read('index.html').includes('.node-mig rect'), 'pill');
     assert(app.includes("want('migration')") && app.includes("sec('migration'") && app.includes('migration: m.nodes.some(n => n.disposition)'), 'report');
@@ -1527,6 +1527,130 @@
     const base = { title: 'X', formatVersion: 1, nodes: [{ id: 'a', label: 'A', type: 'generic', x: 0, y: 0 }], edges: [], groups: [], decisions: [] };
     assert(!/disposition/.test(serializeM(base)) && !/disposition|disposición/.test(TXT.stringify(base, 'en')) && !/disposition|disposición/.test(TXT.stringify(base, 'es')), 'no key anywhere');
     assert(/"disposition": "rehost"/.test(serializeM({ ...base, nodes: [{ ...base.nodes[0], disposition: 'rehost' }] })), 'written when present');
+  });
+
+  /* ======================================================================
+     Radar tecnológico: entradas, reconocimiento, fin de soporte y avisos
+     ====================================================================== */
+  section('Tech radar');
+  const RDSRC = between('/* radar:start */', '/* radar:end */');
+  const mkRd = (entries, now = '2026-10-10', extra = {}) => {
+    const sources = [];
+    const cfg = { ...C, techRadar: { ...C.techRadar, entries, ...extra } };
+    const api = new Function('C', 'fold', 'loc', 'colorVar', 'addFindingSource', 'SEVERITY', 'T', 'today', 'fmtDay', `${RDSRC}; return { cleanRadarEntry, cleanRadarList, cleanRadarRef, radarEntries, radarOf, radarStatus, radarInfo, rdEos };`)(
+      cfg, foldT, v => (v && typeof v === 'object' ? v.en : v), c => c, (k, fn) => sources.push({ k, fn }), ['low', 'medium', 'high', 'critical'], (k, v) => `${k}${v == null ? '' : ':' + JSON.stringify(v)}`, () => now, d => d);
+    return { ...api, findings: m => sources.find(x => x.k === 'radar').fn(m) };
+  };
+  const RDE = [
+    { id: 'ora11', name: 'Oracle 11g', match: { text: 'oracle 11' }, ring: 'retire', eos: '2020-12', replaceWith: { en: 'Oracle 19c', es: 'Oracle 19c' }, note: 'No patches' },
+    { id: 'pg', name: 'PostgreSQL', match: { icon: 'azure/postgresql' }, ring: 'adopt' },
+    { id: 'node16', name: 'Node.js 16', match: { type: 'compute', text: 'node 16' }, ring: 'hold', eos: '2026-12' },
+    { id: 'vm', name: 'Old VM', match: { type: 'vm' }, ring: 'trial', eos: '2027-03-15' }
+  ];
+  test('config radar is empty by default, so nothing is recognised and no finding appears', () => {
+    const R0 = mkRd(C.techRadar.entries);
+    eq([C.techRadar.entries.length, R0.radarEntries({}).length], [0, 0]);
+    eq(R0.radarOf({ id: 'a', label: 'Oracle 11', type: 'db' }, {}), null);
+    eq(R0.findings({ nodes: [{ id: 'a', label: 'Oracle 11' }] }), []);
+  });
+  test('cleanRadarEntry keeps valid entries and drops those without id, ring or match; bad dates and long text are cleaned', () => {
+    const R = mkRd([]);
+    eq(R.cleanRadarEntry({ id: 'x y', ring: 'adopt', match: { text: 'a' } }), null, 'id with a space');
+    eq(R.cleanRadarEntry({ id: 'x', ring: 'nope', match: { text: 'a' } }), null, 'ring');
+    eq(R.cleanRadarEntry({ id: 'x', ring: 'adopt', match: {} }), null, 'empty match');
+    eq(R.cleanRadarEntry({ id: 'x', ring: 'HOLD', match: { text: ' Oracle  11 ', icon: ['x'] }, eos: '2026-13', note: 'n'.repeat(300), name: { en: 'N', es: 'Ñ', xx1: 'bad' } }),
+      { id: 'x', ring: 'hold', match: { text: 'Oracle 11' }, name: { en: 'N', es: 'Ñ' }, note: 'n'.repeat(200) });
+    eq(R.cleanRadarEntry({ id: 'x', ring: 'hold', match: { type: 'db' }, eos: '2026-02' }).eos, '2026-02', 'a month is kept as written');
+    eq(R.cleanRadarList([RDE[0], RDE[0], null, 3, { id: 'q' }]).map(e => e.id), ['ora11'], 'duplicates and junk dropped');
+    eq([R.rdEos('2024-02'), R.rdEos('2026-02-30'), R.rdEos('2026-06-15'), R.rdEos('x')], ['2024-02-29', '', '2026-06-15', ''], 'end of month, invalid day, full date');
+  });
+  test('cleanRadarRef: ids pass, false and none exclude, anything else is nothing', () => {
+    const R = mkRd([]);
+    eq([' ora11 ', false, 'NONE', 'a b', '', 7, null].map(R.cleanRadarRef), ['ora11', 'none', 'none', null, null, null, null]);
+  });
+  test('radarOf: first match wins, every given field must match, text ignores case and accents, a pin overrides, none excludes, an unknown pin is nothing', () => {
+    const R = mkRd(RDE), m = {};
+    const id = n => R.radarOf(n, m)?.id ?? null;
+    eq(id({ label: 'ORACLÉ 11g', sub: 'DB' }), 'ora11');
+    eq(id({ label: 'Reporting', sub: 'oracle 11' }), 'ora11', 'subtitle counts');
+    eq(id({ label: 'x', icon: 'azure/postgresql' }), 'pg');
+    eq(id({ label: 'Node 16 api', type: 'compute' }), 'node16');
+    eq(id({ label: 'Node 16 api', type: 'db' }), null, 'type and text both required');
+    eq(id({ label: 'Plain', type: 'vm' }), 'vm');
+    eq(id({ label: 'Oracle 11', radar: 'pg' }), 'pg', 'pin');
+    eq(id({ label: 'Oracle 11', radar: 'none' }), null, 'excluded');
+    eq(id({ label: 'Oracle 11', radar: 'ghost' }), null, 'unknown pin');
+    eq(R.radarOf(null, m), null);
+  });
+  test('document entries add to config ones and replace the same id', () => {
+    const R = mkRd(RDE), m = { radar: [{ id: 'pg', name: 'PG doc', match: { icon: 'azure/postgresql' }, ring: 'hold' }, { id: 'mine', match: { text: 'legacy' }, ring: 'retire' }] };
+    eq(R.radarEntries(m).map(e => [e.id, e.ring]), [['ora11', 'retire'], ['pg', 'hold'], ['node16', 'hold'], ['vm', 'trial'], ['mine', 'retire']]);
+    eq(R.radarOf({ label: 'Legacy app' }, m)?.id, 'mine');
+    eq(R.radarEntries({}).length, 4, 'a model without its own list uses config only');
+  });
+  test('radarStatus uses fixed dates: ok / soon within warnMonths / ended once the end of the support month has passed', () => {
+    const R = mkRd(RDE, '2026-10-10'), st = e => R.radarStatus(e, '2026-10-10');
+    eq([st({}), st({ eos: '2026-09' }), st({ eos: '2026-10-09' }), st({ eos: '2026-10-10' }), st({ eos: '2026-10' }), st({ eos: '2027-04-10' }), st({ eos: '2027-04-11' })],
+      ['none', 'ended', 'ended', 'soon', 'soon', 'soon', 'ok']);
+    const R3 = mkRd(RDE, '2026-10-10', { warnMonths: 1 });
+    eq([R3.radarStatus({ eos: '2026-11-10' }, '2026-10-10'), R3.radarStatus({ eos: '2026-11-11' }, '2026-10-10')], ['soon', 'ok'], 'warnMonths is configurable');
+  });
+  const rdDoc = () => ({ phases: [{ id: 'p1', name: 'P1', date: '2026-06' }, { id: 'p2', name: 'P2', date: '2027-09' }],
+    nodes: [{ id: 'a', label: 'Oracle 11 core' }, { id: 'b', label: 'Orders API Node 16', type: 'compute', phase: 'p2' }, { id: 'c', label: 'Batch', type: 'vm' }, { id: 'd', label: 'Oracle 11 rep', radar: 'pg', disposition: 'retain' },
+      { id: 'e', label: 'Old', type: 'vm', radar: 'ora11', disposition: 'retain' }, { id: 'f', label: 'Plain' }] });
+  test('findings: support ended, ring retire, support soon, phase after the end of support, hold added by a phase, retire kept in the 6R; nothing for adopt', () => {
+    const R = mkRd(RDE), f = R.findings(rdDoc());
+    const by = Object.fromEntries(f.map(x => [`${x.rule}:${x.target.id}`, x]));
+    eq(Object.keys(by).sort(), ['rdr.eos-passed:a', 'rdr.eos-passed:e', 'rdr.eos-soon:b', 'rdr.eos-soon:c', 'rdr.hold-added:b', 'rdr.phase-after-eos:b', 'rdr.phase-after-eos:c', 'rdr.retire-retained:e'].sort());
+    eq([by['rdr.eos-passed:a'].severity, by['rdr.hold-added:b'].severity, by['rdr.phase-after-eos:b'].severity, by['rdr.retire-retained:e'].severity], ['high', 'low', 'medium', 'medium']);
+    eq(by['rdr.eos-passed:a'].id, 'radar:eos-passed:node:a'); eq(by['rdr.eos-passed:a'].source, 'radar');
+    assert(/Oracle 19c/.test(by['rdr.eos-passed:a'].fix), 'fix names the replacement');
+    const retire = R.findings({ nodes: [{ id: 'z', label: 'Oracle 11', radar: 'x' }], radar: [{ id: 'x', match: { text: 'q' }, ring: 'retire' }] });
+    eq(retire.map(x => x.rule), ['rdr.retire'], 'ring retire without a date');
+    const soon = mkRd([{ id: 's', match: { text: 'zz' }, ring: 'trial', eos: '2027-02' }]).findings({ nodes: [{ id: 'q', label: 'ZZ' }] });
+    eq(soon.map(x => [x.rule, x.severity]), [['rdr.eos-soon', 'medium']]);
+  });
+  test('findings: until limits the phases checked, rules can be switched off or re-rated, a model without matches gives none', () => {
+    const R = mkRd(RDE), d = rdDoc();
+    d.nodes[2] = { ...d.nodes[2], until: 'p2' };
+    eq(R.findings(d).filter(x => x.target.id === 'c').map(x => x.rule), ['rdr.eos-soon'], 'retired before the late phase: only the support warning (p1 is dated before the end of support)');
+    const off = mkRd(RDE, '2026-10-10', { rules: { ...C.techRadar.rules, 'rdr.eos-passed': { enabled: false } } });
+    assert(!off.findings(rdDoc()).some(x => x.rule === 'rdr.eos-passed'), 'switched off');
+    const hi = mkRd(RDE, '2026-10-10', { rules: { ...C.techRadar.rules, 'rdr.hold-added': { enabled: true, severity: 'critical' } } });
+    eq(hi.findings(rdDoc()).find(x => x.rule === 'rdr.hold-added').severity, 'critical');
+    eq(R.findings({ nodes: [{ id: 'a', label: 'Nothing' }] }), []);
+  });
+  test('text format: radar=<id> and radar=none round trip in English and Spanish; a bad value is reported with its line', () => {
+    ['en', 'es'].forEach(lang => {
+      const model = { title: 'T', groups: [], edges: [], nodes: [{ id: 'a', label: 'A', type: 'generic', radar: 'ora11' }, { id: 'b', label: 'B', type: 'generic', radar: 'none' }, { id: 'c', label: 'C', type: 'generic' }] };
+      const txt = TXT.stringify(model, lang), r = TXT.parse(txt, textCtx(lang));
+      assert(/radar=ora11/.test(txt) && /radar=none/.test(txt), `written (${lang}): ${txt}`);
+      eq(r.errors, [], `errors (${lang})`);
+      eq(r.model.nodes.map(n => n.radar), ['ora11', 'none', undefined], `round trip (${lang})`);
+    });
+    const r = TXT.parse('a: Alpha radar=ninguno\nb: Beta radar="no good"', textCtx('en'));
+    eq(r.model.nodes.map(n => n.radar), ['none', undefined]); eq(r.errors.length, 1);
+  });
+  test('JSON: radar entries are written after the layout keys, a node pin is a node field, and a model without radar writes nothing', () => {
+    const base = { title: 'X', formatVersion: 1, nodes: [{ id: 'a', label: 'A', type: 'generic', x: 0, y: 0 }], edges: [], groups: [], decisions: [] };
+    assert(!/radar/.test(serializeM(base)) && !/radar/.test(TXT.stringify(base, 'en')), 'no key anywhere');
+    const j = serializeM({ ...base, radar: [{ id: 'x', ring: 'hold', match: { text: 'a' } }], nodes: [{ ...base.nodes[0], radar: 'x' }] });
+    assert(/"radar": \[\n    \{"id":"x","ring":"hold","match":\{"text":"a"\}\}\n  \]/.test(j) && /"radar": "x"/.test(j), j);
+  });
+  test('the app wires it: normalize cleans node pins and the document list, text editor keeps the list, inspector, filter, tag, report, inventory and i18n', () => {
+    assert(/const rr = cleanRadarRef\(o\.radar\); if \(rr\) o\.radar = rr; else delete o\.radar;/.test(app), 'normalize node');
+    assert(/const rd = cleanRadarList\(raw\.radar\); if \(rd\.length\) m\.radar = rd;/.test(app), 'normalize list');
+    assert(app.includes('...(m.radar?.length ? { radar: m.radar } : {})'), 'snapshot');
+    assert(/Array\.isArray\(raw\.radar\) && S\.model\.radar/.test(app), 'text editor keeps the list');
+    assert(app.includes('${radarField(t)}') && app.includes("select[data-radar]") && app.includes("if (s === 'radar')") && app.includes('radar: radarOptions(m)'), 'inspector and filter');
+    assert(app.includes("...radarTags(n)") && read('index.html').includes('.dt-radar'), 'tag');
+    assert(app.includes("want('radar')") && app.includes("sec('radar'") && app.includes('radar: m.nodes.some(n => radarOf(n, m))') && app.includes('INV_RADAR'), 'report and inventory');
+    const i18n = read('src/i18n.js');
+    ['radar.label', 'flt.sec.radar', 'find.src.radar', 'radar.auto', 'radar.none', 'radar.noneFlt', 'radar.hint', 'radar.mixed', 'radar.attn', 'radar.eol', 'radar.eos.on', 'radar.eos.ended', 'radar.replace',
+      'radar.f.eos-passed.t', 'radar.f.retire.t', 'radar.f.eos-soon.t', 'radar.f.phase-after-eos.t', 'radar.f.hold-added.t', 'radar.f.retire-retained.t',
+      'radar.f.fix.replace', 'radar.f.fix.plan', 'radar.f.fix.phase', 'radar.f.fix.hold', 'radar.f.fix.migrate', 'rep.s.radar', 'rep.h.ring', 'rep.h.radarProduct', 'rep.h.eos', 'rep.h.replaceWith', 'inv.c.radar', 'inv.c.radarEos']
+      .forEach(k => eq(i18n.split(`'${k}':`).length - 1, 2, `${k} once per language`));
+    assert(/radar=oracle11/.test(read('src/text-lang.js')), 'documented in the text language header');
   });
 
   /* ---------- resumen ---------- */
