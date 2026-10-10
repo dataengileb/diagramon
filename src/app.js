@@ -884,6 +884,7 @@
       if (cleanRegion(o.region)) o.region = cleanRegion(o.region); else delete o.region;
       { const l = cleanLayer(o.layer); if (l) o.layer = l; else delete o.layer; }
       { const dp = cleanDisposition(o.disposition); if (dp) o.disposition = dp; else delete o.disposition; }
+      { const rf = window.DiagramonWorkspace?.cleanRef(o.ref); if (rf) o.ref = rf; else delete o.ref; }   // enlace al diagrama donde se detalla (espacio de trabajo)
       { const ef = cleanEffort(o.effort); if (ef.length) o.effort = ef; else delete o.effort; }
       { const rr = cleanRadarRef(o.radar); if (rr) o.radar = rr; else delete o.radar; }
       { const ex = cleanExposure(o.exposure); if (ex) o.exposure = ex; else delete o.exposure; const bk = cleanBackup(o.backup); if (bk != null) o.backup = bk; else delete o.backup; }
@@ -4318,7 +4319,7 @@
 
   const ORDER = {
     group: ['id', 'label', 'icon', 'color', 'parent', 'kind', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'controls', 'in', 'phase', 'until'],
-    node: ['id', 'label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'x', 'y', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'exposure', 'backup', 'controls', 'in', 'c4', 'sla', 'rpo', 'rto', 'replicas', 'disposition', 'radar', 'effort', 'phase', 'until'],
+    node: ['id', 'label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'x', 'y', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'exposure', 'backup', 'controls', 'in', 'c4', 'sla', 'rpo', 'rto', 'replicas', 'disposition', 'radar', 'effort', 'ref', 'phase', 'until'],
     edge: ['id', 'from', 'to', 'label', 'style', 'weight', 'route', 'both', 'color', 'data', 'encrypted', 'datasets', 'latency', 'transferOk', 'threats', 'phase', 'until'],
     note: ['id', 'x', 'y', 'w', 'h', 'text', 'color', 'in'],
     zone: ['id', 'x', 'y', 'w', 'h', 'label', 'severity', 'desc', 'kind', 'trust', 'in'],
@@ -4429,6 +4430,7 @@
       if (!Array.isArray(raw.comments) && S.model.comments) raw = { ...raw, comments: S.model.comments };   // el texto no lleva comentarios; el JSON, si omite la clave, los conserva
       if (opts.fromEditor === 'text' && S.model.estimation && raw.estimation == null) raw = { ...raw, estimation: S.model.estimation };   // los imprevistos y el trabajo extra de cada fase solo viven en el JSON: el texto no los lleva
       if (opts.fromEditor === 'text' && Array.isArray(raw.phases) && (S.model.phases || []).some(p => p.extra)) raw = { ...raw, phases: raw.phases.map(p => { const old = p && (S.model.phases || []).find(q => q.id === p.id); return old?.extra && !p.extra ? { ...p, extra: old.extra } : p; }) };
+      if (opts.fromEditor === 'text' && Array.isArray(raw.nodes) && S.model.nodes.some(n => n.ref)) { const rf = new Map(S.model.nodes.filter(n => n.ref).map(n => [n.id, n.ref])); raw = { ...raw, nodes: raw.nodes.map(n => (n && rf.has(n.id) && n.ref == null ? { ...n, ref: rf.get(n.id) } : n)) }; }   // el texto no lleva los enlaces entre diagramas: se conservan por id
       if (!Array.isArray(raw.radar) && S.model.radar) raw = { ...raw, radar: S.model.radar };   // el texto solo lleva radar=<id> por componente: las entradas propias del radar se conservan
       if (!Array.isArray(raw.datasets) && S.model.datasets) raw = { ...raw, datasets: S.model.datasets };   // el texto siempre trae los conjuntos de datos; el JSON, si omite la clave, los conserva
       if (!Array.isArray(raw.decisions)) raw = { ...raw, decisions: S.model.decisions }; // el texto siempre trae las decisiones (ADR; borrarlas del texto las borra); el JSON, si omite la clave, las conserva
@@ -6446,6 +6448,15 @@
         return `<button data-disp="${esc(k)}" class="${cur === k ? 'on' : ''}" style="--lc:${esc(i.color)}" title="${esc(i.hint)}">${esc(i.label)}</button>`; }).join('')}</div>
       <span class="cost-hint">${esc(cur === null ? T('mig.mixed') : info ? info.hint : T('mig.hint'))}</span></div>`;
   };
+  // «Se detalla en»: enlaza el componente con otro diagrama del espacio de trabajo abierto (ref.doc = su docId); solo con un componente
+  const refField = items => {
+    const list = [].concat(items);
+    if (list.length !== 1 || !('type' in list[0])) return '';
+    const n = list[0], docs = (WS.index?.diagrams || []).filter(d => d.docId && !d.dupDocId && d.docId !== S.model.docId), cur = n.ref?.doc || '', known = docs.some(d => d.docId === cur);
+    if (!docs.length && !cur) return '';
+    const opts = [['', T('ws.ref.none')], ...docs.map(d => [d.docId, d.title]), ...(cur && !known ? [[cur, `${cur} ⚠`]] : [])];
+    return `<div class="field"><label>${T('ws.ref.label')}<select data-ref>${opts.map(([v, l]) => `<option value="${esc(v)}"${cur === v ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select></label>${known ? `<button type="button" class="btn small" data-ref-open="${esc(cur)}">${esc(T('ws.ref.open'))}</button>` : ''}<span class="cost-hint">${esc(T(cur && !known ? 'ws.ref.lost' : 'ws.ref.hint'))}</span></div>`;
+  };
   // Radar tecnológico: fija el componente a una entrada del radar, deja que se reconozca solo o lo excluye; con un solo componente muestra lo que dice el radar
   const radarField = items => {
     const list = [].concat(items).filter(x => 'type' in x), m = S.model, ents = radarEntries(m);
@@ -6662,6 +6673,7 @@
         ${layerField(t)}
         ${dispField(t)}
         ${radarField(t)}
+        ${refField(t)}
         ${effortField(t)}
         ${secField(t)}
         ${cmpField(t, 'node')}
@@ -6903,6 +6915,19 @@
     pushHistory();
     (Array.isArray(t) ? t : [t]).filter(x => 'type' in x).forEach(x => { if (v) x.radar = v; else delete x.radar; });
     changed(true); renderInspector();
+  });
+  inspector.addEventListener('change', ev => {
+    if (!ev.target.matches('select[data-ref]')) return;
+    const t = selTarget(), v = ev.target.value;
+    if (!t || Array.isArray(t) || !('type' in t)) return;
+    pushHistory();
+    if (v) t.ref = { doc: v }; else delete t.ref;
+    changed(true); renderInspector();
+  });
+  inspector.addEventListener('click', ev => {
+    const b = ev.target.closest('[data-ref-open]');
+    const d = b && WS.index?.diagrams.find(x => x.docId === b.dataset.refOpen && !x.dupDocId);
+    if (d) wsOpen(d.name);
   });
   // Esfuerzo del componente: cambiar perfil o días de una fila, añadir y quitar
   function efEdit(fn) {
@@ -8950,10 +8975,17 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
   /* ---------- espacio de trabajo: una carpeta con varios diagramas (src/workspace.js) ---------- */
   // WS.dir = { name, handle } (handle = null si la carpeta se leyó con <input webkitdirectory>: solo lectura); WS.index = resultado de scan();
   // WS.read(nombre) → texto; WS.base = snapshot() del diagrama al abrirlo o guardarlo desde la carpeta (si cambió, abrir otro pide confirmar)
-  const WS = { dir: null, index: null, read: null, base: null, file: '' };
+  const WS = { dir: null, index: null, read: null, base: null, file: '', view: 'list' };   // view: 'list' | 'map'
   const wsLib = () => window.DiagramonWorkspace;
   function ensureDocId() { const L = wsLib(); if (L && !S.model.docId) S.model.docId = L.newDocId(); return S.model.docId || ''; }
   const wsWritable = () => !!WS.dir?.handle;
+  const wsLiveLinks = () => wsLib().summarize({ nodes: S.model.nodes }, '').links;
+  // Hallazgo bajo: un componente apunta a un diagrama que no está en la carpeta abierta (solo mientras hay una carpeta abierta)
+  addFindingSource('workspace', m => {
+    if (!WS.index) return [];
+    const ids = new Set([...WS.index.diagrams.map(d => d.docId).filter(Boolean), m.docId].filter(Boolean));
+    return m.nodes.filter(n => n.ref && !ids.has(n.ref.doc)).map(n => ({ id: `workspace:ref-missing:node:${n.id}`, source: 'workspace', rule: 'ws.ref-missing', severity: 'low', target: { kind: 'node', id: n.id }, title: T('ws.f.missing.t', n.label), fix: T('ws.f.missing.fix') }));
+  });
   async function wsFromHandle(handle) {
     const L = wsLib(), files = [];
     for await (const [name, h] of handle.entries()) {
@@ -9028,13 +9060,37 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     } catch { if (msg) msg.textContent = T('ws.err.save'); }
     wsRender();
   }
+  const wsTrim = (t, n) => (t.length > n ? `${t.slice(0, n - 1)}…` : t);
+  // Mapa de sistemas: una caja por diagrama con id y una flecha por cada enlace de componente; clic o Enter abre el diagrama
+  function wsMapHtml() {
+    const L = wsLib(), cur = S.model.docId || '', ix = WS.index;
+    const map = L.systemsMap(ix.diagrams, cur ? { docId: cur, title: S.model.title, nodes: S.model.nodes.length, links: wsLiveLinks() } : null);
+    const title = id => map.nodes.find(n => n.docId === id)?.title || ix.diagrams.find(d => d.docId === id)?.title || id;
+    const notes = [map.unlinkable ? `<p class="ws-dir">${esc(T('ws.map.unlinkable', map.unlinkable))}</p>` : '', ...map.missing.map(x => `<p class="ws-dir"><span class="ws-warn">⚠</span> ${esc(T('ws.map.missing', { from: title(x.from), via: x.via.join(', ') }))}</p>`)].join('');
+    if (!map.nodes.length) return `<p class="ws-dir">${esc(T('ws.map.empty'))}</p>${notes}`;
+    const g = L.layoutMap(map), byId = new Map(map.nodes.map(n => [n.docId, n]));
+    const arrows = g.arrows.map(a => {
+      const dx = a.same ? 36 + (a.from < a.to ? 0 : 14) : Math.max(24, Math.abs(a.x2 - a.x1) / 2);
+      const d = a.same ? `M${a.x1} ${a.y1} C${a.x1 + dx} ${a.y1} ${a.x2 + dx} ${a.y2} ${a.x2} ${a.y2}` : `M${a.x1} ${a.y1} C${a.x1 + (a.x2 > a.x1 ? dx : -dx)} ${a.y1} ${a.x2 + (a.x2 > a.x1 ? -dx : dx)} ${a.y2} ${a.x2} ${a.y2}`;
+      return `<path class="ws-arrow" d="${d}" marker-end="url(#ws-arr)"><title>${esc(`${title(a.from)} → ${title(a.to)}: ${a.via.join(', ')}`)}</title></path>`;
+    }).join('');
+    const boxes = g.boxes.map(b => {
+      const n = byId.get(b.docId);
+      return `<g class="ws-box${b.docId === cur ? ' cur' : ''}" data-ws-doc="${esc(b.docId)}" tabindex="0" role="button" aria-label="${esc(`${T('ws.open')}: ${n.title}`)}"><rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" rx="10"/><text x="${b.x + 12}" y="${b.y + 24}" class="ws-bt">${esc(wsTrim(n.title, 26))}</text><text x="${b.x + 12}" y="${b.y + 42}" class="ws-bs">${esc(T('ws.map.sub', { n: n.nodes, unsaved: n.unsaved }))}</text></g>`;
+    }).join('');
+    return `<p class="ws-dir">${esc(T('ws.map.hint'))}</p><svg class="ws-map" viewBox="0 0 ${g.width} ${g.height}" width="${g.width}" role="group" aria-label="${esc(T('ws.map.aria'))}"><defs><marker id="ws-arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 10 5 0 10z"/></marker></defs>${arrows}${boxes}</svg>${notes}`;
+  }
   function wsRender() {
     const box = $('#ws-body');
     if (!box) return;
     const L = wsLib(), d = WS.dir, ix = WS.index, cur = S.model.docId || '';
     $('#ws-save').hidden = !wsWritable();
     $('#ws-refresh').hidden = !wsWritable();
+    $('#ws-tab-list').setAttribute('aria-pressed', String(WS.view === 'list'));
+    $('#ws-tab-map').setAttribute('aria-pressed', String(WS.view === 'map'));
+    $('#ws-tabs').hidden = !d || !ix;
     if (!d || !ix) { box.innerHTML = `<p class="ws-dir">${esc(T('ws.none'))}</p>`; return; }
+    if (WS.view === 'map') { box.innerHTML = wsMapHtml(); return; }
     const rows = ix.diagrams.map(x => {
       const here = (cur && x.docId === cur && !x.dupDocId) || x.name === WS.file;
       return `<li${here ? ' class="cur"' : ''}><div class="ws-t"><b>${esc(x.title)}</b><small>${esc(T('ws.meta', x))}${x.dupDocId ? ` · <span class="ws-warn">${esc(T('ws.dup'))}</span>` : ''}</small></div>${here ? `<span class="ws-chip">${esc(T('ws.current'))}</span>` : ''}<button type="button" class="btn small" data-ws-open="${esc(x.name)}">${esc(T('ws.open'))}</button></li>`;
@@ -9050,6 +9106,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
       <h3 id="${id}t">${esc(T('ws.title'))}</h3>
       <p>${esc(T('ws.lead'))}</p>
       <div class="ws-bar"><button type="button" class="btn" id="ws-pick">${esc(T('ws.pick'))}</button><button type="button" class="btn" id="ws-refresh" hidden>${esc(T('ws.refresh'))}</button><button type="button" class="btn" id="ws-save" hidden>${esc(T('ws.save'))}</button></div>
+      <div class="ws-bar" id="ws-tabs" hidden><button type="button" class="btn" id="ws-tab-list" aria-pressed="true">${esc(T('ws.tab.list'))}</button><button type="button" class="btn" id="ws-tab-map" aria-pressed="false">${esc(T('ws.tab.map'))}</button></div>
       <div id="ws-body"></div>
       <p class="sh-err" role="alert" id="ws-msg"></p>
       <div class="cf-actions"><button type="button" class="btn" id="ws-close">${esc(T('ws.close'))}</button></div>
@@ -9064,8 +9121,15 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
       else if (b.id === 'ws-pick') wsPick();
       else if (b.id === 'ws-refresh') { try { await wsRefresh(); } catch { $('#ws-msg').textContent = T('ws.err.pick'); } wsRender(); }
       else if (b.id === 'ws-save') wsSave();
+      else if (b.id === 'ws-tab-list' || b.id === 'ws-tab-map') { WS.view = b.id === 'ws-tab-map' ? 'map' : 'list'; wsRender(); }
       else if (b.dataset.wsOpen) wsOpen(b.dataset.wsOpen);
     });
+    const openDoc = async el => {   // desde el mapa: la caja del diagrama abierto no hace nada; las demás lo abren
+      const id = el?.dataset.wsDoc, d = id && WS.index.diagrams.find(x => x.docId === id && !x.dupDocId);
+      if (d && id !== S.model.docId) { await wsOpen(d.name); if (WS.file === d.name) { WS.view = 'list'; wsRender(); } }
+    };
+    back.addEventListener('click', ev => openDoc(ev.target.closest('[data-ws-doc]')));
+    back.addEventListener('keydown', ev => { if (ev.key === 'Enter' && ev.target.matches?.('[data-ws-doc]')) { ev.preventDefault(); openDoc(ev.target); } });
     document.addEventListener('keydown', key, true);
     document.body.appendChild(back);
     wsRender();

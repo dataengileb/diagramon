@@ -38,5 +38,6 @@ Son decisiones tomadas a propósito, casi siempre para que Diagramon siga siendo
   - Un diagrama grande con muchas vistas y niveles internos puede tardar varios segundos.
 - **Niveles C4**: las tarjetas fantasma son como mucho 8 por lado, y las conexiones entre dos niveles solo se dibujan como fantasmas (se llega a ellas desde los enlaces del inspector).
 - **Espacio de trabajo**: solo se leen los archivos que están directamente en la carpeta (sin subcarpetas), hasta 200 diagramas de 8 MB como máximo. Guardar en la carpeta requiere un navegador Chromium.
+- **Enlaces entre diagramas** (`ref`): no entran en la comparación de versiones ni en el formato de texto. Se conservan al editar el texto. Un componente puede apuntar a un diagrama entero, todavía no a uno de sus componentes.
 - **La región se deduce del nombre de un grupo** con los códigos habituales de AWS, Azure y Google Cloud. Para otros nombres hay que usar el campo **Región**.
 - Varias descargas CSV seguidas pueden activar el aviso de «descargar varios archivos» en algunos navegadores.

@@ -538,6 +538,13 @@ A client rarely has one diagram. The **Workspace** button (folder icon, next to 
 
 Nothing leaves your browser: the folder is read and written locally, and permission is asked by the browser each time you open it.
 
+### Systems map
+
+- Select a component and pick **Detailed in** in the inspector to say that another diagram of the folder details it (a «Payments» box here, the Payments diagram there). **Open** jumps to that diagram. Only diagrams that have a `docId` can be chosen: open a diagram and use **Save current diagram here** to give it one.
+- The **Systems map** tab of the Workspace window draws one box per diagram and one arrow for each pair that is linked, with the component names in the arrow's tooltip. Click a box (or press Enter on it) to open that diagram. The diagram on screen is drawn from its current state, even if the file in the folder is older.
+- A link to a diagram that is not in the open folder shows up under the map and as a low **Review** finding (source *Workspace*) while a folder is open.
+- Links are saved in the JSON as `ref: { "doc": "<docId>" }` on the component. The Text tab does not show them, but editing the text keeps them.
+
 ## Views
 
 A **view** is a way of looking at the same diagram: it only decides what is shown, how much detail and what stands out. It never changes your components or positions. Pick one from the **View** selector in the top bar, with keys **`1`**–**`9`**, or from the console (`Diagramon.setView('security')`). When the view is not *Full*, a pill above the canvas names it, counts what it hides or dims, and has an **×** to go back. The document card and the legend of exports follow the active view.
