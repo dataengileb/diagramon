@@ -46,6 +46,9 @@
   const test = (name, fn) => {
     try { fn(); pass++; print(`  ok   ${name}`); } catch (e) { fail++; print(`  FAIL ${name}\n       ${String(e && e.message || e).split('\n').join('\n       ')}`); }
   };
+  // Pruebas con promesas (Web Crypto): se ejecutan al final, solo en Node (osascript no espera promesas)
+  const later = [];
+  const testAsync = (name, fn) => { if (isNode) later.push([name, fn]); };
   const assert = (cond, msg) => { if (!cond) throw new Error(msg || 'assertion failed'); };
   const eq = (a, b, msg) => { const A = JSON.stringify(a), B = JSON.stringify(b); if (A !== B) throw new Error(`${msg || 'not equal'}\n  got:      ${A.slice(0, 400)}\n  expected: ${B.slice(0, 400)}`); };
   const near = (a, b, eps, msg) => assert(Math.abs(a - b) <= eps, `${msg || 'not near'}: ${a} vs ${b}`);
@@ -1738,7 +1741,72 @@
     assert(C.comments && C.comments.rules['cmt.open'].enabled === true, 'config.js');
   });
 
+  /* ---------- compartir cifrado: visor con comentarios y archivo de comentarios ---------- */
+  const SHW = {};
+  new Function('window', read('src/share.js'))(SHW);
+  const SH = SHW.DiagramonShare, shareSrc = read('src/share.js');
+  test('viewer: the Content Security Policy still blocks the network; comments add no connection, form or storage permission', () => {
+    const html = SH.viewer({ v: 1 }, 'en');
+    assert(html.includes(`content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src blob: data:; base-uri 'none'; form-action 'none'"`), 'CSP unchanged');
+    assert(!/fetch\(|XMLHttpRequest|WebSocket|sendBeacon|localStorage|sessionStorage|indexedDB|eval\(|new Function|\.innerHTML/.test(shareSrc.slice(shareSrc.indexOf('const VIEWER_JS'), shareSrc.indexOf('const VIEWER_CSS'))), 'viewer script: no network, storage or innerHTML');
+  });
+  test('viewer: the page has the comments button, the panel, the hotspot layer and every text in both languages', () => {
+    ['en', 'es'].forEach(lang => {
+      const html = SH.viewer({ v: 1 }, lang);
+      ['id="c-btn"', 'id="side"', 'id="hots"', 'id="c-form"', 'id="c-on"', 'id="c-name"', 'id="c-text"', 'id="c-dl"', 'id="c-list"'].forEach(x => assert(html.includes(x), `${x} (${lang})`));
+    });
+    const en = shareSrc.slice(shareSrc.indexOf('en: {', shareSrc.indexOf('const VIEW_TEXT')), shareSrc.indexOf('es: {', shareSrc.indexOf('const VIEW_TEXT'))), es = shareSrc.slice(shareSrc.indexOf('es: {', shareSrc.indexOf('const VIEW_TEXT')), shareSrc.indexOf('// Script del visor'));
+    const keys = x => [...x.matchAll(/\b([a-zA-Z]+): '/g)].map(m => m[1]).sort();
+    eq(keys(en), keys(es), 'same viewer texts in English and Spanish');
+    ['comments', 'cHelp', 'cName', 'cOn', 'cText', 'cAdd', 'cDl', 'cGeneral', 'cReplyTo', 'cDel', 'cReply', 'cSend', 'cNone', 'cFile', 'cDone'].forEach(k => assert(keys(en).includes(k), `viewer text ${k}`));
+  });
+  const fbSeal = async (payload, pw, { v = 'fb1', kind = 'feedback', iter = 600000 } = {}) => {
+    const enc = new TextEncoder(), salt = crypto.getRandomValues(new Uint8Array(16)), iv = crypto.getRandomValues(new Uint8Array(12));
+    const base = await crypto.subtle.importKey('raw', enc.encode(pw), 'PBKDF2', false, ['deriveKey']);
+    const key = await crypto.subtle.deriveKey({ name: 'PBKDF2', hash: 'SHA-256', salt, iterations: iter }, base, { name: 'AES-GCM', length: 256 }, false, ['encrypt']);
+    const gz = new Uint8Array(await new Response(new Blob([typeof payload === 'string' ? payload : JSON.stringify(payload)]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer());
+    const env = { v, kind, kdf: 'PBKDF2-SHA256', iter, cipher: 'AES-256-GCM', salt: Buffer.from(salt).toString('base64'), iv: Buffer.from(iv).toString('base64') };
+    env.data = Buffer.from(await crypto.subtle.encrypt({ name: 'AES-GCM', iv, additionalData: enc.encode(`diagramon/${v}/${env.kdf}/${env.iter}/${env.cipher}`) }, key, gz)).toString('base64');
+    return env;
+  };
+  const FB = { format: 'diagramon-feedback', v: 1, shareId: 'abc', title: 'T', author: 'Ana', created: '2026-10-10T00:00:00.000Z', comments: [{ id: 'r-1', on: { kind: 'node', id: 'a' }, author: 'Ana', date: '2026-10-10', text: 'Hi' }] };
+  testAsync('openFeedback: opens a file sealed the way the viewer does, with the same password (low iteration floor kept at 100000)', async () => {
+    eq(await SH.openFeedback(await fbSeal(FB, 'correct horse battery'), 'correct horse battery'), FB);
+  });
+  testAsync('openFeedback: a wrong password, a tampered envelope and a shared-diagram envelope are all rejected', async () => {
+    const env = await fbSeal(FB, 'correct horse battery'), bad = async (e, pw = 'correct horse battery') => { try { await SH.openFeedback(e, pw); return 'opened'; } catch { return 'rejected'; } };
+    eq(await bad(env, 'wrong password!!'), 'rejected');
+    eq(await bad({ ...env, iter: 700000 }), 'rejected', 'iterations are authenticated');
+    eq(await bad({ ...env, v: 'fb2' }), 'rejected');
+    eq(await bad({ ...env, kind: 'share' }), 'rejected');
+    eq(await bad({ ...env, iter: 1000 }), 'rejected', 'weak iteration count refused before any work');
+    eq(await bad({ ...env, data: 'A'.repeat(1600000) }), 'rejected', 'oversized envelope refused');
+    eq(await bad(null), 'rejected');
+    const asShare = await fbSeal(FB, 'correct horse battery', { v: 1, kind: 'feedback' });
+    eq(await bad(asShare), 'rejected', 'a v1 (shared diagram) envelope cannot pass as a comments file');
+  });
+  testAsync('openFeedback: a decompression bomb is refused once it passes the size cap', async () => {
+    const big = await fbSeal('{"x":"' + 'a'.repeat(2500000) + '"}', 'correct horse battery');
+    let r = 'opened'; try { await SH.openFeedback(big, 'correct horse battery'); } catch (e) { r = String(e.message); }
+    eq(r, 'size');
+  });
+  test('the app wires it: the share dialog offers comments, the payload is format 3 only when asked, internal and resolved threads stay out, targets come from the live shapes', () => {
+    assert(app.includes("name=\"cm\" checked") && app.includes('name="cmopen"'), 'dialog');
+    assert(app.includes('fmt: cm ? 3 : 2') && app.includes('cmt: true, shareId') && app.includes('targets: shareTargets('), 'payload');
+    assert(app.includes('.filter(c => !c.internal && c.status !== \'resolved\')'), 'only open, non-internal threads travel');
+    assert(app.includes('ox: pad - b.x, oy: pad + top - b.y'), 'buildSVG exposes the canvas offset');
+    const i18n = read('src/i18n.js');
+    ['share.cm', 'share.cm.hint', 'share.cmopen', 'share.cmopen.hint'].forEach(k => eq(i18n.split(`'${k}':`).length - 1, 2, `${k} once per language`));
+  });
+
   /* ---------- resumen ---------- */
-  print(`\n${pass} passed, ${fail} failed`);
-  return finish(fail === 0);
+  const summary = () => { print(`\n${pass} passed, ${fail} failed`); return finish(fail === 0); };
+  if (!later.length) return summary();
+  section('Web Crypto (Node only)');
+  (async () => {
+    for (const [name, fn] of later) {
+      try { await fn(); pass++; print(`  ok   ${name}`); } catch (e) { fail++; print(`  FAIL ${name}\n       ${String(e && e.message || e).split('\n').join('\n       ')}`); }
+    }
+    summary();
+  })();
 })();

@@ -7770,7 +7770,7 @@
     }
     // Incrusta solo las caras de la tipografía elegida que cubren el texto usado: el archivo se ve igual en cualquier lado
     style.textContent += '\n' + fontFaces(S.font, out.textContent);
-    return { str: '<?xml version="1.0" encoding="UTF-8"?>\n' + new XMLSerializer().serializeToString(out), W, H: Ht };
+    return { str: '<?xml version="1.0" encoding="UTF-8"?>\n' + new XMLSerializer().serializeToString(out), W, H: Ht, ox: pad - b.x, oy: pad + top - b.y };   // ox, oy: desplazamiento del lienzo al SVG (las zonas pulsables del visor compartido)
   }
   function exportSVG() { download(buildSVG().str, fileName('svg'), 'image/svg+xml'); toast(T('toast.svg')); }
   // PNG a 2x desde el SVG: promesa con el Blob (null si el navegador no pudo rasterizarlo)
@@ -7851,7 +7851,26 @@
   }
   /* ---------- compartir cifrado: un HTML que se abre solo, con contraseña ---------- */
   // El diagrama se guarda como imagen en los dos temas: el visor no necesita la app
-  const svgFor = theme => { const old = S.theme; S.theme = theme; try { return buildSVG().str; } finally { S.theme = old; } };
+  const svgBuild = theme => { const old = S.theme; S.theme = theme; try { return buildSVG(); } finally { S.theme = old; } };
+  const svgFor = theme => svgBuild(theme).str;
+  // Zonas pulsables del visor compartido (una conexión recta mide cero en un eje): la caja de cada grupo, conexión (cuadro en su punto medio) y componente visible en la vista, en las coordenadas del SVG; los componentes van los últimos, encima
+  function shareTargets(ox, oy) {
+    const vis = x => { const r = x?.getBoundingClientRect?.(); return !!r && (r.width > 0 || r.height > 0); }, rd = Math.round, out = [], m = S.model;
+    m.groups.forEach(g => { const r = R.groups.get(g.id), b = R.gbox.get(g.id); if (b && vis(r?.box)) out.push({ k: 'group', id: g.id, label: g.label, box: [rd(b.x + ox), rd(b.y + oy), rd(b.w), rd(b.h)] }); });
+    m.edges.forEach(e => {
+      const line = R.edges.get(e.id)?.line;
+      if (!vis(line)) return;
+      let len = 0; try { len = line.getTotalLength(); } catch { len = 0; }
+      if (!len) return;
+      const p = line.getPointAtLength(len / 2);
+      out.push({ k: 'edge', id: e.id, label: cmTargetText(m, { kind: 'edge', id: e.id }), box: [rd(p.x + ox - 14), rd(p.y + oy - 14), 28, 28] });
+    });
+    m.nodes.forEach(n => { if (vis(R.nodes.get(n.id))) out.push({ k: 'node', id: n.id, label: n.label, box: [rd(n.x + ox), rd(n.y + oy), rd(R.width.get(n.id) || 0), H] }); });
+    return out;
+  }
+  // Lo que viaja en el archivo compartido: hilos sin resolver y no internos (lo interno nunca sale del documento) y los destinos sin forma (decisiones, requisitos y versiones)
+  const shareThreads = () => (S.model.comments || []).filter(c => !c.internal && c.status !== 'resolved').map(c => ({ id: c.id, on: c.on, ...(c.author ? { author: c.author } : {}), ...(c.date ? { date: c.date } : {}), text: c.text, ...(c.source ? { source: c.source } : {}), ...(c.replies ? { replies: c.replies } : {}) }));
+  const shareRefs = () => ['decision', 'requirement', 'version'].flatMap(k => ({ decision: S.model.decisions, requirement: S.model.requirements, version: S.model.versions }[k] || []).map(x => ({ k, id: x.id, label: cmTargetText(S.model, { kind: k, id: x.id }) })));
   function shareEncrypted() {
     const SH = window.DiagramonShare;
     if (!SH || !window.crypto?.subtle || typeof CompressionStream === 'undefined') return toast(T('share.unsupported'), 3200);
@@ -7867,6 +7886,8 @@
       <h3 id="${id}t">${esc(T('share.title'))}</h3>
       <p id="${id}d">${esc(T('share.lead'))}</p>
       <fieldset class="sh-views"><legend>${esc(T('share.views'))}</legend>${offered.map(k => `<label class="sh-chk"><input type="checkbox" name="views" value="${esc(k)}"${preset.includes(k) ? ' checked' : ''}>${esc(viewLabel(k))}</label>`).join('')}<small class="sh-size"></small></fieldset>
+      <fieldset class="sh-cm"><label class="sh-chk"><input type="checkbox" name="cm" checked>${esc(T('share.cm'))}</label><small class="dbt-d">${esc(T('share.cm.hint'))}</small>
+        <label class="sh-chk"><input type="checkbox" name="cmopen">${esc(T('share.cmopen'))}</label><small class="dbt-d">${esc(T('share.cmopen.hint'))}</small></fieldset>
       <label>${esc(T('share.pw'))}<span class="sh-row"><input type="password" name="pw" autocomplete="new-password" minlength="12" required><button type="button" class="btn small" data-sh="show">${esc(T('share.show'))}</button></span></label>
       <div class="sh-meter" data-level="-1"><i></i><i></i><i></i><i></i><span></span></div>
       <label>${esc(T('share.pw2'))}<input type="password" name="pw2" autocomplete="new-password" required></label>
@@ -7914,8 +7935,13 @@
       try {
         const av = activeVersion();
         const views = [];
-        await eachView(keys, key => { views.push({ key, label: viewLabel(key), svg: Object.fromEntries(shTheme().map(th => [th, svgFor(th)])) }); });
-        const payload = { fmt: 2, title: S.model.title, version: av ? verLabel(av) : S.model.meta?.version || '', sharedAt: new Date().toISOString(), theme: S.theme, view: keys.includes(S.viewKey) ? S.viewKey : keys[0], views };
+        const cm = form.elements.cm.checked;
+        await eachView(keys, key => {
+          const built = shTheme().map(th => [th, svgBuild(th)]);
+          views.push({ key, label: viewLabel(key), svg: Object.fromEntries(built.map(([th, b]) => [th, b.str])), ...(cm ? { targets: shareTargets(built[0][1].ox, built[0][1].oy) } : {}) });
+        });
+        const payload = { fmt: cm ? 3 : 2, title: S.model.title, version: av ? verLabel(av) : S.model.meta?.version || '', sharedAt: new Date().toISOString(), theme: S.theme, view: keys.includes(S.viewKey) ? S.viewKey : keys[0], views,
+          ...(cm ? { cmt: true, shareId: Array.from(crypto.getRandomValues(new Uint8Array(8)), b => b.toString(16).padStart(2, '0')).join(''), refs: shareRefs(), comments: form.elements.cmopen.checked ? shareThreads() : [] } : {}) };
         const env = await SH.encrypt(payload, pw.value);
         download(SH.viewer(env, I.lang), `diagramon-${today()}.html`, 'text/html');
         close();
