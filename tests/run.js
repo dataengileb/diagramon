@@ -900,7 +900,7 @@
     eq(none.map(x => [x.cost, x.dCost]), [[null, null], [null, null], [null, null]], 'no cost anywhere'); eq(PHM.phaseRows({ nodes: [], edges: [], groups: [] }, h), [], 'no phases');
   });
   test('report and presentation wiring for phases', () => {
-    assert(/REP_SECS = \[[^\]]*'approvals', 'phases', 'estimation', 'migration', 'radar', 'versions'/.test(app), 'section after approvals; estimation, migration and radar follow the phases'); assert(/phases: !!m\.phases\?\.length/.test(app), 'available with phases'); assert(app.includes("want('phases')") && app.includes('presentPhases'), 'section and API');
+    assert(/REP_SECS = \[[^\]]*'approvals', 'phases', 'estimation', 'migration', 'radar', 'drift', 'versions'/.test(app), 'section after approvals; estimation, migration and radar follow the phases'); assert(/phases: !!m\.phases\?\.length/.test(app), 'available with phases'); assert(app.includes("want('phases')") && app.includes('presentPhases'), 'section and API');
     const i18n = read('src/i18n.js'); ['rep.s.phases', 'rep.k.phases', 'rep.h.phase', 'phase.present.tip', 'phase.present.step', 'phase.cmp.title', 'phase.cmp.cost'].forEach(k => assert(i18n.split(`'${k}'`).length - 1 === 2, `${k} in en and es`));
   });
   test('without phases the JSON, the snapshot and the text stay byte-identical', () => {
@@ -2252,6 +2252,15 @@
     eq(DR.propose(d, r).map(p => [p.design, p.reality, p.score]), [['a', 'x', 5]], 'only the exact one gets it; Orders replica loses to the exact name');
     eq(DR.propose([dn('a', 'Orders', { type: 'x' })], [rn('x', 'orders', 'o1', null, { type: 'y' })]), [{ design: 'a', reality: 'x', score: 3 }], 'the same name alone reaches the floor');
     eq(DR.propose([dn('a', 'Orders')], [rn('x', 'Billing', 'o')]), [], 'no name signal, no proposal'); eq(DR.compare(null, null), { pairs: [], proposals: [], missing: [], unlinked: [], extra: [], diffs: [] }, 'empty');
+  });
+  test('the app wires the comparison: Review source, accepted differences cleaned, saved and kept through text edits, report section, texts in both languages', () => {
+    const page = read('index.html');
+    assert(app.includes("addFindingSource('drift'") && app.includes('const cleanDeviations =') && app.includes('cleanDeviations(raw.deviations, m)') && app.includes('"deviations": ${JSON.stringify(m.deviations)}') && app.includes('!Array.isArray(raw.deviations) && S.model.deviations'), 'model');
+    assert(app.includes("want('drift')") && page.includes('id="btn-drift"') && page.includes('id="dr-file"'), 'report, button and file input');
+    assert(!/driftKey = .*\\0/.test(app), 'data-* keys never carry a NUL (the HTML parser would turn it into U+FFFD)');
+    const keys = ['top.drift', 'top.drift.lbl', 'dr.title', 'dr.lead', 'dr.pick.files', 'dr.clear', 'dr.none', 'dr.pick', 'dr.sum', 'dr.s.diffs', 'dr.s.accepted', 'dr.s.props', 'dr.s.missing', 'dr.s.unlinked', 'dr.s.extra', 'dr.field.region', 'dr.field.replicas', 'dr.field.exposure', 'dr.field.backup',
+      'dr.design', 'dr.deployed', 'dr.reason', 'dr.accept', 'dr.adopt', 'dr.reopen', 'dr.link', 'dr.unlink', 'dr.maybe', 'dr.gone', 'dr.clean', 'dr.err.read', 'dr.err.reason', 'dr.f.diff.t', 'dr.f.diff.fix', 'dr.f.missing.t', 'dr.f.missing.fix', 'find.src.drift', 'rep.s.drift', 'rep.h.field', 'rep.h.accepted'];
+    keys.forEach(k => eq(i18nSrc.split(`'${k}':`).length - 1, 2, `${k} once per language`));
   });
   test('the app keeps `iac` on nodes and the page loads the module before the app', () => {
     const page = read('index.html');

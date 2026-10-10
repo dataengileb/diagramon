@@ -40,6 +40,7 @@ These are deliberate choices, usually to keep Diagramon local, dependency-free a
 - **Workspace**: only the files directly inside the folder are read (no subfolders), up to 200 diagrams of at most 8 MB each. Saving into the folder needs a Chromium browser.
 - **Data lineage across diagrams** matches datasets by name only and takes "produces" to mean "starts at a component nothing feeds with it". It does not follow a dataset through renamed copies, and a diagram without an id is left out.
 - **Portfolio export** is an Excel file only (no CSV, no report section) and it is a snapshot: it does not keep history between exports.
+- **Compare with deployed** reads the same files the IaC import reads and compares only region, replicas, public exposure and backup, where both sides state a value. It is a one-off check, not a monitor: the deployed files are not kept, and accepted differences are not part of a saved version snapshot or of the text format.
 - **Shared items** are copies, not live links: there is no automatic sync, and a change made in a diagram to a shared item does not go back unless you share it again. Items are matched by name or title only.
 - **Links between diagrams** (`ref`) are not part of the version comparison and are not in the text format. They are kept when you edit the text. A component can point to a whole diagram, not yet to one of its components.
 - **Region detection** from a group's name covers the usual AWS, Azure and Google Cloud codes. Other names need the **Region** field.

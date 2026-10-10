@@ -939,7 +939,8 @@
     { const rq = cleanRequirements(raw.requirements, m); if (rq.length) m.requirements = rq; }   // sin requisitos no hay clave: JSON y exportaciones idénticos
     m.raid = cleanRaid(raw.raid, m);   // después de los requisitos: sus ids ya están en m.requirements
     { const cm = cleanComments(raw.comments, m); if (cm.length) m.comments = cm; }   // al final: sus destinos (nodos, conexiones, grupos, decisiones, requisitos y versiones) ya están limpios; sin comentarios no hay clave
-    { const ds = cleanCatalog(raw.datasets, m, dsHelpers()); if (ds.length) m.datasets = ds; }   // después de nodos y fases (consumidores y fase deben existir); sin conjuntos no hay clave: JSON y exportaciones idénticos
+    { const ds = cleanCatalog(raw.datasets, m, dsHelpers()); if (ds.length) m.datasets = ds; }
+    { const dv = cleanDeviations(raw.deviations, m); if (dv.length) m.deviations = dv; }   // después de los nodos; sin ninguna no hay clave   // después de nodos y fases (consumidores y fase deben existir); sin conjuntos no hay clave: JSON y exportaciones idénticos
     // Cada versión puede llevar las decisiones que había al guardarla (para compararlas); sus enlaces se limpian contra el diagrama de la versión
     m.versions.forEach(v => { if (v.decisions) v.decisions = cleanDecisions(v.decisions, { nodes: v.diagram.nodes || [], edges: v.diagram.edges || [], groups: v.diagram.groups || [], versions: m.versions, stakeholders: m.stakeholders }); });
     if (raw.active != null && m.versions.some(v => v.id === String(raw.active))) m.active = String(raw.active);
@@ -1189,6 +1190,20 @@
       out[id] = o;
     });
     return Object.keys(out).length ? out : null;
+  };
+  // Diferencias con la infraestructura desplegada que alguien aceptó: [{ node, field, value (lo desplegado que se aceptó), reason, date? }]
+  const cleanDeviations = (v, m) => {
+    const ids = new Set(m.nodes.map(n => n.id)), fields = window.DiagramonDrift?.FIELDS || [], seen = new Set(), out = [];
+    (Array.isArray(v) ? v : []).forEach(d => {
+      if (!d || typeof d !== 'object' || Array.isArray(d) || out.length >= 200) return;
+      const node = String(d.node ?? ''), field = String(d.field ?? ''), k = `${node}\0${field}`;
+      if (!ids.has(node) || !fields.includes(field) || seen.has(k)) return;
+      seen.add(k);
+      const o = { node, field, value: String(d.value ?? '').trim().slice(0, 100), reason: String(d.reason ?? '').trim().slice(0, 300) };
+      if (isDay(d.date)) o.date = d.date;
+      out.push(o);
+    });
+    return out;
   };
   // Grupos de un nodo, del más cercano al más lejano
   const groupChain = (n, m) => { const out = []; let g = n.group, i = 0; while (g && i++ < 50) { const gg = m.groups.find(x => x.id === g); if (!gg) break; out.push(gg); g = gg.parent; } return out; };
@@ -4365,6 +4380,7 @@
     if (m.datasets?.length) head.push(`  "datasets": [\n${m.datasets.map(d => '    ' + line(dsOrdered(d, ordered))).join(',\n')}\n  ]`);
     if (m.edgeTypes?.length) head.push(`  "edgeTypes": ${JSON.stringify(m.edgeTypes)}`);
     if (m.dismissed && Object.keys(m.dismissed).length) head.push(`  "dismissed": ${JSON.stringify(m.dismissed)}`);
+    if (m.deviations?.length) head.push(`  "deviations": ${JSON.stringify(m.deviations)}`);
     if (m.meta) head.push(`  "meta": ${JSON.stringify(m.meta)}`);
     const body = [...head, arr('groups', m.groups, ORDER.group), arr('nodes', m.nodes, ORDER.node), arr('edges', m.edges, ORDER.edge)];
     if (m.notes?.length) body.push(arr('notes', m.notes, ORDER.note));
@@ -4431,6 +4447,7 @@
       if (!Array.isArray(raw.comments) && S.model.comments) raw = { ...raw, comments: S.model.comments };   // el texto no lleva comentarios; el JSON, si omite la clave, los conserva
       if (opts.fromEditor === 'text' && S.model.estimation && raw.estimation == null) raw = { ...raw, estimation: S.model.estimation };   // los imprevistos y el trabajo extra de cada fase solo viven en el JSON: el texto no los lleva
       if (opts.fromEditor === 'text' && Array.isArray(raw.phases) && (S.model.phases || []).some(p => p.extra)) raw = { ...raw, phases: raw.phases.map(p => { const old = p && (S.model.phases || []).find(q => q.id === p.id); return old?.extra && !p.extra ? { ...p, extra: old.extra } : p; }) };
+      if (opts.fromEditor === 'text' && !Array.isArray(raw.deviations) && S.model.deviations) raw = { ...raw, deviations: S.model.deviations };   // el texto no lleva las diferencias aceptadas con la infraestructura
       if (opts.fromEditor === 'text' && Array.isArray(raw.nodes) && S.model.nodes.some(n => n.iac)) { const ic = new Map(S.model.nodes.filter(n => n.iac).map(n => [n.id, n.iac])); raw = { ...raw, nodes: raw.nodes.map(n => (n && ic.has(n.id) && n.iac == null ? { ...n, iac: ic.get(n.id) } : n)) }; }   // el texto no lleva el enlace con la infraestructura: se conserva por id
       if (opts.fromEditor === 'text' && Array.isArray(raw.nodes) && S.model.nodes.some(n => n.ref)) { const rf = new Map(S.model.nodes.filter(n => n.ref).map(n => [n.id, n.ref])); raw = { ...raw, nodes: raw.nodes.map(n => (n && rf.has(n.id) && n.ref == null ? { ...n, ref: rf.get(n.id) } : n)) }; }   // el texto no lleva los enlaces entre diagramas: se conservan por id
       if (!Array.isArray(raw.radar) && S.model.radar) raw = { ...raw, radar: S.model.radar };   // el texto solo lleva radar=<id> por componente: las entradas propias del radar se conservan
@@ -8315,7 +8332,7 @@
   // reportData() arma un modelo plano (secciones de bloques) y dos dibujantes lo pintan: reportMarkdown y reportHTML, así que los dos formatos no se desincronizan.
   // Bloques: { k: 'h3', t } · { k: 'p', t, muted? } · { k: 'kv', items: [[k, v]] } · { k: 'cards', items: [{ label, value, tone? }] }
   //          { k: 'table', head: [], rows: [[celda]], cls? } (celda = texto | { t, tone }) · { k: 'text', label, t } · { k: 'ul', items } · { k: 'img', alt, caption, svg?, uri?, file? }
-  const REP_SECS = ['summary', 'diagram', 'components', 'connections', 'data', 'owners', 'layers', 'datasets', 'costs', 'resilience', 'findings', 'compliance', 'threats', 'decisions', 'requirements', 'raid', 'approvals', 'phases', 'estimation', 'migration', 'radar', 'versions', 'notes', 'comments'];
+  const REP_SECS = ['summary', 'diagram', 'components', 'connections', 'data', 'owners', 'layers', 'datasets', 'costs', 'resilience', 'findings', 'compliance', 'threats', 'decisions', 'requirements', 'raid', 'approvals', 'phases', 'estimation', 'migration', 'radar', 'drift', 'versions', 'notes', 'comments'];
   const REP_PAGE = ['diagram', 'components', 'findings', 'decisions']; // secciones que empiezan página al imprimir
   const repT = (k, v) => T(`rep.${k}`, v);
   const repSleep = ms => new Promise(r => setTimeout(r, ms));
@@ -8337,7 +8354,7 @@
       layers: m.nodes.some(n => layerOf(n).value), migration: m.nodes.some(n => n.disposition), radar: m.nodes.some(n => radarOf(n, m)), costs: m.nodes.some(hasCost), resilience: m.nodes.some(hasRes) || spofList(m).length > 0, findings: findingsOf(m).length > 0,
       compliance: cmpModel(m).keys.length > 0, threats: strideAll(m).length > 0, decisions: !!m.decisions?.length, requirements: !!m.requirements?.length,
       raid: !!m.raid?.length, approvals: !!m.stakeholders?.length, phases: !!m.phases?.length, estimation: !!phaseEffort(m, effortHelpers), datasets: !!m.datasets?.length,
-      versions: m.versions.length > 0, notes: (m.notes || []).length > 0 || (m.zones || []).some(z => z.kind !== 'trust'), comments: (m.comments || []).some(c => !c.internal && c.status !== 'resolved')
+      versions: m.versions.length > 0, notes: (m.notes || []).length > 0 || (m.zones || []).some(z => z.kind !== 'trust'), comments: (m.comments || []).some(c => !c.internal && c.status !== 'resolved'), drift: !!m.deviations?.length
     };
   }
   const repDefaultViews = () => {
@@ -8707,6 +8724,11 @@
       blocks.push({ k: 'table', cls: 'wide', head: [repT('h.component'), repT('h.radarProduct'), repT('h.ring'), repT('h.eos'), repT('h.replaceWith')], rows: ordered.map(({ n, i }) => [n.label, i.name, i.ring.label,
         i.eosDay ? { t: fmtDay(i.eosDay), tone: i.status === 'ended' ? 'sev-high' : i.status === 'soon' ? 'sev-medium' : '' } : '', i.replaceWith]) });
       sec('radar', blocks);
+    }
+
+    if (want('drift')) {   // diferencias con la infraestructura desplegada que alguien aceptó, con su motivo
+      const lab = id => m.nodes.find(n => n.id === id)?.label || id;
+      sec('drift', [{ k: 'table', cls: 'wide', head: [repT('h.component'), repT('h.field'), repT('h.accepted'), repT('h.reason'), repT('h.date')], rows: (m.deviations || []).map(d => [lab(d.node), T(`dr.field.${d.field}`), driftShow(d.field, d.field === 'replicas' ? +d.value : d.field === 'backup' ? d.value === 'true' : d.value), d.reason, d.date ? fmtDay(d.date) : '']) }]);
     }
 
     if (want('versions')) {
@@ -9235,6 +9257,126 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     back.querySelector('#ws-pick').focus();
   }
   $('#btn-workspace').addEventListener('click', openWorkspaceDialog);
+
+  /* ---------- diseño frente a realidad (src/drift.js) ----------
+     Se cargan archivos de infraestructura como código (los mismos que se importan), se comparan con el diagrama y se decide fila por fila.
+     Lo cargado vive solo en esta sesión; en el diagrama quedan únicamente el enlace `iac` de cada componente y las diferencias aceptadas (m.deviations). */
+  const DRIFT = { reality: null, names: [] };
+  const driftLib = () => window.DiagramonDrift;
+  const driftGet = (m, n, f) => (f === 'region' ? govOf(n, 'region', m).value || undefined : n[f]);
+  const driftCmp = (m = S.model) => (DRIFT.reality && driftLib() ? driftLib().compare(m.nodes, DRIFT.reality, { get: (n, f) => driftGet(m, n, f) }) : null);
+  const driftKey = (node, field) => `${encodeURIComponent(node)}~${field}`;   // para los atributos data-*: el id puede llevar cualquier carácter
+  const driftSplit = k => { const i = k.lastIndexOf('~'); return [decodeURIComponent(k.slice(0, i)), k.slice(i + 1)]; };
+  const driftShow = (f, v) => (v === true ? T('sec.yes') : v === false ? T('sec.no') : f === 'exposure' ? T(`sec.expo.${v}`) : String(v ?? ''));
+  const driftAccepted = (m, d) => (m.deviations || []).find(x => x.node === d.design && x.field === d.field && x.value === String(d.realityValue));
+  // Diferencias abiertas y componentes enlazados que ya no existen en lo desplegado: hallazgos mientras haya una comparación cargada
+  addFindingSource('drift', m => {
+    const c = m === S.model ? driftCmp(m) : null;
+    if (!c) return [];
+    const by = new Map(m.nodes.map(n => [n.id, n]));
+    return [
+      ...c.diffs.filter(d => !driftAccepted(m, d)).map(d => ({ id: `drift:diff:${d.design}:${d.field}`, source: 'drift', rule: 'drift.diff', severity: d.field === 'exposure' || d.field === 'backup' ? 'medium' : 'low', target: { kind: 'node', id: d.design },
+        title: T('dr.f.diff.t', { node: by.get(d.design)?.label || d.design, field: T(`dr.field.${d.field}`), design: driftShow(d.field, d.designValue), real: driftShow(d.field, d.realityValue) }), fix: T('dr.f.diff.fix') })),
+      ...c.missing.map(id => ({ id: `drift:missing:${id}`, source: 'drift', rule: 'drift.missing', severity: 'low', target: { kind: 'node', id }, title: T('dr.f.missing.t', by.get(id)?.label || id), fix: T('dr.f.missing.fix') }))
+    ];
+  });
+  function driftMutate(fn) {
+    pushHistory();
+    fn(S.model);
+    changed(true); renderInspector();
+    driftRender();
+  }
+  function driftHtml() {
+    const m = S.model, c = driftCmp(m);
+    if (!c) return `<p class="ws-dir">${esc(T('dr.none'))}</p>`;
+    const byD = new Map(m.nodes.map(n => [n.id, n])), byR = new Map(DRIFT.reality.map(r => [r.id, r]));
+    const open = c.diffs.filter(d => !driftAccepted(m, d)), acc = c.diffs.filter(d => driftAccepted(m, d));
+    const rl = r => `${esc(r.label)} <small>${esc(r.iac || '')}</small>`;
+    const head = `<p class="ws-dir">${esc(T('dr.sum', { pairs: c.pairs.length, diffs: open.length, props: c.proposals.length, missing: c.missing.length, extra: c.extra.length, names: DRIFT.names.join(', ') }))}</p>`;
+    const sec = (title, body) => (body ? `<fieldset class="sh-views dr-sec"><legend>${esc(title)}</legend>${body}</fieldset>` : '');
+    const rows = (list, row) => (list.length ? `<ul class="ws-list dr-list">${list.slice(0, 200).map(row).join('')}</ul>` : '');
+    const diffs = rows(open, d => {
+      const n = byD.get(d.design), k = driftKey(d.design, d.field);
+      return `<li><div class="ws-t"><b>${esc(n.label)}</b><small>${esc(T(`dr.field.${d.field}`))}: ${esc(T('dr.design'))} <b>${esc(driftShow(d.field, d.designValue))}</b> · ${esc(T('dr.deployed'))} <b>${esc(driftShow(d.field, d.realityValue))}</b></small>
+        <span class="dr-acc"><input type="text" maxlength="300" data-dr-reason="${esc(k)}" placeholder="${esc(T('dr.reason'))}" aria-label="${esc(T('dr.reason'))}"><button type="button" class="btn small" data-dr-accept="${esc(k)}">${esc(T('dr.accept'))}</button></span></div>
+        <button type="button" class="btn small" data-dr-adopt="${esc(k)}">${esc(T('dr.adopt'))}</button></li>`;
+    });
+    const accepted = rows(acc, d => {
+      const n = byD.get(d.design), a = driftAccepted(m, d), k = driftKey(d.design, d.field);
+      return `<li><div class="ws-t"><b>${esc(n.label)}</b><small>${esc(T(`dr.field.${d.field}`))}: ${esc(driftShow(d.field, d.designValue))} → ${esc(driftShow(d.field, d.realityValue))} · ${esc(a.reason)}${a.date ? ` · ${esc(fmtDay(a.date))}` : ''}</small></div><button type="button" class="btn small" data-dr-reopen="${esc(k)}">${esc(T('dr.reopen'))}</button></li>`;
+    });
+    const props = rows(c.proposals, p => `<li><div class="ws-t"><b>${esc(byD.get(p.design).label)}</b><small>${esc(T('dr.maybe'))} ${rl(byR.get(p.reality))}</small></div><button type="button" class="btn small" data-dr-link="${esc(p.design)}" data-dr-to="${esc(p.reality)}">${esc(T('dr.link'))}</button></li>`);
+    const missing = rows(c.missing, id => `<li><div class="ws-t"><b>${esc(byD.get(id).label)}</b><small>${esc(T('dr.gone', byD.get(id).iac))}</small></div><button type="button" class="btn small" data-dr-unlink="${esc(id)}">${esc(T('dr.unlink'))}</button></li>`);
+    const free = DRIFT.reality.filter(r => c.extra.includes(r.id) || c.proposals.some(p => p.reality === r.id));
+    const opts = `<option value="">${esc(T('dr.pick'))}</option>${free.slice(0, 300).map(r => `<option value="${esc(r.id)}">${esc(`${r.label} · ${r.iac || ''}`)}</option>`).join('')}`;
+    const unlinked = free.length ? rows(c.unlinked, id => `<li><div class="ws-t"><b>${esc(byD.get(id).label)}</b></div><select data-dr-sel="${esc(id)}" aria-label="${esc(T('dr.pick'))}">${opts}</select><button type="button" class="btn small" data-dr-linksel="${esc(id)}">${esc(T('dr.link'))}</button></li>`) : '';
+    const extra = c.extra.length ? `<ul class="dr-extra">${c.extra.slice(0, 200).map(id => `<li>${rl(byR.get(id))}</li>`).join('')}</ul>` : '';
+    return head + sec(T('dr.s.diffs'), diffs) + sec(T('dr.s.accepted'), accepted) + sec(T('dr.s.props'), props) + sec(T('dr.s.missing'), missing) + sec(T('dr.s.unlinked'), unlinked) + sec(T('dr.s.extra'), extra)
+      + (open.length || c.proposals.length || c.missing.length || c.extra.length || acc.length ? '' : `<p class="ws-dir">${esc(T('dr.clean'))}</p>`);
+  }
+  function driftRender() { const b = $('#dr-body'); if (b) b.innerHTML = driftHtml(); refreshFindings?.(); }
+  async function driftLoad(fileList) {
+    const msg = $('#dr-msg'), IAC = window.DiagramonIaC;
+    if (msg) msg.textContent = '';
+    try {
+      const files = await Promise.all([...fileList].map(async f => ({ name: f.name || '', text: await f.text() })));
+      const res = IAC.convert(files);
+      if (!res.nodes) throw new Error('empty');
+      DRIFT.reality = res.diagram.nodes; DRIFT.names = files.map(f => f.name);
+      driftRender();
+    } catch { if (msg) msg.textContent = T('dr.err.read'); }
+  }
+  function openDriftDialog() {
+    if (P || $('#dr-dialog')) return;
+    const prev = document.activeElement, id = `dr${Date.now()}`;
+    const back = document.createElement('div');
+    back.className = 'cf-back'; back.id = 'dr-dialog';
+    back.innerHTML = `<form class="cf share rep ws" role="dialog" aria-modal="true" aria-labelledby="${id}t" autocomplete="off">
+      <h3 id="${id}t">${esc(T('dr.title'))}</h3>
+      <p>${esc(T('dr.lead'))}</p>
+      <div class="ws-bar"><button type="button" class="btn" id="dr-pick">${esc(T('dr.pick.files'))}</button><button type="button" class="btn" id="dr-clear">${esc(T('dr.clear'))}</button></div>
+      <div id="dr-body"></div>
+      <p class="sh-err" role="alert" id="dr-msg"></p>
+      <div class="cf-actions"><button type="button" class="btn" id="dr-close">${esc(T('ws.close'))}</button></div>
+    </form>`;
+    const close = () => { document.removeEventListener('keydown', key, true); back.remove(); prev?.focus?.(); };
+    const key = ev => { if (ev.key === 'Escape' && !document.querySelector('.cf-back:not(#dr-dialog)')) { ev.preventDefault(); ev.stopPropagation(); close(); } };
+    const split = driftSplit;
+    const node = i => S.model.nodes.find(n => n.id === i);
+    back.addEventListener('mousedown', ev => { if (ev.target === back) close(); });
+    back.addEventListener('click', ev => {
+      const b = ev.target.closest('button');
+      if (!b) return;
+      const d = b.dataset;
+      if (b.id === 'dr-close') close();
+      else if (b.id === 'dr-pick') $('#dr-file').click();
+      else if (b.id === 'dr-clear') { DRIFT.reality = null; DRIFT.names = []; driftRender(); }
+      else if (d.drLink || d.drLinksel) {
+        const from = d.drLink || d.drLinksel, to = d.drTo || back.querySelector(`select[data-dr-sel="${CSS.escape(from)}"]`)?.value, r = DRIFT.reality?.find(x => x.id === to);
+        if (r?.iac && node(from)) driftMutate(m => { m.nodes.find(n => n.id === from).iac = r.iac; });
+      } else if (d.drUnlink) driftMutate(m => { delete m.nodes.find(n => n.id === d.drUnlink).iac; });
+      else if (d.drAdopt) {
+        const [nid, f] = split(d.drAdopt), c = driftCmp(), df = c?.diffs.find(x => x.design === nid && x.field === f);
+        if (df) driftMutate(m => { m.nodes.find(n => n.id === nid)[f] = f === 'region' ? cleanRegion(df.realityValue) || String(df.realityValue) : df.realityValue; m.deviations = (m.deviations || []).filter(x => !(x.node === nid && x.field === f)); if (!m.deviations.length) delete m.deviations; });
+      } else if (d.drAccept) {
+        const [nid, f] = split(d.drAccept), c = driftCmp(), df = c?.diffs.find(x => x.design === nid && x.field === f);
+        const inp = back.querySelector(`input[data-dr-reason="${CSS.escape(d.drAccept)}"]`), reason = (inp?.value || '').trim();
+        if (!reason) { inp?.focus(); $('#dr-msg').textContent = T('dr.err.reason'); return; }
+        $('#dr-msg').textContent = '';
+        if (df) driftMutate(m => { m.deviations = [...(m.deviations || []).filter(x => !(x.node === nid && x.field === f)), { node: nid, field: f, value: String(df.realityValue), reason: reason.slice(0, 300), date: today() }]; });
+      } else if (d.drReopen) {
+        const [nid, f] = split(d.drReopen);
+        driftMutate(m => { m.deviations = (m.deviations || []).filter(x => !(x.node === nid && x.field === f)); if (!m.deviations.length) delete m.deviations; });
+      }
+    });
+    back.addEventListener('keydown', ev => { if (ev.key === 'Enter' && ev.target.matches?.('input[data-dr-reason]')) { ev.preventDefault(); back.querySelector(`button[data-dr-accept="${CSS.escape(ev.target.dataset.drReason)}"]`)?.click(); } });
+    document.addEventListener('keydown', key, true);
+    document.body.appendChild(back);
+    driftRender();
+    back.querySelector('#dr-pick').focus();
+  }
+  $('#dr-file').addEventListener('change', async ev => { const l = [...ev.target.files]; ev.target.value = ''; if (l.length) await driftLoad(l); });
+  $('#btn-drift').addEventListener('click', openDriftDialog);
 
   /* ---------- exportar a otras herramientas (src/export/*.js) ----------
      Cada exportador recibe una copia del diagrama y este contexto, y devuelve { text, ext, mime }. */
