@@ -18,6 +18,7 @@
 | `src/workspace.js` | Espacio de trabajo (una carpeta de diagramas): reconoce los archivos de Diagramon, los resume (título, cantidades, versión de formato, `docId`) y nombra los archivos nuevos; puro, sin DOM. La lectura y escritura de la carpeta está en `src/app.js` |
 | `src/drift.js` | Diseño frente a realidad (puro, sin DOM): une los componentes de un diagrama con los recursos de la infraestructura importada por su dirección `iac`, propone (nunca aplica) uniones por nombre y tipo, y lista las diferencias de región, réplicas, exposición pública y copia de seguridad. |
 | `src/dbt.js` | Importación del manifest de dbt (`manifest.json` a conjuntos, reglas de calidad, frescura y un diagrama de linaje); puro, sin DOM |
+| `src/models/*.js` | Modelos puros (sin DOM) que salen de `src/app.js` en la v2, un archivo por área: `comments.js` comentarios e hilos de revisión; `radar.js` radar tecnológico y fin de soporte; `disposition.js` disposición de migración (6R); `decisions.js` decisiones de arquitectura (ADR) y aprobaciones; `raid.js` registro RAID; `stakeholders.js` interesados y matriz RACI; `requirements.js` requisitos y sus controles; `phases.js` fases (hoja de ruta) y estimación de esfuerzo; `status.js` informe de estado; `datasets.js` conjuntos de datos, catálogo y frescura; `reliability.js` fiabilidad de rutas (disponibilidad). Cada uno añade su parte a `window.DiagramonModels`. Los que aún dicen «Reservado» están vacíos y el código sigue en `src/app.js` |
 | `samples/` | Archivos de IaC y un manifest de dbt (`samples/dbt/`) de ejemplo para probar las importaciones |
 | `assets/icons/*.js` | Iconos oficiales de AWS, Azure, Google Cloud, SAP BTP y Microsoft Fabric, incrustados |
 | `tools/build-icons.py` | Genera `assets/icons/*.js` desde los paquetes oficiales |
@@ -38,3 +39,13 @@ Cuando un cambio del modelo rompería los archivos viejos (una clave renombrada 
 3. Añade una prueba en la sección «Format version» de `tests/run.js` con un documento en el formato viejo y el resultado esperado.
 
 Las plantillas, las versiones guardadas, los diagramas nuevos y la pestaña Texto ya están en el formato actual y no pasan por las migraciones. Los archivos, el guardado local y la pestaña JSON sí pasan por ellas.
+
+## Diagramon v2: dividir `src/app.js`
+
+`src/app.js` se está dividiendo en archivos más pequeños sin cambiar lo que hace la app. Las reglas que lo hacen seguro:
+
+1. **Scripts clásicos, sin módulos.** Cada archivo es un `<script src>` normal que añade su parte a un espacio de nombres en `window` (`window.DiagramonModels.<área>`). Los módulos ES (`import`/`export`) no cargan desde `file://`, así que romperían abrir la app con doble clic.
+2. **Un área por pull request.** El PR mueve el código a su archivo, deja en su lugar de `src/app.js` una línea que recoge las funciones del espacio de nombres y apunta las pruebas de `tests/run.js` al archivo nuevo. Sin cambios de comportamiento en el mismo PR.
+3. **Las etiquetas de script y las cargas de las pruebas ya están puestas** (`index.html`, `tests/run.js`), así que los PR de áreas distintas no tocan las mismas líneas y se pueden trabajar a la vez.
+4. **`node tests/run.js` y `node tests/smoke.js` deben pasar.** Antes de fusionar, se trae el último `main` y se deja correr el CI otra vez, para que dos PR fusionados seguidos también se prueben juntos. `window.Diagramon` debe mantener la misma API.
+5. La versión anterior se guarda en la rama `v1`.
