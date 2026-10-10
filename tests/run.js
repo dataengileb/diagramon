@@ -271,6 +271,7 @@
      ====================================================================== */
   section('app.js pure functions');
   const app = read('src/app.js');
+  const dsApp = app + read('src/ui/datatab.js');   // v2: la pestaña Datos vive en src/ui/datatab.js
   const between = (a, b) => { const i = app.indexOf(a), j = app.indexOf(b, i); assert(i >= 0 && j > i, `markers not found: ${a}`); return app.slice(i + a.length, j); };
   const routeReliability = win.DiagramonModels.reliability().routeReliability;
   test('composite availability: single route = product', () => {
@@ -293,7 +294,7 @@
     assert(r && r.value > 0.9 && r.value <= 1, `value ${r && r.value}`); assert(Date.now() - t0 < 5000, 'too slow');
   });
   // v2: el código de la interfaz está repartido entre src/app.js y src/ui/*.js; cada clave T('...') literal debe existir en inglés y en español
-  const UI_FILES = ['src/ui/dialogs.js', 'src/ui/panel.js', 'src/ui/tabs.js', 'src/ui/sidebar.js', 'src/ui/topbar.js', 'src/ui/raid.js', 'src/ui/people.js', 'src/ui/reqs.js'];
+  const UI_FILES = ['src/ui/dialogs.js', 'src/ui/panel.js', 'src/ui/tabs.js', 'src/ui/sidebar.js', 'src/ui/topbar.js', 'src/ui/raid.js', 'src/ui/people.js', 'src/ui/reqs.js', 'src/ui/datatab.js'];
   test('interface files: every literal T() key is defined in English and Spanish', () => {
     const i18nSrc = read('src/i18n.js');
     for (const f of ['src/app.js', ...UI_FILES]) {
@@ -1185,7 +1186,7 @@
     ['cleanCatalog(raw.datasets, m, dsHelpers())', "addFindingSource('data'", 'data-lat', 'catalog: catalogApi', 'dataset: v =>', 'addDataset', 'updateDataset', 'removeDataset', 'renameDataset: renameDatasetApi', 'freshness: freshnessApi', 'storage: storageApi',
       "'latency', 'transferOk'", 'raw = { ...raw, datasets: S.model.datasets }', 'datasets: () => datasetList()', 'lineage: ds =>'].forEach(k => assert(app.includes(k), `app has ${k}`));
     assert(read('src/text-lang.js').includes('latency|latencia'), 'the text edge options know latency');
-    const i18n = read('src/i18n.js'), used = [...new Set([...app.matchAll(/T\('(ds\.[\w.]+)'/g)].map(m => m[1]))];
+    const i18n = read('src/i18n.js'), used = [...new Set([...dsApp.matchAll(/T\('(ds\.[\w.]+)'/g)].map(m => m[1]))];
     ['find.src.data', ...used, 'ds.find.noOwner', 'ds.find.noContract', 'ds.find.ownerContract'].forEach(k => assert(i18n.split(`'${k}':`).length === 3, `${k} is defined once in en and once in es`));
     const keys = [...i18n.matchAll(/'(ds\.[\w.]+)':/g)].map(m => m[1]); assert(keys.every(k => keys.filter(x => x === k).length === 2), 'every ds.* key is defined exactly once per language');
   });
@@ -1210,9 +1211,9 @@
     assert(idx.includes('<button data-group="data" class="tab" data-tab="data"'), 'the data tab is in group data');
     const side = idx.split('<aside class="sidebar">')[1].split('</aside>')[0];
     assert(side.includes('data-pane="data"') && side.includes('id="ds-panel"') && side.includes('id="ds-bar"') && side.includes('id="ds-list"'), 'the data pane and its containers live inside the side panel');
-    ['renderDs', 'dsDocument', 'renameDatasetApi(ds.id', 'data-ds-open', 'return void exportContract(ds.id)'].forEach(k => assert(app.includes(k), `app has ${k}`));
+    ['renderDs', 'dsDocument', 'renameDatasetApi(ds.id', 'data-ds-open', 'return void exportContract(ds.id)'].forEach(k => assert(dsApp.includes(k), `app has ${k}`));
     assert(read('src/ui/tabs.js').includes("t.dataset.tab === 'data'"), 'tabs.js opens the data tab');   // src/ui/tabs.js
-    const used = new Set([...app.matchAll(/T\(\s*'(ds\.[\w.]+)'/g)].map(m => m[1]));
+    const used = new Set([...dsApp.matchAll(/T\(\s*'(ds\.[\w.]+)'/g)].map(m => m[1]));
     ['ds.cst.draft', 'ds.cst.agreed', 'ds.cst.deprecated', 'ds.rule.not_null', 'ds.rule.unique', 'ds.rule.range', 'ds.rule.regex', 'ds.rule.accepted_values', 'ds.rule.freshness', 'ds.rule.custom', 'ds.sec.general', 'ds.sec.schema', 'ds.sec.quality', 'ds.sec.contract', 'ds.sec.lineage', 'tab.data', 'tab.data.tip'].forEach(k => used.add(k));
     used.forEach(k => assert(i18n.split(`'${k}':`).length === 3, `${k} is defined once in en and once in es`));
     const keys = [...i18n.matchAll(/'((?:ds|tab\.data)[\w.]*)':/g)].map(m => m[1]); assert(keys.every(k => keys.filter(x => x === k).length === 2), 'no duplicated ds.* key');
