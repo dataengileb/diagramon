@@ -14,6 +14,7 @@ Estas funciones van bien en el navegador y se comprobó la estructura de lo que 
 - **Informe de arquitectura en PDF**: se probó hasta la llamada de impresión del navegador. Se carga el documento completo con sus 14 secciones, imágenes y tablas, se llama a `print()` y las tablas caben en el ancho de un A4. El diálogo de impresión y la paginación final no se han revisado.
 - **Kit de decisiones de lakehouse** (`src/adr-kits.js`): las opciones, pros y contras están escritos para ser neutrales y duraderos, pero no los ha revisado un especialista de cada producto. Contrástalos con la documentación actual de cada fabricante antes de presentarlos a un cliente.
 - **Componentes muy pequeños** con todas las etiquetas a la vez (capa, región, equipo, disponibilidad): sin revisar. Con el ancho fijo por defecto caben.
+- **Carpetas de espacio de trabajo** (`src/workspace.js`): la lógica del listado está probada, y abrir, guardar y el modo de solo lectura se ejercitaron en Chromium sin interfaz con una carpeta simulada. Nadie ha probado aún una carpeta real con el selector real, ni navegadores que no sean Chromium (Firefox y Safari usan el modo de solo lectura).
 
 ## 🔧 Aún no hecho (mejoras pequeñas)
 
@@ -36,5 +37,6 @@ Son decisiones tomadas a propósito, casi siempre para que Diagramon siga siendo
   - Los visores de Markdown que bloquean imágenes `data:` no muestran los diagramas salvo que guardes las imágenes aparte.
   - Un diagrama grande con muchas vistas y niveles internos puede tardar varios segundos.
 - **Niveles C4**: las tarjetas fantasma son como mucho 8 por lado, y las conexiones entre dos niveles solo se dibujan como fantasmas (se llega a ellas desde los enlaces del inspector).
+- **Espacio de trabajo**: solo se leen los archivos que están directamente en la carpeta (sin subcarpetas), hasta 200 diagramas de 8 MB como máximo. Guardar en la carpeta requiere un navegador Chromium.
 - **La región se deduce del nombre de un grupo** con los códigos habituales de AWS, Azure y Google Cloud. Para otros nombres hay que usar el campo **Región**.
 - Varias descargas CSV seguidas pueden activar el aviso de «descargar varios archivos» en algunos navegadores.

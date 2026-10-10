@@ -632,6 +632,17 @@
   .sh-err { min-height: 16px; margin: 0 !important; color: var(--p-coral) !important; font-weight: 650; }
   .cf.share.busy { cursor: progress; }
   .cf.share [hidden] { display: none; }
+  .cf.share.ws { width: min(620px, 100%); max-height: calc(100vh - 32px); overflow: auto; }
+  .ws-bar { display: flex; flex-wrap: wrap; gap: 6px; }
+  .ws-dir { margin: 0; font-size: 12px; color: var(--muted); }
+  .ws-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; max-height: 40vh; overflow: auto; }
+  .ws-list li { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface2); }
+  .ws-list li.cur { border-color: var(--accent); }
+  .ws-list .ws-t { flex: 1; min-width: 0; display: grid; gap: 2px; }
+  .ws-list .ws-t b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+  .ws-list .ws-t small { color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ws-list .ws-chip { font-size: 11px; font-weight: 650; color: var(--accent); }
+  .ws-list .ws-warn { color: var(--p-coral); }
   .cf.share.rep { width: min(560px, 100%); max-height: calc(100vh - 32px); overflow: auto; }
   .cf.share select { width: 100%; height: 34px; padding: 0 8px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface2); color: var(--text); font: 13px var(--font); }
   .cf.share .rep-sec { flex: 0 0 calc(50% - 7px); min-width: 0; }
@@ -1452,6 +1463,7 @@
           <p class="menu-note" data-i18n="exp.legend.note"></p>
         </div>
       </details>
+      <button class="tbtn" id="btn-workspace" data-i18n-title="top.workspace"><svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg><span class="lbl" data-i18n="top.workspace.lbl"></span></button>
       <button class="tbtn" id="btn-import" data-i18n-title="top.import"><svg viewBox="0 0 24 24"><path d="M12 15V3M7 8l5-5 5 5M5 21h14"/></svg><span class="lbl" data-i18n="top.import.lbl"></span></button>
       <button class="tbtn" id="btn-new" data-i18n-title="top.new"><svg viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M12 12v6M9 15h6"/></svg><span class="lbl" data-i18n="top.new.lbl"></span></button>
       <span class="sep"></span>
@@ -1570,6 +1582,7 @@
 </div>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 <input type="file" id="file" accept=".json,.tfstate,.yaml,.yml,.template,application/json" multiple hidden>
+<input type="file" id="ws-dir" webkitdirectory multiple hidden>
 
 <script src="src/config.js"></script>
 <script src="src/i18n.js"></script>
@@ -1585,6 +1598,7 @@
 <script src="src/examples.js"></script>
 <script src="src/iac.js"></script>
 <script src="src/dbt.js"></script>
+<script src="src/workspace.js"></script>
 <script src="src/share.js"></script>
 <script src="src/export/mermaid.js"></script>
 <script src="src/export/plantuml.js"></script>

@@ -825,6 +825,7 @@
     if (raw.direction === 'LR' || raw.direction === 'TB') m.direction = raw.direction;
     if (raw.routing === 'elbow') m.routing = 'elbow';
     if (raw.layerNames === 'zones') m.layerNames = 'zones';
+    { const id = window.DiagramonWorkspace?.cleanDocId(raw.docId); if (id) m.docId = id; }   // identificador estable del diagrama (espacio de trabajo); sin él no hay clave
     { const rd = cleanRadarList(raw.radar); if (rd.length) m.radar = rd; }   // entradas propias del radar tecnológico; sin ellas no hay clave
     { const ph = cleanPhases(raw.phases); if (ph.length) m.phases = ph; }
     { const es = cleanEstimation(raw.estimation); if (es) m.estimation = es; }   // imprevistos propios del diagrama; sin ellos no hay clave   // sin fases no hay clave: JSON y exportaciones idénticos
@@ -4355,6 +4356,7 @@
     if (m.direction) head.push(`  "direction": ${JSON.stringify(m.direction)}`);
     if (m.routing) head.push(`  "routing": ${JSON.stringify(m.routing)}`);
     if (m.layerNames === 'zones') head.push(`  "layerNames": "zones"`);
+    if (m.docId) head.push(`  "docId": ${JSON.stringify(m.docId)}`);
     if (m.radar?.length) head.push(`  "radar": [\n${m.radar.map(e => '    ' + JSON.stringify(e)).join(',\n')}\n  ]`);
     if (m.phases?.length) head.push(arr('phases', m.phases, ORDER.phase));
     if (m.estimation) head.push(`  "estimation": ${JSON.stringify(m.estimation)}`);
@@ -4423,6 +4425,7 @@
       if (!Array.isArray(raw.requirements) && S.model.requirements) raw = { ...raw, requirements: S.model.requirements }; // igual que las decisiones: el texto siempre las trae; el JSON, si omite la clave, las conserva
       if (!Array.isArray(raw.raid)) raw = { ...raw, raid: S.model.raid };   // el texto siempre trae el registro RAID; el JSON, si omite la clave, lo conserva
       if (!Array.isArray(raw.stakeholders) && S.model.stakeholders) raw = { ...raw, stakeholders: S.model.stakeholders };   // igual: el texto siempre trae los interesados; el JSON, si omite la clave, los conserva
+      if (raw.docId == null && S.model.docId) raw = { ...raw, docId: S.model.docId };   // el texto no lleva el identificador del diagrama; el JSON, si omite la clave, lo conserva
       if (!Array.isArray(raw.comments) && S.model.comments) raw = { ...raw, comments: S.model.comments };   // el texto no lleva comentarios; el JSON, si omite la clave, los conserva
       if (opts.fromEditor === 'text' && S.model.estimation && raw.estimation == null) raw = { ...raw, estimation: S.model.estimation };   // los imprevistos y el trabajo extra de cada fase solo viven en el JSON: el texto no los lleva
       if (opts.fromEditor === 'text' && Array.isArray(raw.phases) && (S.model.phases || []).some(p => p.extra)) raw = { ...raw, phases: raw.phases.map(p => { const old = p && (S.model.phases || []).find(q => q.id === p.id); return old?.extra && !p.extra ? { ...p, extra: old.extra } : p; }) };
@@ -8944,6 +8947,132 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     form.elements.ref.focus();
   }
 
+  /* ---------- espacio de trabajo: una carpeta con varios diagramas (src/workspace.js) ---------- */
+  // WS.dir = { name, handle } (handle = null si la carpeta se leyó con <input webkitdirectory>: solo lectura); WS.index = resultado de scan();
+  // WS.read(nombre) → texto; WS.base = snapshot() del diagrama al abrirlo o guardarlo desde la carpeta (si cambió, abrir otro pide confirmar)
+  const WS = { dir: null, index: null, read: null, base: null, file: '' };
+  const wsLib = () => window.DiagramonWorkspace;
+  function ensureDocId() { const L = wsLib(); if (L && !S.model.docId) S.model.docId = L.newDocId(); return S.model.docId || ''; }
+  const wsWritable = () => !!WS.dir?.handle;
+  async function wsFromHandle(handle) {
+    const L = wsLib(), files = [];
+    for await (const [name, h] of handle.entries()) {
+      if (h.kind !== 'file' || !(name === L.MANIFEST || /\.json$/i.test(name))) continue;
+      const f = await h.getFile();
+      files.push({ name, size: f.size, text: f.size > L.MAX_BYTES ? '' : await f.text() });
+    }
+    return files;
+  }
+  const wsFromInput = async fileList => {   // solo los archivos de la carpeta elegida, sin subcarpetas
+    const L = wsLib(), byName = new Map(), files = [];
+    for (const f of [...fileList]) {
+      const parts = String(f.webkitRelativePath || '').split('/');
+      if (parts.length !== 2 || !(parts[1] === L.MANIFEST || /\.json$/i.test(parts[1]))) continue;
+      byName.set(parts[1], f);
+      files.push({ name: parts[1], size: f.size, text: f.size > L.MAX_BYTES ? '' : await f.text() });
+    }
+    return { files, byName, folder: String(fileList[0]?.webkitRelativePath || '').split('/')[0] };
+  };
+  async function wsRefresh() {
+    const L = wsLib();
+    const files = await wsFromHandle(WS.dir.handle);
+    WS.index = L.scan(files);
+    WS.read = async name => (await (await WS.dir.handle.getFileHandle(name)).getFile()).text();
+  }
+  async function wsPick() {
+    try {
+      if (typeof window.showDirectoryPicker === 'function') {
+        const h = await window.showDirectoryPicker({ mode: 'readwrite', id: 'diagramon-workspace' });
+        WS.dir = { name: h.name, handle: h };
+        await wsRefresh();
+        wsRender();
+      } else $('#ws-dir').click();
+    } catch (e) { if (e?.name !== 'AbortError') { const m = $('#ws-msg'); if (m) m.textContent = T('ws.err.pick'); } }
+  }
+  $('#ws-dir').addEventListener('change', async ev => {
+    const list = [...ev.target.files]; ev.target.value = '';
+    if (!list.length) return;
+    const r = await wsFromInput(list);
+    WS.dir = { name: r.folder, handle: null };
+    WS.index = wsLib().scan(r.files);
+    WS.read = async name => (r.byName.get(name) ? r.byName.get(name).text() : '');
+    wsRender();
+  });
+  async function wsOpen(name) {
+    const L = wsLib(), msg = $('#ws-msg');
+    if (msg) msg.textContent = '';
+    if (WS.base !== snapshot() && !(await confirmBox({ title: T('ws.cf.title'), text: T('ws.cf.text'), ok: T('ws.cf.ok'), cancel: T('ver.cf.cancel') }))) return;
+    let raw = null;
+    try { raw = JSON.parse(await WS.read(name)); } catch { /* ilegible */ }
+    if (!L.isDiagram(raw)) { if (msg) msg.textContent = T('ws.err.read', name); return; }
+    S.sel = null;
+    setModel(raw, { history: true, animate: true, fit: true });
+    WS.base = snapshot(); WS.file = name;
+    toast(T('ws.opened', S.model.title));
+    wsRender();
+  }
+  async function wsSave() {
+    const L = wsLib(), msg = $('#ws-msg');
+    if (!wsWritable()) return;
+    if (msg) msg.textContent = '';
+    try {
+      const id = ensureDocId(), ix = WS.index.diagrams, hit = ix.find(x => x.docId === id && !x.dupDocId) || (WS.file && ix.find(x => x.name === WS.file && !x.docId));   // mismo docId, o el archivo sin docId del que se abrió
+      const name = hit ? hit.name : L.fileNameFor(S.model.title, [...ix, ...WS.index.skipped].map(x => x.name));
+      if (hit && !(await confirmBox({ title: T('ws.cf.overTitle', name), text: T('ws.cf.overText'), ok: T('ws.cf.overOk'), cancel: T('ver.cf.cancel') }))) return;
+      const w = await (await WS.dir.handle.getFileHandle(name, { create: true })).createWritable();
+      await w.write(serialize(S.model, true));
+      await w.close();
+      WS.base = snapshot(); WS.file = name;
+      await wsRefresh();
+      toast(T('ws.saved', name));
+    } catch { if (msg) msg.textContent = T('ws.err.save'); }
+    wsRender();
+  }
+  function wsRender() {
+    const box = $('#ws-body');
+    if (!box) return;
+    const L = wsLib(), d = WS.dir, ix = WS.index, cur = S.model.docId || '';
+    $('#ws-save').hidden = !wsWritable();
+    $('#ws-refresh').hidden = !wsWritable();
+    if (!d || !ix) { box.innerHTML = `<p class="ws-dir">${esc(T('ws.none'))}</p>`; return; }
+    const rows = ix.diagrams.map(x => {
+      const here = (cur && x.docId === cur && !x.dupDocId) || x.name === WS.file;
+      return `<li${here ? ' class="cur"' : ''}><div class="ws-t"><b>${esc(x.title)}</b><small>${esc(T('ws.meta', x))}${x.dupDocId ? ` · <span class="ws-warn">${esc(T('ws.dup'))}</span>` : ''}</small></div>${here ? `<span class="ws-chip">${esc(T('ws.current'))}</span>` : ''}<button type="button" class="btn small" data-ws-open="${esc(x.name)}">${esc(T('ws.open'))}</button></li>`;
+    }).join('');
+    box.innerHTML = `<p class="ws-dir">${esc(T('ws.dir', { folder: ix.manifest?.name || d.name, n: ix.diagrams.length, ro: !wsWritable() }))}${ix.skipped.length ? ` · ${esc(T('ws.skipped', ix.skipped.length))}` : ''}</p>${rows ? `<ul class="ws-list">${rows}</ul>` : `<p class="ws-dir">${esc(T('ws.empty'))}</p>`}`;
+  }
+  function openWorkspaceDialog() {
+    if (P || $('#ws-dialog')) return;
+    const prev = document.activeElement, id = `ws${Date.now()}`;
+    const back = document.createElement('div');
+    back.className = 'cf-back'; back.id = 'ws-dialog';
+    back.innerHTML = `<form class="cf share rep ws" role="dialog" aria-modal="true" aria-labelledby="${id}t" autocomplete="off">
+      <h3 id="${id}t">${esc(T('ws.title'))}</h3>
+      <p>${esc(T('ws.lead'))}</p>
+      <div class="ws-bar"><button type="button" class="btn" id="ws-pick">${esc(T('ws.pick'))}</button><button type="button" class="btn" id="ws-refresh" hidden>${esc(T('ws.refresh'))}</button><button type="button" class="btn" id="ws-save" hidden>${esc(T('ws.save'))}</button></div>
+      <div id="ws-body"></div>
+      <p class="sh-err" role="alert" id="ws-msg"></p>
+      <div class="cf-actions"><button type="button" class="btn" id="ws-close">${esc(T('ws.close'))}</button></div>
+    </form>`;
+    const close = () => { document.removeEventListener('keydown', key, true); back.remove(); prev?.focus?.(); };
+    const key = ev => { if (ev.key === 'Escape' && !document.querySelector('.cf-back:not(#ws-dialog)')) { ev.preventDefault(); ev.stopPropagation(); close(); } };
+    back.addEventListener('mousedown', ev => { if (ev.target === back) close(); });
+    back.addEventListener('click', async ev => {
+      const b = ev.target.closest('button');
+      if (!b) return;
+      if (b.id === 'ws-close') close();
+      else if (b.id === 'ws-pick') wsPick();
+      else if (b.id === 'ws-refresh') { try { await wsRefresh(); } catch { $('#ws-msg').textContent = T('ws.err.pick'); } wsRender(); }
+      else if (b.id === 'ws-save') wsSave();
+      else if (b.dataset.wsOpen) wsOpen(b.dataset.wsOpen);
+    });
+    document.addEventListener('keydown', key, true);
+    document.body.appendChild(back);
+    wsRender();
+    back.querySelector('#ws-pick').focus();
+  }
+  $('#btn-workspace').addEventListener('click', openWorkspaceDialog);
+
   /* ---------- exportar a otras herramientas (src/export/*.js) ----------
      Cada exportador recibe una copia del diagrama y este contexto, y devuelve { text, ext, mime }. */
   const hexOf = k => {
@@ -9040,7 +9169,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
   }
   function exportContract(id) { const d = dsFind(id); if (d) saveContract(contractYaml(d.id), `${fold(d.name).replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'dataset'}.odcs.yaml`); }
   const exportContracts = () => saveContract(contractsYaml(), 'data-contracts.odcs.yaml');
-  function exportJSON() { download(serialize(S.model, true), fileName('json'), 'application/json'); toast(T('toast.json')); }
+  function exportJSON() { ensureDocId(); download(serialize(S.model, true), fileName('json'), 'application/json'); toast(T('toast.json')); }
   function copyJSON() {
     const txt = serialize(S.model, true);
     const fallback = () => {

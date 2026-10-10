@@ -30,6 +30,7 @@
   - [Informe de arquitectura](#informe-de-arquitectura)
   - [Informe de estado](#informe-de-estado)
   - [Inventario (CSV / Excel)](#inventario-csv--excel)
+- [Espacio de trabajo (varios diagramas)](#espacio-de-trabajo-varios-diagramas)
 - [Vistas](#vistas)
 - [Niveles C4 (drill-down)](#niveles-c4-drill-down)
 - [Atajos de teclado](#atajos-de-teclado)
@@ -523,6 +524,18 @@ Costo y esfuerzo
 - **Excel** (`.xlsx`) trae una hoja por tabla: Componentes, Conexiones (estilo con el nombre del tipo propio, importancia Normal / Importante / Crítica, tipo propio sí/no, cifrado, clases de datos, datasets, cruza fronteras, transferencia aprobada, amenazas STRIDE abiertas), Tipos de conexión (solo si el diagrama tiene tipos propios: id, nombre, patrón de línea, color, grosor, puntos en movimiento y cuántas conexiones lo usan), Grupos, Dueños (por equipo), Decisiones, RAID, Interesados y Firmas (una fila por firma), Hallazgos (con los descartados y su motivo) y Versiones. Las tablas vacías se omiten. Las columnas *Importancia* y *Tipo propio* siempre están en Conexiones (esquema estable, también en diagramas viejos). La fila de títulos va en negrita, inmovilizada y con filtro; las columnas se ajustan al contenido, los costos usan formato de moneda y el SLA conserva tres decimales.
 - **CSV** abre un diálogo pequeño: *Solo componentes* (`<diagrama>-inventory.csv`) o *Todas las tablas como CSV separados* (una descarga por tabla, con nombre `<diagrama>-inventory-<tabla>.csv`). Los archivos llevan BOM para que Excel respete las tildes.
 - Desde la consola: `Diagramon.inventory()` devuelve las filas de componentes y `Diagramon.exportInventory('xlsx' | 'csv' | 'csv-all')` inicia la descarga.
+
+## Espacio de trabajo (varios diagramas)
+
+Un cliente rara vez tiene un solo diagrama. El botón **Espacio** (icono de carpeta, junto a *Importar*) abre una carpeta con varios archivos de Diagramon, los lista y te deja pasar de uno a otro.
+
+- **Abrir carpeta…** lee los archivos `.json` que están directamente en la carpeta (no lee subcarpetas). Cada uno que sea un diagrama de Diagramon aparece con su título, componentes, conexiones y versión de formato; los demás JSON se cuentan como ignorados.
+- **Abrir** carga un diagrama. Si el que está en pantalla cambió desde que se abrió o se guardó en la carpeta, te pregunta antes, y **Deshacer** lo recupera.
+- **Guardar el diagrama actual aquí** (navegadores Chromium: Chrome, Edge, Brave) escribe el diagrama en la carpeta, reemplazando su propio archivo o creando `<título>.json`. Pregunta antes de reemplazar un archivo.
+- Otros navegadores leen la carpeta pero no pueden escribir en ella: la lista dice *solo lectura* y sigues usando **Exportar › JSON**.
+- Cada diagrama guardado así recibe un `docId`, un identificador estable que no cambia si renombras el archivo. Es el ancla de los enlaces entre diagramas que vienen después. La carpeta puede tener además un `diagramon-workspace.json` opcional con `{ "name": "Cliente X" }`, que se muestra en lugar del nombre de la carpeta.
+
+Nada sale de tu navegador: la carpeta se lee y se escribe en local, y el navegador pide permiso cada vez que la abres.
 
 ## Vistas
 

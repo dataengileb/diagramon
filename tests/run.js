@@ -37,7 +37,7 @@
   // src/adr-kits.js puede faltar (kits de decisiones opcionales): solo ese archivo se carga con tolerancia
   const load = p => { try { new Function('window', 'localStorage', 'document', read(p))(win, storage, doc); } catch (e) { if (p !== 'src/adr-kits.js') throw e; } };
   ['src/config.js', 'src/i18n.js', 'assets/icons/aws.js', 'assets/icons/azure.js', 'assets/icons/gcp.js', 'assets/icons/sap.js', 'assets/icons/fabric.js', 'assets/icons/logos.js',
-    'src/text-lang.js', 'src/adr-kits.js', 'src/examples.js', 'src/iac.js', 'src/dbt.js', 'src/export/mermaid.js', 'src/export/plantuml.js', 'src/export/datacontract.js', 'src/export/drawio.js', 'src/export/xlsx.js'].forEach(load);
+    'src/text-lang.js', 'src/adr-kits.js', 'src/examples.js', 'src/iac.js', 'src/dbt.js', 'src/workspace.js', 'src/export/mermaid.js', 'src/export/plantuml.js', 'src/export/datacontract.js', 'src/export/drawio.js', 'src/export/xlsx.js'].forEach(load);
   const C = win.DIAGRAMON_CONFIG, TXT = win.DiagramonText, IAC = win.DiagramonIaC, EXP = win.DiagramonExport, XLSX = win.DiagramonXlsx, DC = win.DiagramonContract;
 
   /* ---------- mini marco de pruebas ---------- */
@@ -2053,6 +2053,57 @@
     assert(app.includes('ox: pad - b.x, oy: pad + top - b.y'), 'buildSVG exposes the canvas offset');
     const i18n = read('src/i18n.js');
     ['share.cm', 'share.cm.hint', 'share.cmopen', 'share.cmopen.hint'].forEach(k => eq(i18n.split(`'${k}':`).length - 1, 2, `${k} once per language`));
+  });
+
+  /* ======================================================================
+     Espacio de trabajo: carpeta con varios diagramas (src/workspace.js)
+     ====================================================================== */
+  section('Workspace');
+  const WSP = win.DiagramonWorkspace;
+  const wsDiagram = (title, extra = {}) => JSON.stringify({ formatVersion: 1, title, nodes: [{ id: 'a', label: 'A', type: 'service' }, { id: 'b', label: 'B', type: 'db' }], edges: [{ id: 'e1', from: 'a', to: 'b' }], groups: [], ...extra });
+  test('isDiagram: diagrams yes; arrays, other JSON and wrong shapes no', () => {
+    assert(WSP.isDiagram(JSON.parse(wsDiagram('x'))) && WSP.isDiagram({ nodes: [] }), 'ok');
+    [null, [], 'x', 5, {}, { nodes: {} }, { nodes: [], edges: {} }, { nodes: [], groups: 'g' }, { nodes: 'x' }].forEach(v => assert(!WSP.isDiagram(v), JSON.stringify(v)));
+  });
+  test('cleanDocId: letters, digits and dashes (6 to 40); anything else is dropped; newDocId passes its own check', () => {
+    eq(WSP.cleanDocId(' d-0123abcd '), 'd-0123abcd', 'trim');
+    ['', 'abc', 'has space', 'ñandú-1234', 'x'.repeat(41), 5, null, {}, '../etc'].forEach(v => eq(WSP.cleanDocId(v), '', String(v)));
+    const a = WSP.newDocId(), b = WSP.newDocId(); eq(WSP.cleanDocId(a), a, 'valid'); assert(a !== b && /^d-[0-9a-f]{16}$/.test(a), 'random and well formed');
+  });
+  test('scan: lists diagrams by title, reads the manifest name, skips the rest with a reason, never throws', () => {
+    const r = WSP.scan([
+      { name: 'b.json', text: wsDiagram('Beta', { docId: 'd-beta-0001' }) }, { name: 'a.json', text: wsDiagram('alpha') }, { name: 'notes.txt', text: 'hi' },
+      { name: 'bad.json', text: '{oops' }, { name: 'other.json', text: '{"a":1}' }, { name: 'huge.json', text: '', size: WSP.MAX_BYTES + 1 },
+      { name: WSP.MANIFEST, text: '{"name":"Shop platform"}' }, { name: '', text: '{}' }, null, { name: 'noText.json' }
+    ]);
+    eq(r.manifest, { name: 'Shop platform' }, 'manifest'); eq(r.diagrams.map(d => d.title), ['alpha', 'Beta'], 'sorted by title');
+    eq(r.diagrams[1], { name: 'b.json', title: 'Beta', nodes: 2, edges: 1, groups: 0, phases: 0, versions: 0, formatVersion: 1, docId: 'd-beta-0001', dupDocId: false }, 'summary');
+    eq(r.skipped.map(x => [x.name, x.reason]), [['bad.json', 'notJson'], ['other.json', 'notDiagram'], ['huge.json', 'big'], ['noText.json', 'notJson']], 'skipped');
+    eq(WSP.scan(null), { manifest: null, diagrams: [], skipped: [] }, 'nothing');
+    eq(WSP.scan([{ name: WSP.MANIFEST, text: 'nope' }]).manifest, null, 'unreadable manifest ignored');
+  });
+  test('scan: files before formatVersion count as 0; a repeated docId is flagged on every file that shares it; the list is capped', () => {
+    const r = WSP.scan([{ name: 'old.json', text: JSON.stringify({ nodes: [], title: 'Old' }) }, { name: 'x.json', text: wsDiagram('X', { docId: 'd-same-0001' }) }, { name: 'y.json', text: wsDiagram('Y', { docId: 'd-same-0001' }) }]);
+    eq(r.diagrams.map(d => [d.name, d.formatVersion, d.dupDocId]), [['old.json', 0, false], ['x.json', 1, true], ['y.json', 1, true]]);
+    const many = Array.from({ length: WSP.MAX_FILES + 3 }, (_, i) => ({ name: `d${i}.json`, text: wsDiagram(`D${i}`) }));
+    const c = WSP.scan(many); eq(c.diagrams.length, WSP.MAX_FILES, 'capped'); eq(c.skipped.filter(x => x.reason === 'many').length, 3, 'rest reported');
+  });
+  test('fileNameFor: slug without accents or symbols, unique without regard to case, never the manifest name', () => {
+    eq(WSP.fileNameFor('Plataforma de Datos · Año 2', []), 'plataforma-de-datos-ano-2.json');
+    eq(WSP.fileNameFor('Shop', ['shop.json', 'SHOP-2.json']), 'shop-3.json', 'collisions ignore case');
+    eq(WSP.fileNameFor('', []), 'diagram.json'); eq(WSP.fileNameFor(null, []), 'diagram.json');
+    eq(WSP.fileNameFor('Diagramon Workspace', []), 'diagramon-workspace-2.json', 'a title that would collide with the manifest file gets a suffix'); assert(WSP.fileNameFor('x'.repeat(200), []).length <= 70, 'bounded');
+  });
+  test('the app wires it: docId in normalize, JSON and the text round trip; the dialog, the button and the texts in both languages', () => {
+    assert(app.includes("window.DiagramonWorkspace?.cleanDocId(raw.docId)") && app.includes('if (m.docId) head.push('), 'docId is read and written');
+    assert(app.includes('raw.docId == null && S.model.docId'), 'text edits keep the docId');
+    assert(app.includes('function ensureDocId()') && app.includes('function exportJSON() { ensureDocId();'), 'docId assigned when saving');
+    assert(app.includes("$('#btn-workspace')") && app.includes('showDirectoryPicker') && app.includes("$('#ws-dir')"), 'entry points');
+    const html = read('index.html');
+    assert(html.includes('src="src/workspace.js"') && html.indexOf('src/workspace.js') < html.indexOf('src/app.js') && html.includes('id="btn-workspace"') && html.includes('id="ws-dir" webkitdirectory'), 'index.html');
+    const keys = [...new Set([...app.slice(app.indexOf('/* ---------- espacio de trabajo'), app.indexOf('/* ---------- exportar a otras herramientas (src/export')).matchAll(/T\('(ws\.[\w.]+)'/g)].map(x => x[1]))];
+    ['top.workspace', 'top.workspace.lbl', ...keys].forEach(k => eq(i18nSrc.split(`'${k}':`).length - 1, 2, `${k} once per language`));
+    assert(keys.length >= 15, `keys found: ${keys.length}`);
   });
 
   /* ---------- resumen ---------- */

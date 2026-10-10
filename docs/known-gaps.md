@@ -14,6 +14,7 @@ These features work in the browser and their output was checked for structure, b
 - **Architecture report as PDF**: checked up to the browser print call. The full document, its 14 sections, images and tables load, `print()` is called, and tables fit an A4 page width. The print dialog itself and the final pagination have not been reviewed.
 - **Lakehouse decision kit** (`src/adr-kits.js`): the options, pros and cons are written to be neutral and durable, but they have not been reviewed by specialists in each product. Check them against current vendor documentation before presenting them to a client.
 - **Very small components** carrying every pill at once (layer, region, team, availability) have not been reviewed. With the default fixed node width they fit.
+- **Workspace folders** (`src/workspace.js`): the listing logic is tested, and opening, saving and the read-only fallback were driven in headless Chromium with a simulated folder. Nobody has tried a real folder with a real folder picker yet, nor browsers other than Chromium (Firefox and Safari take the read-only path).
 
 ## 🔧 Not done yet (small improvements)
 
@@ -36,5 +37,6 @@ These are deliberate choices, usually to keep Diagramon local, dependency-free a
   - Markdown viewers that block `data:` images show nothing for the diagrams unless you save the images as separate files.
   - Large diagrams with many views and internal levels can take several seconds.
 - **C4 levels**: ghost cards show at most 8 per side, and connections between two levels are only drawn as ghosts (reach them from the inspector links).
+- **Workspace**: only the files directly inside the folder are read (no subfolders), up to 200 diagrams of at most 8 MB each. Saving into the folder needs a Chromium browser.
 - **Region detection** from a group's name covers the usual AWS, Azure and Google Cloud codes. Other names need the **Region** field.
 - Several CSV downloads in a row may trigger a «download multiple files» prompt in some browsers.
