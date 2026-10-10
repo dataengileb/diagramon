@@ -140,6 +140,15 @@
       eq((r1.model.decisions || []).map(d => [d.id, d.status]), (model.decisions || []).map(d => [d.id, d.status]), 'decisions');
     });
   }));
+  test('edge bend: text round trip, sanitize and invalid values', () => {
+    const ctx = textCtx('en'), r = TXT.parse('a: A [db]\nb: B [db]\na -> b : x bend=40,-20', ctx);
+    eq(r.errors, [], 'parse errors');
+    eq(r.model.edges[0].bend, { x: 40, y: -20 }, 'parsed');
+    const t = TXT.stringify(r.model, 'en');
+    assert(/bend=40,-20/.test(t), 'serialized');
+    eq(TXT.parse(t, ctx).model.edges[0].bend, { x: 40, y: -20 }, 'round trip');
+    assert(TXT.parse('a: A [db]\nb: B [db]\na -> b : x bend=oops', ctx).errors.length > 0, 'invalid value reported');
+  });
   test('lakehouse starter template keeps its node and edge counts', () => {
     const m = templates('en').find(x => /Lakehouse greenfield/.test(x.name)).model;
     eq({ nodes: m.nodes.length, edges: m.edges.length }, { nodes: 24, edges: 25 }, 'counts');
