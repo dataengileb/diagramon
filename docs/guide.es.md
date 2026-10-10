@@ -544,6 +544,16 @@ Nada sale de tu navegador: la carpeta se lee y se escribe en local, y el navegad
 - Un enlace a un diagrama que no está en la carpeta abierta aparece bajo el mapa y como hallazgo bajo en **Revisión** (fuente *Espacio de trabajo*) mientras haya una carpeta abierta.
 - Los enlaces se guardan en el JSON como `ref: { "doc": "<docId>" }` en el componente. La pestaña Texto no los muestra, pero al editar el texto se conservan.
 
+### Linaje de datos entre diagramas
+
+La pestaña **Linaje de datos** de la ventana Espacio de trabajo sigue un conjunto de datos de un diagrama al siguiente. Los conjuntos se unen por nombre (sin distinguir mayúsculas), el mismo que ya pones en las conexiones.
+
+- Un conjunto *produce* en un diagrama cuando nace en un componente al que nada se lo entrega, y *consume* donde termina. La pestaña lista cada conjunto que aparece en dos o más diagramas, con su papel en cada uno.
+- Si un componente se "detalla en" otro diagrama y el conjunto sale o entra por ese componente, el otro diagrama debería llevar también el conjunto. Si no, la pestaña avisa y **Revisión** genera un hallazgo bajo sobre ese componente.
+- Si dos diagramas producen el mismo conjunto (y ninguno enlaza con el otro), Revisión lo señala una vez para que quede una sola fuente.
+
+No se guarda nada para esto: se calcula con los archivos de la carpeta y el diagrama en pantalla.
+
 ### Elementos compartidos
 
 Las personas, decisiones y conjuntos de datos suelen repetirse en los diagramas de un mismo cliente. El cuadro **Elementos compartidos** de la ventana Espacio de trabajo guarda una sola copia para toda la carpeta, en `diagramon-workspace.json`:
