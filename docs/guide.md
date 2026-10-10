@@ -385,6 +385,19 @@ A greenfield is not built at once. Plan the build in **phases**: an ordered list
 - **Excel**: the Components and Connections sheets get **Phase** and **Retired in** columns, and a **Phases** sheet has one row per phase: ID, name, date, goal, components, added, retired and monthly total. Only diagrams with phases get them.
 - From the console: `Diagramon.phases()`, `addPhase({ name, date, goal })` (returns the new id), `updatePhase(id, patch)`, `removePhase(id)`, `setPhase(i | id | null)` (the phase shown; `null` = All), `Diagramon.phase` (the index shown, `-1` = All), `phaseModel(i)` (a copy of the diagram as it is in phase `i`) and `phaseStats(i)` (components, connections, monthly cost and open findings of that phase).
 
+### Migration disposition (6R)
+
+Say what happens to each component when the architecture is migrated: **Retain**, **Rehost**, **Replatform**, **Refactor**, **Repurchase** or **Retire**.
+
+- Select a component (or several). Under **Migration (6R)**, pick one of the buttons; *None* removes it. Hover a button for a one-line meaning.
+- The component shows a small pill at the bottom right with its initials (*RH* for rehost). It is hidden in the **Context**, **Security** and **Physical** views.
+- The **Migration (6R)** filter in the lenses dims everything with another disposition (or none).
+- The comparison table of the phases gets a **6R** column with the split of each phase, for example *RH 3 · RT 1*. Phases and 6R say different things: the phase says *when*, the disposition says *what*.
+- The **Review** panel has a *Migration* source with three warnings, all low and dismissible: a component to retire that no phase retires, a component marked retain, rehost or replatform that a phase retires, and (off by default) a repurchase or refactor with no linked decision.
+- The **report** has a *Migration strategy (6R)* section (counts, and each component with the phases where it appears and where it is retired); the **Excel** and CSV inventory get a *Migration (6R)* column; comparing versions lists a changed disposition. Diagrams that do not use it export exactly as before.
+- In the *Text* tab: `app: Billing app disposition=rehost` (Spanish: `disposición=rehospedar`). JSON: `"disposition": "rehost"`.
+- The values, colors, initials and warnings are in `src/config.js › migration`; the seventh R, *Relocate*, is there and off by default.
+
 ## 9. Sticky notes and risk zones
 
 Use the two buttons next to the zoom controls (bottom right of the canvas).

@@ -884,7 +884,7 @@
     eq(none.map(x => [x.cost, x.dCost]), [[null, null], [null, null], [null, null]], 'no cost anywhere'); eq(PHM.phaseRows({ nodes: [], edges: [], groups: [] }, h), [], 'no phases');
   });
   test('report and presentation wiring for phases', () => {
-    assert(/REP_SECS = \[[^\]]*'approvals', 'phases', 'versions'/.test(app), 'section after approvals'); assert(/phases: !!m\.phases\?\.length/.test(app), 'available with phases'); assert(app.includes("want('phases')") && app.includes('presentPhases'), 'section and API');
+    assert(/REP_SECS = \[[^\]]*'approvals', 'phases', 'migration', 'versions'/.test(app), 'section after approvals; the migration section follows the phases'); assert(/phases: !!m\.phases\?\.length/.test(app), 'available with phases'); assert(app.includes("want('phases')") && app.includes('presentPhases'), 'section and API');
     const i18n = read('src/i18n.js'); ['rep.s.phases', 'rep.k.phases', 'rep.h.phase', 'phase.present.tip', 'phase.present.step', 'phase.cmp.title', 'phase.cmp.cost'].forEach(k => assert(i18n.split(`'${k}'`).length - 1 === 2, `${k} in en and es`));
   });
   test('without phases the JSON, the snapshot and the text stay byte-identical', () => {
@@ -1446,6 +1446,87 @@
     const base = { title: 'X', nodes: [{ id: 'a', label: 'A', type: 'generic', x: 0, y: 0 }], edges: [], groups: [], decisions: [] };
     assert(serializeM({ ...base, formatVersion: 1 }).startsWith('{\n  "formatVersion": 1,\n  "title": "X"'), 'first key');
     assert(!/formatVersion/.test(serializeM(base)), 'absent without the field');
+  });
+
+  /* ======================================================================
+     Disposición de migración (6R): campo del nodo, texto, avisos, fases
+     ====================================================================== */
+  section('Migration 6R');
+  const MIGSRC6 = between('/* migration:start */', '/* migration:end */');
+  const foldT = x => String(x ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  const mk6 = (cfg = C) => {
+    const sources = [];
+    const api = new Function('C', 'fold', 'loc', 'colorVar', 'addFindingSource', 'SEVERITY', 'T', 'esc', `${MIGSRC6}; return { cleanDisposition, mgInfo, mgText, mgChips, MG, MG_BY };`)(
+      cfg, foldT, v => (v && typeof v === 'object' ? v.en : v), c => c, (k, fn) => sources.push({ k, fn }), ['low', 'medium', 'high', 'critical'], (k, v) => `${k}${v == null ? '' : ':' + JSON.stringify(v)}`, x => String(x));
+    return { ...api, findings: m => sources.find(x => x.k === 'migration').fn(m) };
+  };
+  const M6 = mk6();
+  test('cleanDisposition: keys, names in both languages, aliases and spacing; unknown, off or non-string values are dropped', () => {
+    eq(['rehost', 'Rehospedar', ' LIFT-AND-SHIFT ', 'replatform', 'Re-platform', 'recomprar', 'sustituir', 'rediseñar', 'redisenar', 'Retirar', 'keep'].map(M6.cleanDisposition),
+      ['rehost', 'rehost', 'rehost', 'replatform', 'replatform', 'repurchase', 'repurchase', 'refactor', 'refactor', 'retire', 'retain']);
+    eq(['relocate', 'reubicar', 'nope', '', null, 5, {}].map(M6.cleanDisposition), [null, null, null, null, null, null, null], 'relocate is off by default');
+    const on = mk6({ ...C, migration: { ...C.migration, dispositions: { ...C.migration.dispositions, relocate: { ...C.migration.dispositions.relocate, enabled: true } } } });
+    eq([on.cleanDisposition('relocate'), on.cleanDisposition('Reubicar')], ['relocate', 'relocate'], 'config can switch the seventh R on');
+    eq(Object.keys(M6.MG), ['retain', 'rehost', 'replatform', 'refactor', 'repurchase', 'retire']);
+  });
+  test('mgText and mgChips follow the order of config.js and skip empty counts', () => {
+    eq(M6.mgText({ retire: 1, rehost: 3, nope: 9 }), 'RH 3 · RT 1');
+    eq(M6.mgText(undefined), '');
+    assert(/mg-chip/.test(M6.mgChips({ rehost: 2 })) && M6.mgChips({}) === '');
+  });
+  const mgDoc = () => ({ phases: [{ id: 'p1', name: 'P1' }, { id: 'p2', name: 'P2' }], decisions: [{ id: 'ADR-001', links: { nodes: ['c'] } }],
+    nodes: [{ id: 'a', label: 'A', disposition: 'retire' }, { id: 'b', label: 'B', disposition: 'retire', until: 'p2' }, { id: 'c', label: 'C', disposition: 'rehost', until: 'p2' }, { id: 'd', label: 'D', disposition: 'refactor' }, { id: 'e', label: 'E' }] });
+  test('findings: retire without a retirement phase, retiring components marked to keep; the ADR rule is off by default; nothing without dispositions', () => {
+    const f = M6.findings(mgDoc());
+    eq(f.map(x => x.id), ['migration:retire-no-until:node:a', 'migration:until-kept:node:c']);
+    eq(f.map(x => [x.source, x.rule, x.severity, x.target]), [['migration', 'mig.retire-no-until', 'low', { kind: 'node', id: 'a' }], ['migration', 'mig.until-kept', 'low', { kind: 'node', id: 'c' }]]);
+    eq(M6.findings({ ...mgDoc(), phases: [] }).map(x => x.rule), ['mig.until-kept'], 'no phases, no retire-without-phase warning');
+    eq(M6.findings({ nodes: [{ id: 'a', label: 'A' }] }), []);
+    const on = mk6({ ...C, migration: { ...C.migration, rules: { ...C.migration.rules, 'mig.change-no-decision': { ...C.migration.rules['mig.change-no-decision'], enabled: true, severity: 'medium' } } } });
+    eq(on.findings(mgDoc()).filter(x => x.rule === 'mig.change-no-decision').map(x => [x.target.id, x.severity]), [['d', 'medium']], 'refactor with no linked ADR; the rehost with an ADR is not flagged');
+  });
+  test('phaseStats and phaseRows carry the 6R split only when some component has a disposition', () => {
+    const h = { monthly: () => 0, findings: () => [] };
+    const m = { ...phDoc(), nodes: phDoc().nodes.map((n, i) => (i < 2 ? { ...n, disposition: i ? 'retire' : 'rehost' } : n)) };
+    const st = PHM.phaseStats(m, 2, h);
+    assert(st.mig && Object.values(st.mig).reduce((a, b) => a + b, 0) >= 1, 'split present');
+    assert(!('mig' in PHM.phaseStats(phDoc(), 2, h)) && PHM.phaseRows(phDoc(), h).every(r => !('mig' in r)), 'absent without dispositions: rows stay as they were');
+    assert(PHM.phaseRows(m, h).some(r => r.mig), 'rows carry it');
+  });
+  test('text format: disposition round trips in English and Spanish, accepts aliases and reports unknown values with their line', () => {
+    const dispMap = Object.fromEntries(M6.MG_BY);
+    ['en', 'es'].forEach(lang => {
+      const ctx = { ...textCtx(lang), dispositions: dispMap };
+      const model = { title: 'T', groups: [], edges: [], nodes: [{ id: 'a', label: 'A', type: 'generic', disposition: 'rehost' }, { id: 'b', label: 'B', type: 'generic', disposition: 'repurchase' }, { id: 'c', label: 'C', type: 'generic' }] };
+      const txt = TXT.stringify(model, lang);
+      assert(new RegExp(`${lang === 'es' ? 'disposición=rehospedar' : 'disposition=rehost'}`).test(txt), `written in ${lang}: ${txt}`);
+      const r = TXT.parse(txt, ctx);
+      eq(r.errors, [], `errors (${lang})`);
+      eq(r.model.nodes.map(n => n.disposition), ['rehost', 'repurchase', undefined], `round trip (${lang})`);
+    });
+    const ctx = { ...textCtx('en'), dispositions: dispMap };
+    const r = TXT.parse('a: Alpha disposición=Rediseñar\nb: Beta disposition=lift-and-shift\nc: Gamma disposition=teleport', ctx);
+    eq(r.model.nodes.map(n => n.disposition), ['refactor', 'rehost', undefined], 'aliases in either language; unknown dropped');
+    eq(r.errors.length, 1, 'one error'); assert(/teleport/.test(r.errors[0].message || r.errors[0].msg || JSON.stringify(r.errors[0])), 'names the value');
+  });
+  test('the app wires it: normalize cleans it, JSON and diff know the field, inspector, filter, pill, report, inventory and Review use it', () => {
+    assert(/const dp = cleanDisposition\(o\.disposition\); if \(dp\) o\.disposition = dp; else delete o\.disposition;/.test(app), 'normalize');
+    assert(/'replicas', 'disposition', 'phase', 'until'\],\n    edge: \['id'/.test(app), 'ORDER.node');
+    assert(/'replicas', 'disposition', 'phase', 'until'\],\n    edge: \['label'/.test(app), 'DIFF_FIELDS.node');
+    assert(app.includes("'layer', 'disposition', 'compliance']") && app.includes("if (s === 'disposition')"), 'filter');
+    assert(app.includes('${dispField(t)}') && app.includes('b.dataset.disp != null'), 'inspector');
+    assert(app.includes("class: 'node-mig'") && read('index.html').includes('.node-mig rect'), 'pill');
+    assert(app.includes("want('migration')") && app.includes("sec('migration'") && app.includes('migration: m.nodes.some(n => n.disposition)'), 'report');
+    assert(app.includes('const INV_MIG = [[\'disposition\']]') && app.includes('m.nodes.some(x => x.disposition) ? INV_MIG'), 'inventory');
+    const i18n = read('src/i18n.js');
+    ['flt.sec.disposition', 'mig.label', 'mig.none', 'mig.hint', 'mig.mixed', 'mig.cmp', 'mig.cmp.tip', 'find.src.migration', 'mig.f.retire.t', 'mig.f.retire.fix', 'mig.f.kept.t', 'mig.f.kept.fix', 'mig.f.adr.t', 'mig.f.adr.fix',
+      'rep.s.migration', 'rep.h.disposition', 'rep.h.phaseIn', 'rep.h.phaseOut', 'inv.c.disposition'].forEach(k => eq(i18n.split(`'${k}':`).length - 1, 2, `${k} once per language`));
+    assert(/disposition=rehost/.test(read('src/text-lang.js')), 'documented in the text language header');
+  });
+  test('a diagram without dispositions keeps its JSON, text and phase rows byte-identical', () => {
+    const base = { title: 'X', formatVersion: 1, nodes: [{ id: 'a', label: 'A', type: 'generic', x: 0, y: 0 }], edges: [], groups: [], decisions: [] };
+    assert(!/disposition/.test(serializeM(base)) && !/disposition|disposición/.test(TXT.stringify(base, 'en')) && !/disposition|disposición/.test(TXT.stringify(base, 'es')), 'no key anywhere');
+    assert(/"disposition": "rehost"/.test(serializeM({ ...base, nodes: [{ ...base.nodes[0], disposition: 'rehost' }] })), 'written when present');
   });
 
   /* ---------- resumen ---------- */

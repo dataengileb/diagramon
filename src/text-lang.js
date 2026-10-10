@@ -37,6 +37,8 @@
              mitigated|mitigada, accepted|aceptada o na|no aplica; solo las decididas (las abiertas no se escriben)
    Capas:    nodo o grupo … layer=gold (capa=oro): bronze|silver|gold · bronce|plata|oro · raw|curated|serving · crudo|curado|consumo
              (los nodos heredan la capa de su grupo) · línea `layers: zones` / `capas: zonas` muestra Raw/Curated/Serving en vez de Bronze/Silver/Gold
+   Migración: nodo … disposition=rehost (disposición=rehospedar): retain|rehost|replatform|refactor|repurchase|retire · retener|rehospedar|replataformar|refactorizar|recomprar|retirar
+             (las 6R; también aceptan los alias de config.js › migration, y relocate|reubicar si ese valor está encendido)
    Seguridad: nodo … exposure=public|internal (exposición=pública|interna: sustituye a la deducida) · backup=yes|no (respaldo=sí|no)
    Cumplimiento: nodo o grupo … controls="iso27001:A.8.24=met,pcidss:4.2=gap" (es: controles=; estados met|partial|gap|na · cumple|parcial|brecha|na;
              cada control es marco:id=estado, los nodos heredan de sus grupos; sin espacios no hacen falta comillas)
@@ -123,7 +125,7 @@
   const PHASE_LINE_KEYS = ['date', 'fecha', 'goal', 'objetivo'];
   const PHASE_ID = /^[A-Za-z0-9_-]{1,30}$/, PHASE_MAX = 12;
   const isPhaseDay = v => { const r = /^(\d{4})-(\d{2})(?:-(\d{2}))?$/.exec(v); if (!r) return false; const mo = +r[2], d = r[3] == null ? 1 : +r[3]; return mo >= 1 && mo <= 12 && d >= 1 && d <= new Date(Date.UTC(+r[1], mo, 0)).getUTCDate(); };
-  const NODE_KEYS = ['color', 'badge', 'desc', 'sub', 'x', 'y', 'costo', 'cost', 'data', 'datos', 'region', 'región', 'country', 'pais', 'país', 'layer', 'capa', 'exposure', 'exposición', 'exposicion', 'backup', 'respaldo', 'controls', 'controles', 'in', 'dentro', 'c4', 'sla', 'rpo', 'rto', 'replicas', 'réplicas', ...PHASE_KEYS];
+  const NODE_KEYS = ['color', 'badge', 'desc', 'sub', 'x', 'y', 'costo', 'cost', 'data', 'datos', 'region', 'región', 'country', 'pais', 'país', 'layer', 'capa', 'disposition', 'disposición', 'disposicion', 'exposure', 'exposición', 'exposicion', 'backup', 'respaldo', 'controls', 'controles', 'in', 'dentro', 'c4', 'sla', 'rpo', 'rto', 'replicas', 'réplicas', ...PHASE_KEYS];
   /* ---------- gobierno: dueño, responsable, equipo, centro de costo ---------- */
   const GOV_KEYS = { owner: 'owner', dueño: 'owner', dueno: 'owner', steward: 'steward', responsable: 'steward', team: 'team', equipo: 'team',
     costcenter: 'costCenter', centro: 'costCenter', centrocosto: 'costCenter', centrodecosto: 'costCenter' };
@@ -265,12 +267,12 @@
     en: { title: 'title', direction: 'direction', group: 'group', cost: 'cost', hour: 'hour', month: 'month', year: 'year', years: 'years', data: 'data', encrypted: 'encrypted', both: 'both', yes: 'yes', no: 'no', lines: 'lines', line: 'line', region: 'region', transfer: 'transfer', ok: 'ok', elbow: 'elbow', curved: 'curved', elbowOne: 'elbow', curvedOne: 'curved', author: 'author', version: 'version', view: 'view', kind: 'kind', physical: 'physical', logical: 'logical',
       review: 'review', by: 'by', raised: 'raised', due: 'due', status: 'status', closed: 'closed', resolved: 'resolved', layer: 'layer', layers: 'layers', zones: 'zones',
       owner: 'owner', steward: 'steward', team: 'team', costCenter: 'costcenter',
-      in: 'in', layerOf: { bronze: 'bronze', silver: 'silver', gold: 'gold' }, exposure: 'exposure', backup: 'backup', expoOf: { public: 'public', internal: 'internal' },
+      in: 'in', layerOf: { bronze: 'bronze', silver: 'silver', gold: 'gold' }, disposition: 'disposition', dispOf: { retain: 'retain', rehost: 'rehost', replatform: 'replatform', refactor: 'refactor', repurchase: 'repurchase', retire: 'retire', relocate: 'relocate' }, exposure: 'exposure', backup: 'backup', expoOf: { public: 'public', internal: 'internal' },
       note: 'note', zone: 'zone', trust: 'trust', threat: 'threat', dismiss: 'dismiss', phase: 'phase', until: 'until', goal: 'goal', at: 'at', size: 'size', severity: 'severity', date: 'date', inside: 'inside', sevOf: { low: 'low', medium: 'medium', high: 'high', critical: 'critical' } },
     es: { title: 'título', direction: 'dirección', group: 'grupo', cost: 'costo', hour: 'hora', month: 'mes', year: 'año', years: 'años', data: 'datos', encrypted: 'cifrado', both: 'ambos', yes: 'sí', no: 'no', lines: 'líneas', line: 'línea', region: 'región', transfer: 'transferencia', ok: 'ok', elbow: 'codos', curved: 'curvas', elbowOne: 'codo', curvedOne: 'curva', author: 'autor', version: 'versión', view: 'vista', kind: 'tipo', physical: 'físico', logical: 'lógico',
       review: 'revisión', by: 'por', raised: 'levantada', due: 'compromiso', status: 'estado', closed: 'cerrada', resolved: 'resuelta', layer: 'capa', layers: 'capas', zones: 'zonas',
       owner: 'dueño', steward: 'responsable', team: 'equipo', costCenter: 'centro',
-      in: 'dentro', layerOf: { bronze: 'bronce', silver: 'plata', gold: 'oro' }, exposure: 'exposición', backup: 'respaldo', expoOf: { public: 'pública', internal: 'interna' },
+      in: 'dentro', layerOf: { bronze: 'bronce', silver: 'plata', gold: 'oro' }, disposition: 'disposición', dispOf: { retain: 'retener', rehost: 'rehospedar', replatform: 'replataformar', refactor: 'refactorizar', repurchase: 'recomprar', retire: 'retirar', relocate: 'reubicar' }, exposure: 'exposición', backup: 'respaldo', expoOf: { public: 'pública', internal: 'interna' },
       note: 'nota', zone: 'zona', trust: 'confianza', threat: 'amenaza', dismiss: 'descartar', phase: 'fase', until: 'hasta', goal: 'objetivo', at: 'en', size: 'tamaño', severity: 'severidad', date: 'fecha', inside: 'dentro', sevOf: { low: 'baja', medium: 'media', high: 'alta', critical: 'crítica' } }
   };
   const MSG = {
@@ -286,7 +288,7 @@
       day: v => `invalid date “${v}” (use YYYY-MM-DD)`, status: v => `invalid status “${v}” (use open or resolved)`,
       ctl: v => `invalid control “${v}” (use framework:id=met|partial|gap|na, e.g. iso27001:A.8.24=met)`,
       layer: v => `unknown layer “${v}” (use bronze, silver or gold; also raw, curated or serving)`, lnames: v => `invalid layer naming “${v}” (use medallion or zones)`,
-      expo: v => `invalid exposure “${v}” (use public or internal)`, backup: v => `invalid backup value “${v}” (use yes or no)`,
+      disp: v => `unknown disposition “${v}” (use retain, rehost, replatform, refactor, repurchase or retire)`, expo: v => `invalid exposure “${v}” (use public or internal)`, backup: v => `invalid backup value “${v}” (use yes or no)`,
       view: v => `unknown view “${v}”`, gkind: v => `invalid group type “${v}” (use logical or physical)`,
       c4: v => `unknown C4 type “${v}” (use person, system, container, component or external)`, inRef: id => `“in” points to “${id}”, which is not a component`,
       line: 'cannot understand this line', open: (n, lv) => `missing } to close ${lv ? (n === 1 ? 'a block' : `${n} blocks`) : n === 1 ? 'a group' : `${n} groups`}`,
@@ -327,7 +329,7 @@
       day: v => `fecha no válida «${v}» (usa AAAA-MM-DD)`, status: v => `estado no válido «${v}» (usa abierta o resuelta)`,
       ctl: v => `control no válido «${v}» (usa marco:id=cumple|parcial|brecha|na, ej.: iso27001:A.8.24=cumple)`,
       layer: v => `capa desconocida «${v}» (usa bronce, plata u oro; también crudo, curado o consumo)`, lnames: v => `nombres de capa no válidos «${v}» (usa medallón o zonas)`,
-      expo: v => `exposición no válida «${v}» (usa pública o interna)`, backup: v => `valor de respaldo no válido «${v}» (usa sí o no)`,
+      disp: v => `disposición desconocida «${v}» (usa retener, rehospedar, replataformar, refactorizar, recomprar o retirar)`, expo: v => `exposición no válida «${v}» (usa pública o interna)`, backup: v => `valor de respaldo no válido «${v}» (usa sí o no)`,
       view: v => `vista desconocida «${v}»`, gkind: v => `tipo de grupo no válido «${v}» (usa lógico o físico)`,
       c4: v => `tipo C4 desconocido «${v}» (usa persona, sistema, contenedor, componente o externo)`, inRef: id => `«dentro» apunta a «${id}», que no es un componente`,
       line: 'no se entiende esta línea', open: (n, lv) => `falta cerrar ${lv ? (n === 1 ? 'un bloque' : `${n} bloques`) : n === 1 ? 'un grupo' : `${n} grupos`} con }`,
@@ -451,6 +453,15 @@
       if (!ctx.layers) return k;
       if (ctx.layers[k]) return ctx.layers[k];
       err(ln, msg.layer(v));
+      return null;
+    };
+
+    // Disposición de migración (6R): clave, nombre o alias; si se conocen las de config.js (ctx.dispositions), avisa de las desconocidas
+    const checkDisp = (v, ln) => {
+      const k = String(v).trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[\s_-]+/g, '');
+      if (!ctx.dispositions) return k;
+      if (ctx.dispositions[k]) return ctx.dispositions[k];
+      err(ln, msg.disp(v));
       return null;
     };
 
@@ -928,6 +939,8 @@
         if (nr) n.region = nr.trim();
         const lv = tk.kv.layer ?? tk.kv.capa;
         if (lv != null) { const l = checkLayer(lv, ln); if (l) n.layer = l; }
+        const dpv = tk.kv.disposition ?? tk.kv.disposición ?? tk.kv.disposicion;
+        if (dpv != null) { const d = checkDisp(dpv, ln); if (d) n.disposition = d; }
         const ev = tk.kv.exposure ?? tk.kv.exposición ?? tk.kv.exposicion;
         if (ev != null) { if (/^(public|publico|público|pública|publica|external|externa?)$/i.test(ev.trim())) n.exposure = 'public'; else if (/^(internal|interno|interna|private|privado|privada)$/i.test(ev.trim())) n.exposure = 'internal'; else err(ln, msg.expo(ev)); }
         const bv = tk.kv.backup ?? tk.kv.respaldo;
@@ -1050,6 +1063,7 @@
       GOV_WORDS.forEach(k => { if (n[k]) p.push(`${w[k]}=${bare(n[k])}`); });
       if (n.region) p.push(`${w.region}=${bare(n.region)}`);
       if (n.layer) p.push(`${w.layer}=${w.layerOf[n.layer] || n.layer}`);
+      if (n.disposition) p.push(`${w.disposition}=${w.dispOf[n.disposition] || n.disposition}`);
       if (n.exposure) p.push(`${w.exposure}=${w.expoOf[n.exposure] || n.exposure}`);
       if (typeof n.backup === 'boolean') p.push(`${w.backup}=${n.backup ? w.yes : w.no}`);
       if (n.sla != null) p.push(`sla=${n.sla}`);
