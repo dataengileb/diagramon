@@ -1637,6 +1637,95 @@
   });
 
   /* ======================================================================
+     Informe de estado: statusBase / statusModel / statusText
+     ====================================================================== */
+  section('Status report');
+  const i18nSrc = read('src/i18n.js'), DICT2 = new Function('plural', `const C = { app: {} }; ${i18nSrc.slice(i18nSrc.indexOf('const DICT = {'), i18nSrc.indexOf('\n  };', i18nSrc.indexOf('const DICT = {')) + 5)} return DICT;`)((n, one, many) => `${n} ${n === 1 ? one : many}`);
+  const TL = lang => (k, v) => { const x = DICT2[lang][k] ?? DICT2.en[k] ?? k; return typeof x === 'function' ? x(v) : x; };
+  const diffSrc = app.slice(app.indexOf('  const DIFF_FIELDS = {'), app.indexOf('  /* ---------- decisiones (ADR): comparar entre versiones'));
+  const diffModelsT = new Function(`${diffSrc}; return diffModels;`)();
+  const ST = new Function(`${between('/* statusModel:start */', '/* statusModel:end */')}; return { statusBase, statusModel, statusText };`)();
+  // Ayudantes de prueba: el «riesgo» de un componente es una propiedad suelta (la diferencia de hallazgos no mira el resto)
+  const stH = { verLabel: v => v.name || v.id, prepared: v => v.diagram, diff: diffModelsT, findings: m => m.nodes.filter(n => n.risk).map(n => ({ id: `f:${n.id}`, title: `${n.label} is exposed`, severity: n.risk })), monthly: m => m.nodes.reduce((a, n) => a + (n.cost || 0), 0),
+    effort: m => { const d = m.nodes.reduce((a, n) => a + (n.days || 0), 0); return d ? { totals: { days: d, total: d * 500 } } : null; }, pending: () => [{ kind: 'decision', id: 'ADR-003', label: 'ADR-003 Use Kafka', missing: ['Ana', 'Luis'] }] };
+  const stBase = () => ({ title: 'Shop', phases: [{ id: 'p1', name: 'MVP', date: '2026-12' }, { id: 'p2', name: 'Wave 2', date: '2027-03' }], groups: [], edges: [{ from: 'a', to: 'b' }], nodes: [
+    { id: 'a', label: 'Alpha', cost: 100, risk: 'high' }, { id: 'b', label: 'Beta', phase: 'p1', days: 10 }, { id: 'e', label: 'Epsilon', risk: 'low' }] });
+  const stNow = () => ({ title: 'Shop', phases: [{ id: 'p1', name: 'MVP', date: '2026-12' }, { id: 'p2', name: 'Wave 2', date: '2027-06' }], groups: [], edges: [{ from: 'a', to: 'b' }, { from: 'a', to: 'c' }], nodes: [
+    { id: 'a', label: 'Alpha', cost: 160 }, { id: 'b', label: 'Beta', phase: 'p2', days: 15, desc: 'now with a queue' }, { id: 'c', label: 'Gamma', risk: 'medium' }],
+    decisions: [{ id: 'ADR-001', title: 'Use Postgres', status: 'accepted', date: '2026-09-10', history: [{ status: 'proposed', date: '2026-09-02' }, { status: 'accepted', date: '2026-09-10', by: 'Ana' }] },
+      { id: 'ADR-002', title: 'Keep the monolith', status: 'rejected', date: '2026-08-20', history: [{ status: 'proposed', date: '2026-08-15' }, { status: 'rejected', date: '2026-08-20' }] },
+      { id: 'ADR-003', title: 'Use Kafka', status: 'proposed', date: '2026-09-12' }],
+    comments: [{ id: 'CM-001', on: {}, text: 'a', date: '2026-09-11' }, { id: 'CM-002', on: {}, text: 'b', date: '2026-08-01' }, { id: 'CM-003', on: {}, text: 'c', date: '2026-09-11', internal: true }, { id: 'CM-004', on: {}, text: 'd', date: '2026-09-11', status: 'resolved' }],
+    versions: [{ id: 'v1', name: 'v1', created: '2026-09-01', updated: '2026-09-01', status: 'approved', diagram: stBase() }, { id: 'v2', name: 'v2', created: '2026-09-15', updated: '2026-09-15', status: 'review', diagram: stBase() }] });
+  test('statusBase: the last saved version by default, a chosen version, or a date; nothing without versions or a valid date', () => {
+    const m = stNow();
+    eq([ST.statusBase(m, undefined, stH).id, ST.statusBase(m, { kind: 'last' }, stH).day], ['v2', '2026-09-15'], 'last = most recently saved');
+    eq(ST.statusBase(m, { kind: 'version', id: 'v1' }, stH).day, '2026-09-01'); eq(ST.statusBase(m, { kind: 'version', id: 'nope' }, stH), null);
+    const d = ST.statusBase(m, { kind: 'date', day: '2026-09-10' }, stH); eq([d.id, d.day, d.snapDay], ['v1', '2026-09-10', '2026-09-01'], 'date: the diagram is compared with the latest version saved up to that day');
+    const early = ST.statusBase(m, { kind: 'date', day: '2026-01-01' }, stH); eq([early.model, early.day], [null, '2026-01-01'], 'before any version: only dates count');
+    eq(ST.statusBase(m, { kind: 'date', day: '10/09/2026' }, stH), null, 'bad date'); eq(ST.statusBase({ ...m, versions: [] }, undefined, stH), null, 'no versions'); eq(ST.statusBase(m, { kind: 'date', day: '2026-09-10' }, stH).label, 'v1');
+  });
+  test('statusModel: components, connections, phases, cost, effort and risks against the saved version', () => {
+    const m = stNow(), d = ST.statusModel(m, ST.statusBase(m, { kind: 'version', id: 'v1' }, stH), stH);
+    eq(d.components, { added: [{ id: 'c', label: 'Gamma' }], removed: [{ id: 'e', label: 'Epsilon' }], changed: [{ id: 'a', label: 'Alpha', fields: ['cost'] }, { id: 'b', label: 'Beta', fields: ['desc', 'phase'] }] });
+    eq(d.connections, { added: 1, removed: 0, changed: 0 });
+    eq(d.phases, { added: [], removed: [], moved: [{ id: 'p2', name: 'Wave 2', from: '2027-03', to: '2027-06' }], components: [{ id: 'b', label: 'Beta', from: 'MVP', to: 'Wave 2' }] });
+    eq(d.cost, { from: 100, to: 160, delta: 60 }); eq(d.effort, { days: [10, 15], total: [5000, 7500] });
+    eq(d.risks, { added: [{ id: 'f:c', title: 'Gamma is exposed', severity: 'medium' }], resolved: [{ id: 'f:a', title: 'Alpha is exposed', severity: 'high' }, { id: 'f:e', title: 'Epsilon is exposed', severity: 'low' }] }, 'worst first');
+  });
+  test('statusModel: decisions, approvals, comments and versions are measured by their dates, strictly after the reference day', () => {
+    const m = stNow(), d = ST.statusModel(m, ST.statusBase(m, { kind: 'version', id: 'v1' }, stH), stH);
+    eq(d.decisions, { accepted: [{ id: 'ADR-001', title: 'Use Postgres', date: '2026-09-10', by: 'Ana' }], rejected: [], proposed: [{ id: 'ADR-003', title: 'Use Kafka', date: '2026-09-12' }] }, 'the rejection of 20 Aug is older than the reference');
+    eq(d.pending, [{ kind: 'decision', id: 'ADR-003', label: 'ADR-003 Use Kafka', missing: ['Ana', 'Luis'] }]);
+    eq(d.comments, { open: 2, added: 1 }, 'open and public only (the internal and the resolved ones stay out); one is newer than the reference');
+    eq(d.versions, [{ label: 'v2', status: 'review' }], 'v1 is the reference itself');
+    const same = ST.statusModel(m, { id: '', day: '2026-09-10', label: '', model: null }, stH); eq(same.decisions.accepted, [], 'accepted on the same day does not count'); eq(same.snapshot, false); assert(!('components' in same) && !('risks' in same), 'no photo, no diagram comparison');
+    eq(ST.statusModel(m, null, stH), { empty: true }, 'no reference');
+  });
+  test('statusModel: quiet when nothing changed; the lists are capped', () => {
+    const m = { ...stNow(), decisions: [], comments: [], versions: [{ id: 'v1', name: 'v1', created: '2026-09-01', updated: '2026-09-01', diagram: stNow() }] }; m.versions[0].diagram = JSON.parse(JSON.stringify({ ...m, versions: undefined }));
+    const q = ST.statusModel(m, ST.statusBase({ ...m }, undefined, { ...stH, pending: () => [] }), { ...stH, pending: () => [] }); eq(q.quiet, true, JSON.stringify(q));
+    const big = { ...stNow(), nodes: Array.from({ length: 80 }, (_, i) => ({ id: `n${i}`, label: `N${i}` })) }; eq(ST.statusModel(big, ST.statusBase(big, { kind: 'version', id: 'v1' }, stH), stH).components.added.length, 50, 'at most 50 per list');
+  });
+  const stF = { money: v => `$${v}`, day: v => v, phaseDate: v => v };
+  test('statusText (English): short sentences with plurals, lists and “and”; sections in a fixed order; deterministic', () => {
+    const m = stNow(), d = ST.statusModel(m, ST.statusBase(m, { kind: 'version', id: 'v1' }, stH), stH), t = ST.statusText(d, TL('en'), stF);
+    eq(t.intro, 'Changes since v1 (2026-09-01).'); eq(t.sections.map(s => s.k), ['decisions', 'risks', 'phases', 'components', 'money', 'pending', 'comments', 'versions']);
+    eq(Object.fromEntries(t.sections.map(s => [s.k, s.lines])), {
+      decisions: ['1 decision was accepted: ADR-001 Use Postgres.', '1 new decision was proposed: ADR-003 Use Kafka.'],
+      risks: ['1 new risk was detected: Gamma is exposed.', '2 risks were resolved: Alpha is exposed (High) and Epsilon is exposed.'],
+      phases: ['Phase “Wave 2” moves from 2027-03 to 2027-06.', 'Beta moves from MVP to Wave 2.'],
+      components: ['1 component was added: Gamma.', '1 component was removed: Epsilon.', '2 components were modified: Alpha and Beta.', '1 connection added.'],
+      money: ['Monthly running cost goes from $100 to $160 (+$60).', 'Estimated effort goes from 10 to 15 person-days (+5).', 'Build cost goes from $5000 to $7500.'],
+      pending: ['ADR-003 Use Kafka is waiting for Ana and Luis.'], comments: ['2 comments are still open (1 new).'], versions: ['New version saved: v2 (In review).'] });
+    eq(ST.statusText(d, TL('en'), stF), t, 'same input, same text');
+  });
+  test('statusText (Spanish): the same data in Spanish, with their plurals', () => {
+    const m = stNow(), d = ST.statusModel(m, ST.statusBase(m, { kind: 'version', id: 'v1' }, stH), stH), t = ST.statusText(d, TL('es'), stF);
+    eq(t.intro, 'Cambios desde v1 (2026-09-01).');
+    eq(t.sections.find(s => s.k === 'decisions').lines, ['1 decisión fue aceptada: ADR-001 Use Postgres.', '1 decisión nueva fue propuesta: ADR-003 Use Kafka.']);
+    eq(t.sections.find(s => s.k === 'risks').lines[1], '2 riesgos fueron resueltos: Alpha is exposed (Alta) y Epsilon is exposed.');
+    eq(t.sections.find(s => s.k === 'components').lines, ['1 componente fue añadido: Gamma.', '1 componente fue retirado: Epsilon.', '2 componentes fueron modificados: Alpha y Beta.', '1 conexión añadida.']);
+    eq(t.sections.find(s => s.k === 'money').lines[0], 'El costo mensual de operación pasa de $100 a $160 (+$60).'); eq(t.sections.find(s => s.k === 'pending').lines, ['ADR-003 Use Kafka espera a Ana y Luis.']);
+  });
+  test('statusText: empty sections are not printed, long lists are shortened, a quiet period and a missing reference say so clearly', () => {
+    const m = stNow(), d = ST.statusModel(m, { id: '', day: '2026-09-10', label: '', model: null }, { ...stH, pending: () => [] }), t = ST.statusText(d, TL('en'), stF);
+    eq(t.intro, 'Changes since 2026-09-10.'); eq(t.sections.map(s => s.k), ['decisions', 'comments', 'versions'], 'no photo: nothing about components, phases, risks or money');
+    const many = ST.statusText({ ...ST.statusModel(m, ST.statusBase(m, { kind: 'version', id: 'v1' }, stH), stH), components: { added: Array.from({ length: 9 }, (_, i) => ({ id: `n${i}`, label: `N${i}` })), removed: [], changed: [] } }, TL('en'), stF);
+    eq(many.sections.find(s => s.k === 'components').lines[0], '9 components were added: N0, N1, N2, N3, N4, N5 and 3 more.');
+    eq(ST.statusText({ empty: true }, TL('en'), stF), { intro: 'There is no saved version or date to compare with. Save a version first, or pick a date.', sections: [], quiet: true });
+    const q = ST.statusText({ baseDay: '2026-09-01', baseLabel: 'v1', quiet: true, pending: [], comments: { open: 0, added: 0 }, versions: [], decisions: { accepted: [], rejected: [], proposed: [] } }, TL('en'), stF); eq([q.quiet, q.none, q.sections], [true, 'Nothing changed in this period.', []]);
+  });
+  test('the app wires it: helpers, the API call and the texts in both languages', () => {
+    assert(app.includes('const statusHelpers = {') && app.includes('function statusReport(spec, m = S.model)') && app.includes('exportThreats, exportReport, statusReport,'), 'app');
+    assert(app.includes("apprMissing('decision', d, mm)") && app.includes("apprMissing('version', v, mm)"), 'pending approvals come from the approval model');
+    const keys = [...new Set([...app.slice(app.indexOf('/* statusModel:start */'), app.indexOf('/* statusModel:end */')).matchAll(/T\(`?'?(stat\.[\w.]+)/g)].map(x => x[1]))];
+    ['stat.empty', 'stat.intro.v', 'stat.intro.d', 'stat.none', 'stat.and', 'stat.more', 'stat.first', 'stat.dec.accepted', 'stat.risk.added', 'stat.phase.moved', 'stat.comp.added', 'stat.conn', 'stat.cost', 'stat.effort', 'stat.build', 'stat.pend.decision', 'stat.pend.version', 'stat.comments', 'stat.version', 'stat.phase.comp', 'stat.phase.compMore',
+      'stat.s.decisions', 'stat.s.risks', 'stat.s.phases', 'stat.s.components', 'stat.s.money', 'stat.s.pending', 'stat.s.comments', 'stat.s.versions'].forEach(k => { eq(i18nSrc.split(`'${k}':`).length - 1, 2, `${k} once per language`); });
+    assert(keys.length >= 5, `keys found in the block: ${keys.length}`);
+  });
+
+  /* ======================================================================
      Radar tecnológico: entradas, reconocimiento, fin de soporte y avisos
      ====================================================================== */
   section('Tech radar');
