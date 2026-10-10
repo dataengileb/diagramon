@@ -3584,21 +3584,37 @@
   }
   function setFilter(f) { S.filter = f || {}; applyFilter(); }
   const clearFilter = () => setFilter({});
+  // Las 15 secciones se agrupan en 4 bloques plegables; abiertos: los que tienen fichas activas y los que abre el usuario
+  const FLT_GROUPS = [['security', ['data', 'review', 'compliance']], ['infra', ['provider', 'category', 'group', 'layer', 'region']], ['gov', ['team', 'owner', 'steward', 'costCenter']], ['plan', ['cost', 'disposition', 'radar']]];
+  const fltOpen = new Set(), fltQuery = $('#filter-q');
   function renderFilterMenu() {
-    const opts = filterOptions(), box = $('#filter-body');
-    box.innerHTML = FLT_SECTIONS.filter(s => opts[s].length).map(s => `<div class="flt-sec"><div class="cat">${esc(T(`flt.sec.${s}`))}</div><div class="flt-chips">${
-      opts[s].map(o => `<button class="flt-chip${(S.filter[s] || []).includes(o.k) ? ' on' : ''}" data-s="${s}" data-k="${esc(o.k)}" aria-pressed="${(S.filter[s] || []).includes(o.k)}">${esc(o.label)}</button>`).join('')}</div></div>`).join('');
-    $('#filter-clear').hidden = !Object.keys(S.filter).length;
+    const opts = filterOptions(), box = $('#filter-body'), q = fold(fltQuery.value.trim()), active = Object.keys(S.filter).length;
+    const chip = (s, o) => { const on = (S.filter[s] || []).includes(o.k); return `<button class="flt-chip${on ? ' on' : ''}" data-s="${s}" data-k="${esc(o.k)}" aria-pressed="${on}">${esc(o.label)}</button>`; };
+    const act = FLT_SECTIONS.flatMap(s => (S.filter[s] || []).map(k => ({ s, k, label: opts[s].find(o => o.k === k)?.label || k })));
+    const groups = FLT_GROUPS.map(([g, secs]) => {
+      const body = secs.filter(s => opts[s].length).map(s => {
+        const list = opts[s].filter(o => !q || fold(`${o.label} ${T(`flt.sec.${s}`)}`).includes(q));
+        return list.length ? `<div class="flt-sec"><div class="cat">${esc(T(`flt.sec.${s}`))}</div><div class="flt-chips">${list.map(o => chip(s, o)).join('')}</div></div>` : '';
+      }).join('');
+      if (!body) return '';
+      const n = secs.reduce((t, s) => t + (S.filter[s] || []).length, 0), open = q || n || fltOpen.has(g);
+      return `<div class="flt-grp${open ? ' open' : ''}"><button class="flt-grp-h" data-g="${g}" aria-expanded="${!!open}"><span class="flt-car" aria-hidden="true"></span>${esc(T(`flt.grp.${g}`))}${n ? `<span class="flt-n">${n}</span>` : ''}</button>${open ? `<div class="flt-grp-b">${body}</div>` : ''}</div>`;
+    }).join('');
+    box.innerHTML = (act.length ? `<div class="flt-act"><div class="flt-chips">${act.map(a => `<button class="flt-chip on" data-s="${a.s}" data-k="${esc(a.k)}" title="${esc(T(`flt.sec.${a.s}`))}">${esc(a.label)} ✕</button>`).join('')}</div></div>` : '') + (groups || `<p class="menu-note">${esc(T('flt.nomatch'))}</p>`);
+    $('#filter-clear').hidden = !active;
   }
   function placeFilterMenu() {
     const r = filterMenu.querySelector('summary').getBoundingClientRect(), pop = filterMenu.querySelector('.menu-pop');
     pop.style.top = `${r.bottom}px`;
     pop.style.right = `${Math.max(8, innerWidth - r.right)}px`;
   }
-  filterMenu.addEventListener('toggle', () => { if (filterMenu.open) { renderFilterMenu(); placeFilterMenu(); } });
+  fltQuery.addEventListener('input', renderFilterMenu);
+  filterMenu.addEventListener('toggle', () => { if (filterMenu.open) { fltQuery.value = ''; renderFilterMenu(); placeFilterMenu(); } });
   document.addEventListener('pointerdown', ev => { if (filterMenu.open && !filterMenu.contains(ev.target)) filterMenu.open = false; });
   filterMenu.addEventListener('click', ev => {
     if (ev.target.closest('#filter-clear')) return clearFilter();
+    const h = ev.target.closest('.flt-grp-h');
+    if (h) { fltOpen.has(h.dataset.g) ? fltOpen.delete(h.dataset.g) : fltOpen.add(h.dataset.g); return renderFilterMenu(); }
     const b = ev.target.closest('.flt-chip');
     if (!b) return;
     const { s, k } = b.dataset, cur = S.filter[s] || [];
