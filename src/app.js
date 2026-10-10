@@ -2499,8 +2499,9 @@
     const byId = new Map(m.nodes.map(n => [n.id, n]));
     const hideN = new Set(), hideE = new Set(), hideG = new Set(), top = new Set();
     const nodeCls = new Map(), edgeCls = new Map(), nodeVar = new Map(), edgeVar = new Map(), ownVar = new Map();
+    const boxed = new Set();   // nodos que solo están ocultos por estar dentro de una caja cerrada: siguen contando para su tarjeta
     if (collapse) { // cajas cerradas: dentro de un grupo todo se oculta; las conexiones reales se sustituyen por las agregadas
-      m.nodes.forEach(n => { if (n.group) hideN.add(n.id); });
+      m.nodes.forEach(n => { if (n.group) { hideN.add(n.id); boxed.add(n.id); } });
       m.edges.forEach(e => hideE.add(e.id));
       m.groups.forEach(g => (g.parent ? hideG : top).add(g.id));
     } else if (v.groups === 'logical') m.groups.forEach(g => { if (groupKind(g) === 'physical') hideG.add(g.id); });
@@ -2513,7 +2514,7 @@
     VW.sc = sc;
     // Fases: lo que aún no existe en la fase elegida es un fantasma (se oculta si se apagan los fantasmas) y lo retirado se oculta; las conexiones siguen a sus extremos
     const pv = phaseView();
-    pv.hide.nodes.forEach(id => hideN.add(id)); pv.hide.edges.forEach(id => hideE.add(id)); pv.hide.groups.forEach(id => hideG.add(id));
+    pv.hide.nodes.forEach(id => { hideN.add(id); boxed.delete(id); }); sc.nodes.forEach(id => boxed.delete(id)); pv.hide.edges.forEach(id => hideE.add(id)); pv.hide.groups.forEach(id => hideG.add(id));
     VW.ph = pv;
 
     if (emph === 'security') {
@@ -2573,6 +2574,7 @@
     R.nodes.forEach((g, id) => { g.classList.toggle('pghost', pv.ghost.nodes.has(id)); g.classList.toggle('ph-new', pv.fresh.has(id)); });
     R.edges.forEach((r, id) => r.g.classList.toggle('pghost', pv.ghost.edges.has(id)));
     R.groups.forEach((r, id) => r.g.classList.toggle('pghost', pv.ghost.groups.has(id)));
+    VW.boxed = boxed;
     VW.hideNodes = hideN; VW.hideEdges = hideE; VW.hideGroups = hideG;
     // Atenuados (no ocultos): los muestra la pastilla de la vista
     const dim = cls => [...cls].filter(([id, c]) => /\bv-dim\b/.test(c)).length;
@@ -2949,7 +2951,7 @@
     const topOf = gid => { let g = gmap.get(gid), i = 0; while (g?.parent && gmap.has(g.parent) && i++ < 50) g = gmap.get(g.parent); return g; };
     // Representante visible de cada nodo: la caja cerrada de su grupo de primer nivel, o él mismo
     const reps = new Map(), repOf = new Map();
-    scopeModel().nodes.filter(n => !VW.hideNodes.has(n.id)).forEach(n => {
+    scopeModel().nodes.filter(n => !VW.hideNodes.has(n.id) || VW.boxed.has(n.id)).forEach(n => {
       const tg = n.group && topOf(n.group), b = tg && R.gbox.get(tg.id), k = b ? `g:${tg.id}` : `n:${n.id}`;
       // La caja cerrada es una tarjeta compacta centrada en el centro del grupo (no del tamaño del grupo)
       const card = b && { w: Math.min(b.w, 300), h: Math.min(b.h, 128) };

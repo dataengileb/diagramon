@@ -51,7 +51,7 @@ window.DiagramonCore.state = (() => {
   // Referencias a elementos SVG y medidas calculadas (nunca se guardan en el modelo)
   const R = { nodes: new Map(), edges: new Map(), groups: new Map(), width: new Map(), gbox: new Map(), notes: new Map(), zones: new Map() };
   // Lo que la vista activa oculta o resume (se recalcula en applyViewMode / updateContext) y el último resaltado
-  const VW = { dimNodes: 0, dimEdges: 0, hideNodes: new Set(), hideEdges: new Set(), hideGroups: new Set(), flows: new Map(), ctxBoxes: new Map(), ctxEdges: new Map(), gcost: null, sc: { nodes: new Set(), edges: new Set(), groups: new Set() }, xs: null, ph: null };
+  const VW = { dimNodes: 0, dimEdges: 0, hideNodes: new Set(), hideEdges: new Set(), hideGroups: new Set(), boxed: new Set(), flows: new Map(), ctxBoxes: new Map(), ctxEdges: new Map(), gcost: null, sc: { nodes: new Set(), edges: new Set(), groups: new Set() }, xs: null, ph: null };
   const HL = { f: null, fr: null };
 
   return { FONTS, fontKey, VIEW_DEFAULTS, VIEWS, VIEW_KEYS, VR, viewKey, viewLabel, S, R, VW, HL };
