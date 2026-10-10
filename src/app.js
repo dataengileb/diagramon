@@ -9142,6 +9142,32 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     const issues = lin.issues.map(x => `<p class="ws-dir"><span class="ws-warn">⚠</span> ${esc(T(`ws.f.${x.kind}.t`, { ds: x.ds, node: x.label, to: title(x.to), others: (x.docs || []).map(title).join(', ') }))} <small>(${esc(title(x.docId))})</small></p>`).join('');
     return `<p class="ws-dir">${esc(T('ws.lin.hint'))}</p>${rows ? `<table class="ws-lint"><thead><tr><th>${esc(T('ws.lin.ds'))}</th><th>${esc(T('ws.lin.in'))}</th></tr></thead><tbody>${rows}</tbody></table>` : `<p class="ws-dir">${esc(T('ws.lin.empty'))}</p>`}${issues}${cur ? '' : `<p class="ws-dir">${esc(T('ws.lin.unsaved'))}</p>`}`;
   }
+  // Cartera: un Excel con una fila por diagrama de la carpeta y otra hoja con los conjuntos de datos compartidos; el diagrama abierto se lee de pantalla, los demás de su archivo
+  async function wsPortfolio() {
+    const L = wsLib(), X = window.DiagramonXlsx, msg = $('#ws-msg'), ix = WS.index, cur = S.model.docId || '', bad = [], rows = [];
+    if (msg) msg.textContent = '';
+    try {
+      if (!X || !ix) throw new Error('no workspace');
+      for (const d of ix.diagrams) {
+        let m = S.model;
+        if (!((cur && d.docId === cur && !d.dupDocId) || d.name === WS.file)) {
+          try { m = normalize(migrate(JSON.parse(await WS.read(d.name))).raw); } catch { bad.push(d.name); continue; }
+        }
+        const f = { high: 0, medium: 0, low: 0 };
+        findingsOf(m).filter(x => !x.dismissed).forEach(x => { f[x.severity === 'critical' || x.severity === 'high' ? 'high' : x.severity === 'medium' ? 'medium' : 'low']++; });
+        rows.push([m.title, d.name, m.nodes.length, m.edges.length, (m.phases || []).length, m.nodes.some(hasCost) ? round2(monthlyTotal(m.nodes)) : '', f.high, f.medium, f.low,
+          (m.decisions || []).length, (m.stakeholders || []).length, (m.datasets || []).length, new Set(m.nodes.filter(n => n.ref).map(n => n.ref.doc)).size]);
+      }
+      const lin = L.lineage(ix.diagrams, cur ? { docId: cur, title: S.model.title, flows: L.flowsOf(S.model) } : null), dsRows = [];
+      lin.datasets.forEach(r => r.uses.forEach(u => dsRows.push([r.name, u.title, T(u.produces ? 'ws.lin.produces' : 'ws.lin.consumes')])));
+      const cols = [['title'], ['file'], ['nodes', 'int'], ['edges', 'int'], ['phases', 'int'], ['cost', 'money'], ['high', 'int'], ['medium', 'int'], ['low', 'int'], ['decisions', 'int'], ['stakeholders', 'int'], ['datasets', 'int'], ['links', 'int']];
+      const sheets = [{ name: T('ws.pf.sheet.diagrams'), head: cols.map(([k]) => T(`ws.pf.c.${k}`)), rows, fmt: cols.map(([, f]) => f || null) }];
+      if (dsRows.length) sheets.push({ name: T('ws.pf.sheet.datasets'), head: [T('ws.lin.ds'), T('ws.pf.c.title'), T('ws.pf.c.role')], rows: dsRows, fmt: [null, null, null] });
+      const slug = fold(ix.manifest?.name || WS.dir.name || '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'workspace';
+      download(X.blob(sheets, { title: `${ix.manifest?.name || WS.dir.name} · ${T('ws.pf.title')}`, creator: 'Diagramon' }), `${slug}-portfolio.xlsx`, X.MIME);
+      toast(bad.length ? T('ws.pf.partial', { n: rows.length, bad: bad.length }) : T('toast.exported', { name: T('ws.pf.title') }));
+    } catch (e) { console.error(e); if (msg) msg.textContent = T('toast.exportFail'); }
+  }
   function wsRender() {
     const box = $('#ws-body');
     if (!box) return;
@@ -9152,6 +9178,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     $('#ws-tab-map').setAttribute('aria-pressed', String(WS.view === 'map'));
     $('#ws-tab-lineage').setAttribute('aria-pressed', String(WS.view === 'lineage'));
     $('#ws-tabs').hidden = !d || !ix;
+    $('#ws-portfolio').hidden = !d || !ix || !ix.diagrams.length;
     if (!d || !ix) { box.innerHTML = `<p class="ws-dir">${esc(T('ws.none'))}</p>`; return; }
     if (WS.view === 'map') { box.innerHTML = wsMapHtml(); return; }
     if (WS.view === 'lineage') { box.innerHTML = wsLineageHtml(); return; }
@@ -9172,7 +9199,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     back.innerHTML = `<form class="cf share rep ws" role="dialog" aria-modal="true" aria-labelledby="${id}t" autocomplete="off">
       <h3 id="${id}t">${esc(T('ws.title'))}</h3>
       <p>${esc(T('ws.lead'))}</p>
-      <div class="ws-bar"><button type="button" class="btn" id="ws-pick">${esc(T('ws.pick'))}</button><button type="button" class="btn" id="ws-refresh" hidden>${esc(T('ws.refresh'))}</button><button type="button" class="btn" id="ws-save" hidden>${esc(T('ws.save'))}</button></div>
+      <div class="ws-bar"><button type="button" class="btn" id="ws-pick">${esc(T('ws.pick'))}</button><button type="button" class="btn" id="ws-refresh" hidden>${esc(T('ws.refresh'))}</button><button type="button" class="btn" id="ws-save" hidden>${esc(T('ws.save'))}</button><button type="button" class="btn" id="ws-portfolio" hidden>${esc(T('ws.pf.btn'))}</button></div>
       <div class="ws-bar" id="ws-tabs" hidden><button type="button" class="btn" id="ws-tab-list" aria-pressed="true">${esc(T('ws.tab.list'))}</button><button type="button" class="btn" id="ws-tab-map" aria-pressed="false">${esc(T('ws.tab.map'))}</button><button type="button" class="btn" id="ws-tab-lineage" aria-pressed="false">${esc(T('ws.tab.lineage'))}</button></div>
       <div id="ws-body"></div>
       <p class="sh-err" role="alert" id="ws-msg"></p>
@@ -9188,6 +9215,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
       else if (b.id === 'ws-pick') wsPick();
       else if (b.id === 'ws-refresh') { try { await wsRefresh(); } catch { $('#ws-msg').textContent = T('ws.err.pick'); } wsRender(); }
       else if (b.id === 'ws-save') wsSave();
+      else if (b.id === 'ws-portfolio') wsPortfolio();
       else if (b.id === 'ws-sh-add') wsShareAdd();
       else if (b.id === 'ws-sh-out') wsShareOut();
       else if (b.id === 'ws-tab-list' || b.id === 'ws-tab-map' || b.id === 'ws-tab-lineage') { WS.view = b.id === 'ws-tab-map' ? 'map' : b.id === 'ws-tab-lineage' ? 'lineage' : 'list'; wsRender(); }

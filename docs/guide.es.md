@@ -554,6 +554,10 @@ La pestaña **Linaje de datos** de la ventana Espacio de trabajo sigue un conjun
 
 No se guarda nada para esto: se calcula con los archivos de la carpeta y el diagrama en pantalla.
 
+### Exportar la cartera
+
+El botón **Exportar cartera (Excel)** de la ventana Espacio de trabajo escribe un libro para toda la carpeta. La hoja *Diagramas* tiene una fila por diagrama: componentes, conexiones, fases, costo mensual (vacío si ningún componente lo tiene), hallazgos abiertos por severidad (los descartados no cuentan), decisiones, interesados, conjuntos de datos y a cuántos otros diagramas enlaza. La hoja *Conjuntos compartidos* lista cada conjunto que aparece en más de un diagrama con su papel en cada uno (ver Linaje de datos). El diagrama en pantalla se lee tal como está ahora; los demás, de su archivo. Un archivo que no se pueda leer se omite y el mensaje dice cuántos.
+
 ### Elementos compartidos
 
 Las personas, decisiones y conjuntos de datos suelen repetirse en los diagramas de un mismo cliente. El cuadro **Elementos compartidos** de la ventana Espacio de trabajo guarda una sola copia para toda la carpeta, en `diagramon-workspace.json`:

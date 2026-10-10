@@ -555,6 +555,10 @@ The **Data lineage** tab of the Workspace window follows a dataset from one diag
 
 Nothing is stored for this: it is computed from the files in the folder and the diagram on screen.
 
+### Portfolio export
+
+The **Export portfolio (Excel)** button of the Workspace window writes one workbook for the whole folder. The *Diagrams* sheet has a row per diagram: components, connections, phases, monthly cost (left empty when no component has one), open findings by severity (dismissed ones are not counted), decisions, stakeholders, datasets and how many other diagrams it links to. The *Shared datasets* sheet lists each dataset that appears in more than one diagram with its role in each (see Data lineage). The diagram on screen is read as it is now; the others from their files. A file that cannot be read is skipped and the message says how many.
+
 ### Shared items
 
 People, decisions and datasets often repeat across the diagrams of one client. The **Shared items** box of the Workspace window keeps one copy for the whole folder, in `diagramon-workspace.json`:
