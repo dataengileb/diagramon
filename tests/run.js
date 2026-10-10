@@ -272,7 +272,7 @@
   section('app.js pure functions');
   const app = read('src/app.js');
   const between = (a, b) => { const i = app.indexOf(a), j = app.indexOf(b, i); assert(i >= 0 && j > i, `markers not found: ${a}`); return app.slice(i + a.length, j); };
-  const routeReliability = new Function(`${between('/* routeReliability:start */', '/* routeReliability:end */')}; return routeReliability;`)();
+  const routeReliability = win.DiagramonModels.reliability().routeReliability;
   test('composite availability: single route = product', () => {
     const r = routeReliability(3, [[1], [2], []], 0, 2, [0.999, 0.99, 0.995]);
     near(r.value, 0.999 * 0.99 * 0.995, 1e-12); assert(r.exact, 'exact');
@@ -1020,7 +1020,7 @@
      10. Conjuntos de datos: catálogo, contrato de datos, frescura de extremo a extremo, latencia
      ====================================================================== */
   section('Datasets');
-  const DSM = new Function(`${between('/* datasetModel:start */', '/* datasetModel:end */')}; return { cleanCatalog, catalog, e2eFreshness, storageEstimate, renameDataset, datasetIssues };`)();
+  const DSM = win.DiagramonModels.datasets();
   const DSD = new Function('fold', `const dsKey = s => String(s).trim().toLowerCase(); ${app.slice(app.indexOf('  function lineageOf('), app.indexOf('  // Conjuntos de datos que entran y salen de un nodo'))}\n${app.slice(app.indexOf('  const DUR_UNITS'), app.indexOf('  const numFmt'))}\nreturn { lineageOf, parseDur, normDur };`)(fold);
   const dsLayer = v => { const k = fold(v).trim(), DLs = C.dataLayers || {}, AL = C.layerAliases || {}; return DLs[k] ? k : DLs[AL[k]] ? AL[k] : null; };
   const dsClean = (raw, m) => DSM.cleanCatalog(raw, m || { nodes: [{ id: 'bi' }, { id: 'api' }], phases: [{ id: 'mvp' }, { id: 'wave1' }] }, { layer: dsLayer, classes: Object.keys(C.dataClasses || {}), normDur: DSD.normDur });
@@ -1467,12 +1467,10 @@
      Disposición de migración (6R): campo del nodo, texto, avisos, fases
      ====================================================================== */
   section('Migration 6R');
-  const MIGSRC6 = between('/* migration:start */', '/* migration:end */');
   const foldT = x => String(x ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
   const mk6 = (cfg = C) => {
     const sources = [];
-    const api = new Function('C', 'fold', 'loc', 'colorVar', 'addFindingSource', 'SEVERITY', 'T', 'esc', `${MIGSRC6}; return { cleanDisposition, mgInfo, mgText, mgChips, MG, MG_BY };`)(
-      cfg, foldT, v => (v && typeof v === 'object' ? v.en : v), c => c, (k, fn) => sources.push({ k, fn }), ['low', 'medium', 'high', 'critical'], (k, v) => `${k}${v == null ? '' : ':' + JSON.stringify(v)}`, x => String(x));
+    const api = win.DiagramonModels.disposition({ C: cfg, fold: foldT, loc: v => (v && typeof v === 'object' ? v.en : v), colorVar: c => c, addFindingSource: (k, fn) => sources.push({ k, fn }), SEVERITY: ['low', 'medium', 'high', 'critical'], T: (k, v) => `${k}${v == null ? '' : ':' + JSON.stringify(v)}`, esc: x => String(x) });
     return { ...api, findings: m => sources.find(x => x.k === 'migration').fn(m) };
   };
   const M6 = mk6();
@@ -1758,12 +1756,10 @@
      Radar tecnológico: entradas, reconocimiento, fin de soporte y avisos
      ====================================================================== */
   section('Tech radar');
-  const RDSRC = between('/* radar:start */', '/* radar:end */');
   const mkRd = (entries, now = '2026-10-10', extra = {}) => {
     const sources = [];
     const cfg = { ...C, techRadar: { ...C.techRadar, entries, ...extra } };
-    const api = new Function('C', 'fold', 'loc', 'colorVar', 'addFindingSource', 'SEVERITY', 'T', 'today', 'fmtDay', `${RDSRC}; return { cleanRadarEntry, cleanRadarList, cleanRadarRef, radarEntries, radarOf, radarStatus, radarInfo, rdEos };`)(
-      cfg, foldT, v => (v && typeof v === 'object' ? v.en : v), c => c, (k, fn) => sources.push({ k, fn }), ['low', 'medium', 'high', 'critical'], (k, v) => `${k}${v == null ? '' : ':' + JSON.stringify(v)}`, () => now, d => d);
+    const api = win.DiagramonModels.radar({ C: cfg, fold: foldT, loc: v => (v && typeof v === 'object' ? v.en : v), colorVar: c => c, addFindingSource: (k, fn) => sources.push({ k, fn }), SEVERITY: ['low', 'medium', 'high', 'critical'], T: (k, v) => `${k}${v == null ? '' : ':' + JSON.stringify(v)}`, today: () => now, fmtDay: d => d });
     return { ...api, findings: m => sources.find(x => x.k === 'radar').fn(m) };
   };
   const RDE = [
@@ -1879,11 +1875,9 @@
   });
 
   /* ---------- comentarios: hilos sobre un elemento ---------- */
-  const CMSRC = between('/* commentModel:start */', '/* commentModel:end */');
   const mkCm = (cfg = C) => {
     const sources = [];
-    const api = new Function('C', 'isDay', 'addFindingSource', 'SEVERITY', 'T', `${CMSRC}; return { cleanComments, cmOpen, cmHas, cleanFeedback, mergeFeedback };`)(
-      cfg, v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) && new Date(`${v}T12:00`).toISOString().slice(0, 10) === v, (k, fn) => sources.push({ k, fn }), ['low', 'medium', 'high', 'critical'], (k, v) => `${k}${v == null ? '' : ':' + JSON.stringify(v)}`);
+    const api = win.DiagramonModels.comments({ C: cfg, isDay: v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) && new Date(`${v}T12:00`).toISOString().slice(0, 10) === v, addFindingSource: (k, fn) => sources.push({ k, fn }), SEVERITY: ['low', 'medium', 'high', 'critical'], T: (k, v) => `${k}${v == null ? '' : ':' + JSON.stringify(v)}` });
     return { ...api, findings: m => sources.find(x => x.k === 'comments').fn(m) };
   };
   const CM = mkCm();
