@@ -28,6 +28,7 @@
   - [Threat modeling (STRIDE)](#threat-modeling-stride)
 - [10. Present and export](#10-present-and-export)
   - [Architecture report](#architecture-report)
+  - [Status report](#status-report)
   - [Inventory (CSV / Excel)](#inventory-csv--excel)
 - [Views](#views)
 - [C4 levels (drill-down)](#c4-levels-drill-down)
@@ -484,6 +485,36 @@ Some zones are **trust boundaries** instead of risk zones: open a zone and switc
 - **Markdown images** are embedded as `data:` PNGs. Some Markdown viewers block them, so tick **Save images as separate files** to download the PNGs next to the `.md` and reference them by file name.
 - Texts come out in the current interface language, dates and money in the document's formats, and everything is escaped.
 - From the console: `Diagramon.exportReport({ format: 'pdf' | 'md' | 'html', sections?: [...], views?: [...], scopes?: true | false, theme?: 'light' | 'current', separateImages?: boolean })` returns a promise with the generated HTML or Markdown after starting the download or the print dialog. Section keys: `summary diagram components connections data owners layers costs findings compliance threats decisions raid approvals versions notes`.
+
+### Status report
+
+**Export › Status report…** writes the paragraph you would otherwise compose on Friday: what changed since a reference, in short sentences ready to paste into an email. It is built from the diagram, the decisions and the findings, with fixed templates in English and Spanish (the language of the app): no AI, no service, and the same document always gives the same text.
+
+- **Compare with**: the last saved version (the default), another saved version, or a date. With a date, the diagram is compared with the latest version saved up to that day; with no version at all, only the dated things count.
+- The sections are *Decisions* (accepted, rejected or newly proposed), *Risks* (new and resolved Review findings), *Phases* (a date that moves, a component that changes phase), *Architecture* (components added, removed or modified, and connections), *Cost and effort* (monthly running cost and estimated effort), *Pending approvals*, *Comments* (open public threads) and *Versions*. A section with nothing to say is not printed; untick the ones you do not want.
+- Versions only keep the diagram, so decisions, comments and approvals are placed by their dates: what happened **after** the reference day counts, and the same day does not.
+- The preview is the text itself. **Copy text** puts it on the clipboard as plain text; **Markdown** and **HTML** download it with the same escaping and styling as the architecture report.
+- From the console: `Diagramon.statusReport({ kind: 'last' | 'version' | 'date', id, day })` returns `{ data, text }`, and `Diagramon.statusOutput({ …, sections, format: 'text' | 'md' | 'html' })` returns the document as a string.
+
+Example (English):
+
+```
+Changes since Version 3 (Oct 3, 2026).
+
+Decisions
+- 1 decision was accepted: ADR-004 Use Kafka for ingestion.
+
+Risks
+- 1 new risk was detected: Orders API is exposed to the internet (High).
+- 2 risks were resolved: Unencrypted link to Billing and Old batch has no owner.
+
+Architecture
+- 2 components were added: Queue and Consumer.
+- 1 connection added.
+
+Cost and effort
+- Monthly running cost goes from $1200 to $1500 (+$300).
+```
 
 ### Inventory (CSV / Excel)
 

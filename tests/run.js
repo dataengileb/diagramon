@@ -1644,7 +1644,7 @@
   const TL = lang => (k, v) => { const x = DICT2[lang][k] ?? DICT2.en[k] ?? k; return typeof x === 'function' ? x(v) : x; };
   const diffSrc = app.slice(app.indexOf('  const DIFF_FIELDS = {'), app.indexOf('  /* ---------- decisiones (ADR): comparar entre versiones'));
   const diffModelsT = new Function(`${diffSrc}; return diffModels;`)();
-  const ST = new Function(`${between('/* statusModel:start */', '/* statusModel:end */')}; return { statusBase, statusModel, statusText };`)();
+  const ST = new Function(`${between('/* statusModel:start */', '/* statusModel:end */')}; return { statusBase, statusModel, statusText, statusDoc, statusPlain };`)();
   // Ayudantes de prueba: el «riesgo» de un componente es una propiedad suelta (la diferencia de hallazgos no mira el resto)
   const stH = { verLabel: v => v.name || v.id, prepared: v => v.diagram, diff: diffModelsT, findings: m => m.nodes.filter(n => n.risk).map(n => ({ id: `f:${n.id}`, title: `${n.label} is exposed`, severity: n.risk })), monthly: m => m.nodes.reduce((a, n) => a + (n.cost || 0), 0),
     effort: m => { const d = m.nodes.reduce((a, n) => a + (n.days || 0), 0); return d ? { totals: { days: d, total: d * 500 } } : null; }, pending: () => [{ kind: 'decision', id: 'ADR-003', label: 'ADR-003 Use Kafka', missing: ['Ana', 'Luis'] }] };
@@ -1715,6 +1715,24 @@
     eq(many.sections.find(s => s.k === 'components').lines[0], '9 components were added: N0, N1, N2, N3, N4, N5 and 3 more.');
     eq(ST.statusText({ empty: true }, TL('en'), stF), { intro: 'There is no saved version or date to compare with. Save a version first, or pick a date.', sections: [], quiet: true });
     const q = ST.statusText({ baseDay: '2026-09-01', baseLabel: 'v1', quiet: true, pending: [], comments: { open: 0, added: 0 }, versions: [], decisions: { accepted: [], rejected: [], proposed: [] } }, TL('en'), stF); eq([q.quiet, q.none, q.sections], [true, 'Nothing changed in this period.', []]);
+  });
+  test('statusDoc and statusPlain: the same text as a document for the report renderers and as plain text; chosen sections only, in their fixed order', () => {
+    const m = stNow(), t = ST.statusText(ST.statusModel(m, ST.statusBase(m, { kind: 'version', id: 'v1' }, stH), stH), TL('en'), stF), head = { title: 'Shop · Status report', lang: 'en', date: '2026-10-10' };
+    const doc = ST.statusDoc(t, ['components', 'decisions'], head);
+    eq(doc.sections.map(x => x.id), ['decisions', 'components'], 'fixed order, not the order of the keys'); eq([doc.title, doc.lang, doc.date, doc.sub, doc.files], ['Shop · Status report', 'en', '2026-10-10', 'Changes since v1 (2026-09-01).', []]);
+    eq(doc.sections[0], { id: 'decisions', title: 'Decisions', blocks: [{ k: 'ul', items: ['1 decision was accepted: ADR-001 Use Postgres.', '1 new decision was proposed: ADR-003 Use Kafka.'] }] });
+    eq(ST.statusPlain(t, ['money', 'comments'], head), 'Shop · Status report\n\nChanges since v1 (2026-09-01).\n\nCost and effort\n- Monthly running cost goes from $100 to $160 (+$60).\n- Estimated effort goes from 10 to 15 person-days (+5).\n- Build cost goes from $5000 to $7500.\n\nComments\n- 2 comments are still open (1 new).\n');
+    eq(ST.statusDoc(t, [], head).sections, [], 'nothing chosen: no sections'); eq(ST.statusDoc(t, null, head).sections.length, 8, 'no list: everything');
+    const quiet = { intro: 'Changes since v1 (2026-09-01).', sections: [], quiet: true, none: 'Nothing changed in this period.' };
+    eq(ST.statusDoc(quiet, null, head).sub, 'Changes since v1 (2026-09-01). Nothing changed in this period.'); eq(ST.statusPlain(quiet, null, head), 'Shop · Status report\n\nChanges since v1 (2026-09-01). Nothing changed in this period.\n');
+  });
+  test('the dialog and the outputs are wired: menu entry, report renderers take the subtitle, API, texts in both languages', () => {
+    assert(read('index.html').includes('data-export="status"') && app.includes('status: openStatusDialog') && app.includes('function openStatusDialog()') && app.includes('function statusOutput('), 'menu and dialog');
+    assert(app.includes('D.sub || [D.author, D.version, D.active?.label, D.date]'), 'both renderers accept a subtitle'); assert((app.match(/D\.sub \|\| \[D\.author/g) || []).length === 2, 'markdown and html');
+    assert(app.includes('reportMarkdown(statusDoc(') && app.includes('reportHTML(statusDoc(') && app.includes('statusReport, statusOutput,'), 'outputs reuse the report pipeline');
+    ['exp.status', 'exp.status.ext', 'stat.title', 'stat.d.lead', 'stat.d.ref', 'stat.d.last', 'stat.d.date', 'stat.d.day', 'stat.d.sections', 'stat.d.preview', 'stat.d.copy', 'stat.d.md', 'stat.d.html', 'stat.d.done'].forEach(k => eq(i18nSrc.split(`'${k}':`).length - 1, 2, `${k} once per language`));
+    const keys = [...new Set([...app.slice(app.indexOf('function openStatusDialog()'), app.indexOf('/* ---------- exportar a otras herramientas')).matchAll(/T\('(stat\.[\w.]+|toast\.[\w.]+)'/g)].map(x => x[1]))];
+    keys.forEach(k => assert(i18nSrc.split(`'${k}':`).length - 1 === 2, `${k} exists in both languages`));
   });
   test('the app wires it: helpers, the API call and the texts in both languages', () => {
     assert(app.includes('const statusHelpers = {') && app.includes('function statusReport(spec, m = S.model)') && app.includes('exportThreats, exportReport, statusReport,'), 'app');
