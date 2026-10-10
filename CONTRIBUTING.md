@@ -6,7 +6,7 @@ Thanks for your interest! Diagramon is a small, dependency-free project, and con
 
 - **Report a bug or suggest a feature** by opening an [issue](../../issues/new/choose).
 - **Fix something small** (typos, docs, a bug). Look for issues labelled `good first issue`.
-- **Take on a larger idea** from [docs/roadmap.md](docs/roadmap.md), such as connections between groups or splitting `src/app.js` into modules. Open an issue first to agree on the approach.
+- **Take on a larger idea** from [docs/roadmap.md](docs/roadmap.md), such as connections between groups. Open an issue first to agree on the approach.
 - **Report a vulnerability** privately. See [SECURITY.md](SECURITY.md); please don't open a public issue for it.
 
 ## Project principles
@@ -16,11 +16,11 @@ These keep Diagramon what it is, so changes that break them will usually be decl
 1. **No external dependencies and no build step.** It must keep working by double-clicking `index.html`.
 2. **No network connections.** No analytics, CDN, web fonts or APIs. The Content Security Policy in `index.html` enforces this.
 3. **Customizable things live in `src/config.js`.** UI text goes in `src/i18n.js`, in both English and Spanish.
-4. **Escape everything.** Any text that comes from a model, import or user input and is placed into HTML must go through `esc()` (see `src/app.js`). Never interpolate raw values into `innerHTML` or `style="…"`. Don't add inline scripts or `on…=` handlers: the CSP blocks them.
+4. **Escape everything.** Any text that comes from a model, import or user input and is placed into HTML must go through `esc()` (in `src/core/util.js`). Never interpolate raw values into `innerHTML` or `style="…"`. Don't add inline scripts or `on…=` handlers: the CSP blocks them.
 
 ## Where things are
 
-The app code is in `src/` (engine, config, texts, text language, import, sharing) and `src/export/` (Mermaid, PlantUML, draw.io, Excel); icons and fonts are in `assets/`. See [docs/project-structure.md](docs/project-structure.md) for every file, and keep the user guides in `docs/` (English `*.md` and Spanish `*.es.md`) in sync with the feature you change.
+The app code is in `src/`: the editor core in `src/app.js`, the configuration, texts, text language, imports and sharing next to it, pure models in `src/models/`, shared state and helpers in `src/core/`, the interface (tabs, dialogs, inspector, exports, reports) in `src/ui/` and the exporters in `src/export/`. Icons and fonts are in `assets/`. All of them are classic scripts loaded by `index.html`, with no modules and no build step. See [docs/project-structure.md](docs/project-structure.md) for every file and for how a piece in `src/ui/` gets what it needs from `src/app.js`, and keep the user guides in `docs/` (English `*.md` and Spanish `*.es.md`) in sync with the feature you change.
 
 ## How to send a change
 
@@ -29,7 +29,7 @@ The app code is in `src/` (engine, config, texts, text language, import, sharing
 3. Try it in a browser: open `index.html`, exercise the feature, and check the console for errors or CSP violations.
 4. Run the automated tests from the repository root: `node tests/run.js` (on macOS without Node: `osascript -l JavaScript tests/run.js`). They also run on every pull request. If you change a sample in `samples/` on purpose, update its expected counts in `tests/run.js`.
 5. Run the browser smoke test too: `node tests/smoke.js`. It opens `index.html` from `file://` in headless Chrome (it uses `CHROME_BIN` or the first Chrome it finds) and checks that the app starts without errors or CSP reports, that every template draws, that the exports and the encrypted HTML work, and that the public `window.Diagramon` API is unchanged. If you change that API on purpose, update the list at the top of `tests/smoke.js`.
-5. Open a pull request against `main` and fill in the template.
+6. Open a pull request against `main` and fill in the template.
 
 `main` is protected: every change goes through a pull request, and the CodeQL checks must pass before merging. The tests run on every pull request too.
 

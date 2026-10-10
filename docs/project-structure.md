@@ -7,7 +7,7 @@
 | `index.html` | UI and styles. `#diagram-css` holds the styles that are also embedded in exports |
 | `src/config.js` | **Everything you can customize**: themes, palettes, types, connections, animation and costs |
 | `src/i18n.js` | UI texts in English and Spanish |
-| `src/app.js` | Editor engine |
+| `src/app.js` | Editor core: canvas drawing and interaction, routing, views, C4 levels, the analyses (security, residency, STRIDE, availability, lineage), versions, file format, startup and the public `window.Diagramon` API. It wires together the pieces below |
 | `src/text-lang.js` | Text language (diagram as code) |
 | `src/examples.js` | Templates |
 | `src/export/mermaid.js`, `src/export/plantuml.js`, `src/export/drawio.js` | Exporters to Mermaid, PlantUML and draw.io |
@@ -15,12 +15,12 @@
 | `src/export/datacontract.js` | Data contracts (Open Data Contract Standard, ODCS v3.2.0 YAML, one file per dataset or all in one), written by hand with no libraries |
 | `src/share.js` | Encrypted, self-contained HTML viewer for sharing |
 | `src/iac.js` | Infrastructure-as-code import (Terraform, CloudFormation, Kubernetes, Compose) |
-| `src/workspace.js` | Workspace (a folder of diagrams): recognizes Diagramon files, summarizes them (title, counts, format version, `docId`) and names new files; pure, no DOM. Reading and writing the folder is in `src/app.js` |
+| `src/workspace.js` | Workspace (a folder of diagrams): recognizes Diagramon files, summarizes them (title, counts, format version, `docId`) and names new files; pure, no DOM. Its dialog, with reading and writing the folder, is `src/ui/workspaceui.js` |
 | `src/drift.js` | Design vs reality (pure, no DOM): pairs the components of a diagram with the resources of imported infrastructure by their `iac` address, proposes (never applies) matches by name and type, and lists differences in region, replicas, public exposure and backup. |
 | `src/dbt.js` | dbt manifest import (`manifest.json` to datasets, quality rules, freshness and a lineage diagram); pure, no DOM |
-| `src/models/*.js` | Pure models (no DOM) split out of `src/app.js` for v2, one file per area: `comments.js` comments and review threads; `radar.js` technology radar and end of support; `disposition.js` migration disposition (6R); `decisions.js` architecture decisions (ADR) and approvals; `raid.js` RAID log; `stakeholders.js` stakeholders and RACI; `requirements.js` requirements and their checks; `phases.js` phases (roadmap) and effort estimation; `status.js` status report; `datasets.js` datasets, catalog and freshness; `reliability.js` route reliability (availability). Each one adds its part to `window.DiagramonModels`. Files still marked "reserved" are empty and the code is still in `src/app.js` |
-| `src/core/*.js` | Shared base of the interface, split out of `src/app.js` for v2 (add to `window.DiagramonCore`): `util.js` helpers (`$`, `esc`, `clone`, `store`, icons); `state.js` shared state `S` (plus `R`, `VW`, `HL`), fonts and views. `src/app.js` takes them back with one destructuring line |
-| `src/ui/*.js` | Interface pieces split out of `src/app.js` for v2 (add to `window.DiagramonUI`): `dialogs.js` confirmation boxes and toasts; `panel.js` side panel width; `tabs.js` grouped tabs; `sidebar.js` providers, component palette and templates; `topbar.js` title and top bar buttons; `raid.js` RAID log tab; `people.js` stakeholders tab and RACI matrix (it also holds the decision export that sat in the same block); `reqs.js` requirements tab, traceability matrix and inspector section; `datatab.js` data tab (dataset cards: general, schema, quality, contract, lineage); `adr.js` decisions (ADR) tab, version and inspector sections, and approvals (sign-offs); `workspaceui.js` workspace dialog and design-vs-reality dialog (the screens for `src/workspace.js` and `src/drift.js`); `exportother.js` export to other tools (Mermaid, PlantUML, draw.io), data contracts, JSON, inventory (CSV/Excel) and dbt import; `exportshare.js` SVG/PNG export, legend and title block, multi-view export and encrypted sharing; `report.js` architecture report (PDF, Markdown, HTML) and status report; `inspfields.js` inspector fields (custom color picker, icon search, cost, data, layers, radar) and `inspconn.js` connection inspector fields (STRIDE, encryption, region, governance, availability) and `inspcomp.js` compliance (inspector section and matrix) and custom connection types; `comments.js` comment threads dialog and reviewer-feedback import; `inspector.js` the inspector itself (render, field events and edits). Pieces that need app functions get them through a `ctx` object (`create(ctx)`): wrappers like `undo: (...a) => undo(...a)` when the function is used later, plain values when already defined at that point |
+| `src/models/*.js` | Pure models (no DOM) split out of `src/app.js` for v2, one file per area: `comments.js` comments and review threads; `radar.js` technology radar and end of support; `disposition.js` migration disposition (6R); `decisions.js` architecture decisions (ADR) and approvals; `raid.js` RAID log; `stakeholders.js` stakeholders and RACI; `requirements.js` requirements and their checks; `phases.js` phases (roadmap) and effort estimation; `status.js` status report; `datasets.js` datasets, catalog and freshness; `reliability.js` route reliability (availability). Each one adds its part to `window.DiagramonModels` |
+| `src/core/*.js` | Shared base of the interface (adds to `window.DiagramonCore`): `util.js` helpers (`$`, `esc`, `clone`, `store`, icons); `state.js` shared state `S` (plus `R`, `VW`, `HL`), fonts and views |
+| `src/ui/*.js` | Interface pieces: tabs, dialogs, inspector, exports and reports. One file per area, listed [below](#interface-pieces-srcui) |
 | `samples/` | Sample IaC files and a dbt manifest (`samples/dbt/`) to try the imports |
 | `assets/icons/*.js` | Embedded official icons for AWS, Azure, Google Cloud, SAP BTP and Microsoft Fabric |
 | `tools/build-icons.py` | Builds `assets/icons/*.js` from the official packs |
@@ -42,12 +42,25 @@ When a change to the model would break old files (a renamed or moved key, a chan
 
 Templates, saved versions, new diagrams and the Text tab already come in the current format and skip the migrations. Files, local saves and the JSON tab go through them.
 
-## Diagramon v2: splitting `src/app.js`
+## Interface pieces (`src/ui/`)
 
-`src/app.js` is being split into smaller files without changing what the app does. The rules that keep it safe:
+| File | What it holds |
+|---|---|
+| `dialogs.js` | Confirmation boxes and toasts |
+| `panel.js`, `tabs.js` | Side panel width and the grouped tabs |
+| `sidebar.js`, `topbar.js` | Providers, component palette and templates; title and top bar buttons |
+| `inspector.js` | The inspector itself: what it shows for each selection, field events and edits |
+| `inspfields.js`, `inspconn.js`, `inspcomp.js` | Inspector sections: color picker, icon search, cost, data, layers and radar; STRIDE, encryption, region, governance and availability; compliance (section and matrix) and custom connection types |
+| `comments.js` | Comment threads dialog and the import of a reviewer's comments |
+| `raid.js`, `people.js`, `reqs.js`, `adr.js`, `datatab.js` | The RAID, Stakeholders (with RACI and the decision export), Requirements, ADR (with approvals) and Data tabs |
+| `workspaceui.js` | Workspace dialog and the design-vs-reality dialog (the screens for `src/workspace.js` and `src/drift.js`) |
+| `exportshare.js`, `exportother.js`, `report.js` | SVG/PNG export with legend and title block, several views at once and encrypted sharing; Mermaid, PlantUML, draw.io, data contracts, JSON, inventory and dbt import; architecture and status reports |
 
-1. **Classic scripts, no modules.** Each file is a plain `<script src>` that adds to a `window` namespace (`window.DiagramonModels.<area>`). ES modules (`import`/`export`) do not load from `file://`, so they would break opening the app with a double-click.
-2. **One area per pull request.** The PR moves the code to its file, leaves in its place in `src/app.js` one line that takes the functions back from the namespace, and points the tests in `tests/run.js` at the new file. No behavior changes in the same PR.
-3. **The script tags and test loads are already in place** (`index.html`, `tests/run.js`), so PRs for different areas do not touch the same lines and can be worked on at the same time.
-4. **`node tests/run.js` and `node tests/smoke.js` must pass.** Before merging, bring in the latest `main` and let CI run again, so two PRs merged one after the other are also tested together. `window.Diagramon` must keep the same API.
-5. The previous version is kept in the `v1` branch.
+## How the code is split (v2)
+
+Until v2, almost all the app lived in `src/app.js`, about 11,700 lines in a single closure. v2 moved the pure models to `src/models/`, the shared state and helpers to `src/core/` and the interface to `src/ui/`, without changing what the app does. `src/app.js` now holds about 5,800 lines. The previous version is kept in the `v1` branch.
+
+1. **Classic scripts, no modules.** Each file is a plain `<script src>` in `index.html` that adds to a `window` namespace (`DiagramonModels`, `DiagramonCore`, `DiagramonUI`). ES modules (`import`/`export`) do not load from `file://`, so they would break opening the app with a double-click. There is still no build step.
+2. **`create(ctx)` for interface pieces.** Each `src/ui/` file exposes `create(ctx)` and returns the functions the rest of the app needs. `src/app.js` calls it at the place where the code used to be, with one line such as `const { renderInspector } = window.DiagramonUI.inspector.create({ … })`. `ctx` carries what the piece needs from the app: functions defined later go as wrappers (`undo: (...a) => undo(...a)`), and values that change or are defined later (`WS`, `DUR_TIERS`) go as getters (`get WS() { return WS; }`), never as wrappers.
+3. **Tests.** `tests/run.js` reads `src/app.js` together with the `src/ui/` files (the `UI_FILES` list), so a test that looks for a piece of code finds it wherever it lives. When you add a file to `src/ui/`, add it to `index.html`, to `UI_FILES` and to the table above.
+4. **What it changes in practice.** Nothing for the people who use the app: the same features, the same files and the same public API. Opening the page takes a few tens of milliseconds longer, because the browser reads 55 small scripts instead of 23 larger ones. The gain is for whoever changes the code: smaller files, reviews that touch one area, and parts that can be tested on their own.
