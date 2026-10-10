@@ -179,6 +179,13 @@ async function run(cdp) {
       const drawn = await app.evaluate('document.querySelectorAll("#canvas *").length');
       assert(drawn > want, `canvas has ${drawn} elements for ${want} nodes`);
       for (const v of await app.evaluate('window.Diagramon.views')) { await app.call(view => window.Diagramon.setView(view), v); await sleep(50); }
+      // Contexto: cada grupo de primer nivel con algo dentro se dibuja como una tarjeta cerrada
+      const tops = await app.evaluate('window.Diagramon.model.nodes.some(n => n.c4) ? 0 : window.Diagramon.model.groups.filter(g => !g.parent && window.Diagramon.model.nodes.some(n => n.group === g.id)).length');
+      if (tops) {
+        await app.evaluate('window.Diagramon.setView("context")'); await sleep(150);
+        const cards = await app.evaluate('document.querySelectorAll("#canvas .ctx-box").length');
+        assert(cards > 0, `Context view draws ${cards} cards for ${tops} top-level groups`);
+      }
       await app.evaluate('window.Diagramon.setView("full")');
       for (let k = 0; k < 2; k++) { await app.evaluate('window.Diagramon.toggleTheme()'); await app.evaluate('window.Diagramon.toggleLang()'); await sleep(100); }
       app.clean();
