@@ -14,6 +14,7 @@
 
   const { $, $$, clamp, snap, clone, esc, fold, debounce, reducedMotion, store, ICON } = window.DiagramonCore.util;
   const { FONTS, fontKey, VIEW_DEFAULTS, VIEWS, VIEW_KEYS, VR, viewKey, viewLabel, S, R, VW, HL } = window.DiagramonCore.state;
+  const { confirmBox, phraseBox, toast } = window.DiagramonUI.dialogs;
 
   const svg = $('#canvas'), viewport = $('#viewport'), stage = $('#stage');
   const L = { zones: $('#l-zones'), groups: $('#l-groups'), edges: $('#l-edges'), ctx: $('#l-ctx'), ghosts: $('#l-ghosts'), nodes: $('#l-nodes'), zoneTop: $('#l-zone-top'), notes: $('#l-notes'), guides: $('#l-guides'), scope: $('#l-scope') };
@@ -6470,37 +6471,8 @@
     if (matchMedia('(max-width: 760px)').matches) $('#main').classList.remove('open');
   });
 
-  /* ---------- pestañas agrupadas ---------- */
-  // Fila 1: grupos (.tabg[data-g]); fila 2: solo las pestañas (.tab[data-group]) del grupo activo. Añadir una pestaña a un grupo = `data-group` en el botón.
-  const TABG = $$('.tabg'), TABS = $$('.tab');
-  TABG.forEach(g => { g.hidden = !TABS.some(t => t.dataset.group === g.dataset.g); g.setAttribute('role', 'tab'); });
-  TABS.forEach(t => t.setAttribute('role', 'tab'));
-  function syncTabs(t) {
-    TABG.forEach(g => { const on = g.dataset.g === t.dataset.group; g.classList.toggle('on', on); g.setAttribute('aria-selected', on); g.tabIndex = on ? 0 : -1; });
-    TABS.forEach(x => { const on = x === t; x.classList.toggle('on', on); x.hidden = x.dataset.group !== t.dataset.group; x.setAttribute('aria-selected', on); x.tabIndex = on ? 0 : -1; });
-  }
-  TABS.forEach(t => t.addEventListener('click', () => {
-    syncTabs(t);
-    $$('.pane').forEach(p => p.classList.toggle('on', p.dataset.pane === t.dataset.tab));
-    store.set('tab', t.dataset.tab);
-    const last = store.get('tabg', {}); last[t.dataset.group] = t.dataset.tab; store.set('tabg', last);
-    if (t.dataset.tab === 'review') renderFindings();
-    else if (t.dataset.tab === 'adr') renderAdr(true);
-    else if (t.dataset.tab === 'req') renderReq(true);
-    else if (t.dataset.tab === 'raid') renderRaid(true);
-    else if (t.dataset.tab === 'data') renderDs(true);
-    else if (t.dataset.tab === 'people') renderPeople(true);
-  }));
-  TABG.forEach(g => g.addEventListener('click', () => {
-    const mine = TABS.filter(t => t.dataset.group === g.dataset.g), last = store.get('tabg', {})[g.dataset.g];
-    (mine.find(t => t.dataset.tab === last) || mine[0])?.click();
-  }));
-  // Flechas / Inicio / Fin dentro de cada fila (activan al mover, como un tablist automático)
-  [TABG, TABS].forEach(row => row.forEach(b => b.addEventListener('keydown', ev => {
-    const vis = row.filter(x => !x.hidden), i = vis.indexOf(b), n = { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: vis.length - 1 }[ev.key];
-    if (n === undefined) return;
-    ev.preventDefault(); const nb = vis[(n + vis.length) % vis.length]; nb.click(); nb.focus();
-  })));
+  /* ---------- pestañas agrupadas (src/ui/tabs.js) ---------- */
+  window.DiagramonUI.tabs.create({ renderFindings: (...a) => renderFindings(...a), renderAdr: (...a) => renderAdr(...a), renderReq: (...a) => renderReq(...a), renderRaid: (...a) => renderRaid(...a), renderDs: (...a) => renderDs(...a), renderPeople: (...a) => renderPeople(...a) });
 
   function codeBox(box, apply) {
     box.addEventListener('focus', beginEdit);
@@ -6555,31 +6527,8 @@
   });
   $('#btn-format').addEventListener('click', () => { syncEditor(true); toast(T('toast.formatted')); });
 
-  /* ---------- ancho del panel lateral ---------- */
-  const mainEl = $('#main');
-  const sideWidth = () => $('.sidebar').getBoundingClientRect().width;
-  function setSide(px, keep = true) {
-    const w = Math.round(clamp(px, 240, innerWidth * 0.8));
-    mainEl.style.setProperty('--side', `${w}px`);
-    if (keep) store.set('side', w);
-  }
-  if (store.get('side', null)) setSide(store.get('side'), false);
-  $('#resizer').addEventListener('pointerdown', ev => {
-    ev.preventDefault();
-    const r = $('#resizer');
-    r.setPointerCapture(ev.pointerId);
-    mainEl.classList.add('resizing');
-    const left = mainEl.getBoundingClientRect().left;
-    const move = e => setSide(e.clientX - left, false);
-    const up = () => {
-      mainEl.classList.remove('resizing');
-      store.set('side', Math.round(sideWidth()));
-      r.removeEventListener('pointermove', move);
-      r.removeEventListener('pointerup', up);
-    };
-    r.addEventListener('pointermove', move);
-    r.addEventListener('pointerup', up);
-  });
+  /* ---------- ancho del panel lateral (src/ui/panel.js) ---------- */
+  window.DiagramonUI.panel.create();
 
   /* ---------- barra superior ---------- */
   const titleBox = $('#title');
@@ -10434,82 +10383,6 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     </div>`;
   };
 
-  /* ---------- avisos ---------- */
-  let toastTimer;
-  // Diálogo de confirmación propio: Promise<boolean>; Esc cancela, Enter acepta, foco en lo seguro
-  function confirmBox({ title, text, list, ok = 'OK', cancel = 'Cancel', danger = false }) {
-    return new Promise(done => {
-      const prev = document.activeElement, id = `cf${Date.now()}`;
-      const back = document.createElement('div');
-      back.className = 'cf-back';
-      back.innerHTML = `<div class="cf" role="dialog" aria-modal="true" aria-labelledby="${id}t" aria-describedby="${id}d">
-        <h3 id="${id}t">${esc(title)}</h3>
-        <div id="${id}d">${text ? `<p>${esc(text)}</p>` : ''}${list?.length ? `<ul>${list.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}</div>
-        <div class="cf-actions"><button class="btn" data-cf="no">${esc(cancel)}</button><button class="btn${danger ? ' danger' : ' primary'}" data-cf="ok">${esc(ok)}</button></div></div>`;
-      const close = r => { document.removeEventListener('keydown', key, true); back.remove(); prev?.focus?.(); done(r); };
-      const key = ev => {
-        if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); close(false); }
-        else if (ev.key === 'Enter') { ev.preventDefault(); ev.stopPropagation(); close(document.activeElement?.dataset?.cf === 'ok'); }
-        else if (ev.key === 'Tab') { ev.preventDefault(); const b = [...back.querySelectorAll('button')]; b[(b.indexOf(document.activeElement) + (ev.shiftKey ? b.length - 1 : 1)) % b.length].focus(); }
-      };
-      back.addEventListener('mousedown', ev => { if (ev.target === back) close(false); });
-      back.addEventListener('click', ev => { const b = ev.target.closest('[data-cf]'); if (b) close(b.dataset.cf === 'ok'); });
-      document.addEventListener('keydown', key, true);
-      document.body.appendChild(back);
-      back.querySelector('[data-cf="no"]').focus();
-    });
-  }
-
-  // Confirmación escrita: el botón sigue deshabilitado hasta teclear la frase (sin pegar ni arrastrar)
-  const normPhrase = x => String(x).trim().replace(/\s+/g, ' ').toLowerCase();
-  function phraseBox({ title, text, phrase, ok, cancel }) {
-    return new Promise(done => {
-      const prev = document.activeElement, id = `cf${Date.now()}`;
-      const back = document.createElement('div');
-      back.className = 'cf-back';
-      back.innerHTML = `<div class="cf" role="dialog" aria-modal="true" aria-labelledby="${id}t" aria-describedby="${id}d">
-        <h3 id="${id}t">${esc(title)}</h3>
-        <div id="${id}d"><p>${esc(text)}</p><p>${esc(T('ver.cf.phraseIntro'))}</p><p class="cf-phrase" id="${id}p">${esc(phrase)}</p></div>
-        <input class="cf-type" type="text" aria-labelledby="${id}p" aria-describedby="${id}h" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off">
-        <div class="cf-hint" id="${id}h" role="status" aria-live="polite"></div>
-        <div class="cf-actions"><button class="btn" data-cf="no">${esc(cancel)}</button><button class="btn danger" data-cf="ok" disabled>${esc(ok)}</button></div></div>`;
-      const input = back.querySelector('input'), okBtn = back.querySelector('[data-cf="ok"]'), hint = back.querySelector('.cf-hint');
-      const want = normPhrase(phrase);
-      let hintTimer;
-      const close = r => { clearTimeout(hintTimer); document.removeEventListener('keydown', key, true); back.remove(); prev?.focus?.(); done(r); };
-      const noPaste = ev => {
-        ev.preventDefault();
-        hint.textContent = T('ver.cf.noPaste');
-        clearTimeout(hintTimer);
-        hintTimer = setTimeout(() => { hint.textContent = ''; }, 2600);
-      };
-      ['paste', 'drop'].forEach(t => input.addEventListener(t, noPaste));
-      input.addEventListener('beforeinput', ev => { if (['insertFromPaste', 'insertFromDrop', 'insertReplacementText', 'insertFromYank'].includes(ev.inputType)) noPaste(ev); });
-      input.addEventListener('input', () => { okBtn.disabled = normPhrase(input.value) !== want; });
-      const key = ev => {
-        if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); close(false); }
-        else if (ev.key === 'Enter') {
-          ev.preventDefault(); ev.stopPropagation();
-          if (document.activeElement?.dataset?.cf === 'no') close(false);
-          else if (!okBtn.disabled) close(true);
-        }
-        else if (ev.key === 'Tab') { ev.preventDefault(); const b = [input, ...back.querySelectorAll('button:not(:disabled)')]; b[(b.indexOf(document.activeElement) + (ev.shiftKey ? b.length - 1 : 1)) % b.length].focus(); }
-      };
-      back.addEventListener('mousedown', ev => { if (ev.target === back) close(false); });
-      back.addEventListener('click', ev => { const b = ev.target.closest('[data-cf]'); if (b && !b.disabled) close(b.dataset.cf === 'ok'); });
-      document.addEventListener('keydown', key, true);
-      document.body.appendChild(back);
-      input.focus();
-    });
-  }
-
-  function toast(msg, ms = 1800) {
-    const t = $('#toast');
-    t.textContent = msg;
-    t.classList.add('show');
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => t.classList.remove('show'), ms);
-  }
 
   /* ---------- arranque ---------- */
   function init() {
