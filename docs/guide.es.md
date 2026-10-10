@@ -410,6 +410,17 @@ Mantén una lista de qué productos se aceptan y cuáles van de salida, y míral
 - En la pestaña *Texto*: `db: Core radar=oracle11` fija un componente a una entrada y `radar=none` lo excluye. Las entradas se guardan en el JSON y no se pierden al editar el texto.
 - Las fechas se comparan con la de hoy, así que los avisos cambian con el tiempo.
 
+### Estimación de esfuerzo
+
+Indica cuántos días-persona cuesta construir cada componente, por perfil, para poder valorar después las fases. Los perfiles y sus tarifas diarias son tuyos: viven en `src/config.js › estimation.roles` y vienen vacíos, así que el campo solo aparece cuando una empresa añade los suyos.
+
+- Selecciona un componente. En **Esfuerzo (días-persona)**, elige un perfil, escribe los días y pulsa **Añadir**; cambia una fila en su sitio o pulsa **×** para quitarla. El total muestra días, horas y, si los perfiles tienen tarifa, el costo en la moneda de `cost.currency`. Hasta 8 perfiles por componente.
+- El esfuerzo cuenta en la fase donde aparece el componente (su *Aparece en la fase*; sin fase, la primera).
+- Un perfil que no está en `config.js` se conserva y se marca con ⚠: no tiene tarifa, así que suma días pero no costo.
+- En la pestaña *Texto*: `api: API de pedidos esfuerzo=dev:10,devops:3` (en inglés: `effort=dev:10,devops:3`). Los decimales llevan punto. JSON: `"effort": [{ "role": "dev", "days": 10 }]`.
+- El trabajo que no es un componente (gestión, pruebas, migración de datos) va en el JSON, por fase: `"extra": [{ "label": "Pruebas", "role": "qa", "days": 5 }]`, y el documento puede fijar sus propios imprevistos con `"estimation": { "contingency": 15 }` (porcentaje sobre el esfuerzo). La pestaña Texto no lleva estas dos cosas, pero al editar el texto se conservan.
+- Sin esfuerzo no cambia nada: ni clave en el JSON ni columna en ningún sitio.
+
 ### Comentarios
 
 Mantén la conversación dentro del documento: hilos con autor sobre un componente, una conexión, un grupo, una decisión, un requisito o una versión, o sobre todo el diagrama.

@@ -411,6 +411,17 @@ Keep a list of which products are accepted and which are on their way out, and s
 - In the *Text* tab: `db: Core radar=oracle11` pins a component to an entry and `radar=none` excludes it. The entries themselves are kept in the JSON and are not lost when you edit the text.
 - Dates are compared with today's date, so the warnings change as time passes.
 
+### Effort estimation
+
+Say how many person-days each component takes to build, by role, so the phases can later be priced. The roles and their daily rates are yours: they live in `src/config.js › estimation.roles` and ship empty, so the field only appears once a company adds its own.
+
+- Select a component. Under **Effort (person-days)**, pick a role, type the days and press **Add**; change a row in place or press **×** to remove it. The total shows days, hours and, when the roles have a rate, the cost in the currency of `cost.currency`. Up to 8 roles per component.
+- The effort counts in the phase where the component appears (its *Appears in phase*; with no phase, the first one).
+- A role that is not in `config.js` is kept and marked ⚠: it has no rate, so it adds days but no cost.
+- In the *Text* tab: `api: Orders API effort=dev:10,devops:3` (Spanish: `esfuerzo=dev:10,devops:3`). Decimals use a point. JSON: `"effort": [{ "role": "dev", "days": 10 }]`.
+- Work that is not a component (management, testing, data migration) goes in the JSON, per phase: `"extra": [{ "label": "Testing", "role": "qa", "days": 5 }]`, and the document can set its own contingency with `"estimation": { "contingency": 15 }` (percent on top of the effort). The Text tab does not carry these two, but editing the text keeps them.
+- Without effort nothing changes: no key in the JSON, no column anywhere.
+
 ### Comments
 
 Keep the discussion inside the document: threads with an author on a component, a connection, a group, a decision, a requirement or a version, or on the whole diagram.

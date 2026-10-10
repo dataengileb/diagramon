@@ -826,7 +826,7 @@
      9. Fases: hoja de ruta de la arquitectura (phase / until en nodos, conexiones y grupos)
      ====================================================================== */
   section('Phases');
-  const PHM = new Function(`${between('/* phaseModel:start */', '/* phaseModel:end */')}; return { cleanPhases, cleanPhaseRefs, phaseIndex, inPhase, phaseState, phaseStates, phaseModel, phaseDiff, phaseStats, phaseRows };`)();
+  const PHM = new Function(`${between('/* phaseModel:start */', '/* phaseModel:end */')}; return { cleanEffort, cleanExtra, cleanEstimation, cleanPhases, cleanPhaseRefs, phaseIndex, inPhase, phaseState, phaseStates, phaseModel, phaseDiff, phaseStats, phaseRows };`)();
   const snapshotM = new Function('clone', `${app.slice(app.indexOf('  const snapshotOf = m => {'), app.indexOf('  const prepared = v =>'))}; return snapshotOf;`)(o => JSON.parse(JSON.stringify(o)));
   const phList = () => [{ id: 'mvp', name: 'MVP', date: '2026-12', goal: 'Batch ingestion' }, { id: 'wave1', name: 'Wave 1', date: '2027-03-15' }, { id: 'wave2', name: 'Wave 2' }];
   // g1 (sin campos) tiene src (siempre), cdc (wave1), upload (mvp, se retira en wave1); g2 solo tiene stream (wave2); lone no tiene nodos
@@ -961,7 +961,7 @@
     });
   });
   test('the phase model stays out of the old paths: markers, ORDER, API-facing helpers exist', () => {
-    ['ORDER.phase = [\'id\', \'name\', \'date\', \'goal\']'].forEach(x => assert(app.includes(x), x));
+    ['ORDER.phase = [\'id\', \'name\', \'date\', \'goal\', \'extra\']'].forEach(x => assert(app.includes(x), x));
     assert(/cleanPhaseRefs\(\[\.\.\.m\.groups, \.\.\.m\.nodes, \.\.\.m\.edges\], m\.phases\)/.test(app), 'normalize cleans the element fields'); assert(/if \(m\.phases\?\.length\) head\.push\(arr\('phases'/.test(app), 'JSON only writes the key when there are phases');
   });
 
@@ -1514,8 +1514,8 @@
   });
   test('the app wires it: normalize cleans it, JSON and diff know the field, inspector, filter, pill, report, inventory and Review use it', () => {
     assert(/const dp = cleanDisposition\(o\.disposition\); if \(dp\) o\.disposition = dp; else delete o\.disposition;/.test(app), 'normalize');
-    assert(/'replicas', 'disposition', 'radar', 'phase', 'until'\],\n    edge: \['id'/.test(app), 'ORDER.node');
-    assert(/'replicas', 'disposition', 'radar', 'phase', 'until'\],\n    edge: \['label'/.test(app), 'DIFF_FIELDS.node');
+    assert(/'replicas', 'disposition', 'radar', 'effort', 'phase', 'until'\],\n    edge: \['id'/.test(app), 'ORDER.node');
+    assert(/'replicas', 'disposition', 'radar', 'effort', 'phase', 'until'\],\n    edge: \['label'/.test(app), 'DIFF_FIELDS.node');
     assert(app.includes("'layer', 'disposition', 'radar', 'compliance']") && app.includes("if (s === 'disposition')"), 'filter');
     assert(app.includes('${dispField(t)}') && app.includes('b.dataset.disp != null'), 'inspector');
     assert(app.includes("class: 'node-mig'") && read('index.html').includes('.node-mig rect'), 'pill');
@@ -1530,6 +1530,59 @@
     const base = { title: 'X', formatVersion: 1, nodes: [{ id: 'a', label: 'A', type: 'generic', x: 0, y: 0 }], edges: [], groups: [], decisions: [] };
     assert(!/disposition/.test(serializeM(base)) && !/disposition|disposición/.test(TXT.stringify(base, 'en')) && !/disposition|disposición/.test(TXT.stringify(base, 'es')), 'no key anywhere');
     assert(/"disposition": "rehost"/.test(serializeM({ ...base, nodes: [{ ...base.nodes[0], disposition: 'rehost' }] })), 'written when present');
+  });
+
+  /* ======================================================================
+     Estimación de esfuerzo: node.effort, phase.extra, m.estimation
+     ====================================================================== */
+  section('Effort estimation');
+  test('config: estimation ships without roles, so nothing is offered until a company adds its own', () => {
+    const e = C.estimation; assert(e && Array.isArray(e.roles) && e.roles.length === 0 && e.hoursPerDay === 8 && e.contingency === 0, JSON.stringify(e));
+  });
+  test('cleanEffort: unknown roles are kept, days are cleaned, duplicates add up, at most 8 roles', () => {
+    eq(PHM.cleanEffort([{ role: ' Dev ', days: '10' }, { role: 'devops', days: 3.456 }, { role: 'dev', days: 2.5 }]), [{ role: 'dev', days: 12.5 }, { role: 'devops', days: 3.46 }], 'trim, lower case, round to 2 decimals, add duplicates');
+    eq(PHM.cleanEffort([{ role: 'ghost-role', days: 1 }]), [{ role: 'ghost-role', days: 1 }], 'a role config.js does not know stays');
+    eq(PHM.cleanEffort([{ role: 'dev', days: 0 }, { role: 'dev', days: -2 }, { role: 'dev', days: 'x' }, { role: '', days: 1 }, { role: '9x', days: 1 }, { role: 'a b', days: 1 }, null, 'x', { days: 1 }]), [], 'zero, negative, text, bad roles and non objects go');
+    eq(PHM.cleanEffort([{ role: 'dev', days: '2,5' }]), [{ role: 'dev', days: 2.5 }], 'decimal comma');
+    eq(PHM.cleanEffort([{ role: 'dev', days: 1e9 }]), [{ role: 'dev', days: 9999 }], 'capped');
+    eq(PHM.cleanEffort(Array.from({ length: 12 }, (_, i) => ({ role: `r${i}`, days: 1 }))).length, 8, 'at most 8');
+    eq(PHM.cleanEffort(undefined), [], 'no key');
+  });
+  test('cleanExtra and cleanEstimation: extra work needs label, role and days; contingency is a percentage', () => {
+    eq(PHM.cleanExtra([{ label: '  Project   management ', role: 'PM', days: '4' }, { label: '', role: 'pm', days: 1 }, { label: 'x', role: 'pm', days: 0 }, { label: 'y', days: 1 }]), [{ label: 'Project management', role: 'pm', days: 4 }], 'only the complete one');
+    eq(PHM.cleanExtra(Array.from({ length: 30 }, (_, i) => ({ label: `t${i}`, role: 'dev', days: 1 }))).length, 20, 'at most 20');
+    eq(PHM.cleanEstimation({ contingency: '15' }), { contingency: 15 }, 'text number'); eq(PHM.cleanEstimation({ contingency: 12.345 }), { contingency: 12.3 }, 'one decimal');
+    eq(PHM.cleanEstimation({ contingency: 0 }), { contingency: 0 }, 'zero is a choice');
+    [null, {}, { contingency: -1 }, { contingency: 101 }, { contingency: 'x' }, { contingency: '' }, [], 5].forEach(v => eq(PHM.cleanEstimation(v), null, `rejected: ${JSON.stringify(v)}`));
+    const ph = PHM.cleanPhases([{ id: 'a', extra: [{ label: 'QA', role: 'qa', days: 5 }] }, { id: 'b', extra: [{ label: '', role: 'qa', days: 5 }] }]);
+    eq(ph[0].extra, [{ label: 'QA', role: 'qa', days: 5 }], 'a phase keeps its extra work'); assert(!('extra' in ph[1]), 'no key when nothing valid');
+  });
+  test('text format: effort round trips in English and Spanish and reports bad pairs with their line', () => {
+    ['en', 'es'].forEach(lang => {
+      const model = { title: 'T', groups: [], edges: [], nodes: [{ id: 'a', label: 'A', type: 'generic', effort: [{ role: 'dev', days: 10 }, { role: 'devops', days: 3.5 }] }, { id: 'b', label: 'B', type: 'generic' }] };
+      const txt = TXT.stringify(model, lang);
+      assert(new RegExp(`${lang === 'es' ? 'esfuerzo' : 'effort'}=dev:10,devops:3\\.5`).test(txt), `written in ${lang}: ${txt}`);
+      const r = TXT.parse(txt, textCtx(lang));
+      eq(r.errors || [], [], `no errors (${lang})`); eq(r.model.nodes.map(n => n.effort), [[{ role: 'dev', days: 10 }, { role: 'devops', days: 3.5 }], undefined], `round trip (${lang})`);
+    });
+    const r = TXT.parse('a: Alpha effort=dev:10,qa:x,:3,ops\nb: Beta esfuerzo=dev:2,5', textCtx('en'));
+    eq(r.model.nodes.map(n => n.effort), [[{ role: 'dev', days: 10 }], [{ role: 'dev', days: 2 }]], 'good pairs stay, the rest is dropped');
+    eq((r.errors || []).map(e => e.line), [1, 1, 1, 2], 'one error per bad pair, with its line');
+  });
+  test('the app wires it: normalize, JSON order, diff, text, inspector and phases know the effort', () => {
+    assert(app.includes('{ const ef = cleanEffort(o.effort); if (ef.length) o.effort = ef; else delete o.effort; }'), 'normalize');
+    assert(app.includes('{ const es = cleanEstimation(raw.estimation); if (es) m.estimation = es; }') && app.includes("if (m.estimation) head.push("), 'estimation');
+    assert(app.includes("opts.fromEditor === 'text' && S.model.estimation") && app.includes('old?.extra && !p.extra'), 'text editor keeps what only the JSON carries');
+    assert(app.includes('${effortField(t)}') && app.includes('data-ef-add') && app.includes('data-ef-rm') && app.includes('select[data-ef-role]'), 'inspector');
+    const i18n = read('src/i18n.js');
+    ['est.label', 'est.role', 'est.days', 'est.add', 'est.remove', 'est.hint', 'est.total', 'est.unknown'].forEach(k => eq(i18n.split(`'${k}':`).length - 1, 2, `${k} once per language`));
+    assert(/effort=dev:10,devops:3/.test(read('src/text-lang.js')), 'documented in the text language header');
+  });
+  test('a diagram without effort keeps its JSON and text byte-identical', () => {
+    const base = { title: 'X', formatVersion: 1, nodes: [{ id: 'a', label: 'A', type: 'generic', x: 0, y: 0 }], edges: [], groups: [], decisions: [] };
+    assert(!/effort|estimation|extra/.test(serializeM(base)) && !/effort|esfuerzo/.test(TXT.stringify(base, 'en') + TXT.stringify(base, 'es')), 'no key anywhere');
+    const withIt = serializeM({ ...base, estimation: { contingency: 10 }, phases: [{ id: 'p', name: 'P', extra: [{ label: 'QA', role: 'qa', days: 5 }] }], nodes: [{ ...base.nodes[0], effort: [{ role: 'dev', days: 3 }] }] });
+    assert(/"effort": \[\{"role":"dev","days":3\}\]/.test(withIt) && /"estimation": \{"contingency":10\}/.test(withIt) && /"extra": \[/.test(withIt), withIt);
   });
 
   /* ======================================================================
