@@ -395,7 +395,7 @@
      7. Requisitos: modelo, controles (fitness functions), hallazgos y texto
      ====================================================================== */
   section('Requirements');
-  const REQM = new Function(`${between('/* reqModel:start */', '/* reqModel:end */')}; return { cleanRequirements, cleanReqCheck, cleanReqLinks, reqEval, reqCover, reqIssues };`)();
+  const REQM = win.DiagramonModels.requirements;
   const serializeM = new Function(`${app.slice(app.indexOf('  const ORDER = {'), app.indexOf('  /* ---------- editores de código'))}; return serialize;`)();
   const reqModel = () => ({ nodes: [{ id: 'a', label: 'A', data: ['pii'] }, { id: 'b', label: 'B' }, { id: 'c', label: 'C' }], edges: [{ id: 'e1', from: 'a', to: 'b', encrypted: true, data: ['pii'] }, { id: 'e2', from: 'b', to: 'c' }],
     groups: [{ id: 'g' }], decisions: [{ id: 'ADR-001', status: 'accepted' }, { id: 'ADR-002', status: 'proposed' }] });
@@ -516,8 +516,7 @@
      8. Registro RAID: riesgos, supuestos, problemas y dependencias
      ====================================================================== */
   section('RAID log');
-  const raidSrc = between('/* raidModel:start */', '/* raidModel:end */');
-  const RAIDM = new Function('isDay', 'today', `${raidSrc}; return { cleanRaid, raidScore, raidLevel, raidHeat, raidSummary, raidIssues, raidState };`)(v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v), () => '2026-10-07');
+  const RAIDM = win.DiagramonModels.raid.create(v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v));
   const raidDoc = { nodes: [{ id: 'a' }, { id: 'b' }], edges: [{ id: 'e1' }], groups: [{ id: 'g' }], decisions: [{ id: 'ADR-001', status: 'accepted' }, { id: 'ADR-002', status: 'proposed' }, { id: 'ADR-003', status: 'rejected' }] };
   const raidSet = () => [
     { id: 'R-001', type: 'risk', title: 'SAP CDC licence not available', detail: 'd', owner: 'PMO', status: 'open', probability: 3, impact: 4, mitigation: 'Ask the vendor', raised: '2026-10-01', links: { decisions: ['ADR-001'], nodes: ['a'] } },
@@ -660,7 +659,7 @@
      9. Interesados y RACI
      ====================================================================== */
   section('Stakeholders');
-  const SHM = new Function(`${between('/* stakeholderModel:start */', '/* stakeholderModel:end */')}; return { cleanStakeholders, shGaps, shAreas, shIsA };`)();
+  const SHM = win.DiagramonModels.stakeholders;
   const shSet = () => [
     { id: 'SH-001', name: 'Ana Pérez', role: 'CISO', org: 'client', raci: { '*': 'C', Security: 'A', 'Data Platform': 'R' }, versions: true },
     { id: 'SH-002', name: 'Luis "El Jefe" Gómez', org: 'partner', raci: { platform: 'A' } },
@@ -1275,7 +1274,7 @@
       eq(r.errors, [], `parse ${lang}`); eq(r.model.requirements[0].check, { metric: 'freshness', ds: 'sales daily', target: 4 }, `round trip ${lang}`);
       assert(lang === 'es' ? t.includes('control=frescura conjunto="sales daily" objetivo=4') : t.includes('check=freshness ds="sales daily" target=4'), t);
     });
-    assert(read('src/app.js').includes("freshness: ['ds', 'target']") && read('src/app.js').includes("frescura: 'freshness'"), 'REQ_PARAMS + Spanish alias');
+    assert(read('src/models/requirements.js').includes("freshness: ['ds', 'target']") && read('src/models/requirements.js').includes("frescura: 'freshness'"), 'REQ_PARAMS + Spanish alias');
   });
   test('phaseRows / phaseStats with datasets: counts and estimated storage per phase (separate from component cost)', () => {
     const m = { ...phDoc(), datasets: [{ id: 'DS-001', name: 'a', volume: { perDay: 1, retentionDays: 10 } }, { id: 'DS-002', name: 'b', phase: 'wave1', volume: { perDay: 2, retentionDays: 10 }, layer: 'gold' }, { id: 'DS-003', name: 'c', phase: 'wave2' }] };
