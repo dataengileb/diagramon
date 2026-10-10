@@ -2255,7 +2255,7 @@
   });
   test('the app keeps `iac` on nodes and the page loads the module before the app', () => {
     const page = read('index.html');
-    assert(app.includes("o.iac.replace(") && app.includes('n.iac)') && page.includes('src="src/drift.js"') && page.indexOf('src/drift.js') < page.indexOf('src/app.js'), 'wiring');
+    assert(app.includes("o.iac.replace(") && app.includes('n.iac)') && app.includes('delete n.facts') && page.includes('src="src/drift.js"') && page.indexOf('src/drift.js') < page.indexOf('src/app.js'), 'wiring');
   });
 
   section('Web Crypto (Node only)');

@@ -9609,6 +9609,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     let res;
     try { res = IAC.convert(files); } catch { return toast(IAC ? T('toast.iacNone') : T('toast.badJson'), 3200); }
     if (!res.nodes) return toast(T('toast.iacEmpty', { format: res.format }), 3200);
+    res.diagram.nodes.forEach(n => { delete n.facts; });   // lo que afirma la infraestructura sirve para compararla, no se guarda en el diagrama
     if (S.scope) { importIntoScope(res.diagram); toast(T('toast.iac', res), 4200); return res; } // dentro de un nivel C4: se añade a ese nivel
     S.sel = null;
     setModel(res.diagram, { current: true, history: true, animate: true, fit: true });
