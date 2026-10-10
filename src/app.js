@@ -2016,6 +2016,17 @@
     add('versions', d.versions.map(x => T('stat.version', { label: x.label, status: x.status ? T(`ver.st.${x.status}`) : '' })));
     return { intro, sections: secs, quiet: !!d.quiet, none: d.quiet ? T('stat.none') : '' };
   }
+  // Salidas: el mismo texto en tres formas. statusDoc arma el documento que pintan reportMarkdown y reportHTML (como el informe del proyecto: mismo escapado, mismo idioma);
+  // statusPlain es texto para pegar en un correo. keys = secciones elegidas (se respeta el orden fijo de statusText); o = { title, lang, date }.
+  const statusPick = (t, keys) => t.sections.filter(x => !keys || keys.includes(x.k));
+  function statusDoc(t, keys, o) {
+    return { title: o.title, lang: o.lang, date: o.date || '', sub: [t.intro, t.none].filter(Boolean).join(' '), files: [], sections: statusPick(t, keys).map(x => ({ id: x.k, title: x.title, blocks: [{ k: 'ul', items: x.lines }] })) };
+  }
+  function statusPlain(t, keys, o) {
+    const out = [o.title, '', [t.intro, t.none].filter(Boolean).join(' ')];
+    statusPick(t, keys).forEach(x => { out.push('', x.title, ...x.lines.map(l => `- ${l}`)); });
+    return `${out.join('\n').replace(/\n{3,}/g, '\n\n')}\n`;
+  }
   /* statusModel:end */
 
   // Lo que el informe de estado necesita de la app; las firmas pendientes se calculan sobre el diagrama actual
@@ -2024,6 +2035,11 @@
     pending: mm => [...(mm.decisions || []).filter(d => d.status === 'proposed').map(d => ({ kind: 'decision', id: d.id, label: `${d.id} ${d.title || ''}`.trim(), missing: apprMissing('decision', d, mm) })),
       ...(mm.versions || []).filter(v => v.status === 'review').map(v => ({ kind: 'version', id: v.id, label: verLabel(v), missing: apprMissing('version', v, mm) }))].filter(x => x.missing.length)
   };
+  // Texto, Markdown o HTML del informe de estado; o = { kind, id, day, sections, format: 'text' | 'md' | 'html' } (la referencia como en statusReport)
+  function statusOutput(o = {}, m = S.model) {
+    const r = statusReport({ kind: o.kind, id: o.id, day: o.day }, m), keys = Array.isArray(o.sections) ? o.sections : null, head = { title: `${m.title} · ${T('stat.title')}`, lang: I.lang, date: today() };
+    return o.format === 'md' ? reportMarkdown(statusDoc(r.text, keys, head)) : o.format === 'html' ? reportHTML(statusDoc(r.text, keys, head)) : statusPlain(r.text, keys, head);
+  }
   const statusFormats = { money: v => money(round2(v)), day: v => fmtDay(v), phaseDate: v => fmtPhaseDate(v) };
   // spec: { kind: 'last' } (por defecto) | { kind: 'version', id } | { kind: 'date', day: 'AAAA-MM-DD' } → { data, text } con la redacción en el idioma activo
   function statusReport(spec, m = S.model) {
@@ -7801,7 +7817,7 @@
     const b = ev.target.closest('[data-export]');
     if (!b) return;
     exportMenu.open = false;
-    const f = { svg: exportSVG, png: exportPNG, 'svg-all': () => exportViews('svg'), 'png-all': () => exportViews('png'), 'svg-levels': () => exportLevels('svg'), 'png-levels': () => exportLevels('png'), json: exportJSON, copy: copyJSON, share: shareEncrypted, stride: exportThreats, compliance: openCompMatrix, report: openReportDialog, costs: () => openCosts('breakdown'), 'inventory-xlsx': () => exportInventory('xlsx'), 'inventory-csv': openInventoryDialog, contracts: exportContracts }[b.dataset.export];
+    const f = { svg: exportSVG, png: exportPNG, 'svg-all': () => exportViews('svg'), 'png-all': () => exportViews('png'), 'svg-levels': () => exportLevels('svg'), 'png-levels': () => exportLevels('png'), json: exportJSON, copy: copyJSON, share: shareEncrypted, stride: exportThreats, compliance: openCompMatrix, report: openReportDialog, status: openStatusDialog, costs: () => openCosts('breakdown'), 'inventory-xlsx': () => exportInventory('xlsx'), 'inventory-csv': openInventoryDialog, contracts: exportContracts }[b.dataset.export];
     if (f) f(); else exportOther(b.dataset.export);
   });
 
@@ -8690,7 +8706,7 @@
   const mdCell = c => (mdEsc(typeof c === 'object' && c ? c.t : c).replace(/\r?\n/g, '<br>').trim() || ' ');
   const mdLines = s => mdEsc(s).replace(/\r?\n/g, '  \n');
   function reportMarkdown(D) {
-    const o = [`# ${mdEsc(D.title)}`, '', `*${mdEsc([D.author, D.version, D.active?.label, D.date].filter(Boolean).join(' · '))}*`, ''];
+    const o = [`# ${mdEsc(D.title)}`, '', `*${mdEsc(D.sub || [D.author, D.version, D.active?.label, D.date].filter(Boolean).join(' · '))}*`, ''];
     D.sections.forEach(s => {
       o.push(`## ${mdEsc(s.title)}`, '');
       s.blocks.forEach(b => {
@@ -8763,7 +8779,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     return `<!doctype html>
 <html lang="${esc(D.lang)}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="${csp}">
 <title>${esc(D.title)}</title><style>${css}</style></head><body>
-<header><h1>${esc(D.title)}</h1><p class="sub">${esc([D.author, D.version, D.active?.label, D.date].filter(Boolean).join(' · '))}</p></header>
+<header><h1>${esc(D.title)}</h1><p class="sub">${esc(D.sub || [D.author, D.version, D.active?.label, D.date].filter(Boolean).join(' · '))}</p></header>
 <nav aria-label="${esc(repT('toc'))}"><ol>${D.sections.map(s => `<li><a href="#rep-${esc(s.id)}">${esc(s.title)}</a></li>`).join('')}</ol></nav>
 <main>${D.sections.map(s => `<section id="rep-${esc(s.id)}"${REP_PAGE.includes(s.id) ? ' class="pb"' : ''}><h2>${esc(s.title)}</h2>${s.blocks.map(blk).join('')}</section>`).join('\n')}</main>
 <footer>${esc(repT('footer', { app: C.app.name, date: D.date }))}</footer></body></html>`;
@@ -8871,6 +8887,61 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     document.body.appendChild(back);
     sync();
     form.querySelector('[type="submit"]').focus();
+  }
+
+  // Informe de estado: elige la referencia (la última versión guardada, otra versión o una fecha) y las secciones; la vista previa es el texto que se copia o se descarga en Markdown o HTML
+  const ST_KEYS = ['decisions', 'risks', 'phases', 'components', 'money', 'pending', 'comments', 'versions'];
+  function openStatusDialog() {
+    if (P) return;
+    const prev = document.activeElement, id = `st${Date.now()}`, m = S.model, saved = store.get('statusReport', {}) || {};
+    const vs = [...m.versions].filter(v => v.diagram).sort((a, b) => String(b.updated || b.created).localeCompare(String(a.updated || a.created)));
+    const lastV = vs[0], week = (() => { const d = new Date(); d.setDate(d.getDate() - 7); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })();
+    const kind0 = saved.kind === 'date' || !lastV ? 'date' : saved.kind && saved.kind !== 'last' && vs.some(v => `v:${v.id}` === saved.kind) ? saved.kind : 'last';
+    const secOn = k => !Array.isArray(saved.sections) || saved.sections.includes(k);
+    const back = document.createElement('div');
+    back.className = 'cf-back';
+    back.innerHTML = `<form class="cf share rep" role="dialog" aria-modal="true" aria-labelledby="${id}t" autocomplete="off">
+      <h3 id="${id}t">${esc(T('stat.title'))}</h3>
+      <p>${esc(T('stat.d.lead'))}</p>
+      <label>${esc(T('stat.d.ref'))}<select name="ref">${lastV ? `<option value="last"${kind0 === 'last' ? ' selected' : ''}>${esc(T('stat.d.last', { label: verLabel(lastV), day: fmtDay(lastV.updated || lastV.created) }))}</option>` : ''}${vs.map(v => `<option value="v:${esc(v.id)}"${kind0 === `v:${v.id}` ? ' selected' : ''}>${esc(`${verLabel(v)} · ${fmtDay(v.updated || v.created)}`)}</option>`).join('')}<option value="date"${kind0 === 'date' ? ' selected' : ''}>${esc(T('stat.d.date'))}</option></select></label>
+      <label data-st="day">${esc(T('stat.d.day'))}<input type="date" name="day" value="${esc(week)}"></label>
+      <fieldset class="sh-views"><legend>${esc(T('stat.d.sections'))}</legend>${ST_KEYS.map(k => `<label class="sh-chk"><input type="checkbox" name="sec" value="${k}"${secOn(k) ? ' checked' : ''}>${esc(T(`stat.s.${k}`))}</label>`).join('')}</fieldset>
+      <label>${esc(T('stat.d.preview'))}<textarea name="prev" rows="12" readonly></textarea></label>
+      <p class="sh-err" role="alert" data-st="msg"></p>
+      <div class="cf-actions"><button type="button" class="btn" data-st="no">${esc(T('ver.cf.cancel'))}</button><button type="button" class="btn" data-st="copy">${esc(T('stat.d.copy'))}</button><button type="button" class="btn" data-st="md">${esc(T('stat.d.md'))}</button><button type="button" class="btn primary" data-st="html">${esc(T('stat.d.html'))}</button></div>
+    </form>`;
+    const form = back.querySelector('form'), msg = form.querySelector('[data-st="msg"]');
+    const close = () => { document.removeEventListener('keydown', key, true); back.remove(); prev?.focus?.(); };
+    const key = ev => { if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); close(); } };
+    const spec = () => { const r = form.elements.ref.value; return r === 'date' ? { kind: 'date', day: form.elements.day.value } : r === 'last' ? { kind: 'last' } : { kind: 'version', id: r.slice(2) }; };
+    const keys = () => [...form.querySelectorAll('input[name="sec"]:checked')].map(i => i.value);
+    const out = fmt => statusOutput({ ...spec(), sections: keys(), format: fmt });
+    const ok = () => !!statusReport(spec()).data.baseDay;
+    const sync = () => {
+      form.querySelector('[data-st="day"]').hidden = form.elements.ref.value !== 'date';
+      const r = statusReport(spec()), have = new Set(r.text.sections.map(x => x.k));
+      form.querySelectorAll('input[name="sec"]').forEach(i => { i.disabled = !have.has(i.value); i.parentElement.classList.toggle('rep-none', !have.has(i.value)); });
+      form.elements.prev.value = statusOutput({ ...spec(), sections: keys(), format: 'text' });
+      form.querySelectorAll('[data-st="copy"],[data-st="md"],[data-st="html"]').forEach(b => { b.disabled = !r.data.baseDay; });
+      msg.textContent = '';
+    };
+    form.addEventListener('change', () => { store.set('statusReport', { kind: form.elements.ref.value === 'date' ? 'date' : form.elements.ref.value, sections: keys() }); sync(); });
+    form.addEventListener('click', ev => {
+      const b = ev.target.closest('[data-st]');
+      if (!b || b.tagName !== 'BUTTON') return;
+      if (b.dataset.st === 'no') close();
+      else if (!ok()) msg.textContent = T('stat.empty');
+      else if (b.dataset.st === 'copy') {
+        const txt = out('text'), fallback = () => { form.elements.prev.select(); try { document.execCommand('copy'); toast(T('toast.copied')); } catch { toast(T('toast.copyFail')); } };
+        if (navigator.clipboard?.writeText) navigator.clipboard.writeText(txt).then(() => toast(T('toast.copied')), fallback); else fallback();
+      } else if (b.dataset.st === 'md') { download(out('md'), fileName('md', 'status'), 'text/markdown;charset=utf-8'); toast(T('stat.d.done'), 3000); }
+      else if (b.dataset.st === 'html') { download(out('html'), fileName('html', 'status'), 'text/html;charset=utf-8'); toast(T('stat.d.done'), 3000); }
+    });
+    back.addEventListener('mousedown', ev => { if (ev.target === back) close(); });
+    document.addEventListener('keydown', key, true);
+    document.body.appendChild(back);
+    sync();
+    form.elements.ref.focus();
   }
 
   /* ---------- exportar a otras herramientas (src/export/*.js) ----------
@@ -11235,7 +11306,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     availability: (a, b) => availability(a, b), spofs: () => spofList().map(x => ({ ...x })),
     findings: (opts = {}) => apiFindings(opts), dismissFinding: (id, reason) => dismissFinding(id, reason), restoreFinding: id => restoreFinding(id),
     threats: () => strideAll().map(t => ({ edge: t.e.id, from: t.e.from, to: t.e.to, zones: t.zones.map(z => z.id), category: t.cat, severity: t.severity, status: t.status, note: t.note })),
-    exportThreats, exportReport, statusReport,
+    exportThreats, exportReport, statusReport, statusOutput,
     inventory: () => inventoryRows(S.model).map(r => ({ ...r })), exportInventory: (kind = 'xlsx') => exportInventory(['csv', 'csv-all'].includes(kind) ? kind : 'xlsx'),
     signoff: (kind, id, sid, verdict, note) => signOff(kind, id, sid, verdict, note), approval: (kind, id) => apprInfo(kind, id),
     decisions: () => clone(S.model.decisions || []), compareDecisions: id => { const v = S.model.versions.find(x => x.id === id); return v && Array.isArray(v.decisions) ? diffDecisions(v.decisions, S.model.decisions || []) : null; }, addDecision, updateDecision, removeDecision, exportDecisions,

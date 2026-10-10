@@ -28,6 +28,7 @@
   - [Modelado de amenazas (STRIDE)](#modelado-de-amenazas-stride)
 - [10. Presentar y exportar](#10-presentar-y-exportar)
   - [Informe de arquitectura](#informe-de-arquitectura)
+  - [Informe de estado](#informe-de-estado)
   - [Inventario (CSV / Excel)](#inventario-csv--excel)
 - [Vistas](#vistas)
 - [Niveles C4 (drill-down)](#niveles-c4-drill-down)
@@ -483,6 +484,36 @@ Algunas zonas son **fronteras de confianza** en vez de zonas de riesgo: abre una
 - **Imágenes en Markdown**: van incrustadas como PNG `data:`. Algunos visores de Markdown las bloquean, así que marca **Guardar las imágenes como archivos aparte** para descargar los PNG junto al `.md` y referenciarlos por nombre.
 - Los textos salen en el idioma actual de la interfaz, con fechas y dinero en sus formatos, y todo va escapado.
 - Desde la consola: `Diagramon.exportReport({ format: 'pdf' | 'md' | 'html', sections?: [...], views?: [...], scopes?: true | false, theme?: 'light' | 'current', separateImages?: boolean })` devuelve una promesa con el HTML o Markdown generado tras iniciar la descarga o el diálogo de impresión. Claves de sección: `summary diagram components connections data owners layers costs findings compliance threats decisions raid approvals versions notes`.
+
+### Informe de estado
+
+**Exportar › Informe de estado…** escribe el párrafo que si no compondrías el viernes: qué cambió desde una referencia, en frases cortas listas para pegar en un correo. Se construye a partir del diagrama, las decisiones y los hallazgos, con plantillas fijas en español e inglés (el idioma de la app): sin IA, sin servicio, y el mismo documento siempre da el mismo texto.
+
+- **Comparar con**: la última versión guardada (por defecto), otra versión guardada o una fecha. Con fecha, el diagrama se compara con la última versión guardada hasta ese día; sin ninguna versión, solo cuentan las cosas con fecha.
+- Las secciones son *Decisiones* (aceptadas, rechazadas o propuestas nuevas), *Riesgos* (hallazgos de Revisión nuevos y resueltos), *Fases* (una fecha que se mueve, un componente que cambia de fase), *Arquitectura* (componentes añadidos, retirados o modificados, y conexiones), *Costo y esfuerzo* (costo mensual de operación y esfuerzo estimado), *Aprobaciones pendientes*, *Comentarios* (hilos públicos abiertos) y *Versiones*. Una sección sin nada que decir no se imprime; desmarca las que no quieras.
+- Las versiones solo guardan el diagrama, así que las decisiones, los comentarios y las aprobaciones se sitúan por sus fechas: cuenta lo que pasó **después** del día de la referencia, y el mismo día no.
+- La vista previa es el texto mismo. **Copiar texto** lo deja en el portapapeles como texto plano; **Markdown** y **HTML** lo descargan con el mismo escapado y estilo que el informe de arquitectura.
+- Desde la consola: `Diagramon.statusReport({ kind: 'last' | 'version' | 'date', id, day })` devuelve `{ data, text }`, y `Diagramon.statusOutput({ …, sections, format: 'text' | 'md' | 'html' })` devuelve el documento como cadena.
+
+Ejemplo (en español):
+
+```
+Cambios desde Versión 3 (3 oct 2026).
+
+Decisiones
+- 1 decisión fue aceptada: ADR-004 Usar Kafka para la ingesta.
+
+Riesgos
+- 1 riesgo nuevo fue detectado: La API de pedidos está expuesta a internet (Alta).
+- 2 riesgos fueron resueltos: Enlace sin cifrar hacia Facturación y El lote antiguo no tiene dueño.
+
+Arquitectura
+- 2 componentes fueron añadidos: Cola y Consumidor.
+- 1 conexión añadida.
+
+Costo y esfuerzo
+- El costo mensual de operación pasa de $1200 a $1500 (+$300).
+```
 
 ### Inventario (CSV / Excel)
 
