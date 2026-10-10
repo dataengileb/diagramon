@@ -270,9 +270,9 @@
      5. Funciones puras de src/app.js
      ====================================================================== */
   section('app.js pure functions');
-  const app = read('src/app.js');
-  const dsApp = app + read('src/ui/datatab.js');   // v2: la pestaña Datos vive en src/ui/datatab.js
-  const wsApp = app + read('src/ui/workspaceui.js');   // v2: espacio de trabajo y diseño frente a realidad viven en src/ui/workspaceui.js
+  // v2: la interfaz se reparte entre src/app.js y src/ui/*.js; las pruebas que buscan código de la interfaz leen todo junto (app.js primero, para que las posiciones de sus marcadores no cambien)
+  const UI_FILES = ['src/ui/dialogs.js', 'src/ui/panel.js', 'src/ui/tabs.js', 'src/ui/sidebar.js', 'src/ui/topbar.js', 'src/ui/raid.js', 'src/ui/people.js', 'src/ui/reqs.js', 'src/ui/datatab.js', 'src/ui/adr.js', 'src/ui/workspaceui.js', 'src/ui/exportother.js'];
+  const app = ['src/app.js', ...UI_FILES].map(read).join('\n');
   const between = (a, b) => { const i = app.indexOf(a), j = app.indexOf(b, i); assert(i >= 0 && j > i, `markers not found: ${a}`); return app.slice(i + a.length, j); };
   const routeReliability = win.DiagramonModels.reliability().routeReliability;
   test('composite availability: single route = product', () => {
@@ -295,7 +295,6 @@
     assert(r && r.value > 0.9 && r.value <= 1, `value ${r && r.value}`); assert(Date.now() - t0 < 5000, 'too slow');
   });
   // v2: el código de la interfaz está repartido entre src/app.js y src/ui/*.js; cada clave T('...') literal debe existir en inglés y en español
-  const UI_FILES = ['src/ui/dialogs.js', 'src/ui/panel.js', 'src/ui/tabs.js', 'src/ui/sidebar.js', 'src/ui/topbar.js', 'src/ui/raid.js', 'src/ui/people.js', 'src/ui/reqs.js', 'src/ui/datatab.js', 'src/ui/adr.js', 'src/ui/workspaceui.js'];
   test('interface files: every literal T() key is defined in English and Spanish', () => {
     const i18nSrc = read('src/i18n.js');
     for (const f of ['src/app.js', ...UI_FILES]) {
@@ -1187,7 +1186,7 @@
     ['cleanCatalog(raw.datasets, m, dsHelpers())', "addFindingSource('data'", 'data-lat', 'catalog: catalogApi', 'dataset: v =>', 'addDataset', 'updateDataset', 'removeDataset', 'renameDataset: renameDatasetApi', 'freshness: freshnessApi', 'storage: storageApi',
       "'latency', 'transferOk'", 'raw = { ...raw, datasets: S.model.datasets }', 'datasets: () => datasetList()', 'lineage: ds =>'].forEach(k => assert(app.includes(k), `app has ${k}`));
     assert(read('src/text-lang.js').includes('latency|latencia'), 'the text edge options know latency');
-    const i18n = read('src/i18n.js'), used = [...new Set([...dsApp.matchAll(/T\('(ds\.[\w.]+)'/g)].map(m => m[1]))];
+    const i18n = read('src/i18n.js'), used = [...new Set([...app.matchAll(/T\('(ds\.[\w.]+)'/g)].map(m => m[1]))];
     ['find.src.data', ...used, 'ds.find.noOwner', 'ds.find.noContract', 'ds.find.ownerContract'].forEach(k => assert(i18n.split(`'${k}':`).length === 3, `${k} is defined once in en and once in es`));
     const keys = [...i18n.matchAll(/'(ds\.[\w.]+)':/g)].map(m => m[1]); assert(keys.every(k => keys.filter(x => x === k).length === 2), 'every ds.* key is defined exactly once per language');
   });
@@ -1212,9 +1211,9 @@
     assert(idx.includes('<button data-group="data" class="tab" data-tab="data"'), 'the data tab is in group data');
     const side = idx.split('<aside class="sidebar">')[1].split('</aside>')[0];
     assert(side.includes('data-pane="data"') && side.includes('id="ds-panel"') && side.includes('id="ds-bar"') && side.includes('id="ds-list"'), 'the data pane and its containers live inside the side panel');
-    ['renderDs', 'dsDocument', 'renameDatasetApi(ds.id', 'data-ds-open', 'return void exportContract(ds.id)'].forEach(k => assert(dsApp.includes(k), `app has ${k}`));
+    ['renderDs', 'dsDocument', 'renameDatasetApi(ds.id', 'data-ds-open', 'return void exportContract(ds.id)'].forEach(k => assert(app.includes(k), `app has ${k}`));
     assert(read('src/ui/tabs.js').includes("t.dataset.tab === 'data'"), 'tabs.js opens the data tab');   // src/ui/tabs.js
-    const used = new Set([...dsApp.matchAll(/T\(\s*'(ds\.[\w.]+)'/g)].map(m => m[1]));
+    const used = new Set([...app.matchAll(/T\(\s*'(ds\.[\w.]+)'/g)].map(m => m[1]));
     ['ds.cst.draft', 'ds.cst.agreed', 'ds.cst.deprecated', 'ds.rule.not_null', 'ds.rule.unique', 'ds.rule.range', 'ds.rule.regex', 'ds.rule.accepted_values', 'ds.rule.freshness', 'ds.rule.custom', 'ds.sec.general', 'ds.sec.schema', 'ds.sec.quality', 'ds.sec.contract', 'ds.sec.lineage', 'tab.data', 'tab.data.tip'].forEach(k => used.add(k));
     used.forEach(k => assert(i18n.split(`'${k}':`).length === 3, `${k} is defined once in en and once in es`));
     const keys = [...i18n.matchAll(/'((?:ds|tab\.data)[\w.]*)':/g)].map(m => m[1]); assert(keys.every(k => keys.filter(x => x === k).length === 2), 'no duplicated ds.* key');
@@ -1258,7 +1257,7 @@
     eq([q(5), q(true), q(0)], ['5', 'true', '0'], 'numbers and booleans stay bare');
   });
   test('wiring: export menu entry hidden unless datasets are declared; API, script and i18n', () => {
-    const html = read('index.html'), app = read('src/app.js'), i18n = read('src/i18n.js');
+    const html = read('index.html'), i18n = read('src/i18n.js');
     assert(html.includes('data-export="contracts" id="exp-contracts" hidden') && html.includes('<script src="src/export/datacontract.js"></script>'), 'button hidden by default + script tag');
     ['$(\'#exp-contracts\').hidden = !S.model.datasets?.length', 'contracts: exportContracts', 'function exportContract(id)', 'contractYaml, contractsYaml'].forEach(k => assert(app.includes(k), `app has ${k}`));
     ['exp.contracts', 'req.m.freshness', 'req.m.freshness.hint', 'req.chk.p.ds', 'req.chk.noFresh', 'req.chk.d.fresh', 'phase.cmp.datasets', 'phase.cmp.storage', 'phase.cmp.storage.tip'].forEach(k => assert(i18n.split(`'${k}':`).length === 3, `${k} once per language`));
@@ -1462,7 +1461,7 @@
     eq(MIG2(cur).raw, cur, 'a current file is unchanged');
   });
   test('the app wires it: normalize stamps the version, serialize writes it first, setModel migrates external sources only, the newer-format notice exists', () => {
-    const app2 = read('src/app.js');
+    const app2 = app;
     assert(/const m = \{ formatVersion: FORMAT_VERSION, title:/.test(app2), 'normalize');
     assert(/if \(m\.formatVersion\) head\.unshift\(/.test(app2), 'serialize');
     assert(/if \(!opts\.current && opts\.fromEditor !== 'text'\) \{\s*const mg = migrate\(raw\);/.test(app2), 'setModel');
@@ -2113,10 +2112,10 @@
     eq(WSP.fileNameFor('Diagramon Workspace', []), 'diagramon-workspace-2.json', 'a title that would collide with the manifest file gets a suffix'); assert(WSP.fileNameFor('x'.repeat(200), []).length <= 70, 'bounded');
   });
   test('the app wires it: docId in normalize, JSON and the text round trip; the dialog, the button and the texts in both languages', () => {
-    assert(wsApp.includes("window.DiagramonWorkspace?.cleanDocId(raw.docId)") && wsApp.includes('if (m.docId) head.push('), 'docId is read and written');
-    assert(wsApp.includes('raw.docId == null && S.model.docId'), 'text edits keep the docId');
-    assert(wsApp.includes('function ensureDocId()') && wsApp.includes('function exportJSON() { ensureDocId();'), 'docId assigned when saving');
-    assert(wsApp.includes("$('#btn-workspace')") && wsApp.includes('showDirectoryPicker') && wsApp.includes("$('#ws-dir')"), 'entry points');
+    assert(app.includes("window.DiagramonWorkspace?.cleanDocId(raw.docId)") && app.includes('if (m.docId) head.push('), 'docId is read and written');
+    assert(app.includes('raw.docId == null && S.model.docId'), 'text edits keep the docId');
+    assert(app.includes('function ensureDocId()') && app.includes('function exportJSON() { ensureDocId();'), 'docId assigned when saving');
+    assert(app.includes("$('#btn-workspace')") && app.includes('showDirectoryPicker') && app.includes("$('#ws-dir')"), 'entry points');
     const html = read('index.html');
     assert(html.includes('src="src/workspace.js"') && html.indexOf('src/workspace.js') < html.indexOf('src/app.js') && html.includes('id="btn-workspace"') && html.includes('id="ws-dir" webkitdirectory'), 'index.html');
     const keys = [...new Set([...read('src/ui/workspaceui.js').matchAll(/T\('(ws\.[\w.]+)'/g)].map(x => x[1]))];
@@ -2189,17 +2188,17 @@
     eq(WSP.lineage(null, null), { datasets: [], issues: [] }, 'empty'); assert(!WSP.lineage([{ name: 'a', title: 'a', flows: [] }], null).datasets.length, 'diagrams without id are left out');
   });
   test('the app wires it: ref in normalize and JSON, kept through text edits, inspector field, Review source, map and texts in both languages', () => {
-    assert(wsApp.includes('window.DiagramonWorkspace?.cleanRef(o.ref)') && wsApp.includes("'effort', 'ref', 'iac', 'phase'"), 'ref is cleaned and ordered');
-    assert(wsApp.includes("opts.fromEditor === 'text' && Array.isArray(raw.nodes) && S.model.nodes.some(n => n.ref)"), 'text edits keep the links');
-    assert(wsApp.includes('const refField = items =>') && wsApp.includes('${refField(t)}') && wsApp.includes("select[data-ref]") && wsApp.includes('data-ref-open'), 'inspector');
-    assert(wsApp.includes("addFindingSource('workspace'") && wsApp.includes('function wsMapHtml()') && wsApp.includes('data-ws-doc'), 'Review source and map');
-    const keys = [...new Set([...wsApp.matchAll(/T\(`?'?(ws\.[\w.]+)/g)].map(x => x[1]))].filter(k => !k.endsWith('.'));
+    assert(app.includes('window.DiagramonWorkspace?.cleanRef(o.ref)') && app.includes("'effort', 'ref', 'iac', 'phase'"), 'ref is cleaned and ordered');
+    assert(app.includes("opts.fromEditor === 'text' && Array.isArray(raw.nodes) && S.model.nodes.some(n => n.ref)"), 'text edits keep the links');
+    assert(app.includes('const refField = items =>') && app.includes('${refField(t)}') && app.includes("select[data-ref]") && app.includes('data-ref-open'), 'inspector');
+    assert(app.includes("addFindingSource('workspace'") && app.includes('function wsMapHtml()') && app.includes('data-ws-doc'), 'Review source and map');
+    const keys = [...new Set([...app.matchAll(/T\(`?'?(ws\.[\w.]+)/g)].map(x => x[1]))].filter(k => !k.endsWith('.'));
     ['find.src.workspace', 'ws.sh.k.stakeholders', 'ws.sh.k.decisions', 'ws.sh.k.datasets', ...keys].forEach(k => eq(i18nSrc.split(`'${k}':`).length - 1, 2, `${k} once per language`));
     assert(keys.length >= 30, `keys found: ${keys.length}`);
   });
 
   test('the app wires the portfolio export: a row per diagram, the open one from the screen, texts in both languages', () => {
-    assert(wsApp.includes('async function wsPortfolio()') && wsApp.includes("b.id === 'ws-portfolio'") && wsApp.includes('id="ws-portfolio"'), 'button and handler');
+    assert(app.includes('async function wsPortfolio()') && app.includes("b.id === 'ws-portfolio'") && app.includes('id="ws-portfolio"'), 'button and handler');
     ['ws.pf.btn', 'ws.pf.title', 'ws.pf.sheet.diagrams', 'ws.pf.sheet.datasets', 'ws.pf.partial', ...['title', 'file', 'nodes', 'edges', 'phases', 'cost', 'high', 'medium', 'low', 'decisions', 'stakeholders', 'datasets', 'links', 'role'].map(k => `ws.pf.c.${k}`)].forEach(k => eq(i18nSrc.split(`'${k}':`).length - 1, 2, `${k} once per language`));
   });
   test('cleanShared: keeps only objects with a name or title, drops repeats, ids and what points into the source diagram', () => {
@@ -2225,9 +2224,9 @@
     eq(WSP.shareOut('stakeholders', {}, big).list.length, 200, 'stakeholders capped at 200');
   });
   test('the app wires it: shared lists go through the diagram cleaners, decisions get their first history entry, texts in both languages', () => {
-    assert(wsApp.includes('const WS_LISTS = {') && wsApp.includes('function wsShareAdd()') && wsApp.includes('async function wsShareOut()'), 'functions');
-    assert(wsApp.includes("clean: raw => cleanStakeholders(raw, S.model)") && wsApp.includes("clean: raw => cleanDecisions(raw, S.model)") && wsApp.includes("clean: raw => cleanCatalog(raw, S.model, dsHelpers())"), 'cleaners');
-    assert(wsApp.includes('nd.history = [{ status: nd.status, date: nd.date'), 'history of an imported decision');
+    assert(app.includes('const WS_LISTS = {') && app.includes('function wsShareAdd()') && app.includes('async function wsShareOut()'), 'functions');
+    assert(app.includes("clean: raw => cleanStakeholders(raw, S.model)") && app.includes("clean: raw => cleanDecisions(raw, S.model)") && app.includes("clean: raw => cleanCatalog(raw, S.model, dsHelpers())"), 'cleaners');
+    assert(app.includes('nd.history = [{ status: nd.status, date: nd.date'), 'history of an imported decision');
   });
 
   /* ---------- resumen ---------- */
@@ -2260,9 +2259,9 @@
   });
   test('the app wires the comparison: Review source, accepted differences cleaned, saved and kept through text edits, report section, texts in both languages', () => {
     const page = read('index.html');
-    assert(wsApp.includes("addFindingSource('drift'") && wsApp.includes('const cleanDeviations =') && wsApp.includes('cleanDeviations(raw.deviations, m)') && wsApp.includes('"deviations": ${JSON.stringify(m.deviations)}') && wsApp.includes('!Array.isArray(raw.deviations) && S.model.deviations'), 'model');
-    assert(wsApp.includes("want('drift')") && page.includes('id="btn-drift"') && page.includes('id="dr-file"'), 'report, button and file input');
-    assert(!/driftKey = .*\\0/.test(wsApp), 'data-* keys never carry a NUL (the HTML parser would turn it into U+FFFD)');
+    assert(app.includes("addFindingSource('drift'") && app.includes('const cleanDeviations =') && app.includes('cleanDeviations(raw.deviations, m)') && app.includes('"deviations": ${JSON.stringify(m.deviations)}') && app.includes('!Array.isArray(raw.deviations) && S.model.deviations'), 'model');
+    assert(app.includes("want('drift')") && page.includes('id="btn-drift"') && page.includes('id="dr-file"'), 'report, button and file input');
+    assert(!/driftKey = .*\\0/.test(app), 'data-* keys never carry a NUL (the HTML parser would turn it into U+FFFD)');
     const keys = ['top.drift', 'top.drift.lbl', 'dr.title', 'dr.lead', 'dr.pick.files', 'dr.clear', 'dr.none', 'dr.pick', 'dr.sum', 'dr.s.diffs', 'dr.s.accepted', 'dr.s.props', 'dr.s.missing', 'dr.s.unlinked', 'dr.s.extra', 'dr.field.region', 'dr.field.replicas', 'dr.field.exposure', 'dr.field.backup',
       'dr.design', 'dr.deployed', 'dr.reason', 'dr.accept', 'dr.adopt', 'dr.reopen', 'dr.link', 'dr.unlink', 'dr.maybe', 'dr.gone', 'dr.clean', 'dr.err.read', 'dr.err.reason', 'dr.f.diff.t', 'dr.f.diff.fix', 'dr.f.missing.t', 'dr.f.missing.fix', 'find.src.drift', 'rep.s.drift', 'rep.h.field', 'rep.h.accepted'];
     keys.forEach(k => eq(i18nSrc.split(`'${k}':`).length - 1, 2, `${k} once per language`));
