@@ -30,6 +30,7 @@
   - [Architecture report](#architecture-report)
   - [Status report](#status-report)
   - [Inventory (CSV / Excel)](#inventory-csv--excel)
+- [Workspace (several diagrams)](#workspace-several-diagrams)
 - [Views](#views)
 - [C4 levels (drill-down)](#c4-levels-drill-down)
 - [Keyboard shortcuts](#keyboard-shortcuts)
@@ -524,6 +525,18 @@ Cost and effort
 - **Excel** (`.xlsx`) has one sheet per table: Components, Connections (style with the custom type's name, importance Normal / Important / Critical, custom type yes/no, encryption, data classes, datasets, cross-border, transfer approved, open STRIDE threats), Connection types (only when the diagram has custom types: id, name, line pattern, color, width, moving dots and how many connections use it), Groups, Owners (per team), Decisions, RAID, Stakeholders and Sign-offs (one row per sign-off), Findings (with dismissed ones and their reason) and Versions. Empty tables are skipped. The *Importance* and *Custom type* columns are always present in Connections (stable schema, even for old diagrams). The header row is bold, frozen and filterable, columns are sized to their content, costs use a currency number format and SLA keeps three decimals.
 - **CSV** opens a small dialog: *Components only* (`<diagram>-inventory.csv`) or *All tables as separate CSV files* (one download per table, named `<diagram>-inventory-<table>.csv`). The files include the BOM so Excel respects accents.
 - From the console: `Diagramon.inventory()` returns the component rows, and `Diagramon.exportInventory('xlsx' | 'csv' | 'csv-all')` starts the download.
+
+## Workspace (several diagrams)
+
+A client rarely has one diagram. The **Workspace** button (folder icon, next to *Import*) opens a folder that holds several Diagramon files, lists them and lets you switch between them.
+
+- **Open folder…** reads the `.json` files directly inside the folder (subfolders are not read). Each one that is a Diagramon diagram is listed with its title, components, connections and format version; other JSON files are counted as ignored.
+- **Open** loads a diagram. If the one on screen changed since it was opened or saved in the folder, you are asked first, and **Undo** brings it back.
+- **Save current diagram here** (Chromium browsers: Chrome, Edge, Brave) writes the diagram into the folder, replacing its own file or creating `<title>.json`. It asks before replacing a file.
+- Other browsers read the folder but cannot write into it: the list says *read-only*, and you keep using **Export › JSON**.
+- Every diagram saved this way gets a `docId`, a stable identifier that does not change if you rename the file. It is the anchor for the links between diagrams that come next. The folder may also hold an optional `diagramon-workspace.json` with `{ "name": "Client X" }`, shown instead of the folder name.
+
+Nothing leaves your browser: the folder is read and written locally, and permission is asked by the browser each time you open it.
 
 ## Views
 

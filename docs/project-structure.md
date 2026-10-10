@@ -15,6 +15,7 @@
 | `src/export/datacontract.js` | Data contracts (Open Data Contract Standard, ODCS v3.2.0 YAML, one file per dataset or all in one), written by hand with no libraries |
 | `src/share.js` | Encrypted, self-contained HTML viewer for sharing |
 | `src/iac.js` | Infrastructure-as-code import (Terraform, CloudFormation, Kubernetes, Compose) |
+| `src/workspace.js` | Workspace (a folder of diagrams): recognizes Diagramon files, summarizes them (title, counts, format version, `docId`) and names new files; pure, no DOM. Reading and writing the folder is in `src/app.js` |
 | `src/dbt.js` | dbt manifest import (`manifest.json` to datasets, quality rules, freshness and a lineage diagram); pure, no DOM |
 | `samples/` | Sample IaC files and a dbt manifest (`samples/dbt/`) to try the imports |
 | `assets/icons/*.js` | Embedded official icons for AWS, Azure, Google Cloud, SAP BTP and Microsoft Fabric |
