@@ -545,6 +545,14 @@ Nothing leaves your browser: the folder is read and written locally, and permiss
 - A link to a diagram that is not in the open folder shows up under the map and as a low **Review** finding (source *Workspace*) while a folder is open.
 - Links are saved in the JSON as `ref: { "doc": "<docId>" }` on the component. The Text tab does not show them, but editing the text keeps them.
 
+### Shared items
+
+People, decisions and datasets often repeat across the diagrams of one client. The **Shared items** box of the Workspace window keeps one copy for the whole folder, in `diagramon-workspace.json`:
+
+- **Share from this diagram** (Chromium browsers) publishes the stakeholders, decisions (ADR) and datasets you tick. An item with the same name or title (ignoring case and accents) is replaced; the others are added.
+- **Add shared items to this diagram** copies what the diagram lacks, matching by name or title, so nothing is duplicated. The diagram numbers them itself (`SH-…`, `ADR-…`, `DS-…`) and each decision starts its history today. One step of **Undo** removes the whole addition.
+- Each diagram stays self-contained: it is a copy, not a live link, so a later change to the shared list does not reach a diagram until you add again, and a copy never overwrites what the diagram already has. Ids, links to components, sign-offs, phases and version links do not travel, because they only mean something in the diagram where they were made.
+
 ## Views
 
 A **view** is a way of looking at the same diagram: it only decides what is shown, how much detail and what stands out. It never changes your components or positions. Pick one from the **View** selector in the top bar, with keys **`1`**–**`9`**, or from the console (`Diagramon.setView('security')`). When the view is not *Full*, a pill above the canvas names it, counts what it hides or dims, and has an **×** to go back. The document card and the legend of exports follow the active view.
