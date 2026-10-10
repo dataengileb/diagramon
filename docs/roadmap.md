@@ -34,9 +34,9 @@ Larger changes that would be useful but touch many parts of the code. They are o
 | Availability and single points of failure | «disponibilidad (SLA), RPO/RTO, réplicas y puntos únicos de fallo» |
 | Security review, residency, STRIDE | «revisión de seguridad automática», «residencia y soberanía de datos», «STRIDE: fronteras de confianza…» |
 | Context view and C4 ghosts | «vista Contexto…», «niveles C4: abrir, salir, marco de límite y fantasmas del exterior» |
-| Inspector, connect mode, delete/duplicate | inspector blocks, «acciones», «interacción con el lienzo» |
+| Inspector, connect mode, delete/duplicate | `src/ui/inspector.js` and the `src/ui/insp*.js` sections, «acciones», «interacción con el lienzo» |
 | Text tab | `src/text-lang.js` (parse + stringify) |
-| Exports | `src/export/mermaid.js`, `plantuml.js`, `drawio.js`, and the inventory (`inventoryRows` / connections sheet) |
+| Exports | `src/export/mermaid.js`, `plantuml.js`, `drawio.js`, and the inventory (`inventoryRows` and the connections sheet, in `src/ui/exportother.js`) |
 
 Deleting a group would also have to delete or re-attach its connections, and undo must restore both.
 
@@ -52,24 +52,9 @@ Each step must keep existing diagrams byte-identical when they have no group end
 
 ## Split `src/app.js` into modules
 
-**Status: open for contributors.** The current maintainers do not plan to do it themselves.
+**Status: done in v2.** The pure models, the shared state and the whole interface now live in `src/models/`, `src/core/` and `src/ui/`, as classic scripts that still open with a double-click from `file://`. `src/app.js` went from about 11,700 to about 5,800 lines, the tests and the public `window.Diagramon` API did not change, and the version before the split is kept in the `v1` branch. See [how the code is split](project-structure.md#how-the-code-is-split-v2).
 
-**The need.** `src/app.js` has grown to about 8,000 lines in a single closure, organized in about 80 blocks marked with `/* ---------- … ---------- */` headers. It works, but it is hard to navigate, review and change in parallel, and most helpers cannot be tested on their own. (`tests/run.js` reaches only the few that are pure, by cutting them out of the file.)
-
-**Constraints that must stay.**
-
-- **No build step and no dependencies:** Diagramon must keep opening with a double-click on `index.html`, from disk (`file://`).
-- **The Content Security Policy stays strict** (`script-src 'self'`).
-- **Every existing feature, export and the encrypted viewer keep working byte-for-byte**, and `tests/run.js` keeps passing.
-
-**Possible approach.**
-
-- Keep classic `<script>` files: ES modules (`type="module"`) do not load from `file://` in every browser.
-- Split by the existing block headers into files under `src/` that share one namespace object (for example `window.DiagramonApp`): model and sanitizing, drawing, routing, views, analyses (security, residency, STRIDE, availability, costs, compliance, lineage), inspector, versions, exports, report, and canvas interaction.
-- Move the pure functions first (model cleaning, diff, availability, cost breakdown, inventory rows), so that `tests/run.js` can load them directly and cover more.
-- Do it step by step, one area per pull request, with no behavior change. The browser check and the automated tests must pass after each step.
-
-**Why it is risky.** The blocks share a lot of state through closures: `S`, `R`, `VW`, `C`, `T` and many small helpers. A careless split can break features that are rarely exercised, such as the encrypted viewer, the report or C4 ghosts.
+**What is left, if someone wants it.** The canvas engine (drawing, connectors, particles, interaction) and the analyses (security, residency, STRIDE, availability, lineage) stay in `src/app.js` on purpose: they share a lot of state through closures (`S`, `R`, `VW`, `C`). Splitting them further would need the same rules: one area per pull request, no behavior change, and both test suites passing.
 
 ## Custom rules written by the user
 

@@ -34,9 +34,9 @@ Cambios grandes que serían útiles pero tocan muchas partes del código. Están
 | Disponibilidad y puntos únicos de fallo | «disponibilidad (SLA), RPO/RTO, réplicas y puntos únicos de fallo» |
 | Revisión de seguridad, residencia, STRIDE | «revisión de seguridad automática», «residencia y soberanía de datos», «STRIDE: fronteras de confianza…» |
 | Vista Contexto y fantasmas C4 | «vista Contexto…», «niveles C4: abrir, salir, marco de límite y fantasmas del exterior» |
-| Inspector, modo conectar, borrar/duplicar | bloques del inspector, «acciones», «interacción con el lienzo» |
+| Inspector, modo conectar, borrar/duplicar | `src/ui/inspector.js` y las secciones `src/ui/insp*.js`, «acciones», «interacción con el lienzo» |
 | Pestaña Texto | `src/text-lang.js` (parse + stringify) |
-| Exportaciones | `src/export/mermaid.js`, `plantuml.js`, `drawio.js` y el inventario (`inventoryRows` / hoja de conexiones) |
+| Exportaciones | `src/export/mermaid.js`, `plantuml.js`, `drawio.js` y el inventario (`inventoryRows` y la hoja de conexiones, en `src/ui/exportother.js`) |
 
 Además, borrar un grupo tendría que borrar o reenganchar sus conexiones, y deshacer debe restaurar ambas cosas.
 
@@ -52,24 +52,9 @@ Cada paso debe dejar idénticos, byte a byte, los diagramas que no tengan extrem
 
 ## Dividir `src/app.js` en módulos
 
-**Estado: abierto a colaboradores.** Los mantenedores actuales no tienen previsto hacerlo.
+**Estado: hecho en la v2.** Los modelos puros, el estado compartido y toda la interfaz viven ahora en `src/models/`, `src/core/` y `src/ui/`, como scripts clásicos que siguen abriendo con doble clic desde `file://`. `src/app.js` pasó de unas 11.700 a unas 5.800 líneas, las pruebas y la API pública `window.Diagramon` no cambiaron, y la versión anterior a la división se guarda en la rama `v1`. Más detalle en [cómo está dividido el código](project-structure.es.md#cómo-está-dividido-el-código-v2).
 
-**La necesidad.** `src/app.js` ha crecido hasta unas 8.000 líneas en una sola clausura, organizada en unos 80 bloques marcados con cabeceras `/* ---------- … ---------- */`. Funciona, pero cuesta recorrerlo, revisarlo y cambiarlo en paralelo, y la mayoría de sus funciones no se pueden probar por separado. (`tests/run.js` solo llega a las pocas que son puras, recortándolas del archivo.)
-
-**Condiciones que deben mantenerse.**
-
-- **Sin paso de compilación ni dependencias:** Diagramon debe seguir abriéndose con doble clic en `index.html`, desde el disco (`file://`).
-- **La política de seguridad de contenidos (CSP) sigue siendo estricta** (`script-src 'self'`).
-- **Todas las funciones, exportaciones y el visor cifrado siguen funcionando igual, byte a byte**, y `tests/run.js` sigue pasando.
-
-**Enfoque posible.**
-
-- Mantener archivos `<script>` clásicos: los módulos ES (`type="module"`) no cargan desde `file://` en todos los navegadores.
-- Dividir según las cabeceras de bloque que ya existen, en archivos bajo `src/` que compartan un objeto de espacio de nombres (por ejemplo `window.DiagramonApp`): modelo y saneado, dibujo, conectores, vistas, análisis (seguridad, residencia, STRIDE, disponibilidad, costos, cumplimiento, linaje), inspector, versiones, exportaciones, informe e interacción con el lienzo.
-- Mover primero las funciones puras (limpieza del modelo, diferencias, disponibilidad, desglose de costos, filas del inventario), para que `tests/run.js` pueda cargarlas directamente y cubrir más.
-- Hacerlo paso a paso, un área por pull request y sin cambios de comportamiento. Tras cada paso deben pasar la revisión en el navegador y las pruebas automáticas.
-
-**Por qué es arriesgado.** Los bloques comparten mucho estado a través de clausuras: `S`, `R`, `VW`, `C`, `T` y muchas funciones auxiliares pequeñas. Una división descuidada puede romper funciones que se usan poco, como el visor cifrado, el informe o los fantasmas C4.
+**Lo que queda, si alguien lo quiere.** El motor del lienzo (dibujo, conectores, partículas, interacción) y los análisis (seguridad, residencia, STRIDE, disponibilidad, linaje) se quedan en `src/app.js` a propósito: comparten mucho estado a través de clausuras (`S`, `R`, `VW`, `C`). Dividirlos más pediría las mismas reglas: un área por pull request, sin cambios de comportamiento y con las dos baterías de pruebas pasando.
 
 ## Reglas propias escritas por la persona usuaria
 
