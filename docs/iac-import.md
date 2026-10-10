@@ -20,6 +20,8 @@ What you get:
 - **Data classification** from tags such as `DataClassification = pii`.
 - **Less noise**: supporting resources (IAM, policies, routes, security groups, attachments…) are hidden, but still used to place and connect the rest.
 
+- **Each component remembers its resource**: the import stores the resource address in the component's `iac` field (`aws_db_instance.orders`, a CloudFormation logical id, `Deployment shop/web`, `service api`). It is optional, travels in the JSON and survives text edits, and it is what lets a later comparison with the deployed infrastructure match a component to its resource instead of guessing by name.
+
 ![AWS data lake imported from terraform show -json](iac-data-lake.png)
 
 Try it with the files in [`samples/`](../samples): a simple AWS data lake (as Terraform and as CloudFormation), an Azure web shop (`azure-web-shop`, `terraform show -json`), a Google Cloud data platform (`gcp-data-platform`, `terraform show -json`), a Kubernetes shop and a Docker Compose stack.

@@ -16,6 +16,7 @@
 | `src/share.js` | Encrypted, self-contained HTML viewer for sharing |
 | `src/iac.js` | Infrastructure-as-code import (Terraform, CloudFormation, Kubernetes, Compose) |
 | `src/workspace.js` | Workspace (a folder of diagrams): recognizes Diagramon files, summarizes them (title, counts, format version, `docId`) and names new files; pure, no DOM. Reading and writing the folder is in `src/app.js` |
+| `src/drift.js` | Design vs reality (pure, no DOM): pairs the components of a diagram with the resources of imported infrastructure by their `iac` address, proposes (never applies) matches by name and type, and lists differences in region, replicas, public exposure and backup. |
 | `src/dbt.js` | dbt manifest import (`manifest.json` to datasets, quality rules, freshness and a lineage diagram); pure, no DOM |
 | `samples/` | Sample IaC files and a dbt manifest (`samples/dbt/`) to try the imports |
 | `assets/icons/*.js` | Embedded official icons for AWS, Azure, Google Cloud, SAP BTP and Microsoft Fabric |

@@ -37,7 +37,7 @@
   // src/adr-kits.js puede faltar (kits de decisiones opcionales): solo ese archivo se carga con tolerancia
   const load = p => { try { new Function('window', 'localStorage', 'document', read(p))(win, storage, doc); } catch (e) { if (p !== 'src/adr-kits.js') throw e; } };
   ['src/config.js', 'src/i18n.js', 'assets/icons/aws.js', 'assets/icons/azure.js', 'assets/icons/gcp.js', 'assets/icons/sap.js', 'assets/icons/fabric.js', 'assets/icons/logos.js',
-    'src/text-lang.js', 'src/adr-kits.js', 'src/examples.js', 'src/iac.js', 'src/dbt.js', 'src/workspace.js', 'src/export/mermaid.js', 'src/export/plantuml.js', 'src/export/datacontract.js', 'src/export/drawio.js', 'src/export/xlsx.js'].forEach(load);
+    'src/text-lang.js', 'src/adr-kits.js', 'src/examples.js', 'src/iac.js', 'src/dbt.js', 'src/workspace.js', 'src/drift.js', 'src/export/mermaid.js', 'src/export/plantuml.js', 'src/export/datacontract.js', 'src/export/drawio.js', 'src/export/xlsx.js'].forEach(load);
   const C = win.DIAGRAMON_CONFIG, TXT = win.DiagramonText, IAC = win.DiagramonIaC, EXP = win.DiagramonExport, XLSX = win.DiagramonXlsx, DC = win.DiagramonContract;
 
   /* ---------- mini marco de pruebas ---------- */
@@ -249,6 +249,19 @@
       if (kind === 'azure') assert(r.diagram.groups.some(g => g.region === 'westeurope') && r.diagram.nodes.some(n => n.region === 'northeurope'), 'Azure regions');
       if (kind === 'gcp') assert(['EU', 'us-central1'].every(rg => r.diagram.nodes.some(n => n.region === rg)), 'GCP regions');
     });
+  });
+
+  test('IaC import keeps the address of each resource in `iac` and the facts the resource states (region, replicas, exposure, backup)', () => {
+    const tf = IAC.convert([{ name: 'terraform-show.json', text: read('samples/aws-data-lake/terraform-show.json') }]).diagram.nodes;
+    assert(tf.every(n => typeof n.iac === 'string' && n.iac), 'every Terraform node has its address');
+    const db = tf.find(n => n.iac === 'aws_db_instance.orders'); eq(db.facts, { region: 'us-east-1', exposure: 'internal' }, 'explicit publicly_accessible=false');
+    assert(!tf.find(n => n.iac === 'aws_s3_bucket.raw').facts.exposure, 'what is not stated is not invented');
+    const cf = IAC.convert([{ name: 'cloudformation.yaml', text: read('samples/aws-data-lake/cloudformation.yaml') }]).diagram.nodes;
+    assert(cf.some(n => n.iac === 'OrdersDatabase') && cf.every(n => n.iac), 'CloudFormation uses the logical id');
+    const k8 = IAC.convert([{ name: 'shop.yaml', text: read('samples/kubernetes/shop.yaml') }]).diagram.nodes;
+    eq(k8.find(n => n.iac === 'Deployment shop/orders-api').facts, { replicas: 3 }, 'Kubernetes replicas'); eq(k8.find(n => n.iac === 'StatefulSet shop/postgres').facts, { replicas: 1 }, 'one replica is stated too');
+    const dc = IAC.convert([{ name: 'docker-compose.yml', text: read('samples/docker-compose/docker-compose.yml') }]).diagram.nodes;
+    eq(dc.find(n => n.iac === 'service proxy').facts, { exposure: 'public' }, 'published ports'); eq(dc.find(n => n.iac === 'service api').facts, { replicas: 2 }, 'compose replicas');
   });
 
   /* ======================================================================
@@ -1514,7 +1527,7 @@
   });
   test('the app wires it: normalize cleans it, JSON and diff know the field, inspector, filter, pill, report, inventory and Review use it', () => {
     assert(/const dp = cleanDisposition\(o\.disposition\); if \(dp\) o\.disposition = dp; else delete o\.disposition;/.test(app), 'normalize');
-    assert(/'replicas', 'disposition', 'radar', 'effort', 'ref', 'phase', 'until'\],\n    edge: \['id'/.test(app), 'ORDER.node');
+    assert(/'replicas', 'disposition', 'radar', 'effort', 'ref', 'iac', 'phase', 'until'\],\n    edge: \['id'/.test(app), 'ORDER.node');
     assert(/'replicas', 'disposition', 'radar', 'effort', 'phase', 'until'\],\n    edge: \['label'/.test(app), 'DIFF_FIELDS.node');
     assert(app.includes("'layer', 'disposition', 'radar', 'compliance']") && app.includes("if (s === 'disposition')"), 'filter');
     assert(app.includes('${dispField(t)}') && app.includes('b.dataset.disp != null'), 'inspector');
@@ -2171,7 +2184,7 @@
     eq(WSP.lineage(null, null), { datasets: [], issues: [] }, 'empty'); assert(!WSP.lineage([{ name: 'a', title: 'a', flows: [] }], null).datasets.length, 'diagrams without id are left out');
   });
   test('the app wires it: ref in normalize and JSON, kept through text edits, inspector field, Review source, map and texts in both languages', () => {
-    assert(app.includes('window.DiagramonWorkspace?.cleanRef(o.ref)') && app.includes("'effort', 'ref', 'phase'"), 'ref is cleaned and ordered');
+    assert(app.includes('window.DiagramonWorkspace?.cleanRef(o.ref)') && app.includes("'effort', 'ref', 'iac', 'phase'"), 'ref is cleaned and ordered');
     assert(app.includes("opts.fromEditor === 'text' && Array.isArray(raw.nodes) && S.model.nodes.some(n => n.ref)"), 'text edits keep the links');
     assert(app.includes('const refField = items =>') && app.includes('${refField(t)}') && app.includes("select[data-ref]") && app.includes('data-ref-open'), 'inspector');
     assert(app.includes("addFindingSource('workspace'") && app.includes('function wsMapHtml()') && app.includes('data-ws-doc'), 'Review source and map');
@@ -2215,6 +2228,36 @@
   /* ---------- resumen ---------- */
   const summary = () => { print(`\n${pass} passed, ${fail} failed`); return finish(fail === 0); };
   if (!later.length) return summary();
+  section('Design vs reality');
+  const DR = win.DiagramonDrift;
+  const dn = (id, label, extra = {}) => ({ id, label, type: 'db', ...extra }), rn = (id, label, iac, facts, extra = {}) => ({ id, label, type: 'db', iac, ...(facts ? { facts } : {}), ...extra });
+  test('compare: pairs by `iac`; a stale link is missing; the rest is only proposed, never joined by itself', () => {
+    const d = [dn('a', 'Orders DB', { iac: 'aws_db_instance.orders' }), dn('b', 'Old cache', { iac: 'aws_elasticache_cluster.gone' }), dn('c', 'Customers'), dn('u', 'Mobile app', { type: 'user' })];
+    const r = [rn('x', 'orders', 'aws_db_instance.orders'), rn('y', 'customers-db', 'aws_db_instance.customers'), rn('z', 'queue-new', 'aws_sqs_queue.new', null, { type: 'queue' })];
+    const c = DR.compare(d, r);
+    eq(c.pairs, [{ design: 'a', reality: 'x', iac: 'aws_db_instance.orders' }], 'one pair'); eq(c.missing, ['b'], 'linked but not deployed');
+    eq(c.proposals.map(p => [p.design, p.reality]), [['c', 'y']], 'Customers ~ customers-db is a proposal'); eq(c.unlinked, ['u'], 'no link, nothing similar'); eq(c.extra, ['z'], 'deployed, not designed');
+    eq(c.diffs, [], 'nothing to compare');
+  });
+  test('compare: only what both sides state is compared; case and spacing of regions do not matter; unknown values never differ', () => {
+    const d = [dn('a', 'A', { iac: 'a', region: 'EU-West-1', replicas: 2, exposure: 'internal', backup: true }), dn('b', 'B', { iac: 'b', replicas: 3 }), dn('c', 'C', { iac: 'c', region: 'eu-west-1', exposure: 'public' })];
+    const r = [rn('1', 'A', 'a', { region: 'eu-west-1', replicas: 4, exposure: 'public', backup: false }), rn('2', 'B', 'b', { region: 'us-east-1' }), rn('3', 'C', 'c', { region: 'eu-west-1', exposure: 'public' })];
+    const c = DR.compare(d, r);
+    eq(c.diffs.map(x => [x.design, x.field, x.designValue, x.realityValue]), [['a', 'replicas', 2, 4], ['a', 'exposure', 'internal', 'public'], ['a', 'backup', true, false]], 'region equal, the three others differ; B states no region/exposure on one side');
+    const g = DR.compare(d, r, { get: (n, f) => (f === 'region' ? 'us-east-1' : n[f]) });
+    assert(g.diffs.some(x => x.design === 'a' && x.field === 'region') && !g.diffs.some(x => x.design === 'b'), 'the app can pass the inherited value');
+  });
+  test('propose: needs a name signal, is one to one, best first, and a reality node can answer only one design node', () => {
+    const d = [dn('a', 'Orders'), dn('b', 'Orders replica'), dn('c', 'zzz')], r = [rn('x', 'orders', 'o1'), rn('y', 'billing', 'o2')];
+    eq(DR.propose(d, r).map(p => [p.design, p.reality, p.score]), [['a', 'x', 5]], 'only the exact one gets it; Orders replica loses to the exact name');
+    eq(DR.propose([dn('a', 'Orders', { type: 'x' })], [rn('x', 'orders', 'o1', null, { type: 'y' })]), [{ design: 'a', reality: 'x', score: 3 }], 'the same name alone reaches the floor');
+    eq(DR.propose([dn('a', 'Orders')], [rn('x', 'Billing', 'o')]), [], 'no name signal, no proposal'); eq(DR.compare(null, null), { pairs: [], proposals: [], missing: [], unlinked: [], extra: [], diffs: [] }, 'empty');
+  });
+  test('the app keeps `iac` on nodes and the page loads the module before the app', () => {
+    const page = read('index.html');
+    assert(app.includes("o.iac.replace(") && app.includes('n.iac)') && app.includes('delete n.facts') && page.includes('src="src/drift.js"') && page.indexOf('src/drift.js') < page.indexOf('src/app.js'), 'wiring');
+  });
+
   section('Web Crypto (Node only)');
   (async () => {
     for (const [name, fn] of later) {
