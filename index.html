@@ -649,6 +649,14 @@
   .ws-lint th, .ws-lint td { text-align: left; vertical-align: top; padding: 6px 8px; border-bottom: 1px solid var(--border); }
   .ws-lin { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
   .ws-lin small { color: var(--muted); }
+  .dr-sec { margin: 8px 0 0; }
+  .dr-list { max-height: 34vh; }
+  .dr-list li { flex-wrap: wrap; }
+  .dr-acc { display: flex; gap: 6px; margin-top: 4px; }
+  .dr-acc input { flex: 1; min-width: 0; }
+  .dr-list select { max-width: 40%; }
+  .dr-extra { margin: 4px 0 0; padding-left: 18px; font-size: 12.5px; max-height: 20vh; overflow: auto; }
+  .dr-list small, .dr-extra small { color: var(--muted); }
   .ws-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; max-height: 40vh; overflow: auto; }
   .ws-list li { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface2); }
   .ws-list li.cur { border-color: var(--accent); }
@@ -1478,6 +1486,7 @@
         </div>
       </details>
       <button class="tbtn" id="btn-workspace" data-i18n-title="top.workspace"><svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg><span class="lbl" data-i18n="top.workspace.lbl"></span></button>
+      <button class="tbtn" id="btn-drift" data-i18n-title="top.drift"><svg viewBox="0 0 24 24"><path d="M4 7h6M4 12h6M4 17h6M14 7h6M14 12h6M14 17h6"/><path d="M10 12h4"/></svg><span class="lbl" data-i18n="top.drift.lbl"></span></button>
       <button class="tbtn" id="btn-import" data-i18n-title="top.import"><svg viewBox="0 0 24 24"><path d="M12 15V3M7 8l5-5 5 5M5 21h14"/></svg><span class="lbl" data-i18n="top.import.lbl"></span></button>
       <button class="tbtn" id="btn-new" data-i18n-title="top.new"><svg viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M12 12v6M9 15h6"/></svg><span class="lbl" data-i18n="top.new.lbl"></span></button>
       <span class="sep"></span>
@@ -1597,6 +1606,7 @@
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 <input type="file" id="file" accept=".json,.tfstate,.yaml,.yml,.template,application/json" multiple hidden>
 <input type="file" id="ws-dir" webkitdirectory multiple hidden>
+<input type="file" id="dr-file" accept=".json,.tfstate,.yaml,.yml,.template,application/json" multiple hidden>
 
 <script src="src/config.js"></script>
 <script src="src/i18n.js"></script>

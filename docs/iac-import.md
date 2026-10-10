@@ -25,3 +25,18 @@ What you get:
 ![AWS data lake imported from terraform show -json](iac-data-lake.png)
 
 Try it with the files in [`samples/`](../samples): a simple AWS data lake (as Terraform and as CloudFormation), an Azure web shop (`azure-web-shop`, `terraform show -json`), a Google Cloud data platform (`gcp-data-platform`, `terraform show -json`), a Kubernetes shop and a Docker Compose stack.
+
+## Compare the diagram with what is deployed
+
+The **Deployed** button of the toolbar compares the diagram on screen with the infrastructure files of what is actually running (the same files you can import above). Nothing is stored from those files; they only live while the window is open.
+
+Components are matched by their `iac` link (see above). The window then shows, in this order:
+
+- **Differences**: region, replicas, public exposure and backup, only where both the diagram and the deployed resource state a value and they disagree. Exposure and backup count only when written explicitly on the component, never when Diagramon deduces them. Each row has **Use deployed value** (updates the diagram) or **Accept** with a reason (required). An accepted difference is saved in the diagram with its reason, the date and the deployed value it was accepted for; if the deployed value changes later it comes back as an open difference.
+- **Suggested links**: components without a link that look like a deployed resource (same type or icon and a similar name). Nothing is linked for you; press **Link** on each one you agree with.
+- **Linked, but not found**: the resource is gone or renamed. Unlink it or point it elsewhere.
+- **Components without a link** (pick a resource from the list to link by hand) and **Deployed, but not in the diagram**.
+
+While files are loaded, Review shows one finding per open difference and per link that no longer exists (source *Design vs deployed*), and the report has a section listing the accepted differences. Both go away with the loaded files, except the report section, which comes from what was accepted.
+
+Encryption is not compared: components have no encryption field (only connections do).
