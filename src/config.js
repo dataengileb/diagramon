@@ -386,6 +386,18 @@ window.DIAGRAMON_CONFIG = {
     }
   },
 
+  /* Comentarios: hilos con autor sobre un componente, una conexión, un grupo, una decisión (ADR), un requisito o una versión (o generales).
+     Se escriben en el inspector y en el diálogo «Comentarios»; en el diagrama se guardan como `comments` (sin ellos no hay clave).
+     max: hilos por documento · maxReplies: respuestas por hilo · textMax: caracteres por mensaje.
+     rules: avisos que salen en Revisión (fuente «comentarios»); solo avisan, nunca bloquean.
+       · cmt.open: el componente, la conexión o el grupo tiene hilos sin resolver. */
+  comments: {
+    max: 500, maxReplies: 50, textMax: 4000,
+    rules: {
+      'cmt.open': { enabled: true, severity: 'low' }
+    }
+  },
+
   /* Costos escritos a mano en cada componente (recuadro bajo el nodo).
      hoursPerMonth: horas usadas para pasar un precio por hora a mensual.
      defaultYears: años por defecto del periodo "Multianual". */
