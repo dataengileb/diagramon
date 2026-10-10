@@ -13,7 +13,7 @@ window.DiagramonUI.inspfields = { create(ctx) {
   const { $, $$, ICON, esc, fold, store } = window.DiagramonCore.util;
   const { S } = window.DiagramonCore.state;
   const { toast } = window.DiagramonUI.dialogs;
-  const { COLOR_ALIAS, COST, DATA, DL, EF_MAX, EF_ROLES, EST, ICONS, MG, PERIODS, beginEdit, categories, changed, colorVar, datasetList, datasetsOfNode, dsFind, dsKey, efCostOf, efDaysOf, efInfo, endEdit, fmtDay, groupById, hasCost, iconInfo, layerInfo, layerNaming, layerOf, markEdit, mgInfo, money, nodeColor, nodeIconHtml, perMonth, pushHistory, radarEntries, radarInfo, rdRingInfo, renderInspector, round2, selTarget, today, yearsOf, DUR_TIERS, WS } = ctx;
+  const { COLOR_ALIAS, COST, DATA, DL, EF_MAX, EF_ROLES, EST, ICONS, MG, PERIODS, beginEdit, categories, changed, colorVar, datasetList, datasetsOfNode, dsFind, dsKey, efCostOf, efDaysOf, efInfo, endEdit, fmtDay, groupById, hasCost, iconInfo, layerInfo, layerNaming, layerOf, markEdit, mgInfo, money, nodeColor, nodeIconHtml, perMonth, pushHistory, radarEntries, radarInfo, rdRingInfo, renderInspector, round2, selTarget, today, yearsOf } = ctx;
 
   const CP_RECENT = 7, CP_FAV = 14;
   // #RGB o #RRGGBB (con o sin #) -> #rrggbb, o null si no es válido
@@ -270,7 +270,7 @@ window.DiagramonUI.inspfields = { create(ctx) {
       <datalist id="ds-suggest">${more.map(n => `<option value="${esc(n)}"></option>`).join('')}</datalist>${list.length ? '' : `<span class="cost-hint">${T('lin.none')}</span>`}</div>`;
   };
   // Latencia de una conexión: tiempo que tarda el dato en ese salto ('15m', '1h', '1d'); se valida con parseDur
-  const latencyField = e => `<label>${T('ds.latency')}<input data-lat list="dl-dur" value="${esc(e.latency || '')}" placeholder="${esc(T('ds.latency.ph'))}" aria-label="${esc(T('ds.latency'))}" autocomplete="off" spellcheck="false"><span class="cost-hint">${T('ds.latency.hint')}</span></label><datalist id="dl-dur">${DUR_TIERS.map(v => `<option value="${v}"></option>`).join('')}</datalist>`;
+  const latencyField = e => `<label>${T('ds.latency')}<input data-lat list="dl-dur" value="${esc(e.latency || '')}" placeholder="${esc(T('ds.latency.ph'))}" aria-label="${esc(T('ds.latency'))}" autocomplete="off" spellcheck="false"><span class="cost-hint">${T('ds.latency.hint')}</span></label><datalist id="dl-dur">${ctx.DUR_TIERS.map(v => `<option value="${v}"></option>`).join('')}</datalist>`;
   // Conjuntos que pasan por las conexiones de un nodo (solo lectura; pulsar uno muestra su linaje)
   const nodeDsField = n => {
     const list = datasetsOfNode(n.id);
@@ -292,7 +292,7 @@ window.DiagramonUI.inspfields = { create(ctx) {
   const refField = items => {
     const list = [].concat(items);
     if (list.length !== 1 || !('type' in list[0])) return '';
-    const n = list[0], docs = (WS.index?.diagrams || []).filter(d => d.docId && !d.dupDocId && d.docId !== S.model.docId), cur = n.ref?.doc || '', known = docs.some(d => d.docId === cur);
+    const n = list[0], docs = (ctx.WS.index?.diagrams || []).filter(d => d.docId && !d.dupDocId && d.docId !== S.model.docId), cur = n.ref?.doc || '', known = docs.some(d => d.docId === cur);
     if (!docs.length && !cur) return '';
     const opts = [['', T('ws.ref.none')], ...docs.map(d => [d.docId, d.title]), ...(cur && !known ? [[cur, `${cur} ⚠`]] : [])];
     return `<div class="field"><label>${T('ws.ref.label')}<select data-ref>${opts.map(([v, l]) => `<option value="${esc(v)}"${cur === v ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select></label>${known ? `<button type="button" class="btn small" data-ref-open="${esc(cur)}">${esc(T('ws.ref.open'))}</button>` : ''}<span class="cost-hint">${esc(T(cur && !known ? 'ws.ref.lost' : 'ws.ref.hint'))}</span></div>`;
