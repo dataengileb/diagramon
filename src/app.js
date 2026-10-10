@@ -9023,11 +9023,20 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     wsRender();
   }
   const wsLiveLinks = () => wsLib().summarize({ nodes: S.model.nodes }, '').links;
+  const wsLineage = () => (WS.index && S.model.docId ? wsLib().lineage(WS.index.diagrams, { docId: S.model.docId, title: S.model.title, flows: wsLib().flowsOf(S.model) }) : null);
   // Hallazgo bajo: un componente apunta a un diagrama que no está en la carpeta abierta (solo mientras hay una carpeta abierta)
   addFindingSource('workspace', m => {
     if (!WS.index) return [];
     const ids = new Set([...WS.index.diagrams.map(d => d.docId).filter(Boolean), m.docId].filter(Boolean));
-    return m.nodes.filter(n => n.ref && !ids.has(n.ref.doc)).map(n => ({ id: `workspace:ref-missing:node:${n.id}`, source: 'workspace', rule: 'ws.ref-missing', severity: 'low', target: { kind: 'node', id: n.id }, title: T('ws.f.missing.t', n.label), fix: T('ws.f.missing.fix') }));
+    const out = m.nodes.filter(n => n.ref && !ids.has(n.ref.doc)).map(n => ({ id: `workspace:ref-missing:node:${n.id}`, source: 'workspace', rule: 'ws.ref-missing', severity: 'low', target: { kind: 'node', id: n.id }, title: T('ws.f.missing.t', n.label), fix: T('ws.f.missing.fix') }));
+    const lin = m === S.model ? wsLineage() : null, title = id => WS.index.diagrams.find(d => d.docId === id)?.title || id;   // el linaje es del diagrama abierto
+    (lin ? lin.issues : []).forEach(x => {
+      if (x.kind === 'multi' ? !x.docs.includes(m.docId) : x.docId !== m.docId) return;
+      const e = (m.edges || []).find(e => (e.datasets || []).some(d => dsKey(d) === dsKey(x.ds)));
+      out.push({ id: `workspace:ds-${x.kind}:${dsKey(x.ds)}:${x.node || ''}`, source: 'workspace', rule: `ws.ds-${x.kind}`, severity: 'low', target: x.node ? { kind: 'node', id: x.node } : e ? { kind: 'edge', id: e.id } : { kind: 'node', id: '' },
+        title: T(`ws.f.${x.kind}.t`, { ds: x.ds, node: x.label, to: title(x.to), others: (x.docs || []).filter(d => d !== m.docId).map(title).join(', ') }), fix: T(`ws.f.${x.kind}.fix`) });
+    });
+    return out;
   });
   async function wsFromHandle(handle) {
     const L = wsLib(), files = [];
@@ -9123,6 +9132,16 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     }).join('');
     return `<p class="ws-dir">${esc(T('ws.map.hint'))}</p><svg class="ws-map" viewBox="0 0 ${g.width} ${g.height}" width="${g.width}" role="group" aria-label="${esc(T('ws.map.aria'))}"><defs><marker id="ws-arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 10 5 0 10z"/></marker></defs>${arrows}${boxes}</svg>${notes}`;
   }
+  // Linaje entre diagramas: los conjuntos de datos que aparecen en más de un diagrama, quién los produce y quién los consume
+  function wsLineageHtml() {
+    const L = wsLib(), cur = S.model.docId || '', ix = WS.index;
+    const lin = L.lineage(ix.diagrams, cur ? { docId: cur, title: S.model.title, flows: L.flowsOf(S.model) } : null);
+    const title = id => ix.diagrams.find(d => d.docId === id)?.title || (id === cur ? S.model.title : id);
+    const role = u => `<li><span>${esc(u.title)}</span> <small>${esc(T(u.produces ? 'ws.lin.produces' : 'ws.lin.consumes'))}</small></li>`;
+    const rows = lin.datasets.map(r => `<tr><th scope="row">${esc(r.name)}</th><td><ul class="ws-lin">${r.uses.slice().sort((a, b) => b.produces - a.produces).map(role).join('')}</ul></td></tr>`).join('');
+    const issues = lin.issues.map(x => `<p class="ws-dir"><span class="ws-warn">⚠</span> ${esc(T(`ws.f.${x.kind}.t`, { ds: x.ds, node: x.label, to: title(x.to), others: (x.docs || []).map(title).join(', ') }))} <small>(${esc(title(x.docId))})</small></p>`).join('');
+    return `<p class="ws-dir">${esc(T('ws.lin.hint'))}</p>${rows ? `<table class="ws-lint"><thead><tr><th>${esc(T('ws.lin.ds'))}</th><th>${esc(T('ws.lin.in'))}</th></tr></thead><tbody>${rows}</tbody></table>` : `<p class="ws-dir">${esc(T('ws.lin.empty'))}</p>`}${issues}${cur ? '' : `<p class="ws-dir">${esc(T('ws.lin.unsaved'))}</p>`}`;
+  }
   function wsRender() {
     const box = $('#ws-body');
     if (!box) return;
@@ -9131,9 +9150,11 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
     $('#ws-refresh').hidden = !wsWritable();
     $('#ws-tab-list').setAttribute('aria-pressed', String(WS.view === 'list'));
     $('#ws-tab-map').setAttribute('aria-pressed', String(WS.view === 'map'));
+    $('#ws-tab-lineage').setAttribute('aria-pressed', String(WS.view === 'lineage'));
     $('#ws-tabs').hidden = !d || !ix;
     if (!d || !ix) { box.innerHTML = `<p class="ws-dir">${esc(T('ws.none'))}</p>`; return; }
     if (WS.view === 'map') { box.innerHTML = wsMapHtml(); return; }
+    if (WS.view === 'lineage') { box.innerHTML = wsLineageHtml(); return; }
     const rows = ix.diagrams.map(x => {
       const here = (cur && x.docId === cur && !x.dupDocId) || x.name === WS.file;
       return `<li${here ? ' class="cur"' : ''}><div class="ws-t"><b>${esc(x.title)}</b><small>${esc(T('ws.meta', x))}${x.dupDocId ? ` · <span class="ws-warn">${esc(T('ws.dup'))}</span>` : ''}</small></div>${here ? `<span class="ws-chip">${esc(T('ws.current'))}</span>` : ''}<button type="button" class="btn small" data-ws-open="${esc(x.name)}">${esc(T('ws.open'))}</button></li>`;
@@ -9152,7 +9173,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
       <h3 id="${id}t">${esc(T('ws.title'))}</h3>
       <p>${esc(T('ws.lead'))}</p>
       <div class="ws-bar"><button type="button" class="btn" id="ws-pick">${esc(T('ws.pick'))}</button><button type="button" class="btn" id="ws-refresh" hidden>${esc(T('ws.refresh'))}</button><button type="button" class="btn" id="ws-save" hidden>${esc(T('ws.save'))}</button></div>
-      <div class="ws-bar" id="ws-tabs" hidden><button type="button" class="btn" id="ws-tab-list" aria-pressed="true">${esc(T('ws.tab.list'))}</button><button type="button" class="btn" id="ws-tab-map" aria-pressed="false">${esc(T('ws.tab.map'))}</button></div>
+      <div class="ws-bar" id="ws-tabs" hidden><button type="button" class="btn" id="ws-tab-list" aria-pressed="true">${esc(T('ws.tab.list'))}</button><button type="button" class="btn" id="ws-tab-map" aria-pressed="false">${esc(T('ws.tab.map'))}</button><button type="button" class="btn" id="ws-tab-lineage" aria-pressed="false">${esc(T('ws.tab.lineage'))}</button></div>
       <div id="ws-body"></div>
       <p class="sh-err" role="alert" id="ws-msg"></p>
       <div class="cf-actions"><button type="button" class="btn" id="ws-close">${esc(T('ws.close'))}</button></div>
@@ -9169,7 +9190,7 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
       else if (b.id === 'ws-save') wsSave();
       else if (b.id === 'ws-sh-add') wsShareAdd();
       else if (b.id === 'ws-sh-out') wsShareOut();
-      else if (b.id === 'ws-tab-list' || b.id === 'ws-tab-map') { WS.view = b.id === 'ws-tab-map' ? 'map' : 'list'; wsRender(); }
+      else if (b.id === 'ws-tab-list' || b.id === 'ws-tab-map' || b.id === 'ws-tab-lineage') { WS.view = b.id === 'ws-tab-map' ? 'map' : b.id === 'ws-tab-lineage' ? 'lineage' : 'list'; wsRender(); }
       else if (b.dataset.wsOpen) wsOpen(b.dataset.wsOpen);
     });
     const openDoc = async el => {   // desde el mapa: la caja del diagrama abierto no hace nada; las demás lo abren

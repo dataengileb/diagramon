@@ -2077,7 +2077,7 @@
       { name: WSP.MANIFEST, text: '{"name":"Shop platform"}' }, { name: '', text: '{}' }, null, { name: 'noText.json' }
     ]);
     eq(r.manifest, { name: 'Shop platform', shared: {} }, 'manifest'); eq(r.diagrams.map(d => d.title), ['alpha', 'Beta'], 'sorted by title');
-    eq(r.diagrams[1], { name: 'b.json', title: 'Beta', nodes: 2, links: [], edges: 1, groups: 0, phases: 0, versions: 0, formatVersion: 1, docId: 'd-beta-0001', dupDocId: false }, 'summary');
+    eq(r.diagrams[1], { name: 'b.json', title: 'Beta', nodes: 2, links: [], flows: [], edges: 1, groups: 0, phases: 0, versions: 0, formatVersion: 1, docId: 'd-beta-0001', dupDocId: false }, 'summary');
     eq(r.skipped.map(x => [x.name, x.reason]), [['bad.json', 'notJson'], ['other.json', 'notDiagram'], ['huge.json', 'big'], ['noText.json', 'notJson']], 'skipped');
     eq(WSP.scan(null), { manifest: null, diagrams: [], skipped: [] }, 'nothing');
     eq(WSP.scan([{ name: WSP.MANIFEST, text: 'nope' }]).manifest, null, 'unreadable manifest ignored');
@@ -2144,6 +2144,31 @@
     for (let i = 0; i < cyc.boxes.length; i++) for (let j = i + 1; j < cyc.boxes.length; j++) { const p = cyc.boxes[i], q = cyc.boxes[j]; assert(p.x + p.w <= q.x || q.x + q.w <= p.x || p.y + p.h <= q.y || q.y + q.h <= p.y, 'overlap'); }
     const big = WSP.layoutMap(mk(Array.from({ length: 60 }, (_, i) => `n${i}`), Array.from({ length: 59 }, (_, i) => [`n${i}`, `n${i + 1}`]).concat([['n59', 'n0']])));
     eq(big.boxes.length, 60, 'a long ring still ends'); eq(WSP.layoutMap(null), { boxes: [], arrows: [], width: 16, height: 16 }, 'empty');
+  });
+  test('flowsOf: origin = leaves and is never reached, sink = reached and never leaves; names fold case; links ride along', () => {
+    const f = WSP.flowsOf({ nodes: [{ id: 'a', label: 'Shop', ref: { doc: 'd-shop-01' } }, { id: 'b', label: 'ETL' }, { id: 'c', label: 'BI' }],
+      edges: [{ from: 'a', to: 'b', datasets: ['Orders', 'orders', ' Clients '] }, { from: 'b', to: 'c', datasets: ['ORDERS'] }, { from: 'a', to: 'c', datasets: [7, '', null] }, { from: 'a', to: 'b' }, 5] });
+    eq(f.map(x => x.name), ['Orders', 'Clients'], 'one entry per name, first spelling');
+    eq(f[0].origins, [{ id: 'a', label: 'Shop', doc: 'd-shop-01' }], 'origin with its link'); eq(f[0].sinks, [{ id: 'c', label: 'BI' }], 'the middle node is neither');
+    eq(f[1].sinks, [{ id: 'b', label: 'ETL' }], 'single hop'); eq(WSP.flowsOf(null), [], 'nothing');
+    eq(WSP.flowsOf({ nodes: [{ id: 'a' }], edges: Array.from({ length: 400 }, (_, i) => ({ from: 'a', to: 'a', datasets: [`d${i}`] })) }).length, 300, 'capped');
+  });
+  test('lineage: shared datasets, who produces, links to diagrams that lack the dataset, two producers; the open diagram wins', () => {
+    const mk = (title, docId, nodes, edges) => ({ name: `${title}.json`, text: JSON.stringify({ title, docId, nodes, edges }) });
+    const n = (id, label, doc) => ({ id, label, ...(doc ? { ref: { doc } } : {}) });
+    const r = WSP.scan([
+      mk('Shop', 'd-shop-01', [n('s', 'Web'), n('l', 'Lake')], [{ from: 's', to: 'l', datasets: ['Orders'] }]),
+      mk('Dwh', 'd-dwh-001', [n('i', 'Ingest', 'd-shop-01'), n('b', 'BI')], [{ from: 'i', to: 'b', datasets: ['orders', 'Margins'] }]),
+      mk('Other', 'd-other-1', [n('x', 'Feed'), n('y', 'Report')], [{ from: 'x', to: 'y', datasets: ['ORDERS'] }]),
+      mk('Lonely', 'd-lone-01', [n('p', 'P', 'd-shop-01'), n('q', 'Q')], [{ from: 'p', to: 'q', datasets: ['Margins'] }])]);
+    const lin = WSP.lineage(r.diagrams, null);
+    eq(lin.datasets.map(d => d.name), ['Margins', 'orders'], 'sorted, only those in 2+ diagrams');
+    const orders = lin.datasets[1]; eq(orders.uses.map(u => [u.docId, u.produces]), [['d-dwh-001', false], ['d-other-1', true], ['d-shop-01', true]], 'a linked origin imports, it does not produce');
+    eq(lin.issues.filter(i => i.kind === 'multi').map(i => [i.ds, i.docs]), [['orders', ['d-other-1', 'd-shop-01']]], 'two producers');
+    eq(lin.issues.filter(i => i.kind === 'noUpstream').map(i => [i.ds, i.docId, i.node, i.to]), [['Margins', 'd-dwh-001', 'i', 'd-shop-01'], ['Margins', 'd-lone-01', 'p', 'd-shop-01']], 'the linked diagram lacks Margins');
+    const live = WSP.lineage(r.diagrams, { docId: 'd-shop-01', title: 'Shop', flows: [{ name: 'Orders', origins: [{ id: 's', label: 'Web' }], sinks: [{ id: 'l', label: 'Lake', doc: 'd-lone-01' }] }] });
+    eq(live.issues.filter(i => i.kind === 'noDownstream').map(i => [i.docId, i.to]), [['d-shop-01', 'd-lone-01']], 'live flows replace the file; sink linked to a diagram without Orders');
+    eq(WSP.lineage(null, null), { datasets: [], issues: [] }, 'empty'); assert(!WSP.lineage([{ name: 'a', title: 'a', flows: [] }], null).datasets.length, 'diagrams without id are left out');
   });
   test('the app wires it: ref in normalize and JSON, kept through text edits, inspector field, Review source, map and texts in both languages', () => {
     assert(app.includes('window.DiagramonWorkspace?.cleanRef(o.ref)') && app.includes("'effort', 'ref', 'phase'"), 'ref is cleaned and ordered');

@@ -16,7 +16,7 @@
      (docId del diagrama donde se detalla). El mapa de sistemas los junta.
    API: window.DiagramonWorkspace.{ MANIFEST, MAX_BYTES, MAX_FILES, isDiagram,
         cleanDocId, cleanRef, newDocId, summarize, scan, fileNameFor,
-        systemsMap, layoutMap, SHARED_KINDS, cleanShared, mergeShared, shareOut }
+        systemsMap, layoutMap, flowsOf, lineage, SHARED_KINDS, cleanShared, mergeShared, shareOut }
    ========================================================================== */
 window.DiagramonWorkspace = (() => {
   'use strict';
@@ -61,9 +61,58 @@ window.DiagramonWorkspace = (() => {
     const fv = Math.floor(+raw.formatVersion);
     return {
       name, title: str(raw.title, 200) || name.replace(/\.json$/i, ''),
-      nodes: raw.nodes.length, links: linksOf(raw.nodes), edges: list(raw.edges).length, groups: list(raw.groups).length, phases: list(raw.phases).length, versions: list(raw.versions).length,
+      nodes: raw.nodes.length, links: linksOf(raw.nodes), flows: flowsOf(raw), edges: list(raw.edges).length, groups: list(raw.groups).length, phases: list(raw.phases).length, versions: list(raw.versions).length,
       formatVersion: Number.isFinite(fv) && fv > 0 ? fv : 0, docId: cleanDocId(raw.docId)
     };
+  }
+
+  /* ---------- linaje entre diagramas ---------- */
+  const dsKey = s => String(s).trim().toLowerCase();
+  const MAX_FLOWS = 300;
+  // Conjuntos de datos que viajan por las conexiones de un diagrama (en bruto o normalizado):
+  // [{ name, origins: [{ id, label, doc? }], sinks: [...] }]; origen = componente desde el que sale y al que no llega; destino = al que llega y del que no sale.
+  // doc = diagrama al que apunta ese componente (ref): ahí debería estar el otro extremo del flujo.
+  function flowsOf(raw) {
+    const nodes = new Map(), by = new Map();
+    list(raw && raw.nodes).forEach(n => { if (isObj(n) && n.id != null) nodes.set(String(n.id), n); });
+    list(raw && raw.edges).forEach(e => {
+      if (!isObj(e) || !Array.isArray(e.datasets)) return;
+      e.datasets.forEach(d => {
+        const name = str(d, 120), k = dsKey(name);
+        if (!name || (!by.has(k) && by.size >= MAX_FLOWS)) return;
+        const r = by.get(k) || { name, out: new Set(), inn: new Set() };
+        r.out.add(String(e.from)); r.inn.add(String(e.to)); by.set(k, r);
+      });
+    });
+    const side = (ids, other) => [...ids].filter(id => !other.has(id) && nodes.has(id)).map(id => {
+      const n = nodes.get(id), ref = cleanRef(n.ref);
+      return { id: String(id).slice(0, 60), label: str(n.label, 120), ...(ref ? { doc: ref.doc } : {}) };
+    });
+    return [...by.values()].map(r => ({ name: r.name, origins: side(r.out, r.inn), sinks: side(r.inn, r.out) }));
+  }
+  // Une los flujos de todos los diagramas con id (el abierto manda sobre su archivo: live = { docId, title, flows }).
+  // → { datasets: [{ key, name, uses: [{ docId, title, produces, consumes }] }] (los que están en 2 o más diagramas),
+  //     issues: [{ kind: 'noUpstream'|'noDownstream'|'multi', ds, docId, node?, label?, to?, docs? }] }
+  //   noUpstream/noDownstream: el componente apunta a otro diagrama que no lleva ese conjunto; multi: lo producen 2 o más diagramas a la vez
+  function lineage(diagrams, live) {
+    const docs = list(diagrams).filter(d => d.docId && !d.dupDocId).map(d => ({ docId: d.docId, title: d.title, flows: list(d.flows) }));
+    const lv = live && cleanDocId(live.docId) ? live : null;
+    if (lv) {
+      const me = { docId: lv.docId, title: str(lv.title, 200), flows: list(lv.flows) }, at = docs.findIndex(d => d.docId === lv.docId);
+      if (at >= 0) docs[at] = { ...me, title: me.title || docs[at].title }; else docs.push(me);
+    }
+    const byDoc = new Map(docs.map(d => [d.docId, new Set(d.flows.map(f => dsKey(f.name)))])), by = new Map(), issues = [];
+    docs.forEach(d => d.flows.forEach(f => {
+      const k = dsKey(f.name), r = by.get(k) || { key: k, name: f.name, uses: [] };
+      r.uses.push({ docId: d.docId, title: d.title, produces: f.origins.some(o => !o.doc), consumes: f.sinks.length > 0 });
+      by.set(k, r);
+      [['noUpstream', f.origins], ['noDownstream', f.sinks]].forEach(([kind, side]) => side.forEach(o => {
+        if (o.doc && o.doc !== d.docId && byDoc.has(o.doc) && !byDoc.get(o.doc).has(k)) issues.push({ kind, ds: f.name, docId: d.docId, node: o.id, label: o.label, to: o.doc });
+      }));
+    }));
+    const datasets = [...by.values()].filter(r => r.uses.length > 1).sort((a, b) => a.name.localeCompare(b.name));
+    datasets.forEach(r => { const p = r.uses.filter(u => u.produces); if (p.length > 1) issues.push({ kind: 'multi', ds: r.name, docId: p[0].docId, docs: p.map(u => u.docId) }); });
+    return { datasets, issues };
   }
 
   /* ---------- listas compartidas (manifiesto › shared) ---------- */
@@ -198,5 +247,5 @@ window.DiagramonWorkspace = (() => {
     return { boxes, arrows, width: boxes.reduce((m, b) => Math.max(m, b.x + b.w), 0) + pad + (arrows.some(x => x.same) ? 50 : 0), height: boxes.reduce((m, b) => Math.max(m, b.y + b.h), 0) + pad };
   }
 
-  return { MANIFEST, MAX_BYTES, MAX_FILES, isDiagram, cleanDocId, cleanRef, newDocId, summarize, scan, fileNameFor, systemsMap, layoutMap, SHARED_KINDS, cleanShared, mergeShared, shareOut };
+  return { MANIFEST, MAX_BYTES, MAX_FILES, isDiagram, cleanDocId, cleanRef, newDocId, summarize, scan, fileNameFor, systemsMap, layoutMap, flowsOf, lineage, SHARED_KINDS, cleanShared, mergeShared, shareOut };
 })();

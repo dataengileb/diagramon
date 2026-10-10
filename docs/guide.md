@@ -545,6 +545,16 @@ Nothing leaves your browser: the folder is read and written locally, and permiss
 - A link to a diagram that is not in the open folder shows up under the map and as a low **Review** finding (source *Workspace*) while a folder is open.
 - Links are saved in the JSON as `ref: { "doc": "<docId>" }` on the component. The Text tab does not show them, but editing the text keeps them.
 
+### Data lineage across diagrams
+
+The **Data lineage** tab of the Workspace window follows a dataset from one diagram to the next. Datasets are matched by name (upper and lower case do not matter), the same name you already put on connections.
+
+- A dataset *produces* in a diagram when it starts at a component that nothing feeds with it, and *consumes* where it ends. The tab lists every dataset that appears in two or more diagrams, with the role in each.
+- If a component is "detailed in" another diagram and the dataset flows out of or into that component, the other diagram should carry the dataset too. If it does not, the tab warns and **Review** raises a low finding on that component.
+- If two diagrams both produce the same dataset (and neither links to the other), Review flags it once so you keep a single source.
+
+Nothing is stored for this: it is computed from the files in the folder and the diagram on screen.
+
 ### Shared items
 
 People, decisions and datasets often repeat across the diagrams of one client. The **Shared items** box of the Workspace window keeps one copy for the whole folder, in `diagramon-workspace.json`:
