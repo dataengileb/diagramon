@@ -606,6 +606,7 @@ review db: "DB in a public subnet" by=Ana raised=2026-10-01 due=2026-11-15
 
       'top.route': 'Connector lines: curved or elbow (E)', 'top.route.lbl': 'Elbows',
       'toast.elbow': 'Elbow connectors', 'toast.curved': 'Curved connectors',
+      'edge.bend.tip': 'Drag to move the line · double-click to reset',
       'insp.route': 'Line', 'route.default': ({ name }) => `Diagram default (${name})`, 'route.curved': 'Curved', 'route.elbow': 'Elbow',
       'exp.legend': 'Legend and title block', 'exp.author.ph': 'Your name or team', 'exp.legend.note': 'Added at the bottom of SVG and PNG exports.',
       'leg.connections': 'CONNECTIONS', 'leg.components': 'COMPONENTS', 'leg.data': 'DATA', 'leg.document': 'DOCUMENT',
@@ -1274,6 +1275,7 @@ revisión db: "BD en subred pública" por=Ana levantada=2026-10-01 compromiso=20
 
       'top.route': 'Líneas de conexión: curvas o en ángulo recto (E)', 'top.route.lbl': 'Ángulos',
       'toast.elbow': 'Conectores en ángulo recto', 'toast.curved': 'Conectores curvos',
+      'edge.bend.tip': 'Arrastra para mover la línea · doble clic para restablecer',
       'insp.route': 'Línea', 'route.default': ({ name }) => `La del diagrama (${name})`, 'route.curved': 'Curva', 'route.elbow': 'En ángulo recto',
       'exp.legend': 'Leyenda y cajetín', 'exp.author.ph': 'Tu nombre o equipo', 'exp.legend.note': 'Se añade abajo en las exportaciones SVG y PNG.',
       'leg.connections': 'CONEXIONES', 'leg.components': 'COMPONENTES', 'leg.data': 'DATOS', 'leg.document': 'DOCUMENTO',
