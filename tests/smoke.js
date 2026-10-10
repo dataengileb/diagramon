@@ -113,13 +113,21 @@ async function openTab(cdp, url) {
     if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description || r.exceptionDetails.text);
     return r.result.value;
   };
-  const until = async (expr, what, ms = 15000) => {
+  // Ejecuta una función en la página con argumentos por valor (sin construir código a partir de datos)
+  const call = async (fn, ...args) => {
+    const g = await s('Runtime.evaluate', { expression: 'globalThis' });
+    const r = await s('Runtime.callFunctionOn', { functionDeclaration: fn.toString(), objectId: g.result.objectId, arguments: args.map(value => ({ value })), awaitPromise: true, returnByValue: true });
+    if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description || r.exceptionDetails.text);
+    return r.result.value;
+  };
+  // Espera a que la condición (texto o función con sus argumentos) se cumpla
+  const until = async (cond, what, ms = 15000, ...args) => {
     const end = Date.now() + ms;
-    while (Date.now() < end) { if (await evaluate(expr)) return; await sleep(100); }
+    while (Date.now() < end) { if (await (typeof cond === 'function' ? call(cond, ...args) : evaluate(cond))) return; await sleep(100); }
     throw new Error(`timed out waiting for ${what}`);
   };
   const clean = () => { const e = errors.splice(0); assert(!e.length, e.join('\n')); };
-  return { evaluate, until, errors, clean, close: () => cdp.send('Target.closeTarget', { targetId }) };
+  return { evaluate, call, until, errors, clean, close: () => cdp.send('Target.closeTarget', { targetId }) };
 }
 
 /* ---------- las pruebas ---------- */
@@ -134,7 +142,7 @@ async function run(cdp) {
   });
 
   await test('every script defines its global', async () => {
-    const missing = await app.evaluate(`${JSON.stringify(GLOBALS)}.filter(k => !window[k])`);
+    const missing = await app.call(list => list.filter(k => !window[k]), GLOBALS);
     assert(!missing.length, `missing: ${missing.join(', ')}`);
   });
 
@@ -162,15 +170,15 @@ async function run(cdp) {
   const count = await app.evaluate('window.DIAGRAMON_EXAMPLES.length');
   await test(`there are templates (${count})`, () => assert(count > 0, 'no templates'));
   for (let i = 0; i < count; i++) {
-    const name = await app.evaluate(`(() => { const n = window.DIAGRAMON_EXAMPLES[${i}].name; return typeof n === 'string' ? n : n.en; })()`);
+    const name = await app.call(k => { const n = window.DIAGRAMON_EXAMPLES[k].name; return typeof n === 'string' ? n : n.en; }, i);
     await test(`template "${name}" opens, draws and goes through every view, theme and language`, async () => {
-      await app.evaluate(`document.querySelector('#examples .ex[data-ex="${i}"]').click()`);
-      const want = await app.evaluate(`window.DIAGRAMON_EXAMPLES[${i}].diagram.nodes.length`);
-      await app.until(`window.Diagramon.model.nodes.length === ${want}`, 'the template model');
+      await app.call(k => document.querySelectorAll('#examples .ex')[k].click(), i);
+      const want = await app.call(k => window.DIAGRAMON_EXAMPLES[k].diagram.nodes.length, i);
+      await app.until(n => window.Diagramon.model.nodes.length === n, 'the template model', 15000, want);
       await sleep(300);
       const drawn = await app.evaluate('document.querySelectorAll("#canvas *").length');
       assert(drawn > want, `canvas has ${drawn} elements for ${want} nodes`);
-      for (const v of await app.evaluate('window.Diagramon.views')) { await app.evaluate(`window.Diagramon.setView(${JSON.stringify(v)})`); await sleep(50); }
+      for (const v of await app.evaluate('window.Diagramon.views')) { await app.call(view => window.Diagramon.setView(view), v); await sleep(50); }
       await app.evaluate('window.Diagramon.setView("full")');
       for (let k = 0; k < 2; k++) { await app.evaluate('window.Diagramon.toggleTheme()'); await app.evaluate('window.Diagramon.toggleLang()'); await sleep(100); }
       app.clean();
@@ -181,8 +189,8 @@ async function run(cdp) {
     await app.evaluate(`document.querySelector('#examples .ex[data-ex="0"]').click()`);
     await sleep(500);
     const fmts = await app.evaluate('Object.keys(window.DiagramonExport)');
-    await app.evaluate(`(() => { const D = window.Diagramon; D.exportSVG(); D.exportJSON(); D.exportInventory('xlsx'); ${JSON.stringify(fmts)}.forEach(f => D.exportOther(f)); D.exportPNG(); })()`);
-    await app.until(`window.__dl.length >= ${4 + fmts.length}`, 'the downloads');
+    await app.call(list => { const D = window.Diagramon; D.exportSVG(); D.exportJSON(); D.exportInventory('xlsx'); list.forEach(f => D.exportOther(f)); D.exportPNG(); }, fmts);
+    await app.until(n => window.__dl.length >= n, 'the downloads', 15000, 4 + fmts.length);
     const files = await app.evaluate('window.__take()');
     const by = ext => files.find(f => f.name.endsWith(ext));
     assert(by('.svg') && /^<svg|^<\?xml/.test(by('.svg').text.trim()), 'SVG');
@@ -193,7 +201,7 @@ async function run(cdp) {
     assert(files.length === 4 + fmts.length && files.every(f => f.size > 0), `files: ${files.map(f => `${f.name} (${f.size})`).join(', ')}`);
     // El JSON exportado vuelve a abrirse igual
     const before = await app.evaluate('JSON.stringify(window.Diagramon.model.nodes.map(n => n.id))');
-    await app.evaluate(`window.Diagramon.load(JSON.parse(${JSON.stringify(by('.json').text)}))`);
+    await app.call(text => { window.Diagramon.load(JSON.parse(text)); }, by('.json').text);
     await sleep(300);
     assert(await app.evaluate('JSON.stringify(window.Diagramon.model.nodes.map(n => n.id))') === before, 'JSON round trip');
     app.clean();
@@ -203,7 +211,7 @@ async function run(cdp) {
   await test('encrypted HTML is created', async () => {
     await app.evaluate('window.Diagramon.shareEncrypted()');
     await app.until('!!document.querySelector("form.share")', 'the share dialog');
-    await app.evaluate(`(() => { const f = document.querySelector('form.share'); f.elements.pw.value = f.elements.pw2.value = ${JSON.stringify(PASSWORD)}; f.requestSubmit(); })()`);
+    await app.call(pw => { const f = document.querySelector('form.share'); f.elements.pw.value = f.elements.pw2.value = pw; f.requestSubmit(); }, PASSWORD);
     await app.until('window.__dl.length > 0', 'the encrypted file', 60000);
     const [file] = await app.evaluate('window.__take()');
     assert(file.name.endsWith('.html') && file.text.includes('id="envelope"'), file.name);
@@ -219,7 +227,7 @@ async function run(cdp) {
     await viewer.evaluate(`(() => { document.querySelector('#pw').value = 'wrong-password-000'; document.querySelector('#unlock').requestSubmit(); })()`);
     await viewer.until('document.querySelector("#msg").classList.contains("bad")', 'the wrong-password message', 60000);
     await viewer.until('!document.querySelector("#go").disabled', 'the form to be usable again');
-    await viewer.evaluate(`(() => { document.querySelector('#pw').value = ${JSON.stringify(PASSWORD)}; document.querySelector('#unlock').requestSubmit(); })()`);
+    await viewer.call(pw => { document.querySelector('#pw').value = pw; document.querySelector('#unlock').requestSubmit(); }, PASSWORD);
     await viewer.until('document.querySelector("#pic").naturalWidth > 0', 'the diagram image', 60000);
     assert(await viewer.evaluate('document.querySelector("#doc-title").textContent') === title, 'title');
     viewer.clean();
