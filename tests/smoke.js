@@ -37,7 +37,7 @@ const API = ['addDataset', 'addDecision', 'addDecisionKit', 'addEdge', 'addNode'
   'updateStakeholder', 'validateAssumption', 'view', 'views'];
 
 // Lo que cada script de index.html deja en window
-const GLOBALS = ['DIAGRAMON_CONFIG', 'DiagramonI18n', 'DiagramonText', 'DIAGRAMON_EXAMPLES', 'DiagramonIaC', 'DiagramonShare', 'DiagramonWorkspace', 'DiagramonDrift',
+const GLOBALS = ['DIAGRAMON_CONFIG', 'DiagramonI18n', 'DiagramonText', 'DIAGRAMON_EXAMPLES', 'DiagramonIaC', 'DiagramonShare', 'DiagramonWorkspace', 'DiagramonDrift', 'DiagramonModels',
   'DiagramonExport', 'DiagramonXlsx', 'DiagramonContract', 'DIAGRAMON_FONTS', 'Diagramon'];
 
 /* ---------- mini marco de pruebas (como tests/run.js) ---------- */
