@@ -39,6 +39,7 @@ Son decisiones tomadas a propósito, casi siempre para que Diagramon siga siendo
 - **Niveles C4**: las tarjetas fantasma son como mucho 8 por lado, y las conexiones entre dos niveles solo se dibujan como fantasmas (se llega a ellas desde los enlaces del inspector).
 - **Espacio de trabajo**: solo se leen los archivos que están directamente en la carpeta (sin subcarpetas), hasta 200 diagramas de 8 MB como máximo. Guardar en la carpeta requiere un navegador Chromium.
 - **Linaje de datos entre diagramas**: une los conjuntos solo por nombre y entiende "produce" como "nace en un componente al que nada se lo entrega". No sigue un conjunto que cambia de nombre entre diagramas, y un diagrama sin id queda fuera.
+- **Exportar la cartera**: solo genera Excel (sin CSV ni sección de informe) y es una foto: no guarda historial entre exportaciones.
 - **Elementos compartidos**: son copias, no enlaces vivos; no hay sincronización automática, y un cambio hecho en un diagrama a un elemento compartido no vuelve a la carpeta salvo que lo compartas otra vez. Los elementos se comparan solo por nombre o título.
 - **Enlaces entre diagramas** (`ref`): no entran en la comparación de versiones ni en el formato de texto. Se conservan al editar el texto. Un componente puede apuntar a un diagrama entero, todavía no a uno de sus componentes.
 - **La región se deduce del nombre de un grupo** con los códigos habituales de AWS, Azure y Google Cloud. Para otros nombres hay que usar el campo **Región**.

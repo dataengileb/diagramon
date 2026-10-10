@@ -2180,6 +2180,10 @@
     assert(keys.length >= 30, `keys found: ${keys.length}`);
   });
 
+  test('the app wires the portfolio export: a row per diagram, the open one from the screen, texts in both languages', () => {
+    assert(app.includes('async function wsPortfolio()') && app.includes("b.id === 'ws-portfolio'") && app.includes('id="ws-portfolio"'), 'button and handler');
+    ['ws.pf.btn', 'ws.pf.title', 'ws.pf.sheet.diagrams', 'ws.pf.sheet.datasets', 'ws.pf.partial', ...['title', 'file', 'nodes', 'edges', 'phases', 'cost', 'high', 'medium', 'low', 'decisions', 'stakeholders', 'datasets', 'links', 'role'].map(k => `ws.pf.c.${k}`)].forEach(k => eq(i18nSrc.split(`'${k}':`).length - 1, 2, `${k} once per language`));
+  });
   test('cleanShared: keeps only objects with a name or title, drops repeats, ids and what points into the source diagram', () => {
     const r = WSP.cleanShared({ stakeholders: [{ id: 'SH-001', name: 'Ana', role: 'CTO' }, { name: ' ana ' }, { name: '' }, 5, null],
       decisions: [{ id: 'ADR-001', title: 'Use X', status: 'accepted', links: { nodes: ['a'] }, signoffs: [{ by: 'SH-001' }], supersededBy: 'ADR-002', history: [{}], options: [{ id: 'o1', title: 'A', version: 'v1' }] }],
