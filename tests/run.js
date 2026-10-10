@@ -293,7 +293,7 @@
     assert(r && r.value > 0.9 && r.value <= 1, `value ${r && r.value}`); assert(Date.now() - t0 < 5000, 'too slow');
   });
   // v2: el código de la interfaz está repartido entre src/app.js y src/ui/*.js; cada clave T('...') literal debe existir en inglés y en español
-  const UI_FILES = ['src/ui/dialogs.js', 'src/ui/panel.js', 'src/ui/tabs.js', 'src/ui/sidebar.js', 'src/ui/topbar.js', 'src/ui/raid.js'];
+  const UI_FILES = ['src/ui/dialogs.js', 'src/ui/panel.js', 'src/ui/tabs.js', 'src/ui/sidebar.js', 'src/ui/topbar.js', 'src/ui/raid.js', 'src/ui/people.js'];
   test('interface files: every literal T() key is defined in English and Spanish', () => {
     const i18nSrc = read('src/i18n.js');
     for (const f of ['src/app.js', ...UI_FILES]) {
@@ -753,7 +753,7 @@
     assert(/data-tab="people"/.test(read('index.html')) && /data-pane="people"/.test(read('index.html')), 'tab and pane in index.html');
     assert(/addFindingSource\('approval'/.test(app) && /approval:no-approver:/.test(app), 'no-approver finding');
     assert(/stakeholders: \(\) => clone\(S\.model\.stakeholders \|\| \[\]\), addStakeholder, updateStakeholder, removeStakeholder/.test(app), 'API');
-    assert(/shHasSignoffs\(id\)\) \{ toast/.test(app), 'delete is blocked when the stakeholder has sign-offs');
+    assert(/shHasSignoffs\(id\)\) \{ toast/.test(read('src/ui/people.js')), 'delete is blocked when the stakeholder has sign-offs');
   });
 
   /* ======================================================================
