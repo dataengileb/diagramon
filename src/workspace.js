@@ -6,14 +6,17 @@
    formato, docId) para listarlos sin abrirlos. La lectura de la carpeta
    (File System Access o <input webkitdirectory>) vive en app.js.
    - Diagrama: JSON con `nodes` (lista) y, si las trae, `edges` y `groups` listas.
-   - Manifiesto opcional `diagramon-workspace.json`: por ahora solo { "name" }.
+   - Manifiesto opcional `diagramon-workspace.json`: { "name", "shared" }. `shared`
+     guarda listas de interesados, decisiones (ADR) y conjuntos de datos que se
+     comparten entre los diagramas: se añaden a un diagrama (sin duplicar) y se
+     publican desde uno; cada diagrama sigue siendo autónomo.
    - `docId`: identificador estable del diagrama, para enlazar entre diagramas
      aunque se renombre el archivo (campo opcional, no sube formatVersion).
    - Enlaces entre diagramas: un componente puede llevar `ref: { doc, node? }`
      (docId del diagrama donde se detalla). El mapa de sistemas los junta.
    API: window.DiagramonWorkspace.{ MANIFEST, MAX_BYTES, MAX_FILES, isDiagram,
         cleanDocId, cleanRef, newDocId, summarize, scan, fileNameFor,
-        systemsMap, layoutMap }
+        systemsMap, layoutMap, SHARED_KINDS, cleanShared, mergeShared, shareOut }
    ========================================================================== */
 window.DiagramonWorkspace = (() => {
   'use strict';
@@ -63,6 +66,53 @@ window.DiagramonWorkspace = (() => {
     };
   }
 
+  /* ---------- listas compartidas (manifiesto › shared) ---------- */
+  const SHARED_KINDS = ['stakeholders', 'decisions', 'datasets'];
+  const SHARED_MAX = { stakeholders: 200, decisions: 200, datasets: 500 };
+  const SHARED_ITEM = 20000;   // tamaño máximo de un elemento (JSON, en caracteres)
+  const KEY_FIELD = { stakeholders: 'name', decisions: 'title', datasets: 'name' };
+  const keyOf = (kind, item) => String(item && item[KEY_FIELD[kind]] != null ? item[KEY_FIELD[kind]] : '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+  // Una copia del elemento sin lo que apunta al diagrama donde nació (ids, enlaces, firmas, fases, versiones) y nada más
+  function portable(kind, item) {
+    const o = JSON.parse(JSON.stringify(item));
+    delete o.id;
+    if (kind === 'decisions') {
+      ['links', 'signoffs', 'supersededBy', 'history'].forEach(k => delete o[k]);
+      if (Array.isArray(o.options)) o.options.forEach(x => { if (isObj(x)) delete x.version; });
+    } else if (kind === 'datasets') delete o.phase;
+    return o;
+  }
+  const okItem = (kind, x) => isObj(x) && keyOf(kind, x) && JSON.stringify(x).length <= SHARED_ITEM;
+  // → { stakeholders?, decisions?, datasets? } con solo listas no vacías, sin repetidos (por nombre o título) y con tope
+  function cleanShared(v) {
+    const out = {};
+    if (!isObj(v)) return out;
+    SHARED_KINDS.forEach(kind => {
+      const seen = new Set(), l = [];
+      list(v[kind]).forEach(x => { if (l.length < SHARED_MAX[kind] && okItem(kind, x) && !seen.has(keyOf(kind, x))) { seen.add(keyOf(kind, x)); l.push(portable(kind, x)); } });
+      if (l.length) out[kind] = l;
+    });
+    return out;
+  }
+  // Lo compartido que el diagrama aún no tiene: → { list: existentes + nuevos (sin id: el diagrama los numera), fresh: [nuevos], skipped: n ya presentes }
+  function mergeShared(kind, existing, shared) {
+    const have = new Set(list(existing).map(x => keyOf(kind, x))), fresh = [];
+    list(shared && shared[kind]).forEach(x => { const k = keyOf(kind, x); if (okItem(kind, x) && !have.has(k)) { have.add(k); fresh.push(portable(kind, x)); } });
+    return { list: [...list(existing), ...fresh], fresh, skipped: list(shared && shared[kind]).length - fresh.length };
+  }
+  // Publica los elementos de un diagrama en la lista compartida: el mismo nombre o título se reemplaza, el resto se añade → { list, added, updated }
+  function shareOut(kind, shared, items) {
+    const cur = list(shared && shared[kind]).filter(x => okItem(kind, x)), at = new Map(cur.map((x, i) => [keyOf(kind, x), i])), out = cur.slice();
+    let added = 0, updated = 0;
+    list(items).forEach(x => {
+      if (!okItem(kind, x)) return;
+      const k = keyOf(kind, x), p = portable(kind, x);
+      if (at.has(k)) { if (JSON.stringify(out[at.get(k)]) !== JSON.stringify(p)) { out[at.get(k)] = p; updated++; } }
+      else if (out.length < SHARED_MAX[kind]) { at.set(k, out.length); out.push(p); added++; }
+    });
+    return { list: out, added, updated };
+  }
+
   // files: [{ name, text, size? }] (solo la carpeta, sin subcarpetas) → { manifest, diagrams, skipped }
   // diagrams: resúmenes, por título; skipped: [{ name, reason }] con reason 'notJson' | 'notDiagram' | 'big' | 'many'
   function scan(files) {
@@ -71,7 +121,7 @@ window.DiagramonWorkspace = (() => {
       const name = str(f && f.name, 255), text = f && typeof f.text === 'string' ? f.text : '';
       if (!name) return;
       if (name === MANIFEST) {
-        try { const m = JSON.parse(text); if (isObj(m)) out.manifest = { name: str(m.name, 120) }; } catch { /* manifiesto ilegible: se ignora */ }
+        try { const m = JSON.parse(text); if (isObj(m)) out.manifest = { name: str(m.name, 120), shared: cleanShared(m.shared) }; } catch { /* manifiesto ilegible: se ignora */ }
         return;
       }
       if (!/\.json$/i.test(name)) return;
@@ -148,5 +198,5 @@ window.DiagramonWorkspace = (() => {
     return { boxes, arrows, width: boxes.reduce((m, b) => Math.max(m, b.x + b.w), 0) + pad + (arrows.some(x => x.same) ? 50 : 0), height: boxes.reduce((m, b) => Math.max(m, b.y + b.h), 0) + pad };
   }
 
-  return { MANIFEST, MAX_BYTES, MAX_FILES, isDiagram, cleanDocId, cleanRef, newDocId, summarize, scan, fileNameFor, systemsMap, layoutMap };
+  return { MANIFEST, MAX_BYTES, MAX_FILES, isDiagram, cleanDocId, cleanRef, newDocId, summarize, scan, fileNameFor, systemsMap, layoutMap, SHARED_KINDS, cleanShared, mergeShared, shareOut };
 })();

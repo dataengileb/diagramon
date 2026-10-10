@@ -544,6 +544,14 @@ Nada sale de tu navegador: la carpeta se lee y se escribe en local, y el navegad
 - Un enlace a un diagrama que no está en la carpeta abierta aparece bajo el mapa y como hallazgo bajo en **Revisión** (fuente *Espacio de trabajo*) mientras haya una carpeta abierta.
 - Los enlaces se guardan en el JSON como `ref: { "doc": "<docId>" }` en el componente. La pestaña Texto no los muestra, pero al editar el texto se conservan.
 
+### Elementos compartidos
+
+Las personas, decisiones y conjuntos de datos suelen repetirse en los diagramas de un mismo cliente. El cuadro **Elementos compartidos** de la ventana Espacio de trabajo guarda una sola copia para toda la carpeta, en `diagramon-workspace.json`:
+
+- **Compartir desde este diagrama** (navegadores Chromium) publica los interesados, decisiones (ADR) y conjuntos de datos que marques. Un elemento con el mismo nombre o título (sin distinguir mayúsculas ni acentos) se reemplaza; los demás se añaden.
+- **Añadir lo compartido a este diagrama** copia lo que al diagrama le falta, comparando por nombre o título, así que nada se duplica. El diagrama los numera él mismo (`SH-…`, `ADR-…`, `DS-…`) y cada decisión empieza su historial hoy. Un paso de **Deshacer** quita toda la adición.
+- Cada diagrama sigue siendo autónomo: es una copia, no un enlace vivo, así que un cambio posterior en la lista compartida no llega a un diagrama hasta que vuelvas a añadir, y una copia nunca sobrescribe lo que el diagrama ya tiene. Los ids, enlaces a componentes, firmas de aprobación, fases y enlaces a versiones no viajan, porque solo significan algo en el diagrama donde nacieron.
+
 ## Vistas
 
 Una **vista** es una forma de mirar el mismo diagrama: solo decide qué se ve, con cuánto detalle y qué destaca. Nunca cambia tus componentes ni posiciones. Elígela en el selector **Vista** de la barra superior, con las teclas **`1`**–**`9`**, o desde la consola (`Diagramon.setView('security')`). Cuando la vista no es *Completa*, una pastilla sobre el lienzo la nombra, cuenta lo que oculta o atenúa y tiene una **×** para volver. La ficha del documento y la leyenda de las exportaciones siguen la vista activa.

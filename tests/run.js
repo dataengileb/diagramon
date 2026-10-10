@@ -2076,7 +2076,7 @@
       { name: 'bad.json', text: '{oops' }, { name: 'other.json', text: '{"a":1}' }, { name: 'huge.json', text: '', size: WSP.MAX_BYTES + 1 },
       { name: WSP.MANIFEST, text: '{"name":"Shop platform"}' }, { name: '', text: '{}' }, null, { name: 'noText.json' }
     ]);
-    eq(r.manifest, { name: 'Shop platform' }, 'manifest'); eq(r.diagrams.map(d => d.title), ['alpha', 'Beta'], 'sorted by title');
+    eq(r.manifest, { name: 'Shop platform', shared: {} }, 'manifest'); eq(r.diagrams.map(d => d.title), ['alpha', 'Beta'], 'sorted by title');
     eq(r.diagrams[1], { name: 'b.json', title: 'Beta', nodes: 2, links: [], edges: 1, groups: 0, phases: 0, versions: 0, formatVersion: 1, docId: 'd-beta-0001', dupDocId: false }, 'summary');
     eq(r.skipped.map(x => [x.name, x.reason]), [['bad.json', 'notJson'], ['other.json', 'notDiagram'], ['huge.json', 'big'], ['noText.json', 'notJson']], 'skipped');
     eq(WSP.scan(null), { manifest: null, diagrams: [], skipped: [] }, 'nothing');
@@ -2150,9 +2150,37 @@
     assert(app.includes("opts.fromEditor === 'text' && Array.isArray(raw.nodes) && S.model.nodes.some(n => n.ref)"), 'text edits keep the links');
     assert(app.includes('const refField = items =>') && app.includes('${refField(t)}') && app.includes("select[data-ref]") && app.includes('data-ref-open'), 'inspector');
     assert(app.includes("addFindingSource('workspace'") && app.includes('function wsMapHtml()') && app.includes('data-ws-doc'), 'Review source and map');
-    const keys = [...new Set([...app.matchAll(/T\(`?'?(ws\.[\w.]+)/g)].map(x => x[1]))];
-    ['find.src.workspace', ...keys].forEach(k => eq(i18nSrc.split(`'${k}':`).length - 1, 2, `${k} once per language`));
+    const keys = [...new Set([...app.matchAll(/T\(`?'?(ws\.[\w.]+)/g)].map(x => x[1]))].filter(k => !k.endsWith('.'));
+    ['find.src.workspace', 'ws.sh.k.stakeholders', 'ws.sh.k.decisions', 'ws.sh.k.datasets', ...keys].forEach(k => eq(i18nSrc.split(`'${k}':`).length - 1, 2, `${k} once per language`));
     assert(keys.length >= 30, `keys found: ${keys.length}`);
+  });
+
+  test('cleanShared: keeps only objects with a name or title, drops repeats, ids and what points into the source diagram', () => {
+    const r = WSP.cleanShared({ stakeholders: [{ id: 'SH-001', name: 'Ana', role: 'CTO' }, { name: ' ana ' }, { name: '' }, 5, null],
+      decisions: [{ id: 'ADR-001', title: 'Use X', status: 'accepted', links: { nodes: ['a'] }, signoffs: [{ by: 'SH-001' }], supersededBy: 'ADR-002', history: [{}], options: [{ id: 'o1', title: 'A', version: 'v1' }] }],
+      datasets: [{ id: 'DS-001', name: 'Sales', phase: 'p1', owner: 'Ops' }], junk: [1] });
+    eq(r, { stakeholders: [{ name: 'Ana', role: 'CTO' }], decisions: [{ title: 'Use X', status: 'accepted', options: [{ id: 'o1', title: 'A' }] }], datasets: [{ name: 'Sales', owner: 'Ops' }] });
+    eq(WSP.cleanShared(null), {}); eq(WSP.cleanShared({ datasets: 'x', stakeholders: [{ name: 'x'.repeat(30000) }] }), {}, 'oversized items and wrong shapes are dropped');
+    eq(WSP.cleanShared({ decisions: [{ title: 'Ñandú' }, { title: 'nandu' }] }).decisions.length, 1, 'accents and case do not make a new item');
+  });
+  test('mergeShared: only what the diagram lacks, matched by name or title ignoring case and accents; the diagram numbers them', () => {
+    const cur = [{ id: 'SH-001', name: 'ANA' }, { id: 'SH-002', name: 'Bo' }];
+    const r = WSP.mergeShared('stakeholders', cur, { stakeholders: [{ name: 'Ana' }, { name: 'Cy', role: 'PO' }, { name: 'cy' }] });
+    eq(r.fresh, [{ name: 'Cy', role: 'PO' }], 'one new'); eq(r.list.map(x => x.name), ['ANA', 'Bo', 'Cy']); eq(r.skipped, 2, 'present or repeated'); eq(cur.length, 2, 'input untouched');
+    eq(WSP.mergeShared('datasets', undefined, undefined), { list: [], fresh: [], skipped: 0 }, 'nothing at all');
+    eq(WSP.mergeShared('decisions', [{ title: 'Usar Á' }], { decisions: [{ title: 'usar a' }] }).fresh, [], 'accents ignored');
+  });
+  test('shareOut: same name replaces, new ones are added, ids and links never travel, the cap holds', () => {
+    const r = WSP.shareOut('datasets', { datasets: [{ name: 'Sales', owner: 'A' }] }, [{ id: 'DS-9', name: 'sales', owner: 'B', phase: 'p' }, { name: 'New' }, { name: '' }, { name: 'New' }]);
+    eq(r, { list: [{ name: 'sales', owner: 'B' }, { name: 'New' }], added: 1, updated: 1 });
+    eq(WSP.shareOut('datasets', { datasets: [{ name: 'Sales', owner: 'A' }] }, [{ name: 'Sales', owner: 'A', id: 'DS-1' }]).updated, 0, 'identical content is not an update');
+    const big = Array.from({ length: 300 }, (_, i) => ({ name: `s${i}` }));
+    eq(WSP.shareOut('stakeholders', {}, big).list.length, 200, 'stakeholders capped at 200');
+  });
+  test('the app wires it: shared lists go through the diagram cleaners, decisions get their first history entry, texts in both languages', () => {
+    assert(app.includes('const WS_LISTS = {') && app.includes('function wsShareAdd()') && app.includes('async function wsShareOut()'), 'functions');
+    assert(app.includes("clean: raw => cleanStakeholders(raw, S.model)") && app.includes("clean: raw => cleanDecisions(raw, S.model)") && app.includes("clean: raw => cleanCatalog(raw, S.model, dsHelpers())"), 'cleaners');
+    assert(app.includes('nd.history = [{ status: nd.status, date: nd.date'), 'history of an imported decision');
   });
 
   /* ---------- resumen ---------- */
