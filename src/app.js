@@ -8979,6 +8979,49 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
   const wsLib = () => window.DiagramonWorkspace;
   function ensureDocId() { const L = wsLib(); if (L && !S.model.docId) S.model.docId = L.newDocId(); return S.model.docId || ''; }
   const wsWritable = () => !!WS.dir?.handle;
+  const wsShared = () => WS.index?.manifest?.shared || {};
+  // Cada diagrama sigue siendo autónomo: lo compartido se añade al diagrama abierto (los ids los asigna el diagrama) y se publica desde él
+  const WS_LISTS = {   // cómo se lee y se cambia cada lista en el diagrama abierto
+    stakeholders: { get: () => S.model.stakeholders || [], clean: raw => cleanStakeholders(raw, S.model), set: l => { if (l.length) S.model.stakeholders = l; else delete S.model.stakeholders; } },
+    decisions: { get: () => S.model.decisions || [], clean: raw => cleanDecisions(raw, S.model), set: l => { S.model.decisions = l; } },
+    datasets: { get: () => S.model.datasets || [], clean: raw => cleanCatalog(raw, S.model, dsHelpers()), set: l => { if (l.length) S.model.datasets = l; else delete S.model.datasets; } }
+  };
+  function wsShareAdd() {
+    const L = wsLib(), shared = wsShared(), res = {}, plan = [];
+    L.SHARED_KINDS.forEach(kind => {
+      const cur = WS_LISTS[kind].get(), m = L.mergeShared(kind, cur, shared), list = WS_LISTS[kind].clean(m.list);
+      res[kind] = Math.max(0, list.length - cur.length);
+      if (res[kind]) plan.push([kind, list, cur.length]);
+    });
+    if (!plan.length) return toast(T('ws.sh.nothing'), 2600);
+    pushHistory();
+    plan.forEach(([kind, list, n0]) => {
+      if (kind === 'decisions') { const by = adrAuthor(); list.slice(n0).forEach(nd => { nd.history = [{ status: nd.status, date: nd.date, ...(by ? { by } : {}) }]; }); }   // alta = primera entrada del historial
+      WS_LISTS[kind].set(list);
+    });
+    changed(true); renderInspector();
+    if (typeof renderAdr === 'function') renderAdr(true);
+    if (typeof renderPeople === 'function') renderPeople(true);
+    toast(T('ws.sh.added', res), 3600);
+    wsRender();
+  }
+  async function wsShareOut() {
+    const L = wsLib(), msg = $('#ws-msg'), kinds = [...document.querySelectorAll('#ws-dialog input[name="wssh"]:checked')].map(i => i.value).filter(k => L.SHARED_KINDS.includes(k));
+    if (!wsWritable() || !kinds.length) return;
+    if (msg) msg.textContent = '';
+    try {
+      let raw = {};
+      try { const t = await (await (await WS.dir.handle.getFileHandle(L.MANIFEST)).getFile()).text(); const o = JSON.parse(t); if (o && typeof o === 'object' && !Array.isArray(o)) raw = o; } catch { /* sin manifiesto (o ilegible): se crea uno */ }
+      const shared = L.cleanShared(raw.shared), res = {};
+      kinds.forEach(kind => { const r = L.shareOut(kind, shared, WS_LISTS[kind].get()); res[kind] = r.added + r.updated; if (r.list.length) shared[kind] = r.list; });
+      const w = await (await WS.dir.handle.getFileHandle(L.MANIFEST, { create: true })).createWritable();
+      await w.write(`${JSON.stringify({ ...raw, shared }, null, 2)}\n`);
+      await w.close();
+      await wsRefresh();
+      toast(T('ws.sh.shared', res), 3600);
+    } catch { if (msg) msg.textContent = T('ws.err.save'); }
+    wsRender();
+  }
   const wsLiveLinks = () => wsLib().summarize({ nodes: S.model.nodes }, '').links;
   // Hallazgo bajo: un componente apunta a un diagrama que no está en la carpeta abierta (solo mientras hay una carpeta abierta)
   addFindingSource('workspace', m => {
@@ -9095,7 +9138,10 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
       const here = (cur && x.docId === cur && !x.dupDocId) || x.name === WS.file;
       return `<li${here ? ' class="cur"' : ''}><div class="ws-t"><b>${esc(x.title)}</b><small>${esc(T('ws.meta', x))}${x.dupDocId ? ` · <span class="ws-warn">${esc(T('ws.dup'))}</span>` : ''}</small></div>${here ? `<span class="ws-chip">${esc(T('ws.current'))}</span>` : ''}<button type="button" class="btn small" data-ws-open="${esc(x.name)}">${esc(T('ws.open'))}</button></li>`;
     }).join('');
-    box.innerHTML = `<p class="ws-dir">${esc(T('ws.dir', { folder: ix.manifest?.name || d.name, n: ix.diagrams.length, ro: !wsWritable() }))}${ix.skipped.length ? ` · ${esc(T('ws.skipped', ix.skipped.length))}` : ''}</p>${rows ? `<ul class="ws-list">${rows}</ul>` : `<p class="ws-dir">${esc(T('ws.empty'))}</p>`}`;
+    const sh = wsShared(), cnt = k => (sh[k] || []).length, mine = k => WS_LISTS[k].get().length;
+    const shared = `<fieldset class="sh-views ws-shared"><legend>${esc(T('ws.sh.title'))}</legend><p class="ws-dir">${esc(T('ws.sh.sum', { s: cnt('stakeholders'), d: cnt('decisions'), t: cnt('datasets') }))}</p>
+      <div class="ws-bar"><button type="button" class="btn" id="ws-sh-add"${L.SHARED_KINDS.some(k => cnt(k)) ? '' : ' disabled'}>${esc(T('ws.sh.add'))}</button></div>${wsWritable() ? `<div class="ws-bar">${L.SHARED_KINDS.map(k => `<label class="sh-chk"><input type="checkbox" name="wssh" value="${k}"${mine(k) ? ' checked' : ' disabled'}>${esc(T(`ws.sh.k.${k}`, mine(k)))}</label>`).join('')}<button type="button" class="btn" id="ws-sh-out">${esc(T('ws.sh.out'))}</button></div>` : ''}</fieldset>`;
+    box.innerHTML = `<p class="ws-dir">${esc(T('ws.dir', { folder: ix.manifest?.name || d.name, n: ix.diagrams.length, ro: !wsWritable() }))}${ix.skipped.length ? ` · ${esc(T('ws.skipped', ix.skipped.length))}` : ''}</p>${rows ? `<ul class="ws-list">${rows}</ul>` : `<p class="ws-dir">${esc(T('ws.empty'))}</p>`}${shared}`;
   }
   function openWorkspaceDialog() {
     if (P || $('#ws-dialog')) return;
@@ -9121,6 +9167,8 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
       else if (b.id === 'ws-pick') wsPick();
       else if (b.id === 'ws-refresh') { try { await wsRefresh(); } catch { $('#ws-msg').textContent = T('ws.err.pick'); } wsRender(); }
       else if (b.id === 'ws-save') wsSave();
+      else if (b.id === 'ws-sh-add') wsShareAdd();
+      else if (b.id === 'ws-sh-out') wsShareOut();
       else if (b.id === 'ws-tab-list' || b.id === 'ws-tab-map') { WS.view = b.id === 'ws-tab-map' ? 'map' : 'list'; wsRender(); }
       else if (b.dataset.wsOpen) wsOpen(b.dataset.wsOpen);
     });
