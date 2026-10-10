@@ -418,9 +418,10 @@ Mantén la conversación dentro del documento: hilos con autor sobre un componen
 - Para comentar, escribe tu nombre (se recuerda), elige sobre qué es, escribe el texto y pulsa **Comentar**. Cada hilo se puede responder, **resolver** o reabrir, marcar como **interno** y borrar (pulsa dos veces para confirmar). Cada cambio es un paso de deshacer.
 - Un componente con hilos abiertos muestra una burbuja amarilla con su número en el borde izquierdo (se oculta en la vista **Contexto** y nunca sale en las imágenes exportadas).
 - Marca un hilo como **interno** cuando sea solo para ti: los comentarios internos nunca salen del documento (los archivos e informes que lleven comentarios en los siguientes pasos los omiten).
+- Los comentarios que un revisor escribe en el visor cifrado vuelven en un archivo que importas (ver [Compartir un diagrama cifrado](sharing.es.md)); llegan como hilos marcados *cliente*.
 - Si se borra un elemento, sus hilos pasan a *Todo el diagrama* y recuerdan de qué trataban. Restaurar una versión conserva los comentarios, y las versiones guardadas no los llevan.
 - El panel **Revisión** tiene una fuente *Comentarios*: un aviso bajo y descartable por cada componente, conexión o grupo que aún tenga hilos abiertos (`comments.rules` en `src/config.js`, donde también están los límites).
-- JSON: una lista `comments`, la más antigua primero (`id`, `on: { kind, id }`, `author`, `date`, `text`, `status: "resolved"`, `internal`, `source: "client"`, `replies`). La pestaña *Texto* no muestra los comentarios y tampoco los pierde. Un documento sin comentarios escribe exactamente lo mismo que antes.
+- JSON: una lista `comments`, la más antigua primero (`id`, `on: { kind, id }`, `author`, `date`, `text`, `status: "resolved"`, `internal`, `source: "client"`, `imp`, `replies`). La pestaña *Texto* no muestra los comentarios y tampoco los pierde. Un documento sin comentarios escribe exactamente lo mismo que antes.
 
 ## 9. Notas adhesivas y zonas de riesgo
 

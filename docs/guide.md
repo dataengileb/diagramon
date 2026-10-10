@@ -419,9 +419,10 @@ Keep the discussion inside the document: threads with an author on a component, 
 - To comment, write your name (it is remembered), choose what it is about, write the text and press **Comment**. Each thread can be answered, **resolved** or reopened, marked **internal** and deleted (press twice to confirm). Every change is one undo step.
 - A component with open threads shows a small yellow bubble with their number on its left edge (hidden in the **Context** view and never in exported images).
 - Mark a thread **internal** when it is only for you: internal comments never leave the document (the files and reports that carry comments in the next steps skip them).
+- Comments written by a reviewer in the encrypted viewer come back as a file you import (see [Share an encrypted diagram](sharing.md)); they arrive as threads marked *client*.
 - If an element is deleted, its threads move to *The whole diagram* and remember what they were about. Restoring a version keeps the comments, and saved versions do not carry them.
 - The **Review** panel has a *Comments* source: one low, dismissible notice per component, connection or group that still has open threads (`comments.rules` in `src/config.js`, where the limits also live).
-- JSON: a `comments` list, oldest first (`id`, `on: { kind, id }`, `author`, `date`, `text`, `status: "resolved"`, `internal`, `source: "client"`, `replies`). The *Text* tab does not show comments and does not lose them. A document without comments writes exactly what it wrote before.
+- JSON: a `comments` list, oldest first (`id`, `on: { kind, id }`, `author`, `date`, `text`, `status: "resolved"`, `internal`, `source: "client"`, `imp`, `replies`). The *Text* tab does not show comments and does not lose them. A document without comments writes exactly what it wrote before.
 
 ## 9. Sticky notes and risk zones
 

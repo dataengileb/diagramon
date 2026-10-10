@@ -378,12 +378,14 @@
       if (c.status === 'resolved') o.status = 'resolved';
       if (c.internal === true) o.internal = true;
       if (c.source === 'client') o.source = 'client';
+      { const imp = cmStr(c.imp, 80); if (imp) o.imp = imp; }   // de dónde se importó (id del archivo + id del comentario): importar dos veces no duplica
       if (was) o.was = was;
       const replies = (Array.isArray(c.replies) ? c.replies : []).filter(r => r && typeof r === 'object' && cmStr(r.text, CM_TEXT)).slice(0, CM_REPLIES).map(r => {
         const x = {}, a = cmWho(r.author);
         if (a) x.author = a;
         if (isDay(r.date)) x.date = r.date;
         x.text = cmStr(r.text, CM_TEXT);
+        { const imp = cmStr(r.imp, 80); if (imp) x.imp = imp; }
         return x;
       });
       if (replies.length) o.replies = replies;
@@ -392,6 +394,48 @@
     let n = Math.max(0, ...out.map(c => +c.id.slice(3) || 0));
     out.forEach(c => { if (!c.id) c.id = `CM-${String(++n).padStart(3, '0')}`; });
     return out;
+  }
+  // Archivo de comentarios del revisor (ya descifrado): contenido no confiable, se valida y se limpia; null si no es de este formato
+  function cleanFeedback(raw) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw) || raw.format !== 'diagramon-feedback' || raw.v !== 1) return null;
+    const out = { shareId: cmStr(raw.shareId, 40).replace(/[^0-9a-zA-Z-]/g, ''), title: cmStr(raw.title, 200), author: cmWho(raw.author), created: typeof raw.created === 'string' ? raw.created.slice(0, 30) : '', comments: [] }, seen = new Set();
+    (Array.isArray(raw.comments) ? raw.comments : []).slice(0, CM_MAX).forEach(c => {
+      if (!c || typeof c !== 'object') return;
+      const id = cmStr(c.id, 40), text = cmStr(c.text, CM_TEXT);
+      if (!id || !text || seen.has(id)) return;
+      seen.add(id);
+      const o = { id, author: cmWho(c.author) || out.author, date: isDay(c.date) ? c.date : '', text };
+      if (typeof c.replyTo === 'string' && c.replyTo.trim()) o.replyTo = cmStr(c.replyTo, 40);
+      else { const k = c.on && c.on.kind, oid = cmStr(c.on && c.on.id, 120); o.on = CM_KINDS.includes(k) && oid ? { kind: k, id: oid } : { kind: 'general' }; }
+      out.comments.push(o);
+    });
+    return out;
+  }
+  // Mezcla el archivo con los comentarios del documento sin tocarlos (devuelve la lista nueva y el recuento). Cada comentario se reconoce por «id del archivo:id», así importar dos veces no duplica.
+  // Una respuesta va al hilo con ese id; si ese hilo no está, entra como hilo nuevo. Los comentarios sobre elementos que ya no existen pasan a «general».
+  function mergeFeedback(m, fb, day) {
+    const list = (m.comments || []).map(c => ({ ...c, ...(c.replies ? { replies: c.replies.map(r => ({ ...r })) } : {}) }));
+    const known = new Set(list.flatMap(c => [c.imp, ...(c.replies || []).map(r => r.imp)]).filter(Boolean)), res = { threads: 0, replies: 0, dup: 0, orphan: 0, stray: 0, capped: 0 };
+    fb.comments.forEach(c => {
+      const imp = `${fb.shareId}:${c.id}`;
+      if (known.has(imp)) { res.dup++; return; }
+      known.add(imp);
+      const date = c.date || day;
+      if (c.replyTo) {
+        const t = list.find(x => x.id === c.replyTo);
+        if (t) { t.replies = [...(t.replies || []), { author: c.author, date, text: c.text, imp }]; res.replies++; return; }
+        res.stray++;
+        list.push({ id: '', on: { kind: 'general' }, author: c.author, date, text: c.text, source: 'client', imp });
+        res.threads++;
+        return;
+      }
+      if (c.on.kind !== 'general' && !cmHas(m, c.on)) res.orphan++;
+      list.push({ id: '', on: c.on, author: c.author, date, text: c.text, source: 'client', imp });
+      res.threads++;
+    });
+    res.comments = cleanComments(list, m);
+    res.capped = Math.max(0, list.length - res.comments.length);
+    return res;
   }
   const cmOpen = (m, kind, id) => (m.comments || []).filter(c => c.status !== 'resolved' && (kind == null || (c.on.kind === kind && c.on.id === id)));
   // Hallazgos (fuente «comments»): hilos sin resolver sobre un componente, una conexión o un grupo (config.js › comments.rules)
@@ -4125,7 +4169,7 @@
     return o;
   }
   ORDER.stakeholder = ['id', 'name', 'role', 'org', 'raci', 'versions', 'inactive'];
-  ORDER.comment = ['id', 'on', 'author', 'date', 'text', 'status', 'internal', 'source', 'was', 'replies'];
+  ORDER.comment = ['id', 'on', 'author', 'date', 'text', 'status', 'internal', 'source', 'imp', 'was', 'replies'];
   function serialize(m, full = false) {
     const ordered = (o, keys) => { const r = {}; keys.forEach(k => k in o && (r[k] = o[k])); Object.keys(o).forEach(k => k in r || (r[k] = o[k])); return r; };
     const line = o => '{ ' + Object.entries(o)
@@ -7032,6 +7076,70 @@
     if (b && ['node', 'edge', 'group'].includes(S.sel?.kind)) openComments({ kind: S.sel.kind, id: S.sel.id });
   });
 
+  /* ---------- importar los comentarios del revisor (archivo cifrado que devuelve el visor compartido) ---------- */
+  function openFeedbackImport(env) {
+    const SH = window.DiagramonShare;
+    if (!SH?.openFeedback || !window.crypto?.subtle || typeof DecompressionStream === 'undefined') return toast(T('share.unsupported'), 3200);
+    const prev = document.activeElement, back = document.createElement('div'), id = `fb${Date.now()}`;
+    let res = null;
+    back.className = 'cf-back';
+    back.innerHTML = `<form class="cf fb" role="dialog" aria-modal="true" aria-labelledby="${id}t" autocomplete="off">
+      <h3 id="${id}t">${esc(T('fb.title'))}</h3>
+      <p class="fb-lead">${esc(T('fb.lead'))}</p>
+      <label class="fb-pw">${esc(T('fb.pw'))}<input type="password" name="pw" autocomplete="off" required></label>
+      <div class="fb-sum" hidden></div>
+      <p class="sh-err" role="alert"></p>
+      <div class="cf-actions"><button type="button" class="btn" data-fb="no">${esc(T('ver.cf.cancel'))}</button><button type="submit" class="btn primary">${esc(T('fb.open'))}</button></div></form>`;
+    const form = back.querySelector('form'), err = form.querySelector('.sh-err'), sum = form.querySelector('.fb-sum'), go = form.querySelector('[type="submit"]');
+    const close = () => { document.removeEventListener('keydown', key, true); back.remove(); prev?.focus?.(); };
+    const key = ev => { if (ev.key === 'Escape' && !form.classList.contains('busy')) { ev.preventDefault(); ev.stopPropagation(); close(); } };
+    back.addEventListener('mousedown', ev => { if (ev.target === back && !form.classList.contains('busy')) close(); });
+    form.addEventListener('click', ev => { if (ev.target.closest('[data-fb="no"]')) close(); });
+    form.elements.pw.addEventListener('input', () => { err.textContent = ''; });
+    // Qué entra: recuento y avisos, y una vista previa de los primeros comentarios (siempre como texto)
+    const showSummary = (fb, r) => {
+      const warn = [];
+      if (fb.title && fb.title !== S.model.title) warn.push(T('fb.mismatch', fb.title));
+      if (r.dup) warn.push(T('fb.dup', r.dup));
+      if (r.orphan) warn.push(T('fb.orphan', r.orphan));
+      if (r.stray) warn.push(T('fb.stray', r.stray));
+      if (r.capped) warn.push(T('fb.capped', r.capped));
+      const preview = fb.comments.slice(0, 6).map(c => `<li><b>${esc(c.author || T('cmt.anon'))}</b> · ${esc(c.replyTo ? T('cmt.reply') : cmTargetText(S.model, c.on))}: ${esc(c.text.length > 140 ? `${c.text.slice(0, 140)}…` : c.text)}</li>`).join('');
+      sum.innerHTML = `<p><b>${esc(T('fb.from', { a: fb.author || T('cmt.anon'), t: fb.title || '' }))}</b></p>
+        <p>${esc(r.threads + r.replies ? T('fb.sum', { t: r.threads, r: r.replies }) : T('fb.none'))}</p>
+        ${warn.length ? `<ul class="fb-warn">${warn.map(w => `<li>${esc(w)}</li>`).join('')}</ul>` : ''}
+        <ul class="fb-prev">${preview}</ul>`;
+      sum.hidden = false;
+      form.querySelector('.fb-pw').hidden = true; form.querySelector('.fb-lead').hidden = true;
+    };
+    form.addEventListener('submit', async ev => {
+      ev.preventDefault();
+      if (form.classList.contains('busy')) return;
+      if (res) {   // segundo paso: aplicar
+        if (!res.threads && !res.replies) return close();
+        pushHistory();
+        S.model.comments = res.comments;
+        changed(true); renderInspector();
+        toast(T('fb.done', { t: res.threads, r: res.replies }), 4200);
+        close(); openComments();
+        return;
+      }
+      form.classList.add('busy'); go.textContent = T('fb.busy'); err.textContent = '';
+      try {
+        const fb = cleanFeedback(await SH.openFeedback(env, form.elements.pw.value));
+        if (!fb) throw new Error('format');
+        res = mergeFeedback(S.model, fb, today());
+        showSummary(fb, res);
+        go.textContent = res.threads + res.replies ? T('fb.go', { n: res.threads + res.replies }) : T('fb.close');
+      } catch (e) {
+        err.textContent = e && e.message === 'format' ? T('fb.bad') : T('fb.wrong');
+        go.textContent = T('fb.open'); form.elements.pw.select();
+      } finally { form.classList.remove('busy'); }
+    });
+    document.addEventListener('keydown', key, true);
+    document.body.appendChild(back);
+    form.elements.pw.focus();
+  }
   function openEdgeTypes(opts = {}) {
     const prev = document.activeElement, back = document.createElement('div'), id = `et${Date.now()}`, apply = opts.apply || null;
     let editing = null, draft = { label: '', dash: '6 6', color: '', width: 1.8, particles: 1 };
@@ -7960,7 +8068,7 @@
   // reportData() arma un modelo plano (secciones de bloques) y dos dibujantes lo pintan: reportMarkdown y reportHTML, así que los dos formatos no se desincronizan.
   // Bloques: { k: 'h3', t } · { k: 'p', t, muted? } · { k: 'kv', items: [[k, v]] } · { k: 'cards', items: [{ label, value, tone? }] }
   //          { k: 'table', head: [], rows: [[celda]], cls? } (celda = texto | { t, tone }) · { k: 'text', label, t } · { k: 'ul', items } · { k: 'img', alt, caption, svg?, uri?, file? }
-  const REP_SECS = ['summary', 'diagram', 'components', 'connections', 'data', 'owners', 'layers', 'datasets', 'costs', 'resilience', 'findings', 'compliance', 'threats', 'decisions', 'requirements', 'raid', 'approvals', 'phases', 'migration', 'radar', 'versions', 'notes'];
+  const REP_SECS = ['summary', 'diagram', 'components', 'connections', 'data', 'owners', 'layers', 'datasets', 'costs', 'resilience', 'findings', 'compliance', 'threats', 'decisions', 'requirements', 'raid', 'approvals', 'phases', 'migration', 'radar', 'versions', 'notes', 'comments'];
   const REP_PAGE = ['diagram', 'components', 'findings', 'decisions']; // secciones que empiezan página al imprimir
   const repT = (k, v) => T(`rep.${k}`, v);
   const repSleep = ms => new Promise(r => setTimeout(r, ms));
@@ -7982,7 +8090,7 @@
       layers: m.nodes.some(n => layerOf(n).value), migration: m.nodes.some(n => n.disposition), radar: m.nodes.some(n => radarOf(n, m)), costs: m.nodes.some(hasCost), resilience: m.nodes.some(hasRes) || spofList(m).length > 0, findings: findingsOf(m).length > 0,
       compliance: cmpModel(m).keys.length > 0, threats: strideAll(m).length > 0, decisions: !!m.decisions?.length, requirements: !!m.requirements?.length,
       raid: !!m.raid?.length, approvals: !!m.stakeholders?.length, phases: !!m.phases?.length, datasets: !!m.datasets?.length,
-      versions: m.versions.length > 0, notes: (m.notes || []).length > 0 || (m.zones || []).some(z => z.kind !== 'trust')
+      versions: m.versions.length > 0, notes: (m.notes || []).length > 0 || (m.zones || []).some(z => z.kind !== 'trust'), comments: (m.comments || []).some(c => !c.internal && c.status !== 'resolved')
     };
   }
   const repDefaultViews = () => {
@@ -8356,6 +8464,10 @@
       if (zs.length) { blocks.push({ k: 'h3', t: repT('h.zones2') }); blocks.push({ k: 'table', head: [repT('h.label'), repT('h.severity'), repT('h.detail')], rows: zs.map(z => [z.label || T('zone.new'), sevCell(z.severity), z.desc || '']) }); }
       if ((m.notes || []).length) { blocks.push({ k: 'h3', t: repT('h.notes') }); blocks.push({ k: 'ul', items: m.notes.map(n => n.text).filter(t => String(t).trim()) }); }
       sec('notes', blocks);
+    }
+    if (want('comments')) {   // hilos sin resolver; los internos nunca salen del documento
+      const rows = (m.comments || []).filter(c => !c.internal && c.status !== 'resolved').map(c => [cmTargetText(m, c.on), c.author || '', c.date ? fmtDay(c.date) : '', c.text, (c.replies || []).map(r => `${r.author || T('cmt.anon')}: ${r.text}`).join('\n')]);
+      sec('comments', [{ k: 'table', head: [repT('h.about'), repT('h.author'), repT('h.date'), repT('h.comment'), repT('h.replies')], rows, cls: 'wide' }]);
     }
     return D;
   }
@@ -8897,6 +9009,11 @@ footer{max-width:1000px;margin:28px auto 0;padding-top:8px;border-top:1px solid 
   async function importFiles(list) {
     const files = await Promise.all([...list].map(async f => ({ name: f.name || '', text: typeof f.text === 'string' ? f.text : await f.text() })));
     if (!files.length) return;
+    if (files.length === 1 && files[0].text.length < 2e6 && files[0].text.includes('"feedback"')) {   // archivo de comentarios del revisor (cifrado): pide la contraseña y muestra qué entra
+      let env = null;
+      try { env = JSON.parse(files[0].text); } catch { /* no es JSON */ }
+      if (env && typeof env === 'object' && env.kind === 'feedback' && env.v === 'fb1') return openFeedbackImport(env);
+    }
     const dbtFile = window.DiagramonDbt && files.find(f => window.DiagramonDbt.detect(f.text));   // manifest de dbt: antes que el resto
     if (dbtFile) return openDbtImport(dbtFile.text);
     if (files.length === 1) {
