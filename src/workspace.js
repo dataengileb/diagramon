@@ -9,8 +9,11 @@
    - Manifiesto opcional `diagramon-workspace.json`: por ahora solo { "name" }.
    - `docId`: identificador estable del diagrama, para enlazar entre diagramas
      aunque se renombre el archivo (campo opcional, no sube formatVersion).
+   - Enlaces entre diagramas: un componente puede llevar `ref: { doc, node? }`
+     (docId del diagrama donde se detalla). El mapa de sistemas los junta.
    API: window.DiagramonWorkspace.{ MANIFEST, MAX_BYTES, MAX_FILES, isDiagram,
-        cleanDocId, newDocId, summarize, scan, fileNameFor }
+        cleanDocId, cleanRef, newDocId, summarize, scan, fileNameFor,
+        systemsMap, layoutMap }
    ========================================================================== */
 window.DiagramonWorkspace = (() => {
   'use strict';
@@ -31,12 +34,31 @@ window.DiagramonWorkspace = (() => {
     return 'd-' + [...bytes].map(b => b.toString(16).padStart(2, '0')).join('');
   }
 
+  // ref de un componente: { doc, node? } con un docId válido; si no, null
+  function cleanRef(v) {
+    if (!isObj(v)) return null;
+    const doc = cleanDocId(v.doc);
+    if (!doc) return null;
+    const node = typeof v.node === 'string' ? v.node.trim().slice(0, 60) : '';
+    return node ? { doc, node } : { doc };
+  }
+  const MAX_LINKS = 200;
+  // Componentes de un diagrama (en bruto o ya normalizado) que apuntan a otro: [{ id, label, doc, node? }]
+  function linksOf(nodes) {
+    const out = [];
+    list(nodes).forEach(n => {
+      const r = isObj(n) ? cleanRef(n.ref) : null;
+      if (r && out.length < MAX_LINKS) out.push({ id: String(n.id == null ? '' : n.id).slice(0, 60), label: str(n.label, 120), doc: r.doc, ...(r.node ? { node: r.node } : {}) });
+    });
+    return out;
+  }
+
   const str = (v, max) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
   function summarize(raw, name = '') {
     const fv = Math.floor(+raw.formatVersion);
     return {
       name, title: str(raw.title, 200) || name.replace(/\.json$/i, ''),
-      nodes: raw.nodes.length, edges: list(raw.edges).length, groups: list(raw.groups).length, phases: list(raw.phases).length, versions: list(raw.versions).length,
+      nodes: raw.nodes.length, links: linksOf(raw.nodes), edges: list(raw.edges).length, groups: list(raw.groups).length, phases: list(raw.phases).length, versions: list(raw.versions).length,
       formatVersion: Number.isFinite(fv) && fv > 0 ? fv : 0, docId: cleanDocId(raw.docId)
     };
   }
@@ -76,5 +98,55 @@ window.DiagramonWorkspace = (() => {
     return n;
   }
 
-  return { MANIFEST, MAX_BYTES, MAX_FILES, isDiagram, cleanDocId, newDocId, summarize, scan, fileNameFor };
+  // Mapa de sistemas: un nodo por diagrama con docId (sin repetirse) y una flecha de A a B por cada componente de A que apunta a B.
+  // diagrams: lo que devuelve scan(); live: el diagrama abierto { docId, title, nodes, links } (manda sobre su archivo, que puede estar desactualizado)
+  // → { nodes: [{ docId, name, title, nodes, unsaved }], edges: [{ from, to, via: [etiquetas] }], missing: [{ from, doc, via }], unlinkable }
+  function systemsMap(diagrams, live) {
+    const all = list(diagrams), docs = all.filter(d => d.docId && !d.dupDocId);
+    const nodes = docs.map(d => ({ docId: d.docId, name: d.name, title: d.title, nodes: d.nodes, unsaved: false }));
+    const lv = live && cleanDocId(live.docId) ? live : null;
+    if (lv) {
+      const at = nodes.findIndex(n => n.docId === lv.docId);
+      const me = { docId: lv.docId, name: at >= 0 ? nodes[at].name : '', title: str(lv.title, 200) || (at >= 0 ? nodes[at].title : ''), nodes: Number.isFinite(lv.nodes) ? lv.nodes : at >= 0 ? nodes[at].nodes : 0, unsaved: at < 0 };
+      if (at >= 0) nodes[at] = me; else nodes.push(me);
+    }
+    const ids = new Set(nodes.map(n => n.docId)), edges = new Map(), missing = new Map();
+    const linksFor = docId => (lv && lv.docId === docId ? list(lv.links) : (docs.find(d => d.docId === docId) || {}).links) || [];
+    nodes.forEach(n => linksFor(n.docId).forEach(l => {
+      const label = l.label || l.id;
+      if (l.doc === n.docId) return;
+      const book = ids.has(l.doc) ? edges : missing, key = `${n.docId}\0${l.doc}`;
+      if (!book.has(key)) book.set(key, { from: n.docId, [book === edges ? 'to' : 'doc']: l.doc, via: [] });
+      const via = book.get(key).via;
+      if (label && !via.includes(label)) via.push(label);
+    }));
+    return { nodes, edges: [...edges.values()], missing: [...missing.values()], unlinkable: all.length - docs.length };
+  }
+
+  // Posiciones para dibujar el mapa: columnas por profundidad (de quien enlaza a lo enlazado; los ciclos no la inflan) y, dentro de cada columna, por título.
+  // → { boxes: [{ docId, x, y, w, h }], arrows: [{ from, to, via, same, x1, y1, x2, y2 }], width, height }
+  function layoutMap(map, o = {}) {
+    const w = o.w || 200, h = o.h || 56, gx = o.gx || 80, gy = o.gy || 24, pad = o.pad || 16;
+    const ns = list(map && map.nodes), es = list(map && map.edges), rank = new Map(ns.map(n => [n.docId, 0]));
+    for (let pass = 0; pass < ns.length; pass++) {
+      let moved = false;
+      es.forEach(e => { if (rank.has(e.from) && rank.has(e.to) && rank.get(e.to) < Math.min(rank.get(e.from) + 1, ns.length - 1)) { rank.set(e.to, Math.min(rank.get(e.from) + 1, ns.length - 1)); moved = true; } });
+      if (!moved) break;
+    }
+    const cols = new Map();
+    ns.slice().sort((a, b) => String(a.title).localeCompare(String(b.title)) || String(a.docId).localeCompare(String(b.docId))).forEach(n => {
+      const r = rank.get(n.docId); if (!cols.has(r)) cols.set(r, []); cols.get(r).push(n);
+    });
+    const boxes = [], at = new Map();
+    [...cols.keys()].sort((a, b) => a - b).forEach((r, ci) => cols.get(r).forEach((n, i) => {
+      const b = { docId: n.docId, x: pad + ci * (w + gx), y: pad + i * (h + gy), w, h }; boxes.push(b); at.set(n.docId, b);
+    }));
+    const arrows = es.filter(e => at.has(e.from) && at.has(e.to)).map(e => {
+      const a = at.get(e.from), b = at.get(e.to), fwd = b.x > a.x, back = b.x < a.x, same = !fwd && !back;   // misma columna: de borde derecho a borde derecho (el dibujo la curva hacia fuera)
+      return { from: e.from, to: e.to, via: e.via, same, x1: fwd ? a.x + a.w : back ? a.x : a.x + a.w, y1: a.y + a.h / 2, x2: fwd ? b.x : back ? b.x + b.w : b.x + b.w, y2: b.y + b.h / 2 };
+    });
+    return { boxes, arrows, width: boxes.reduce((m, b) => Math.max(m, b.x + b.w), 0) + pad + (arrows.some(x => x.same) ? 50 : 0), height: boxes.reduce((m, b) => Math.max(m, b.y + b.h), 0) + pad };
+  }
+
+  return { MANIFEST, MAX_BYTES, MAX_FILES, isDiagram, cleanDocId, cleanRef, newDocId, summarize, scan, fileNameFor, systemsMap, layoutMap };
 })();

@@ -635,6 +635,16 @@
   .cf.share.ws { width: min(620px, 100%); max-height: calc(100vh - 32px); overflow: auto; }
   .ws-bar { display: flex; flex-wrap: wrap; gap: 6px; }
   .ws-dir { margin: 0; font-size: 12px; color: var(--muted); }
+  .ws-bar .btn[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+  .ws-map { max-width: 100%; height: auto; max-height: 46vh; border: 1px solid var(--border); border-radius: 9px; background: var(--surface2); }
+  .ws-map .ws-arrow { fill: none; stroke: var(--muted); stroke-width: 1.6; }
+  .ws-map marker path { fill: var(--muted); }
+  .ws-map .ws-box { cursor: pointer; }
+  .ws-map .ws-box rect { fill: var(--surface); stroke: var(--border); stroke-width: 1.2; }
+  .ws-map .ws-box.cur rect, .ws-map .ws-box:hover rect, .ws-map .ws-box:focus rect { stroke: var(--accent); stroke-width: 2; }
+  .ws-map .ws-box:focus { outline: none; }
+  .ws-map .ws-bt { fill: var(--text); font: 650 13px var(--font); }
+  .ws-map .ws-bs { fill: var(--muted); font: 11px var(--font); }
   .ws-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; max-height: 40vh; overflow: auto; }
   .ws-list li { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface2); }
   .ws-list li.cur { border-color: var(--accent); }

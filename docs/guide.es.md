@@ -537,6 +537,13 @@ Un cliente rara vez tiene un solo diagrama. El botón **Espacio** (icono de carp
 
 Nada sale de tu navegador: la carpeta se lee y se escribe en local, y el navegador pide permiso cada vez que la abres.
 
+### Mapa de sistemas
+
+- Selecciona un componente y elige **Se detalla en** en el inspector para decir que otro diagrama de la carpeta lo detalla (una caja «Pagos» aquí, el diagrama de Pagos allá). **Abrir** salta a ese diagrama. Solo se pueden elegir diagramas que tengan `docId`: abre un diagrama y usa **Guardar el diagrama actual aquí** para dárselo.
+- La pestaña **Mapa de sistemas** de la ventana Espacio de trabajo dibuja una caja por diagrama y una flecha por cada pareja enlazada, con los nombres de los componentes en la ayuda de la flecha. Haz clic en una caja (o pulsa Enter sobre ella) para abrir ese diagrama. El diagrama en pantalla se dibuja con su estado actual, aunque el archivo de la carpeta sea más antiguo.
+- Un enlace a un diagrama que no está en la carpeta abierta aparece bajo el mapa y como hallazgo bajo en **Revisión** (fuente *Espacio de trabajo*) mientras haya una carpeta abierta.
+- Los enlaces se guardan en el JSON como `ref: { "doc": "<docId>" }` en el componente. La pestaña Texto no los muestra, pero al editar el texto se conservan.
+
 ## Vistas
 
 Una **vista** es una forma de mirar el mismo diagrama: solo decide qué se ve, con cuánto detalle y qué destaca. Nunca cambia tus componentes ni posiciones. Elígela en el selector **Vista** de la barra superior, con las teclas **`1`**–**`9`**, o desde la consola (`Diagramon.setView('security')`). Cuando la vista no es *Completa*, una pastilla sobre el lienzo la nombra, cuenta lo que oculta o atenúa y tiene una **×** para volver. La ficha del documento y la leyenda de las exportaciones siguen la vista activa.

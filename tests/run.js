@@ -1514,7 +1514,7 @@
   });
   test('the app wires it: normalize cleans it, JSON and diff know the field, inspector, filter, pill, report, inventory and Review use it', () => {
     assert(/const dp = cleanDisposition\(o\.disposition\); if \(dp\) o\.disposition = dp; else delete o\.disposition;/.test(app), 'normalize');
-    assert(/'replicas', 'disposition', 'radar', 'effort', 'phase', 'until'\],\n    edge: \['id'/.test(app), 'ORDER.node');
+    assert(/'replicas', 'disposition', 'radar', 'effort', 'ref', 'phase', 'until'\],\n    edge: \['id'/.test(app), 'ORDER.node');
     assert(/'replicas', 'disposition', 'radar', 'effort', 'phase', 'until'\],\n    edge: \['label'/.test(app), 'DIFF_FIELDS.node');
     assert(app.includes("'layer', 'disposition', 'radar', 'compliance']") && app.includes("if (s === 'disposition')"), 'filter');
     assert(app.includes('${dispField(t)}') && app.includes('b.dataset.disp != null'), 'inspector');
@@ -2077,7 +2077,7 @@
       { name: WSP.MANIFEST, text: '{"name":"Shop platform"}' }, { name: '', text: '{}' }, null, { name: 'noText.json' }
     ]);
     eq(r.manifest, { name: 'Shop platform' }, 'manifest'); eq(r.diagrams.map(d => d.title), ['alpha', 'Beta'], 'sorted by title');
-    eq(r.diagrams[1], { name: 'b.json', title: 'Beta', nodes: 2, edges: 1, groups: 0, phases: 0, versions: 0, formatVersion: 1, docId: 'd-beta-0001', dupDocId: false }, 'summary');
+    eq(r.diagrams[1], { name: 'b.json', title: 'Beta', nodes: 2, links: [], edges: 1, groups: 0, phases: 0, versions: 0, formatVersion: 1, docId: 'd-beta-0001', dupDocId: false }, 'summary');
     eq(r.skipped.map(x => [x.name, x.reason]), [['bad.json', 'notJson'], ['other.json', 'notDiagram'], ['huge.json', 'big'], ['noText.json', 'notJson']], 'skipped');
     eq(WSP.scan(null), { manifest: null, diagrams: [], skipped: [] }, 'nothing');
     eq(WSP.scan([{ name: WSP.MANIFEST, text: 'nope' }]).manifest, null, 'unreadable manifest ignored');
@@ -2104,6 +2104,55 @@
     const keys = [...new Set([...app.slice(app.indexOf('/* ---------- espacio de trabajo'), app.indexOf('/* ---------- exportar a otras herramientas (src/export')).matchAll(/T\('(ws\.[\w.]+)'/g)].map(x => x[1]))];
     ['top.workspace', 'top.workspace.lbl', ...keys].forEach(k => eq(i18nSrc.split(`'${k}':`).length - 1, 2, `${k} once per language`));
     assert(keys.length >= 15, `keys found: ${keys.length}`);
+  });
+
+  test('cleanRef: a valid docId (and an optional node id) survives; anything else is dropped', () => {
+    eq(WSP.cleanRef({ doc: 'd-aaaaaa1' }), { doc: 'd-aaaaaa1' }); eq(WSP.cleanRef({ doc: ' d-aaaaaa1 ', node: ' n1 ' }), { doc: 'd-aaaaaa1', node: 'n1' });
+    eq(WSP.cleanRef({ doc: 'd-aaaaaa1', node: 5, extra: 1 }), { doc: 'd-aaaaaa1' }, 'unknown keys and a non-string node go');
+    [null, 'd-aaaaaa1', [], {}, { doc: 'x' }, { doc: '../x' }, { node: 'n1' }].forEach(v => eq(WSP.cleanRef(v), null, JSON.stringify(v)));
+  });
+  const wsLinked = (title, docId, nodes) => ({ name: `${title}.json`, text: JSON.stringify({ title, docId, nodes }) });
+  const wsN = (id, label, doc) => ({ id, label, ...(doc ? { ref: { doc } } : {}) });
+  test('summarize: lists the components that point to another diagram, ignoring bad refs', () => {
+    const r = WSP.scan([wsLinked('A', 'd-aaaaaa1', [wsN('n1', 'Pay', 'd-bbbbbb1'), wsN('n2', 'None'), { id: 'n3', label: 'Bad', ref: { doc: 'x' } }, null])]);
+    eq(r.diagrams[0].links, [{ id: 'n1', label: 'Pay', doc: 'd-bbbbbb1' }]);
+  });
+  test('systemsMap: one arrow per pair with the component names, missing targets apart, self links and repeated ids left out', () => {
+    const r = WSP.scan([wsLinked('A', 'd-aaaaaa1', [wsN('n1', 'Pay', 'd-bbbbbb1'), wsN('n2', 'Refund', 'd-bbbbbb1'), wsN('n3', 'Ghost', 'd-zzzzzz1'), wsN('n4', 'Self', 'd-aaaaaa1')]),
+      wsLinked('B', 'd-bbbbbb1', [wsN('x', 'Back', 'd-aaaaaa1')]), wsLinked('C', '', []), wsLinked('D1', 'd-dupdup1', []), wsLinked('D2', 'd-dupdup1', [])]);
+    const m = WSP.systemsMap(r.diagrams);
+    eq(m.nodes.map(n => n.docId), ['d-aaaaaa1', 'd-bbbbbb1'], 'only diagrams with a unique id'); eq(m.unlinkable, 3, 'C has no id, D1 and D2 share one');
+    eq(m.edges, [{ from: 'd-aaaaaa1', to: 'd-bbbbbb1', via: ['Pay', 'Refund'] }, { from: 'd-bbbbbb1', to: 'd-aaaaaa1', via: ['Back'] }], 'edges');
+    eq(m.missing, [{ from: 'd-aaaaaa1', doc: 'd-zzzzzz1', via: ['Ghost'] }], 'missing');
+    eq(WSP.systemsMap(null), { nodes: [], edges: [], missing: [], unlinkable: 0 }, 'empty');
+  });
+  test('systemsMap: the open diagram wins over its (older) file and appears even when it is not saved yet', () => {
+    const r = WSP.scan([wsLinked('A', 'd-aaaaaa1', [wsN('n1', 'Pay', 'd-bbbbbb1')]), wsLinked('B', 'd-bbbbbb1', [])]);
+    const live = { docId: 'd-aaaaaa1', title: 'A edited', nodes: 7, links: [{ id: 'n9', label: 'Ledger', doc: 'd-bbbbbb1' }] };
+    const m = WSP.systemsMap(r.diagrams, live);
+    eq(m.nodes[0], { docId: 'd-aaaaaa1', name: 'A.json', title: 'A edited', nodes: 7, unsaved: false }, 'live title and size, same file'); eq(m.edges[0].via, ['Ledger'], 'live links replace the file ones');
+    const fresh = WSP.systemsMap(r.diagrams, { docId: 'd-newnew1', title: 'New', nodes: 2, links: [{ id: 'a', label: 'To A', doc: 'd-aaaaaa1' }] });
+    eq(fresh.nodes.map(n => [n.docId, n.unsaved]), [['d-aaaaaa1', false], ['d-bbbbbb1', false], ['d-newnew1', true]], 'unsaved diagram added'); eq(fresh.edges.map(e => [e.from, e.to]), [['d-aaaaaa1', 'd-bbbbbb1'], ['d-newnew1', 'd-aaaaaa1']]);
+  });
+  test('layoutMap: columns by depth, cycles do not inflate it, boxes never overlap, arrows end on box edges', () => {
+    const mk = (ids, es) => ({ nodes: ids.map(i => ({ docId: i, title: i })), edges: es.map(([from, to]) => ({ from, to, via: [] })) });
+    const g = WSP.layoutMap(mk(['a', 'b', 'c'], [['a', 'b'], ['b', 'c']])), at = id => g.boxes.find(b => b.docId === id);
+    eq(g.boxes.map(b => b.x), [16, 296, 576], 'a chain goes left to right'); assert(g.arrows.every(a => !a.same), 'forward arrows');
+    const a0 = g.arrows[0]; eq([a0.x1, a0.x2], [at('a').x + 200, at('b').x], 'leave the right edge, enter the left edge');
+    const cyc = WSP.layoutMap(mk(['a', 'b'], [['a', 'b'], ['b', 'a']]));
+    assert(cyc.boxes.length === 2 && Number.isFinite(cyc.width) && cyc.boxes.every(b => b.x >= 0), 'cycle lays out');
+    for (let i = 0; i < cyc.boxes.length; i++) for (let j = i + 1; j < cyc.boxes.length; j++) { const p = cyc.boxes[i], q = cyc.boxes[j]; assert(p.x + p.w <= q.x || q.x + q.w <= p.x || p.y + p.h <= q.y || q.y + q.h <= p.y, 'overlap'); }
+    const big = WSP.layoutMap(mk(Array.from({ length: 60 }, (_, i) => `n${i}`), Array.from({ length: 59 }, (_, i) => [`n${i}`, `n${i + 1}`]).concat([['n59', 'n0']])));
+    eq(big.boxes.length, 60, 'a long ring still ends'); eq(WSP.layoutMap(null), { boxes: [], arrows: [], width: 16, height: 16 }, 'empty');
+  });
+  test('the app wires it: ref in normalize and JSON, kept through text edits, inspector field, Review source, map and texts in both languages', () => {
+    assert(app.includes('window.DiagramonWorkspace?.cleanRef(o.ref)') && app.includes("'effort', 'ref', 'phase'"), 'ref is cleaned and ordered');
+    assert(app.includes("opts.fromEditor === 'text' && Array.isArray(raw.nodes) && S.model.nodes.some(n => n.ref)"), 'text edits keep the links');
+    assert(app.includes('const refField = items =>') && app.includes('${refField(t)}') && app.includes("select[data-ref]") && app.includes('data-ref-open'), 'inspector');
+    assert(app.includes("addFindingSource('workspace'") && app.includes('function wsMapHtml()') && app.includes('data-ws-doc'), 'Review source and map');
+    const keys = [...new Set([...app.matchAll(/T\(`?'?(ws\.[\w.]+)/g)].map(x => x[1]))];
+    ['find.src.workspace', ...keys].forEach(k => eq(i18nSrc.split(`'${k}':`).length - 1, 2, `${k} once per language`));
+    assert(keys.length >= 30, `keys found: ${keys.length}`);
   });
 
   /* ---------- resumen ---------- */

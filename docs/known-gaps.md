@@ -38,5 +38,6 @@ These are deliberate choices, usually to keep Diagramon local, dependency-free a
   - Large diagrams with many views and internal levels can take several seconds.
 - **C4 levels**: ghost cards show at most 8 per side, and connections between two levels are only drawn as ghosts (reach them from the inspector links).
 - **Workspace**: only the files directly inside the folder are read (no subfolders), up to 200 diagrams of at most 8 MB each. Saving into the folder needs a Chromium browser.
+- **Links between diagrams** (`ref`) are not part of the version comparison and are not in the text format. They are kept when you edit the text. A component can point to a whole diagram, not yet to one of its components.
 - **Region detection** from a group's name covers the usual AWS, Azure and Google Cloud codes. Other names need the **Region** field.
 - Several CSV downloads in a row may trigger a «download multiple files» prompt in some browsers.
