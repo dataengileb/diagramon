@@ -303,9 +303,7 @@
      6. Decisiones (ADR): opciones, criterios y puntuación
      ====================================================================== */
   section('ADR options');
-  const adrSrc = between('/* adrModel:start */', '/* adrModel:end */');
-  const apprSrc = between('/* approvalModel:start */', '/* approvalModel:end */');   // cleanDecisions llama a cleanSignoffs
-  const ADRM = new Function('isDay', 'today', `${apprSrc}; ${adrSrc}; return { adrScore, adrFull, adrLeader, cleanDecisions };`)(v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v), () => '2026-01-01');
+  const ADRM = win.DiagramonModels.decisions({ isDay: v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v), today: () => '2026-01-01' });   // src/models/decisions.js
   const adrModel = { nodes: [{ id: 'a' }], edges: [], groups: [], versions: [{ id: 'v2' }] };
   const adrDec = () => ({
     id: 'ADR-001', title: 'Open table format', status: 'proposed', date: '2026-10-07', context: 'c', decision: '', consequences: '', area: 'Storage',
@@ -395,7 +393,7 @@
      7. Requisitos: modelo, controles (fitness functions), hallazgos y texto
      ====================================================================== */
   section('Requirements');
-  const REQM = new Function(`${between('/* reqModel:start */', '/* reqModel:end */')}; return { cleanRequirements, cleanReqCheck, cleanReqLinks, reqEval, reqCover, reqIssues };`)();
+  const REQM = win.DiagramonModels.requirements;
   const serializeM = new Function(`${app.slice(app.indexOf('  const ORDER = {'), app.indexOf('  /* ---------- editores de código'))}; return serialize;`)();
   const reqModel = () => ({ nodes: [{ id: 'a', label: 'A', data: ['pii'] }, { id: 'b', label: 'B' }, { id: 'c', label: 'C' }], edges: [{ id: 'e1', from: 'a', to: 'b', encrypted: true, data: ['pii'] }, { id: 'e2', from: 'b', to: 'c' }],
     groups: [{ id: 'g' }], decisions: [{ id: 'ADR-001', status: 'accepted' }, { id: 'ADR-002', status: 'proposed' }] });
@@ -516,8 +514,7 @@
      8. Registro RAID: riesgos, supuestos, problemas y dependencias
      ====================================================================== */
   section('RAID log');
-  const raidSrc = between('/* raidModel:start */', '/* raidModel:end */');
-  const RAIDM = new Function('isDay', 'today', `${raidSrc}; return { cleanRaid, raidScore, raidLevel, raidHeat, raidSummary, raidIssues, raidState };`)(v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v), () => '2026-10-07');
+  const RAIDM = win.DiagramonModels.raid.create(v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v));
   const raidDoc = { nodes: [{ id: 'a' }, { id: 'b' }], edges: [{ id: 'e1' }], groups: [{ id: 'g' }], decisions: [{ id: 'ADR-001', status: 'accepted' }, { id: 'ADR-002', status: 'proposed' }, { id: 'ADR-003', status: 'rejected' }] };
   const raidSet = () => [
     { id: 'R-001', type: 'risk', title: 'SAP CDC licence not available', detail: 'd', owner: 'PMO', status: 'open', probability: 3, impact: 4, mitigation: 'Ask the vendor', raised: '2026-10-01', links: { decisions: ['ADR-001'], nodes: ['a'] } },
@@ -660,7 +657,7 @@
      9. Interesados y RACI
      ====================================================================== */
   section('Stakeholders');
-  const SHM = new Function(`${between('/* stakeholderModel:start */', '/* stakeholderModel:end */')}; return { cleanStakeholders, shGaps, shAreas, shIsA };`)();
+  const SHM = win.DiagramonModels.stakeholders;
   const shSet = () => [
     { id: 'SH-001', name: 'Ana Pérez', role: 'CISO', org: 'client', raci: { '*': 'C', Security: 'A', 'Data Platform': 'R' }, versions: true },
     { id: 'SH-002', name: 'Luis "El Jefe" Gómez', org: 'partner', raci: { platform: 'A' } },
@@ -754,7 +751,7 @@
      ====================================================================== */
   section('Approvals');
   const isDayT = v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
-  const APPM = new Function('isDay', `${apprSrc}; return { approversFor, approvalState, cleanSignoffs };`)(isDayT);
+  const APPM = win.DiagramonModels.decisions({ isDay: isDayT, today: () => '2026-01-01' });
   const people = () => [
     { id: 'SH-001', name: 'Ana', raci: { '*': 'C', Security: 'A' } }, { id: 'SH-002', name: 'Luis', raci: { platform: 'A' } },
     { id: 'SH-003', name: 'Eva', raci: { '*': 'A' }, versions: true }, { id: 'SH-004', name: 'Old', raci: { '*': 'A' }, versions: true, inactive: true }, { id: 'SH-005', name: 'Read', raci: { '*': 'I' } }];
@@ -841,7 +838,7 @@
      9. Fases: hoja de ruta de la arquitectura (phase / until en nodos, conexiones y grupos)
      ====================================================================== */
   section('Phases');
-  const PHM = new Function(`${between('/* phaseModel:start */', '/* phaseModel:end */')}; return { cleanEffort, cleanExtra, cleanEstimation, cleanPhases, cleanPhaseRefs, phaseIndex, inPhase, phaseState, phaseStates, phaseModel, phaseDiff, phaseStats, phaseRows };`)();
+  const PHM = win.DiagramonModels.phases;
   const snapshotM = new Function('clone', `${app.slice(app.indexOf('  const snapshotOf = m => {'), app.indexOf('  const prepared = v =>'))}; return snapshotOf;`)(o => JSON.parse(JSON.stringify(o)));
   const phList = () => [{ id: 'mvp', name: 'MVP', date: '2026-12', goal: 'Batch ingestion' }, { id: 'wave1', name: 'Wave 1', date: '2027-03-15' }, { id: 'wave2', name: 'Wave 2' }];
   // g1 (sin campos) tiene src (siempre), cdc (wave1), upload (mvp, se retira en wave1); g2 solo tiene stream (wave2); lone no tiene nodos
@@ -1275,7 +1272,7 @@
       eq(r.errors, [], `parse ${lang}`); eq(r.model.requirements[0].check, { metric: 'freshness', ds: 'sales daily', target: 4 }, `round trip ${lang}`);
       assert(lang === 'es' ? t.includes('control=frescura conjunto="sales daily" objetivo=4') : t.includes('check=freshness ds="sales daily" target=4'), t);
     });
-    assert(read('src/app.js').includes("freshness: ['ds', 'target']") && read('src/app.js').includes("frescura: 'freshness'"), 'REQ_PARAMS + Spanish alias');
+    assert(read('src/models/requirements.js').includes("freshness: ['ds', 'target']") && read('src/models/requirements.js').includes("frescura: 'freshness'"), 'REQ_PARAMS + Spanish alias');
   });
   test('phaseRows / phaseStats with datasets: counts and estimated storage per phase (separate from component cost)', () => {
     const m = { ...phDoc(), datasets: [{ id: 'DS-001', name: 'a', volume: { perDay: 1, retentionDays: 10 } }, { id: 'DS-002', name: 'b', phase: 'wave1', volume: { perDay: 2, retentionDays: 10 }, layer: 'gold' }, { id: 'DS-003', name: 'c', phase: 'wave2' }] };
@@ -1601,9 +1598,8 @@
   // Motor y avisos de la estimación, extraídos de app.js con una configuración de prueba (dos perfiles con tarifa, uno sin)
   const mkEst = (cfg = {}) => {
     const sources = [], C2 = { ...C, estimation: { hoursPerDay: 8, contingency: 0, roles: [{ id: 'dev', label: { en: 'Developer', es: 'Desarrollo' }, rate: 600 }, { id: 'qa', label: { en: 'QA', es: 'Pruebas' }, rate: 450 }, { id: 'pm', label: { en: 'PM' } }], rules: C.estimation.rules, ...cfg } };
-    const src = `${between('/* phaseModel:start */', '/* phaseModel:end */')};\n${app.slice(app.indexOf('  /* ---------- estimación de esfuerzo'), app.indexOf('  const phaseHelpers = {'))}`;
-    const api = new Function('C', 'loc', 'addFindingSource', 'SEVERITY', 'T', 'round2', `${src}; return { phaseEffort, effortHelpers, efInfo, efDaysOf, efCostOf, EF_ROLES };`)(
-      C2, v => (v && typeof v === 'object' ? v.en : v), (k, fn) => sources.push({ k, fn }), ['low', 'medium', 'high', 'critical'], (k, v) => `${k}${v == null ? '' : ':' + JSON.stringify(v)}`, v => Math.round(v * 100) / 100);
+    const M = win.DiagramonModels.phases;
+    const api = { phaseEffort: M.phaseEffort, ...M.estimation({ C: C2, loc: v => (v && typeof v === 'object' ? v.en : v), addFindingSource: (k, fn) => sources.push({ k, fn }), SEVERITY: ['low', 'medium', 'high', 'critical'], T: (k, v) => `${k}${v == null ? '' : ':' + JSON.stringify(v)}`, round2: v => Math.round(v * 100) / 100 }) };
     return { ...api, findings: m => sources.find(x => x.k === 'estimation').fn(m) };
   };
   const E = mkEst();
@@ -1642,7 +1638,7 @@
     assert(app.includes('${ph.length ? phaseEstimate() : \'\'}') && app.includes('function phaseEstimate()') && app.includes('<tfoot>'), 'phase table');
     assert(app.includes("if (want('estimation'))") && app.includes("sec('estimation', blocks)") && app.includes('estimation: !!phaseEffort(m, effortHelpers)'), 'report');
     assert(app.includes("mk('estimation', INV_EST") && app.includes("...(m.nodes.some(x => x.effort?.length) ? [['effort']] : [])") && app.includes('effort: efDaysOf(n.effort)'), 'inventory');
-    assert(app.includes("addFindingSource('estimation'"), 'Review');
+    assert(read('src/models/phases.js').includes("addFindingSource('estimation'"), 'Review');
     const i18n = read('src/i18n.js');
     ['find.src.estimation', 'est.all', 'est.f.unest.t', 'est.f.unest.fix', 'est.f.rate.t', 'est.f.rate.fix', 'est.title', 'est.cont', 'est.cont.none', 'est.comps', 'est.comps.tip', 'est.days.tip', 'est.extra', 'est.incl', 'est.build', 'est.cum', 'est.run', 'est.run.tip', 'est.sum', 'est.unrated', 'est.unrated.tip',
       'rep.s.estimation', 'rep.h.estimated', 'rep.h.days', 'rep.h.build', 'rep.h.contingency', 'rep.h.total', 'rep.h.cumulative', 'rep.h.sum', 'inv.sheet.estimation', 'inv.c.estimated', 'inv.c.days', 'inv.c.extraDays', 'inv.c.build', 'inv.c.contingency', 'inv.c.total', 'inv.c.cumulative', 'inv.c.effort'].forEach(k => eq(i18n.split(`'${k}':`).length - 1, 2, `${k} once per language`));
@@ -1657,7 +1653,7 @@
   const TL = lang => (k, v) => { const x = DICT2[lang][k] ?? DICT2.en[k] ?? k; return typeof x === 'function' ? x(v) : x; };
   const diffSrc = app.slice(app.indexOf('  const DIFF_FIELDS = {'), app.indexOf('  /* ---------- decisiones (ADR): comparar entre versiones'));
   const diffModelsT = new Function(`${diffSrc}; return diffModels;`)();
-  const ST = new Function(`${between('/* statusModel:start */', '/* statusModel:end */')}; return { statusBase, statusModel, statusText, statusDoc, statusPlain };`)();
+  const ST = win.DiagramonModels.status;
   // Ayudantes de prueba: el «riesgo» de un componente es una propiedad suelta (la diferencia de hallazgos no mira el resto)
   const stH = { verLabel: v => v.name || v.id, prepared: v => v.diagram, diff: diffModelsT, findings: m => m.nodes.filter(n => n.risk).map(n => ({ id: `f:${n.id}`, title: `${n.label} is exposed`, severity: n.risk })), monthly: m => m.nodes.reduce((a, n) => a + (n.cost || 0), 0),
     effort: m => { const d = m.nodes.reduce((a, n) => a + (n.days || 0), 0); return d ? { totals: { days: d, total: d * 500 } } : null; }, pending: () => [{ kind: 'decision', id: 'ADR-003', label: 'ADR-003 Use Kafka', missing: ['Ana', 'Luis'] }] };
@@ -1750,7 +1746,7 @@
   test('the app wires it: helpers, the API call and the texts in both languages', () => {
     assert(app.includes('const statusHelpers = {') && app.includes('function statusReport(spec, m = S.model)') && app.includes('exportThreats, exportReport, statusReport,'), 'app');
     assert(app.includes("apprMissing('decision', d, mm)") && app.includes("apprMissing('version', v, mm)"), 'pending approvals come from the approval model');
-    const keys = [...new Set([...app.slice(app.indexOf('/* statusModel:start */'), app.indexOf('/* statusModel:end */')).matchAll(/T\(`?'?(stat\.[\w.]+)/g)].map(x => x[1]))];
+    const keys = [...new Set([...read('src/models/status.js').matchAll(/T\(`?'?(stat\.[\w.]+)/g)].map(x => x[1]))];
     ['stat.empty', 'stat.intro.v', 'stat.intro.d', 'stat.none', 'stat.and', 'stat.more', 'stat.first', 'stat.dec.accepted', 'stat.risk.added', 'stat.phase.moved', 'stat.comp.added', 'stat.conn', 'stat.cost', 'stat.effort', 'stat.build', 'stat.pend.decision', 'stat.pend.version', 'stat.comments', 'stat.version', 'stat.phase.comp', 'stat.phase.compMore',
       'stat.s.decisions', 'stat.s.risks', 'stat.s.phases', 'stat.s.components', 'stat.s.money', 'stat.s.pending', 'stat.s.comments', 'stat.s.versions'].forEach(k => { eq(i18nSrc.split(`'${k}':`).length - 1, 2, `${k} once per language`); });
     assert(keys.length >= 5, `keys found in the block: ${keys.length}`);
