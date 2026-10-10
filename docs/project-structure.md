@@ -25,6 +25,7 @@
 | `assets/fonts/` | Bundled fonts (`.woff2`, OFL licenses) and the generated `fonts.js` |
 | `tools/build-fonts.py` | Builds `assets/fonts/fonts.js` from `assets/fonts/*.woff2` |
 | `tests/run.js` | Automated tests without dependencies (text format, exports, IaC and dbt import, translations, pure functions); run with `node tests/run.js` |
+| `tests/smoke.js` | Browser smoke test without dependencies: opens `index.html` from `file://` in headless Chrome and checks startup (no errors or CSP reports), templates, views, exports, the encrypted HTML and the public `window.Diagramon` API; run with `node tests/smoke.js` |
 
 ## Changing the file format
 
