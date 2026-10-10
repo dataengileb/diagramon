@@ -554,7 +554,7 @@ review db: "DB in a public subnet" by=Ana raised=2026-10-01 due=2026-11-15
       'top.filter': 'Filter: dim what does not match (G)', 'top.filter.lbl': 'Filter',
       'flt.sec.data': 'Data', 'flt.sec.review': 'Review', 'flt.sec.provider': 'Provider', 'flt.sec.category': 'Category', 'flt.sec.group': 'Group', 'flt.sec.cost': 'Cost',
       'flt.insecure': 'Unencrypted sensitive flows', 'flt.open': 'Open findings', 'flt.overdue': 'Overdue', 'flt.generic': 'Generic', 'flt.cost': 'With cost',
-      'flt.pill': 'Filter', 'flt.count': ({ n, t }) => `${n} of ${t}`, 'flt.clear': 'Clear', 'flt.note': 'Within a section the chips add up; sections combine.',
+      'flt.pill': 'Filter', 'flt.count': ({ n, t }) => `${n} of ${t}`, 'flt.clear': 'Clear', 'flt.note': 'Within a section the chips add up; sections combine.', 'flt.search': 'Search filters…', 'flt.nomatch': 'No matching filters.', 'flt.grp.security': 'Security & data', 'flt.grp.infra': 'Infrastructure', 'flt.grp.gov': 'Governance', 'flt.grp.plan': 'Planning',
       'meta.insecure': n => `⚠ ${n} unencrypted sensitive ${n === 1 ? 'flow' : 'flows'}`,
       /* data residency */
       'res.label': 'Region', 'res.ph': 'e.g. eu-west-1, westeurope, ES', 'res.inherited': g => `inherited from ${g}`, 'res.deduced': g => `deduced from ${g}`,
@@ -1222,7 +1222,7 @@ revisión db: "BD en subred pública" por=Ana levantada=2026-10-01 compromiso=20
       'top.filter': 'Filtrar: atenuar lo que no coincide (G)', 'top.filter.lbl': 'Filtrar',
       'flt.sec.data': 'Datos', 'flt.sec.review': 'Revisión', 'flt.sec.provider': 'Proveedor', 'flt.sec.category': 'Categoría', 'flt.sec.group': 'Grupo', 'flt.sec.cost': 'Costo',
       'flt.insecure': 'Flujos sensibles sin cifrar', 'flt.open': 'Observaciones abiertas', 'flt.overdue': 'Vencidas', 'flt.generic': 'Genérico', 'flt.cost': 'Con costo',
-      'flt.pill': 'Filtro', 'flt.count': ({ n, t }) => `${n} de ${t}`, 'flt.clear': 'Limpiar', 'flt.note': 'Dentro de una sección las fichas suman; las secciones se combinan.',
+      'flt.pill': 'Filtro', 'flt.count': ({ n, t }) => `${n} de ${t}`, 'flt.clear': 'Limpiar', 'flt.note': 'Dentro de una sección las fichas suman; las secciones se combinan.', 'flt.search': 'Buscar filtros…', 'flt.nomatch': 'Ningún filtro coincide.', 'flt.grp.security': 'Seguridad y datos', 'flt.grp.infra': 'Infraestructura', 'flt.grp.gov': 'Gobierno', 'flt.grp.plan': 'Planificación',
       'meta.insecure': n => `⚠ ${n} ${n === 1 ? 'flujo sensible' : 'flujos sensibles'} sin cifrar`,
       /* residencia de datos */
       'res.label': 'Región', 'res.ph': 'ej.: eu-west-1, westeurope, ES', 'res.inherited': g => `heredada de ${g}`, 'res.deduced': g => `deducida de ${g}`,

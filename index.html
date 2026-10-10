@@ -1220,6 +1220,13 @@
   .tbtn.has-dot::after { content: ''; position: absolute; top: 5px; right: 5px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--surface); }
   .flt-pop { width: 290px; max-height: min(70vh, 520px); overflow: auto; }
   .flt-pop .cat { margin: 8px 4px 5px; }
+  .flt-q { box-sizing: border-box; width: 100%; height: 30px; margin: 0 0 6px; padding: 0 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface2); color: var(--text); font: 12.5px var(--font); }
+  .flt-act { padding: 2px 0 8px; border-bottom: 1px solid var(--border); margin-bottom: 4px; }
+  .flt-grp-h { display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 4px; border: 0; background: none; color: var(--text); font: 650 12.5px var(--font); cursor: pointer; text-align: left; }
+  .flt-car { width: 6px; height: 6px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(-45deg); transition: transform .15s; }
+  .flt-grp.open .flt-car { transform: rotate(45deg); }
+  .flt-n { margin-left: auto; min-width: 18px; padding: 0 6px; border-radius: 999px; background: var(--accent); color: var(--bg); font-size: 11px; text-align: center; }
+  .flt-grp-b { padding-bottom: 6px; }
   .flt-sec:first-child .cat { margin-top: 2px; }
   .flt-chips { display: flex; flex-wrap: wrap; gap: 5px; padding: 0 2px; }
   .menu-pop .flt-chip { display: inline-flex; width: auto; padding: 4px 10px; border: 1px solid var(--border); border-radius: 999px; font-size: 12px; font-weight: 600; color: var(--muted); }
@@ -1449,6 +1456,7 @@
       <details class="menu" id="filter-menu">
         <summary class="tbtn" id="btn-filter" data-i18n-title="top.filter"><svg viewBox="0 0 24 24"><path d="M3 5h18l-7 8.5V19l-4 2v-7.5z"/></svg><span class="lbl" data-i18n="top.filter.lbl"></span></summary>
         <div class="menu-pop flt-pop">
+          <input id="filter-q" class="flt-q" type="search" autocomplete="off" data-i18n-placeholder="flt.search" data-i18n-aria="flt.search">
           <div id="filter-body"></div>
           <div class="menu-sep"></div>
           <button id="filter-clear" class="flt-clear" hidden><span data-i18n="flt.clear"></span></button>
