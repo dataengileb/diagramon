@@ -90,10 +90,6 @@ around 290 official cloud icons, and the browser itself blocks every network req
 - 📤 **Export** to SVG (animated), PNG or JSON. **Import** JSON by dropping it on the canvas.
 - ↩️ **Undo and redo**, autosave and automatic layout.
 
-<div align="center">
-<img src="docs/diagram-light.png" alt="Microservices on Google Kubernetes Engine drawn with Diagramon in light mode">
-</div>
-
 ---
 
 ## 🚀 Get started in 30 seconds
