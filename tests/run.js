@@ -271,7 +271,7 @@
      ====================================================================== */
   section('app.js pure functions');
   // v2: la interfaz se reparte entre src/app.js y src/ui/*.js; las pruebas que buscan código de la interfaz leen todo junto (app.js primero, para que las posiciones de sus marcadores no cambien)
-  const UI_FILES = ['src/ui/dialogs.js', 'src/ui/panel.js', 'src/ui/tabs.js', 'src/ui/sidebar.js', 'src/ui/topbar.js', 'src/ui/raid.js', 'src/ui/people.js', 'src/ui/reqs.js', 'src/ui/datatab.js', 'src/ui/adr.js', 'src/ui/workspaceui.js', 'src/ui/exportother.js', 'src/ui/exportshare.js', 'src/ui/report.js', 'src/ui/inspfields.js', 'src/ui/inspconn.js'];
+  const UI_FILES = ['src/ui/dialogs.js', 'src/ui/panel.js', 'src/ui/tabs.js', 'src/ui/sidebar.js', 'src/ui/topbar.js', 'src/ui/raid.js', 'src/ui/people.js', 'src/ui/reqs.js', 'src/ui/datatab.js', 'src/ui/adr.js', 'src/ui/workspaceui.js', 'src/ui/exportother.js', 'src/ui/exportshare.js', 'src/ui/report.js', 'src/ui/inspfields.js', 'src/ui/inspconn.js', 'src/ui/inspcomp.js'];
   const app = ['src/app.js', ...UI_FILES].map(read).join('\n');
   const between = (a, b) => { const i = app.indexOf(a), j = app.indexOf(b, i); assert(i >= 0 && j > i, `markers not found: ${a}`); return app.slice(i + a.length, j); };
   const routeReliability = win.DiagramonModels.reliability().routeReliability;
