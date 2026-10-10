@@ -12,82 +12,11 @@
   const NS = 'http://www.w3.org/2000/svg';
   const H = C.node.height;
 
-  /* ---------- utilidades ---------- */
-  const $ = (s, r = document) => r.querySelector(s);
-  const $$ = (s, r = document) => [...r.querySelectorAll(s)];
-  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-  const snap = v => Math.round(v / C.grid.snap) * C.grid.snap;
-  const clone = o => JSON.parse(JSON.stringify(o));
-  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  const fold = s => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
-  const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
-  const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-  const store = {
-    get(k, d) { try { const v = localStorage.getItem(`${C.app.storageKey}.${k}`); return v == null ? d : JSON.parse(v); } catch { return d; } },
-    set(k, v) { try { localStorage.setItem(`${C.app.storageKey}.${k}`, JSON.stringify(v)); } catch { /* sin almacenamiento disponible */ } }
-  };
-  // Recupera lo guardado con el nombre anterior del proyecto (Nimbo)
-  try {
-    for (const k of ['model', 'theme', 'palette', 'anim', 'reach', 'provider', 'side', 'collapsed', 'tab']) {
-      const old = localStorage.getItem(`nimbo.${k}`);
-      if (old != null && localStorage.getItem(`${C.app.storageKey}.${k}`) == null) localStorage.setItem(`${C.app.storageKey}.${k}`, old);
-    }
-  } catch { /* sin almacenamiento disponible */ }
-
-  /* ---------- tipografías (las incluidas vienen de assets/fonts/fonts.js, en base64) ---------- */
-  // Familias disponibles: `system` siempre; el resto solo si tienen archivos empaquetados
-  const FONTS = {};
-  for (const [k, f] of Object.entries(C.fonts.families)) if (k === 'system' || window.DIAGRAMON_FONTS?.[k]) FONTS[k] = { ...f };
-  for (const [k, f] of Object.entries(window.DIAGRAMON_FONTS || {})) FONTS[k] = { label: f.label, ...FONTS[k], css: f.css };
-  for (const [k, f] of Object.entries(FONTS)) { f.faces = window.DIAGRAMON_FONTS?.[k]?.faces || []; f.family = window.DIAGRAMON_FONTS?.[k]?.family; }
-  const fontKey = k => FONTS[k] ? k : FONTS[C.fonts.default] ? C.fonts.default : 'system';
-
-  /* ---------- vistas: filtros de presentación del mismo modelo (reglas en config.js › views) ---------- */
-  const VIEW_DEFAULTS = { groups: 'all', nodeDetail: 'full', edgeLabels: true, dataTags: true, locks: true, cost: true, zones: true, notes: true, review: true, emphasis: null, legendGroups: false, layers: true };
-  const VIEWS = {};
-  for (const [k, v] of Object.entries(C.views || {})) if (v && typeof v === 'object') VIEWS[k] = { ...VIEW_DEFAULTS, ...v };
-  if (!VIEWS.full) VIEWS.full = { label: { en: 'Full', es: 'Completa' }, ...VIEW_DEFAULTS };
-  const VIEW_KEYS = Object.keys(VIEWS);
-  const VR = { dataTypes: [], dataIconCategories: [], costHeat: ['var(--sev-low)', 'var(--sev-medium)', 'var(--sev-high)', 'var(--sev-critical)'], physicalGroupIcons: [], physicalGroupName: /$^/, ...C.viewRules };
-  // Vista válida: la pedida, la de config.js o `full`
-  const viewKey = k => (VIEWS[k] ? k : VIEWS[C.defaultView] ? C.defaultView : 'full');
-  const viewLabel = k => loc(VIEWS[k]?.label) || k;
-
-  /* ---------- estado ---------- */
-  const S = {
-    model: null,
-    theme: C.themes[store.get('theme')] ? store.get('theme') : C.app.defaultTheme,
-    palette: C.palettes[store.get('palette')] ? store.get('palette') : C.app.defaultPalette,  // paletas retiradas caen a la por defecto
-    font: fontKey(store.get('font')),
-    anim: store.get('anim', C.animation.enabled) && !reducedMotion,
-    reach: store.get('reach', C.focus.defaultMode),
-    view: { x: 0, y: 0, k: 1 },
-    sel: null, hover: null, connecting: null, drag: null, play: null, lastDown: null,
-    history: [], future: [], lastType: 'compute', lastExtra: {},
-    provider: store.get('provider', 'generic'),
-    compare: null, verNote: '', verEdit: null,
-    viewKey: viewKey(store.get('view')),  // vista activa (S.view es la cámara); viewChosen: el usuario ya eligió una en esta sesión
-    viewChosen: false, flow: null,        // flow: conexión agregada elegida en la vista Contexto
-    scope: null,                          // nivel C4 abierto: id del nodo cuyo diagrama interno se ve (null = nivel superior)
-    phase: -1, phaseGhosts: store.get('phaseGhosts', true)   // fase elegida en la barra de fases (-1 = todas; no se guarda en el modelo) y si lo futuro se ve atenuado
-  };
-  // Referencias a elementos SVG y medidas calculadas (nunca se guardan en el modelo)
-  const R = { nodes: new Map(), edges: new Map(), groups: new Map(), width: new Map(), gbox: new Map(), notes: new Map(), zones: new Map() };
-  // Lo que la vista activa oculta o resume (se recalcula en applyViewMode / updateContext) y el último resaltado
-  const VW = { dimNodes: 0, dimEdges: 0, hideNodes: new Set(), hideEdges: new Set(), hideGroups: new Set(), flows: new Map(), ctxBoxes: new Map(), ctxEdges: new Map(), gcost: null, sc: { nodes: new Set(), edges: new Set(), groups: new Set() }, xs: null, ph: null };
-  const HL = { f: null, fr: null };
+  const { $, $$, clamp, snap, clone, esc, fold, debounce, reducedMotion, store, ICON } = window.DiagramonCore.util;
+  const { FONTS, fontKey, VIEW_DEFAULTS, VIEWS, VIEW_KEYS, VR, viewKey, viewLabel, S, R, VW, HL } = window.DiagramonCore.state;
 
   const svg = $('#canvas'), viewport = $('#viewport'), stage = $('#stage');
   const L = { zones: $('#l-zones'), groups: $('#l-groups'), edges: $('#l-edges'), ctx: $('#l-ctx'), ghosts: $('#l-ghosts'), nodes: $('#l-nodes'), zoneTop: $('#l-zone-top'), notes: $('#l-notes'), guides: $('#l-guides'), scope: $('#l-scope') };
-
-  const ICON = {
-    x: '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>',
-    link: '<svg viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg>',
-    swap: '<svg viewBox="0 0 24 24"><path d="M7 4 3 8l4 4M3 8h14M17 20l4-4-4-4M21 16H7"/></svg>',
-    pencil: '<svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></svg>',
-    check: '<svg viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>'
-  };
 
   /* ---------- colores ---------- */
   const paletteKeys = () => Object.keys((C.palettes[S.palette] || Object.values(C.palettes)[0]).dark);
