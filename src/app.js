@@ -311,6 +311,7 @@
   // Cada fuente registra una función (modelo) → [hallazgos] con addFindingSource; allFindings las junta (una fuente que falla no tumba las demás).
   const FINDING_SOURCES = [];
   const addFindingSource = (key, fn) => { FINDING_SOURCES.push({ key, fn }); };
+  const SEVERITY = ['low', 'medium', 'high', 'critical'];
   function allFindings(m = S.model) {
     return m ? FINDING_SOURCES.flatMap(s => { try { return s.fn(m) || []; } catch (err) { console.error(`findings/${s.key}`, err); return []; } }) : [];
   }
@@ -321,225 +322,18 @@
   /* ---------- disposición de migración (6R): qué se hace con cada componente al migrar (config.js › migration) ---------- */
   // Un nodo puede llevar disposition: 'retain' | 'rehost' | 'replatform' | 'refactor' | 'repurchase' | 'retire' (y 'relocate' si config.js lo enciende). Sin él no hay clave: JSON y exportaciones idénticos.
   // Es del diagrama (entra en las fotos de versiones). Se acepta también el nombre en español y los alias de config.js; un valor desconocido se descarta.
-  /* migration:start */
-  const MGC = C.migration || {}, MGR = MGC.rules || {};
-  const MG = Object.fromEntries(Object.entries(MGC.dispositions || {}).filter(([, d]) => d && d.enabled !== false));
-  const mgNorm = x => fold(x).replace(/[\s_-]+/g, '');
-  const MG_BY = new Map();
-  Object.entries(MG).forEach(([k, d]) => [d.label?.en, d.label?.es, ...(d.alias || [])].forEach(w => { if (w) MG_BY.set(mgNorm(w), k); }));
-  Object.keys(MG).forEach(k => MG_BY.set(mgNorm(k), k));   // la clave manda sobre cualquier alias
-  const cleanDisposition = v => (typeof v === 'string' ? MG_BY.get(mgNorm(v)) || null : null);
-  const mgInfo = k => { const d = MG[k]; return d ? { k, label: loc(d.label) || k, short: d.short || k.slice(0, 2).toUpperCase(), color: colorVar(d.color) || 'var(--muted)', hint: loc(d.hint) || '' } : null; };
-  // Reparto { rehost: 3, retire: 1 } como «RH 3 · RT 1», en el orden de config.js (texto plano; el título lleva el nombre completo)
-  const mgText = c => Object.keys(MG).filter(k => c?.[k]).map(k => `${mgInfo(k).short} ${c[k]}`).join(' · ');
-  const mgChips = c => Object.keys(MG).filter(k => c?.[k]).map(k => { const i = mgInfo(k); return `<span class="mg-chip" style="--mg:${esc(i.color)}" title="${esc(i.label)}">${esc(i.short)} ${c[k]}</span>`; }).join(' ');
-  // Avisos de coherencia entre la disposición y las fases / decisiones (config.js › migration.rules); solo avisan
-  addFindingSource('migration', m => {
-    if (!m.nodes.some(n => n.disposition)) return [];
-    const out = [], on = id => !!MGR[id] && MGR[id].enabled !== false, sev = id => (SEVERITY.includes(MGR[id]?.severity) ? MGR[id].severity : 'low');
-    const phased = !!m.phases?.length, withAdr = new Set((m.decisions || []).flatMap(d => d.links?.nodes || []));
-    const add = (rule, n, title, fix) => out.push({ id: `migration:${rule}:node:${n.id}`, source: 'migration', rule: `mig.${rule}`, severity: sev(`mig.${rule}`), target: { kind: 'node', id: n.id }, title, fix });
-    m.nodes.forEach(n => {
-      const d = mgInfo(n.disposition);
-      if (!d) return;
-      if (on('mig.retire-no-until') && n.disposition === 'retire' && phased && !n.until) add('retire-no-until', n, T('mig.f.retire.t', n.label), T('mig.f.retire.fix'));
-      if (on('mig.until-kept') && n.until && (MGR['mig.until-kept'].keepers || []).includes(n.disposition)) add('until-kept', n, T('mig.f.kept.t', { n: n.label, d: d.label }), T('mig.f.kept.fix'));
-      if (on('mig.change-no-decision') && (MGR['mig.change-no-decision'].needsDecision || []).includes(n.disposition) && !withAdr.has(n.id)) add('change-no-decision', n, T('mig.f.adr.t', { n: n.label, d: d.label }), T('mig.f.adr.fix'));
-    });
-    return out;
-  });
-  /* migration:end */
+  const { MG, MG_BY, cleanDisposition, mgInfo, mgChips } = window.DiagramonModels.disposition({ C, fold, loc, colorVar, esc, addFindingSource, SEVERITY, T });
 
   /* ---------- comentarios: hilos sobre un elemento (modelo) ---------- */
   // m.comments = [{ id: 'CM-001', on: { kind, id? }, author?, date?: 'AAAA-MM-DD', text, status?: 'resolved', internal?: true, source?: 'client', was?, replies?: [{ author?, date?, text }] }]
   // on.kind: node | edge | group | decision | requirement | version, o general (sin id). Un destino que ya no existe pasa a «general» y `was` guarda el id que tenía.
   // El orden del arreglo es el cronológico (el más antiguo primero). internal: nunca sale del documento (archivos compartidos, informe). Sin comentarios no hay clave: JSON y exportaciones idénticos.
-  /* commentModel:start */
-  const CMC = C.comments || {}, CM_MAX = CMC.max || 500, CM_REPLIES = CMC.maxReplies || 50, CM_TEXT = CMC.textMax || 4000, CMR = CMC.rules || {};
-  const CM_KINDS = ['node', 'edge', 'group', 'decision', 'requirement', 'version'];
-  const cmHas = (m, on) => !!on && CM_KINDS.includes(on.kind) && ({ node: m.nodes, edge: m.edges, group: m.groups, decision: m.decisions, requirement: m.requirements, version: m.versions }[on.kind] || []).some(x => x.id === on.id);
-  const cmStr = (v, n) => String(v ?? '').replace(/\r\n?/g, '\n').trim().slice(0, n);
-  const cmWho = v => cmStr(v, 80).replace(/\s+/g, ' ');
-  function cleanComments(raw, m) {
-    const out = [], seen = new Set();
-    (Array.isArray(raw) ? raw : []).forEach(c => {
-      if (out.length >= CM_MAX || !c || typeof c !== 'object' || Array.isArray(c)) return;
-      const text = cmStr(c.text, CM_TEXT);
-      if (!text) return;
-      const on0 = c.on && typeof c.on === 'object' && !Array.isArray(c.on) ? c.on : {}, oid = cmStr(on0.id, 120);
-      let on = { kind: 'general' }, was = cmStr(c.was, 120);
-      if (CM_KINDS.includes(on0.kind) && oid) { if (cmHas(m, { kind: on0.kind, id: oid })) { on = { kind: on0.kind, id: oid }; was = ''; } else was = oid; }
-      const rid = cmStr(c.id, 40), o = { id: /^CM-\d+$/.test(rid) && !seen.has(rid) ? rid : '', on };
-      if (o.id) seen.add(o.id);
-      const author = cmWho(c.author);
-      if (author) o.author = author;
-      if (isDay(c.date)) o.date = c.date;
-      o.text = text;
-      if (c.status === 'resolved') o.status = 'resolved';
-      if (c.internal === true) o.internal = true;
-      if (c.source === 'client') o.source = 'client';
-      { const imp = cmStr(c.imp, 80); if (imp) o.imp = imp; }   // de dónde se importó (id del archivo + id del comentario): importar dos veces no duplica
-      if (was) o.was = was;
-      const replies = (Array.isArray(c.replies) ? c.replies : []).filter(r => r && typeof r === 'object' && cmStr(r.text, CM_TEXT)).slice(0, CM_REPLIES).map(r => {
-        const x = {}, a = cmWho(r.author);
-        if (a) x.author = a;
-        if (isDay(r.date)) x.date = r.date;
-        x.text = cmStr(r.text, CM_TEXT);
-        { const imp = cmStr(r.imp, 80); if (imp) x.imp = imp; }
-        return x;
-      });
-      if (replies.length) o.replies = replies;
-      out.push(o);
-    });
-    let n = Math.max(0, ...out.map(c => +c.id.slice(3) || 0));
-    out.forEach(c => { if (!c.id) c.id = `CM-${String(++n).padStart(3, '0')}`; });
-    return out;
-  }
-  // Archivo de comentarios del revisor (ya descifrado): contenido no confiable, se valida y se limpia; null si no es de este formato
-  function cleanFeedback(raw) {
-    if (!raw || typeof raw !== 'object' || Array.isArray(raw) || raw.format !== 'diagramon-feedback' || raw.v !== 1) return null;
-    const out = { shareId: cmStr(raw.shareId, 40).replace(/[^0-9a-zA-Z-]/g, ''), title: cmStr(raw.title, 200), author: cmWho(raw.author), created: typeof raw.created === 'string' ? raw.created.slice(0, 30) : '', comments: [] }, seen = new Set();
-    (Array.isArray(raw.comments) ? raw.comments : []).slice(0, CM_MAX).forEach(c => {
-      if (!c || typeof c !== 'object') return;
-      const id = cmStr(c.id, 40), text = cmStr(c.text, CM_TEXT);
-      if (!id || !text || seen.has(id)) return;
-      seen.add(id);
-      const o = { id, author: cmWho(c.author) || out.author, date: isDay(c.date) ? c.date : '', text };
-      if (typeof c.replyTo === 'string' && c.replyTo.trim()) o.replyTo = cmStr(c.replyTo, 40);
-      else { const k = c.on && c.on.kind, oid = cmStr(c.on && c.on.id, 120); o.on = CM_KINDS.includes(k) && oid ? { kind: k, id: oid } : { kind: 'general' }; }
-      out.comments.push(o);
-    });
-    return out;
-  }
-  // Mezcla el archivo con los comentarios del documento sin tocarlos (devuelve la lista nueva y el recuento). Cada comentario se reconoce por «id del archivo:id», así importar dos veces no duplica.
-  // Una respuesta va al hilo con ese id; si ese hilo no está, entra como hilo nuevo. Los comentarios sobre elementos que ya no existen pasan a «general».
-  function mergeFeedback(m, fb, day) {
-    const list = (m.comments || []).map(c => ({ ...c, ...(c.replies ? { replies: c.replies.map(r => ({ ...r })) } : {}) }));
-    const known = new Set(list.flatMap(c => [c.imp, ...(c.replies || []).map(r => r.imp)]).filter(Boolean)), res = { threads: 0, replies: 0, dup: 0, orphan: 0, stray: 0, capped: 0 };
-    fb.comments.forEach(c => {
-      const imp = `${fb.shareId}:${c.id}`;
-      if (known.has(imp)) { res.dup++; return; }
-      known.add(imp);
-      const date = c.date || day;
-      if (c.replyTo) {
-        const t = list.find(x => x.id === c.replyTo);
-        if (t) { t.replies = [...(t.replies || []), { author: c.author, date, text: c.text, imp }]; res.replies++; return; }
-        res.stray++;
-        list.push({ id: '', on: { kind: 'general' }, author: c.author, date, text: c.text, source: 'client', imp });
-        res.threads++;
-        return;
-      }
-      if (c.on.kind !== 'general' && !cmHas(m, c.on)) res.orphan++;
-      list.push({ id: '', on: c.on, author: c.author, date, text: c.text, source: 'client', imp });
-      res.threads++;
-    });
-    res.comments = cleanComments(list, m);
-    res.capped = Math.max(0, list.length - res.comments.length);
-    return res;
-  }
-  const cmOpen = (m, kind, id) => (m.comments || []).filter(c => c.status !== 'resolved' && (kind == null || (c.on.kind === kind && c.on.id === id)));
-  // Hallazgos (fuente «comments»): hilos sin resolver sobre un componente, una conexión o un grupo (config.js › comments.rules)
-  addFindingSource('comments', m => {
-    const r = CMR['cmt.open'];
-    if (!r || r.enabled === false || !m.comments?.length) return [];
-    const per = new Map(), sev = SEVERITY.includes(r.severity) ? r.severity : 'low';
-    cmOpen(m).filter(c => ['node', 'edge', 'group'].includes(c.on.kind)).forEach(c => { const k = `${c.on.kind}:${c.on.id}`; per.set(k, { on: c.on, n: (per.get(k)?.n || 0) + 1 }); });
-    return [...per.values()].map(({ on, n }) => ({ id: `comments:open:${on.kind}:${on.id}`, source: 'comments', rule: 'cmt.open', severity: sev, target: { kind: on.kind, id: on.id }, title: T('cmt.f.t', n), fix: T('cmt.f.fix') }));
-  });
-  /* commentModel:end */
+  const { CM_MAX, CM_REPLIES, CM_TEXT, cleanComments, cleanFeedback, mergeFeedback, cmOpen } = window.DiagramonModels.comments({ C, isDay: v => isDay(v), addFindingSource, SEVERITY, T });
 
   /* ---------- radar tecnológico: anillo y fin de soporte de los productos usados (config.js › techRadar) ---------- */
   // Un componente se reconoce con una entrada del radar por su icono, su tipo o su texto (config.js), o se fija con radar: '<id>' ('none' lo excluye). Sin entradas no hay nada: JSON y exportaciones idénticos.
   // El diagrama puede traer sus propias entradas en m.radar (se suman a las de config.js; el mismo id las reemplaza). Es del diagrama (entra en las fotos de versiones).
-  /* radar:start */
-  const RDC = C.techRadar || {}, RDR = RDC.rules || {};
-  const RD_KEYS = ['adopt', 'trial', 'hold', 'retire'], RD_ID = /^[A-Za-z0-9_.-]{1,40}$/, RD_MAX = 60;
-  const rdRingInfo = k => { if (!RD_KEYS.includes(k)) return null; const r = RDC.rings?.[k] || {}; return { k, label: loc(r.label) || k, short: r.short || k.toUpperCase(), color: colorVar(r.color) || 'var(--muted)' }; };
-  const rdFold = x => fold(x).replace(/\s+/g, ' ').trim();
-  const rdDay = (y, mo, d) => `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-  // Fin de soporte 'AAAA-MM' (último día de ese mes) o 'AAAA-MM-DD' → 'AAAA-MM-DD'; '' si no es una fecha válida
-  const rdEos = v => {
-    const r = /^(\d{4})-(\d{2})(?:-(\d{2}))?$/.exec(String(v ?? '').trim());
-    if (!r) return '';
-    const y = +r[1], mo = +r[2], last = mo >= 1 && mo <= 12 ? new Date(Date.UTC(y, mo, 0)).getUTCDate() : 0, d = r[3] == null ? last : +r[3];
-    return d >= 1 && d <= last ? rdDay(y, mo, d) : '';
-  };
-  const rdPhaseDay = v => { const r = /^(\d{4})-(\d{2})(?:-(\d{2}))?$/.exec(String(v ?? '')); return r ? `${r[1]}-${r[2]}-${r[3] || '01'}` : ''; };
-  const rdPlus = (day, n) => { const d = new Date(`${day}T12:00`); d.setMonth(d.getMonth() + n); return rdDay(d.getFullYear(), d.getMonth() + 1, d.getDate()); };
-  // Textos: simples o { en, es }; se guardan limpios y se traducen al mostrarlos
-  const rdText = (v, max) => {
-    if (v && typeof v === 'object' && !Array.isArray(v)) { const o = {}; Object.entries(v).forEach(([k, t]) => { const x = /^[a-z]{2}$/.test(k) ? rdText(t, max) : ''; if (x) o[k] = x; }); return Object.keys(o).length ? o : ''; }
-    return typeof v === 'string' || typeof v === 'number' ? String(v).replace(/\s+/g, ' ').trim().slice(0, max) : '';
-  };
-  function cleanRadarEntry(e) {
-    if (!e || typeof e !== 'object' || Array.isArray(e)) return null;
-    const id = String(e.id ?? '').trim(), ring = String(e.ring ?? '').trim().toLowerCase();
-    if (!RD_ID.test(id) || !RD_KEYS.includes(ring)) return null;
-    const mt = e.match && typeof e.match === 'object' ? e.match : {}, match = {};
-    ['icon', 'type', 'text'].forEach(k => { const t = rdText(mt[k], 80); if (t && typeof t === 'string') match[k] = t; });
-    if (!Object.keys(match).length) return null;
-    const o = { id, ring, match };
-    [['name', 80], ['replaceWith', 80], ['note', 200]].forEach(([k, max]) => { const t = rdText(e[k], max); if (t) o[k] = t; });
-    { const eos = String(e.eos ?? '').trim(); if (rdEos(eos)) o.eos = eos; }
-    return o;
-  }
-  function cleanRadarList(raw) {
-    const seen = new Set(), out = [];
-    (Array.isArray(raw) ? raw : []).forEach(x => { const e = cleanRadarEntry(x); if (e && !seen.has(e.id) && out.length < RD_MAX) { seen.add(e.id); out.push(e); } });
-    return out;
-  }
-  // radar de un componente: un id (lo fija a esa entrada) o 'none' (false también); cualquier otra cosa no es nada
-  const cleanRadarRef = v => (v === false || (typeof v === 'string' && v.trim().toLowerCase() === 'none') ? 'none' : typeof v === 'string' && RD_ID.test(v.trim()) ? v.trim() : null);
-  const RD_BASE = cleanRadarList(RDC.entries);
-  let rdMemo = { key: null, list: RD_BASE };
-  const radarEntries = m => {
-    const d = m?.radar;
-    if (!d?.length) return RD_BASE;
-    if (rdMemo.key !== d) rdMemo = { key: d, list: [...RD_BASE.map(b => d.find(x => x.id === b.id) || b), ...d.filter(x => !RD_BASE.some(b => b.id === x.id))] };
-    return rdMemo.list;
-  };
-  const radarOf = (n, m) => {
-    if (!n || n.radar === 'none') return null;
-    const list = radarEntries(m);
-    if (!list.length) return null;
-    if (n.radar) return list.find(e => e.id === n.radar) || null;
-    const hay = rdFold(`${n.label || ''} ${n.sub || ''}`);
-    return list.find(e => (!e.match.icon || n.icon === e.match.icon) && (!e.match.type || n.type === e.match.type) && (!e.match.text || hay.includes(rdFold(e.match.text)))) || null;
-  };
-  // Estado del soporte: none (sin fecha) · ok · soon (termina dentro de warnMonths) · ended (la fecha ya pasó)
-  const radarStatus = (e, now) => {
-    const eos = e?.eos ? rdEos(e.eos) : '';
-    if (!eos) return 'none';
-    return eos < now ? 'ended' : eos <= rdPlus(now, Math.max(0, Math.min(60, +RDC.warnMonths >= 0 ? +RDC.warnMonths : 6))) ? 'soon' : 'ok';
-  };
-  const radarInfo = (n, m, now) => {
-    const e = radarOf(n, m), ring = e && rdRingInfo(e.ring);
-    return e && ring ? { entry: e, ring, name: loc(e.name) || e.id, eos: e.eos || '', eosDay: e.eos ? rdEos(e.eos) : '', status: radarStatus(e, now), replaceWith: loc(e.replaceWith) || '', note: loc(e.note) || '' } : null;
-  };
-  // Avisos del radar en Revisión (config.js › techRadar.rules); solo avisan
-  addFindingSource('radar', m => {
-    if (!radarEntries(m).length) return [];
-    const out = [], now = today(), on = id => !!RDR[id] && RDR[id].enabled !== false, sev = id => (SEVERITY.includes(RDR[id]?.severity) ? RDR[id].severity : 'low');
-    const ph = m.phases || [], phIx = id => ph.findIndex(p => p.id === id);
-    m.nodes.forEach(n => {
-      const i = radarInfo(n, m, now);
-      if (!i) return;
-      const v = { n: n.label, p: i.name, d: i.eosDay ? fmtDay(i.eosDay) : '', r: i.replaceWith };
-      const add = (rule, fix = '') => out.push({ id: `radar:${rule}:node:${n.id}`, source: 'radar', rule: `rdr.${rule}`, severity: sev(`rdr.${rule}`), target: { kind: 'node', id: n.id }, title: T(`radar.f.${rule}.t`, v), fix: fix || T(i.replaceWith ? 'radar.f.fix.replace' : 'radar.f.fix.plan', v) });
-      const ended = i.status === 'ended';
-      if (ended) { if (on('rdr.eos-passed')) add('eos-passed'); }
-      else if (i.entry.ring === 'retire') { if (on('rdr.retire')) add('retire'); }
-      else if (i.status === 'soon' && on('rdr.eos-soon')) add('eos-soon');
-      if (!ended && i.eosDay && ph.length && on('rdr.phase-after-eos')) {
-        const last = n.until ? phIx(n.until) - 1 : ph.length - 1, pd = last >= 0 ? rdPhaseDay(ph[last].date) : '';
-        if (pd && pd > i.eosDay) out.push({ id: `radar:phase-after-eos:node:${n.id}`, source: 'radar', rule: 'rdr.phase-after-eos', severity: sev('rdr.phase-after-eos'), target: { kind: 'node', id: n.id }, title: T('radar.f.phase-after-eos.t', { ...v, f: ph[last].name || ph[last].id }), fix: T('radar.f.fix.phase', v) });
-      }
-      if (i.entry.ring === 'hold' && n.phase && phIx(n.phase) > 0 && on('rdr.hold-added')) add('hold-added', T('radar.f.fix.hold', v));
-      if (i.entry.ring === 'retire' && n.disposition === 'retain' && on('rdr.retire-retained')) add('retire-retained', T('radar.f.fix.migrate', v));
-    });
-    return out;
-  });
-  /* radar:end */
+  const { RD_KEYS, rdRingInfo, cleanRadarList, cleanRadarRef, radarEntries, radarOf, radarInfo } = window.DiagramonModels.radar({ C, loc, colorVar, fold, addFindingSource, today: () => today(), SEVERITY, fmtDay: v => fmtDay(v), T });
 
   /* ---------- cumplimiento normativo (ISO 27001, SOC 2, GDPR, HIPAA, PCI DSS) ---------- */
   // controls: { 'iso27001:A.8.24': 'met' | 'partial' | 'gap' | 'na' } en nodos y grupos; los nodos heredan de sus grupos (gana el más cercano y, al final, el propio).
@@ -948,7 +742,6 @@
   }
 
   // Notas adhesivas y zonas de riesgo: posición y tamaño numéricos, con un mínimo de 60×40
-  const SEVERITY = ['low', 'medium', 'high', 'critical'];
   // Notas y zonas que llegan sin posición (p. ej. escritas en la pestaña Texto sin at=): ensurePositions las pone junto al contenido de su nivel
   const UNPLACED = new WeakSet();
   const hasPos = o => [o.x, o.y].every(v => v !== '' && v != null && Number.isFinite(+v));
@@ -2071,160 +1864,7 @@
   //   contract?: { version, status: 'draft'|'agreed'|'deprecated', consumers?: [ids de nodos], terms? }, phase?: id de fase }] (máx. 500)
   // Es del diagrama (entra en las fotos de versiones). En conexiones: latency = tiempo que tarda el dato en ese salto. Sin conjuntos ni latencias, el JSON y las exportaciones quedan idénticos.
   // El bloque solo usa lo que recibe en `h` (cleanCatalog: layer, classes, formats, rules, normDur · e2eFreshness y datasetIssues: lineageOf, parseDur, T…).
-  /* datasetModel:start */
-  const DS_MAX = 500, DS_COLS = 300, DS_RULES_MAX = 100, DS_DEFAULT_DAYS = 365;
-  const DS_FORMATS = ['delta', 'iceberg', 'hudi', 'parquet', 'avro', 'json', 'csv', 'other'];
-  const DS_RULES = ['not_null', 'unique', 'range', 'regex', 'accepted_values', 'freshness', 'custom'];
-  const DS_STATUS = ['draft', 'agreed', 'deprecated'], DS_SEV = ['low', 'medium', 'high'];
-  const dsK = s => String(s ?? '').trim().toLowerCase();
-  const dsText = (v, n) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, n);
-  const dsLong = (v, n) => String(v ?? '').replace(/\r\n?/g, '\n').trim().slice(0, n);
-  const dsYes = v => v === true || /^(true|yes|si|sí|1)$/i.test(String(v ?? '').trim());
-  const dsNo = v => v === false || /^(false|no|0)$/i.test(String(v ?? '').trim());
-  const dsNum = v => { const n = typeof v === 'number' || (typeof v === 'string' && v.trim() !== '') ? Number(v) : NaN; return Number.isFinite(n) && n >= 0 ? n : null; };
-  const dsNextId = list => `DS-${String(Math.max(0, ...list.map(x => +String(x.id).slice(3) || 0)) + 1).padStart(3, '0')}`;
-  // Limpia m.datasets contra el diagrama m (nodos y fases que existen); h = { layer(v) → clave | null, classes: [claves], formats?, rules?, normDur(v) → texto | null }
-  function cleanCatalog(raw, m, h) {
-    const seenId = new Set(), seenName = new Set(), items = [], nodes = new Set((m.nodes || []).map(n => n.id)), phases = new Set((m.phases || []).map(p => p.id));
-    const formats = h.formats || DS_FORMATS, rules = h.rules || DS_RULES;
-    (Array.isArray(raw) ? raw : []).forEach(r => {
-      if (!r || typeof r !== 'object' || Array.isArray(r)) return;
-      const name = dsText(r.name, 120), key = dsK(name);
-      if (!name || seenName.has(key)) return;
-      seenName.add(key);
-      const rid = String(r.id ?? '').trim(), id = /^DS-\d+$/.test(rid) && !seenId.has(rid) ? rid : '';
-      if (id) seenId.add(id);
-      const o = { id, name }, put = (k, v) => { if (v) o[k] = v; };
-      put('domain', dsText(r.domain, 60));
-      put('layer', h.layer ? h.layer(r.layer) : '');
-      put('description', dsLong(r.description, 2000));
-      put('owner', dsText(r.owner, 120));
-      put('steward', dsText(r.steward, 120));
-      if (dsYes(r.product)) o.product = true;
-      { const cl = [...new Set((Array.isArray(r.classes) ? r.classes : typeof r.classes === 'string' ? r.classes.split(/[,;]/) : []).map(dsK).filter(k => (h.classes || []).includes(k)))]; if (cl.length) o.classes = cl; }
-      { const f = dsK(r.format); if (formats.includes(f)) o.format = f; }
-      { const fr = r.freshness == null || r.freshness === '' ? null : h.normDur(r.freshness); if (fr != null) o.freshness = fr; }
-      if (r.volume && typeof r.volume === 'object' && !Array.isArray(r.volume)) {
-        const v = {}, pd = dsNum(r.volume.perDay), rd = dsNum(r.volume.retentionDays);
-        if (pd != null) v.perDay = pd;
-        if (rd != null) v.retentionDays = Math.round(rd);
-        if (Object.keys(v).length) o.volume = v;
-      }
-      const schema = (Array.isArray(r.schema) ? r.schema : []).filter(c => c && typeof c === 'object' && !Array.isArray(c) && dsText(c.name, 120)).slice(0, DS_COLS).map(c => {
-        const col = { name: dsText(c.name, 120) }, ty = dsText(c.type, 40), ds = dsText(c.desc, 500);
-        if (ty) col.type = ty;
-        if (dsYes(c.key)) col.key = true;
-        if (dsYes(c.pii)) col.pii = true;
-        if (dsNo(c.nullable)) col.nullable = false;
-        if (ds) col.desc = ds;
-        return col;
-      });
-      if (schema.length) o.schema = schema;
-      const quality = (Array.isArray(r.quality) ? r.quality : []).filter(q => q && typeof q === 'object' && rules.includes(dsK(q.rule))).slice(0, DS_RULES_MAX).map(q => {
-        const x = { rule: dsK(q.rule) }, col = dsText(q.column, 120), pa = dsText(q.param, 200), sv = dsK(q.severity);
-        if (col) x.column = col;
-        if (pa) x.param = pa;
-        if (DS_SEV.includes(sv)) x.severity = sv;
-        return x;
-      });
-      if (quality.length) o.quality = quality;
-      if (r.contract && typeof r.contract === 'object' && !Array.isArray(r.contract)) {
-        const c = r.contract, ver = dsText(c.version, 20), st = dsK(c.status), cons = [...new Set((Array.isArray(c.consumers) ? c.consumers : []).map(x => String(x ?? '').trim()).filter(x => nodes.has(x)))], terms = dsLong(c.terms, 2000);
-        if (ver || DS_STATUS.includes(st) || cons.length || terms) {
-          const k = { version: ver || '1.0.0', status: DS_STATUS.includes(st) ? st : 'draft' };
-          if (cons.length) k.consumers = cons;
-          if (terms) k.terms = terms;
-          o.contract = k;
-        }
-      }
-      { const ph = String(r.phase ?? '').trim(); if (ph && phases.has(ph)) o.phase = ph; }
-      items.push(o);
-    });
-    items.forEach(o => { if (!o.id) o.id = dsNextId(items); });
-    return items.slice(0, DS_MAX);
-  }
-  // Conexiones que llevan el conjunto `name` (sin distinguir mayúsculas)
-  const dsEdges = (m, name) => { const k = dsK(name); return (m.edges || []).filter(e => (e.datasets || []).some(d => dsK(d) === k)); };
-  // Catálogo: declarados primero (en el orden del arreglo) y después los nombres usados en conexiones sin declarar (por uso y luego alfabético)
-  function catalog(m) {
-    const use = new Map();
-    (m.edges || []).forEach(e => [...new Set((e.datasets || []).map(dsK))].forEach(k => {
-      const r = use.get(k) || { name: (e.datasets || []).find(d => dsK(d) === k), edges: 0, nodes: new Set() };
-      r.edges++; r.nodes.add(e.from); r.nodes.add(e.to); use.set(k, r);
-    }));
-    const declared = (m.datasets || []).map(ds => { const k = dsK(ds.name), u = use.get(k); return { ds, name: ds.name, key: k, declared: true, edges: u ? u.edges : 0, nodes: u ? [...u.nodes] : [] }; });
-    const known = new Set(declared.map(d => d.key));
-    const rest = [...use.entries()].filter(([k]) => !known.has(k)).map(([k, u]) => ({ ds: null, name: u.name, key: k, declared: false, edges: u.edges, nodes: [...u.nodes] }))
-      .sort((a, b) => b.edges - a.edges || a.name.localeCompare(b.name));
-    return [...declared, ...rest];
-  }
-  // Frescura de extremo a extremo: el camino más lento de un origen del linaje a un consumidor, sumando edge.latency (en ms). Un salto sin latencia suma 0 y se cuenta en unknownHops.
-  // Sin ninguna latencia en el camino → worst null y estado 'unknown'; sin SLA también es 'unknown'. h = { lineageOf(m, name) → { origins, consumers, nodes } | null, parseDur(v) → segundos | null }
-  function e2eFreshness(m, name, h) {
-    const ds = (m.datasets || []).find(d => dsK(d.name) === dsK(name)), slaS = ds?.freshness != null ? h.parseDur(ds.freshness) : null, sla = slaS == null ? null : slaS * 1000;
-    const none = { worst: null, path: [], hops: 0, unknownHops: 0, sla, state: 'unknown' };
-    const lin = h.lineageOf(m, name), es = dsEdges(m, name).filter(e => e.from !== e.to);
-    if (!lin || !es.length) return none;
-    const steps = es.flatMap(e => { const s = e.latency == null || e.latency === '' ? null : h.parseDur(e.latency), ms = s == null ? null : s * 1000; return [[e.from, e.to, ms], ...(e.both ? [[e.to, e.from, ms]] : [])]; });
-    const ids = [...lin.nodes], seeds = lin.origins.length ? lin.origins : ids.slice(0, 1);
-    // best[id] = el camino simple más lento hasta id; el tope de relajaciones evita que un ciclo cuelgue el cálculo (como en lineageOf)
-    const best = new Map(seeds.map(id => [id, { ms: 0, unk: 0, path: [id] }])), q = [...seeds], cap = ids.length * steps.length + 8;
-    for (let n = 0; q.length && n < cap; n++) {
-      const u = q.shift(), b = best.get(u);
-      steps.forEach(([a, c, ms]) => {
-        if (a !== u || b.path.includes(c)) return;
-        const cand = { ms: b.ms + (ms || 0), unk: b.unk + (ms == null ? 1 : 0), path: [...b.path, c] }, cur = best.get(c);
-        if (!cur || cand.ms > cur.ms || (cand.ms === cur.ms && cand.path.length > cur.path.length)) { best.set(c, cand); q.push(c); }
-      });
-    }
-    const ends = (lin.consumers.length ? lin.consumers : ids).filter(id => best.has(id) && best.get(id).path.length > 1);
-    if (!ends.length) return none;
-    const top = ends.map(id => best.get(id)).reduce((a, c) => (c.ms > a.ms || (c.ms === a.ms && c.path.length > a.path.length) ? c : a));
-    const hops = top.path.length - 1, worst = top.unk === hops ? null : top.ms;
-    return { worst, path: top.path, hops, unknownHops: top.unk, sla, state: worst == null || sla == null ? 'unknown' : worst > sla ? 'fail' : 'pass' };
-  }
-  // Almacenamiento estimado: GB guardados = al día × días de retención (365 si no se indica) y costo mensual con el precio por GB-mes de la capa. h = { prices: { default, bronze… } }
-  function storageEstimate(ds, h) {
-    const pd = ds?.volume?.perDay;
-    if (pd == null) return null;
-    const gb = pd * (ds.volume.retentionDays ?? DS_DEFAULT_DAYS), price = h.prices?.[ds.layer] ?? h.prices?.default ?? 0;
-    return { gb, price, monthly: gb * price };
-  }
-  // Cambia el nombre de un conjunto y el de sus apariciones en las conexiones (las demás se quedan). Si el nombre nuevo choca con otro conjunto declarado, devuelve m sin tocar
-  function renameDataset(m, id, newName) {
-    const ds = (m.datasets || []).find(d => d.id === id), name = dsText(newName, 120);
-    if (!ds || !name || (m.datasets || []).some(d => d !== ds && dsK(d.name) === dsK(name))) return m;
-    const old = dsK(ds.name);
-    return { ...m, datasets: m.datasets.map(d => (d === ds ? { ...d, name } : d)), edges: m.edges.map(e => {
-      if (!(e.datasets || []).some(x => dsK(x) === old)) return e;
-      const seen = new Set(), list = e.datasets.map(x => (dsK(x) === old ? name : x)).filter(x => !seen.has(dsK(x)) && seen.add(dsK(x)));
-      return { ...e, datasets: list };
-    }) };
-  }
-  // Avisos del catálogo, ya con textos: [{ id: 'data:<tipo>:<id|nombre>', source: 'data', rule, severity, target, title, detail?, fix }]
-  // h = { T, lineageOf, parseDur, sensitive(clase), short(clase), fmtDur(segundos), edgeName(e), nodeName(id) }
-  function datasetIssues(m, h) {
-    const out = [], T = h.T, nodeName = h.nodeName || (id => id);
-    const tgt = name => { const e = dsEdges(m, name)[0]; return e ? { kind: 'edge', id: e.id } : { kind: 'node', id: '' }; };
-    const add = (rule, key, severity, name, title, detail, fix) => out.push({ id: `data:${rule}:${key}`, source: 'data', rule, severity, target: tgt(name), title, ...(detail ? { detail } : {}), fix });
-    if ((m.datasets || []).length) catalog(m).filter(c => !c.declared).forEach(c => add('undocumented', c.name, 'low', c.name, T('ds.find.undocumented', { name: c.name, n: c.edges }), '', T('ds.find.undocumented.fix')));
-    (m.datasets || []).forEach(d => {
-      const a = { id: d.id, name: d.name };
-      if (d.product && (!d.owner || !d.contract)) add('product-owner', d.id, 'medium', d.name, T(!d.owner && !d.contract ? 'ds.find.ownerContract' : !d.owner ? 'ds.find.noOwner' : 'ds.find.noContract', a), '', T('ds.find.product.fix'));
-      const f = e2eFreshness(m, d.name, h);
-      if (f.state === 'fail') add('freshness', d.id, 'high', d.name, T('ds.find.freshness', a), T('ds.find.freshness.d', { real: h.fmtDur(f.worst / 1000), sla: h.fmtDur(f.sla / 1000), path: f.path.map(nodeName).join(' → ') }), T('ds.find.freshness.fix'));
-      if ((d.schema || []).some(c => c.pii) && !(d.classes || []).includes('pii')) add('pii-class', d.id, 'medium', d.name, T('ds.find.piiClass', a), '', T('ds.find.piiClass.fix'));
-      const sens = (d.classes || []).filter(k => h.sensitive(k)), bad = sens.length ? dsEdges(m, d.name).filter(e => e.encrypted === false) : [];
-      if (bad.length) add('pii-unencrypted', d.id, 'high', d.name, T('ds.find.piiUnenc', { ...a, cls: sens.map(h.short).join(', ') }), bad.map(h.edgeName).join(' · '), T('ds.find.piiUnenc.fix'));
-      if (d.contract?.consumers?.length) {
-        const lin = h.lineageOf(m, d.name), off = d.contract.consumers.filter(id => !lin || !lin.nodes.has(id));
-        if (off.length) add('consumer-unreached', d.id, 'low', d.name, T('ds.find.unreached', { ...a, list: off.map(nodeName).join(', ') }), '', T('ds.find.unreached.fix'));
-      }
-      if ((d.product || d.layer === 'gold') && !(d.quality || []).length) add('no-quality', d.id, 'low', d.name, T('ds.find.noQuality', a), '', T('ds.find.noQuality.fix'));
-    });
-    return out;
-  }
-  /* datasetModel:end */
+  const { DS_MAX, DS_COLS, DS_RULES_MAX, DS_DEFAULT_DAYS, DS_FORMATS, DS_RULES, DS_STATUS, dsK, dsText, cleanCatalog, dsEdges, catalog, e2eFreshness, storageEstimate, renameDataset, datasetIssues } = window.DiagramonModels.datasets();
   // Lo que el bloque recibe de la app
   const dsPrices = () => C.datasets?.storagePrice || { default: 0.023 };
   const dsHelpers = () => ({ layer: cleanLayer, classes: Object.keys(DATA), formats: C.datasets?.formats, rules: C.datasets?.qualityRules, normDur, lineageOf, parseDur, prices: dsPrices(), T: (k, v) => T(k, v), fmtDur: s => fmtDur(s),
@@ -2340,74 +1980,7 @@
   // Disponibilidad compuesta entre a y b: probabilidad de que funcione AL MENOS UNA ruta (los nodos fallan de forma independiente; las aristas no fallan)
   // Fiabilidad exacta de dos terminales por nodos (factorización: se fija un nodo del camino como activo/caído y se memoiza). Con grafos muy enmallados (presupuesto de llamadas agotado)
   // cae a una cota inferior: rutas disjuntas en nodos, de más a menos probable. n nodos 0..n-1, succ[i] = sucesores, s origen, t destino, p[i] = disponibilidad (1 = sin dato)
-  /* routeReliability:start */
-  function routeReliability(n, succ, s, t, p, budget = 8000) {
-    const out = succ.map((l, i) => (i === t ? [] : l.filter(j => j !== s && j !== i))), inn = out.map(() => []);
-    out.forEach((l, i) => l.forEach(j => inn[j].push(i)));
-    const reach = (from, adj) => { const seen = new Set([from]), q = [from]; for (let i = 0; i < q.length; i++) adj[q[i]].forEach(v => { if (!seen.has(v)) { seen.add(v); q.push(v); } }); return seen; };
-    const F0 = reach(s, out), B0 = reach(t, inn);
-    if (!F0.has(t)) return null;
-    // Poda: solo los nodos que están en algún camino de s a t
-    const rel = []; for (let i = 0; i < n; i++) if (F0.has(i) && B0.has(i)) rel.push(i);
-    const isRel = new Set(rel), g = out.map((l, i) => (isRel.has(i) ? l.filter(j => isRel.has(j)) : [])), gi = g.map(() => []);
-    g.forEach((l, i) => l.forEach(j => gi[j].push(i)));
-    const w = i => (p[i] >= 1 ? 0 : -Math.log(Math.max(p[i], 1e-300))) + 1e-9;
-    // Ruta más probable (Dijkstra con pesos −ln p) evitando los nodos bloqueados
-    const best = blocked => {
-      const d = new Map([[s, 0]]), prev = new Map(), done = new Set();
-      for (;;) {
-        let u = -1; d.forEach((v, k) => { if (!done.has(k) && (u < 0 || v < d.get(u))) u = k; });
-        if (u < 0) return null;
-        if (u === t) { const r = []; for (let x = t; x != null; x = prev.get(x)) r.unshift(x); return r; }
-        done.add(u);
-        g[u].forEach(v => { if (blocked && blocked.has(v)) return; const nd = d.get(u) + w(v); if (!d.has(v) || nd < d.get(v)) { d.set(v, nd); prev.set(v, u); } });
-      }
-    };
-    const main = best(null), pos = new Map(main.map((x, i) => [x, i]));
-    // ¿Una sola ruta? Solo el camino principal y ningún atajo hacia delante
-    const single = rel.length === main.length && main.every((u, i) => g[u].every(v => pos.get(v) <= i + 1));
-    // Nº de rutas simples (acotado)
-    let steps = 0, routes = 0; const onp = new Set([s]);
-    const cnt = u => { if (routes >= 100 || ++steps > 20000) return; if (u === t) { routes++; return; } g[u].forEach(v => { if (!onp.has(v)) { onp.add(v); cnt(v); onp.delete(v); } }); };
-    cnt(s);
-    const ends = p[s] * p[t], base = { routes: single ? 1 : Math.max(routes, 2), main, rel, single };
-    if (single) { let v = 1; main.forEach(i => { v *= p[i]; }); return { ...base, value: v, exact: true }; }
-    // Exacto por factorización
-    const st = new Uint8Array(n), memo = new Map(); let calls = 0;
-    rel.forEach(i => { if (i === s || i === t || p[i] >= 1) st[i] = 1; });
-    const rec = () => {
-      if (++calls > budget) throw new Error('budget');
-      const F = reach2(s, g), B = reach2(t, gi);
-      if (!F.has(t)) return 0;
-      const key = rel.map(i => (F.has(i) && B.has(i) ? st[i] : 9)).join('');
-      if (memo.has(key)) return memo.get(key);
-      // Camino con menos nodos inciertos (0-1 BFS) y pivote = primer nodo incierto
-      const dist = new Map([[s, 0]]), prev = new Map(), dq = [s];
-      while (dq.length) {
-        const u = dq.shift();
-        g[u].forEach(v => { if (st[v] === 2 || !B.has(v)) return; const c = st[v] === 1 ? 0 : 1, nd = dist.get(u) + c; if (!dist.has(v) || nd < dist.get(v)) { dist.set(v, nd); prev.set(v, u); c ? dq.push(v) : dq.unshift(v); } });
-      }
-      let piv = -1; for (let x = t; x != null; x = prev.get(x)) if (st[x] === 0) piv = x;
-      let val;
-      if (piv < 0) val = 1;
-      else { st[piv] = 1; const a1 = rec(); st[piv] = 2; const a0 = rec(); st[piv] = 0; val = p[piv] * a1 + (1 - p[piv]) * a0; }
-      memo.set(key, val);
-      return val;
-    };
-    const reach2 = (from, adj) => { const seen = new Set([from]), q = [from]; for (let i = 0; i < q.length; i++) adj[q[i]].forEach(v => { if (st[v] !== 2 && !seen.has(v)) { seen.add(v); q.push(v); } }); return seen; };
-    try { return { ...base, value: ends * rec(), exact: true }; } catch (e) { if (e.message !== 'budget') throw e; }
-    // Aproximación: rutas disjuntas en nodos inciertos → cota inferior de la fiabilidad real
-    const blocked = new Set(); let fail = 1;
-    for (let k = 0; k < 64; k++) {
-      const r = best(blocked); if (!r) break;
-      const inner = r.filter(i => i !== s && i !== t), pr = inner.reduce((a, i) => a * p[i], 1);
-      fail *= 1 - pr;
-      const unc = inner.filter(i => p[i] < 1); if (!unc.length) break;
-      unc.forEach(i => blocked.add(i));
-    }
-    return { ...base, value: ends * (1 - fail), exact: false };
-  }
-  /* routeReliability:end */
+  const { routeReliability } = window.DiagramonModels.reliability();
   // Disponibilidad compuesta de a a b: combina todas las rutas (res = caminos más cortos; sirve para a, el sentido y el resultado «sin ruta»)
   // worst = el componente con menor disponibilidad de la ruta más probable; rpo/rto = máximo a lo largo de esa ruta
   function pathAvailability(m, b, res) {
