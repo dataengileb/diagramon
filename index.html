@@ -595,6 +595,16 @@
   .cf.share input { width: 100%; min-width: 0; height: 34px; padding: 0 10px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface2); color: var(--text); font: 13px var(--font); }
   .cf.share input:focus { outline: none; border-color: var(--accent); }
   .sh-views { margin: 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: 9px; display: flex; flex-wrap: wrap; gap: 4px 14px; }
+  .cf.fb { width: min(480px, 100%); display: grid; gap: 8px; }
+  .cf.fb label { display: grid; gap: 5px; font-size: 12px; font-weight: 650; color: var(--muted); }
+  .cf.fb input { width: 100%; min-width: 0; height: 34px; padding: 0 10px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface2); color: var(--text); font: 13px var(--font); }
+  .cf.fb input:focus { outline: none; border-color: var(--accent); }
+  .cf.fb [hidden] { display: none; }
+  .cf.fb .fb-sum p { margin: 0 0 6px; color: var(--text); }
+  .cf.fb .fb-warn { margin: 0 0 6px; padding-left: 18px; list-style: disc; display: block; color: var(--sev-medium); font-size: 12px; }
+  .cf.fb .fb-prev { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; max-height: 190px; overflow-y: auto; }
+  .cf.fb .fb-prev li { padding: 5px 9px; border-radius: 8px; background: var(--surface2); font-size: 12px; overflow-wrap: anywhere; }
+  .cf.fb .fb-warn li { padding: 0; background: none; }
   .sh-cm { margin: 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: 9px; display: grid; gap: 2px; }
   .sh-cm .dbt-d { margin-bottom: 6px; }
   .sh-views legend { padding: 0 4px; font-size: 12px; font-weight: 650; color: var(--muted); }

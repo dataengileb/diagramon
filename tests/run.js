@@ -1660,7 +1660,7 @@
   const CMSRC = between('/* commentModel:start */', '/* commentModel:end */');
   const mkCm = (cfg = C) => {
     const sources = [];
-    const api = new Function('C', 'isDay', 'addFindingSource', 'SEVERITY', 'T', `${CMSRC}; return { cleanComments, cmOpen, cmHas };`)(
+    const api = new Function('C', 'isDay', 'addFindingSource', 'SEVERITY', 'T', `${CMSRC}; return { cleanComments, cmOpen, cmHas, cleanFeedback, mergeFeedback };`)(
       cfg, v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) && new Date(`${v}T12:00`).toISOString().slice(0, 10) === v, (k, fn) => sources.push({ k, fn }), ['low', 'medium', 'high', 'critical'], (k, v) => `${k}${v == null ? '' : ':' + JSON.stringify(v)}`);
     return { ...api, findings: m => sources.find(x => x.k === 'comments').fn(m) };
   };
@@ -1739,6 +1739,51 @@
       'cmt.kind.node', 'cmt.kind.edge', 'cmt.kind.group', 'cmt.kind.decision', 'cmt.kind.requirement', 'cmt.kind.version', 'cmt.f.t', 'cmt.f.fix', 'find.src.comments']
       .forEach(k => eq(i18n.split(`'${k}':`).length - 1, 2, `${k} once per language`));
     assert(C.comments && C.comments.rules['cmt.open'].enabled === true, 'config.js');
+  });
+
+  const FBF = (extra = {}) => ({ format: 'diagramon-feedback', v: 1, shareId: 'ab12', title: 'T', author: ' Cliente  Uno ', created: '2026-10-10T00:00:00.000Z', comments: [
+    { id: 'r-1', on: { kind: 'node', id: 'a' }, author: 'Cliente Uno', date: '2026-10-10', text: 'Multi-AZ?' }, { id: 'r-2', on: { kind: 'decision', id: 'ADR-001' }, text: 'Agree' },
+    { id: 'r-3', replyTo: 'CM-001', author: 'Cliente Uno', date: '2026-10-10', text: 'Because of cost' }], ...extra });
+  test('cleanFeedback: only the diagramon-feedback v1 format passes; text is trimmed, ids are required and unique, unknown targets become general', () => {
+    eq([null, 5, [], {}, { format: 'x', v: 1 }, { format: 'diagramon-feedback', v: 2 }].map(CM.cleanFeedback), [null, null, null, null, null, null]);
+    const fb = CM.cleanFeedback(FBF({ comments: [{ id: 'r-1', on: { kind: 'planet', id: 'a' }, text: '  hi ' }, { id: 'r-1', text: 'dup id' }, { text: 'no id' }, { id: 'r-9', text: '  ' }, 'x', { id: 'r-2', replyTo: 'CM-001', text: 'rep', date: '2026-02-31' }] }));
+    eq(fb.author, 'Cliente Uno');
+    eq(fb.comments, [{ id: 'r-1', author: 'Cliente Uno', date: '', text: 'hi', on: { kind: 'general' } }, { id: 'r-2', author: 'Cliente Uno', date: '', text: 'rep', replyTo: 'CM-001' }]);
+    eq(CM.cleanFeedback(FBF({ shareId: 'a/b<c>1' })).shareId, 'abc1', 'share id keeps letters, digits and dashes only');
+  });
+  test('mergeFeedback: new threads and replies are counted, targets that no longer exist go general, and the document is left untouched', () => {
+    const doc = { ...cmDoc(), comments: [{ id: 'CM-001', on: { kind: 'node', id: 'a' }, author: 'Ana', date: '2026-10-09', text: 'Why?' }] }, before = JSON.stringify(doc);
+    const fb = CM.cleanFeedback(FBF({ comments: [...FBF().comments, { id: 'r-4', on: { kind: 'node', id: 'gone' }, text: 'old' }, { id: 'r-5', replyTo: 'CM-099', text: 'lost' }] }));
+    const r = CM.mergeFeedback(doc, fb, '2026-10-11');
+    eq([r.threads, r.replies, r.dup, r.orphan, r.stray, r.capped], [4, 1, 0, 1, 1, 0]);
+    eq(JSON.stringify(doc), before, 'input not modified');
+    eq(r.comments.map(c => c.id), ['CM-001', 'CM-002', 'CM-003', 'CM-004', 'CM-005']);
+    eq(r.comments[0].replies, [{ author: 'Cliente Uno', date: '2026-10-10', text: 'Because of cost', imp: 'ab12:r-3' }]);
+    eq(r.comments[1], { id: 'CM-002', on: { kind: 'node', id: 'a' }, author: 'Cliente Uno', date: '2026-10-10', text: 'Multi-AZ?', source: 'client', imp: 'ab12:r-1' });
+    eq(r.comments[2].date, '2026-10-11', 'a missing date takes the day of the import');
+    eq([r.comments[3].on, r.comments[3].was], [{ kind: 'general' }, 'gone']);
+    eq([r.comments[4].on.kind, r.comments[4].source], ['general', 'client']);
+  });
+  test('mergeFeedback: importing the same file twice adds nothing, a new file from another share adds again, and the document limit is respected', () => {
+    const doc = cmDoc(), fb = CM.cleanFeedback(FBF()), once = CM.mergeFeedback(doc, fb, '2026-10-11');
+    const again = CM.mergeFeedback({ ...doc, comments: once.comments }, fb, '2026-10-11');
+    eq([again.threads, again.replies, again.dup, again.comments.length], [0, 0, 3, once.comments.length]);
+    eq(JSON.stringify(again.comments), JSON.stringify(once.comments), 'identical result');
+    const other = CM.mergeFeedback({ ...doc, comments: once.comments }, { ...fb, shareId: 'zz99' }, '2026-10-11');
+    eq([other.threads, other.replies, other.dup], [2, 1, 0], 'the key is the share id plus the comment id (the reply now finds its thread CM-001)');
+    const small = mkCm({ ...C, comments: { ...C.comments, max: 2 } }), r = small.mergeFeedback(doc, small.cleanFeedback(FBF()), '2026-10-11');
+    eq([r.comments.length, r.capped], [2, 0], 'cleanFeedback already stops at the limit');
+    const full = small.mergeFeedback({ ...doc, comments: [{ id: 'CM-001', on: { kind: 'general' }, text: 'x' }, { id: 'CM-002', on: { kind: 'general' }, text: 'y' }] }, small.cleanFeedback(FBF({ comments: [{ id: 'q', text: 'z' }] })), '2026-10-11');
+    eq([full.comments.length, full.capped], [2, 1]);
+  });
+  test('the app wires it: the import picks the encrypted comments file, asks for the password, shows the counts and applies them as one undo step; the report lists open public threads', () => {
+    assert(app.includes("env.kind === 'feedback' && env.v === 'fb1'") && app.includes('openFeedbackImport(env)') && app.includes('SH.openFeedback(env, form.elements.pw.value)'), 'import hook');
+    assert(/pushHistory\(\);\s+S\.model\.comments = res\.comments;/.test(app), 'one history step');
+    assert(app.includes("'notes', 'comments']") && app.includes("comments: (m.comments || []).some(c => !c.internal && c.status !== 'resolved')") && app.includes("want('comments')") && app.includes("sec('comments'"), 'report');
+    assert(app.includes('.filter(c => !c.internal && c.status !== \'resolved\').map(c => [cmTargetText'), 'the report skips internal and resolved threads');
+    const i18n = read('src/i18n.js');
+    ['fb.title', 'fb.lead', 'fb.pw', 'fb.open', 'fb.busy', 'fb.close', 'fb.wrong', 'fb.bad', 'fb.from', 'fb.sum', 'fb.none', 'fb.go', 'fb.dup', 'fb.orphan', 'fb.stray', 'fb.capped', 'fb.mismatch', 'fb.done', 'rep.s.comments', 'rep.h.about', 'rep.h.comment', 'rep.h.replies']
+      .forEach(k => eq(i18n.split(`'${k}':`).length - 1, 2, `${k} once per language`));
   });
 
   /* ---------- compartir cifrado: visor con comentarios y archivo de comentarios ---------- */
