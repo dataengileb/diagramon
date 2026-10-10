@@ -292,6 +292,16 @@
     const t0 = Date.now(), r = routeReliability(n, succ, 0, n - 1, Array(n).fill(0.99));
     assert(r && r.value > 0.9 && r.value <= 1, `value ${r && r.value}`); assert(Date.now() - t0 < 5000, 'too slow');
   });
+  // v2: el código de la interfaz está repartido entre src/app.js y src/ui/*.js; cada clave T('...') literal debe existir en inglés y en español
+  const UI_FILES = ['src/ui/dialogs.js', 'src/ui/panel.js', 'src/ui/tabs.js', 'src/ui/sidebar.js', 'src/ui/topbar.js', 'src/ui/raid.js'];
+  test('interface files: every literal T() key is defined in English and Spanish', () => {
+    const i18nSrc = read('src/i18n.js');
+    for (const f of ['src/app.js', ...UI_FILES]) {
+      const keys = [...new Set([...read(f).matchAll(/\bT\('([\w.]*\w)'(?!\s*\+)/g)].map(m => m[1]))];
+      const missing = keys.filter(k => i18nSrc.split(`'${k}':`).length < 3);
+      assert(!missing.length, `${f}: keys missing in en/es: ${missing.slice(0, 5).join(', ')}`);
+    }
+  });
   const SAFE_COLOR = new Function(`${app.match(/const SAFE_COLOR = [^\n]+;/)[0]} return SAFE_COLOR;`)();
   test('color sanitizer accepts hex, names and CSS variables only', () => {
     eq(['#fff', '#A1B2C3', 'coral', 'var(--layer-gold, #d4a72c)', 'var(--p-menta)'].map(c => SAFE_COLOR.test(c)), [true, true, true, true, true], 'accepted');
