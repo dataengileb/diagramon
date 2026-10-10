@@ -20,3 +20,6 @@ jobs:
       # Sin dependencias: Node solo ejecuta las pruebas, la app sigue funcionando con doble clic
       - name: Run tests
         run: node tests/run.js
+      # Abre index.html desde file:// en el Chrome que ya trae el runner (sin instalar nada)
+      - name: Browser smoke test
+        run: node tests/smoke.js

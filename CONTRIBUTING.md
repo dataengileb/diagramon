@@ -28,6 +28,7 @@ The app code is in `src/` (engine, config, texts, text language, import, sharing
 2. Make your change. Keep it focused: one topic per pull request.
 3. Try it in a browser: open `index.html`, exercise the feature, and check the console for errors or CSP violations.
 4. Run the automated tests from the repository root: `node tests/run.js` (on macOS without Node: `osascript -l JavaScript tests/run.js`). They also run on every pull request. If you change a sample in `samples/` on purpose, update its expected counts in `tests/run.js`.
+5. Run the browser smoke test too: `node tests/smoke.js`. It opens `index.html` from `file://` in headless Chrome (it uses `CHROME_BIN` or the first Chrome it finds) and checks that the app starts without errors or CSP reports, that every template draws, that the exports and the encrypted HTML work, and that the public `window.Diagramon` API is unchanged. If you change that API on purpose, update the list at the top of `tests/smoke.js`.
 5. Open a pull request against `main` and fill in the template.
 
 `main` is protected: every change goes through a pull request, and the CodeQL checks must pass before merging. The tests run on every pull request too.

@@ -25,6 +25,7 @@
 | `assets/fonts/` | Tipografías incluidas (`.woff2`, licencias OFL) y el `fonts.js` generado |
 | `tools/build-fonts.py` | Genera `assets/fonts/fonts.js` desde `assets/fonts/*.woff2` |
 | `tests/run.js` | Pruebas automáticas sin dependencias (formato de texto, exportaciones, importación de IaC y de dbt, traducciones, funciones puras); se ejecutan con `node tests/run.js` |
+| `tests/smoke.js` | Prueba de humo en navegador sin dependencias: abre `index.html` desde `file://` en Chrome sin ventana y comprueba el arranque (sin errores ni avisos de la CSP), las plantillas, las vistas, las exportaciones, el HTML cifrado y la API pública `window.Diagramon`; se ejecuta con `node tests/smoke.js` |
 
 ## Cambiar el formato del archivo
 
