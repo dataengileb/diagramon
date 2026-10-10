@@ -39,6 +39,7 @@
              (los nodos heredan la capa de su grupo) · línea `layers: zones` / `capas: zonas` muestra Raw/Curated/Serving en vez de Bronze/Silver/Gold
    Migración: nodo … disposition=rehost (disposición=rehospedar): retain|rehost|replatform|refactor|repurchase|retire · retener|rehospedar|replataformar|refactorizar|recomprar|retirar
              (las 6R; también aceptan los alias de config.js › migration, y relocate|reubicar si ese valor está encendido)
+   Esfuerzo: nodo … effort=dev:10,devops:3 (es: esfuerzo=dev:10,devops:3): días-persona por perfil (de config.js › estimation); decimales con punto, hasta 8 perfiles
    Radar:    nodo … radar=oracle11 (fija el componente a una entrada del radar tecnológico de config.js › techRadar o del diagrama; radar=none lo excluye; sin él se reconoce solo)
    Seguridad: nodo … exposure=public|internal (exposición=pública|interna: sustituye a la deducida) · backup=yes|no (respaldo=sí|no)
    Cumplimiento: nodo o grupo … controls="iso27001:A.8.24=met,pcidss:4.2=gap" (es: controles=; estados met|partial|gap|na · cumple|parcial|brecha|na;
@@ -126,7 +127,7 @@
   const PHASE_LINE_KEYS = ['date', 'fecha', 'goal', 'objetivo'];
   const PHASE_ID = /^[A-Za-z0-9_-]{1,30}$/, PHASE_MAX = 12;
   const isPhaseDay = v => { const r = /^(\d{4})-(\d{2})(?:-(\d{2}))?$/.exec(v); if (!r) return false; const mo = +r[2], d = r[3] == null ? 1 : +r[3]; return mo >= 1 && mo <= 12 && d >= 1 && d <= new Date(Date.UTC(+r[1], mo, 0)).getUTCDate(); };
-  const NODE_KEYS = ['color', 'badge', 'desc', 'sub', 'x', 'y', 'costo', 'cost', 'data', 'datos', 'region', 'región', 'country', 'pais', 'país', 'layer', 'capa', 'disposition', 'disposición', 'disposicion', 'radar', 'exposure', 'exposición', 'exposicion', 'backup', 'respaldo', 'controls', 'controles', 'in', 'dentro', 'c4', 'sla', 'rpo', 'rto', 'replicas', 'réplicas', ...PHASE_KEYS];
+  const NODE_KEYS = ['color', 'badge', 'desc', 'sub', 'x', 'y', 'costo', 'cost', 'data', 'datos', 'region', 'región', 'country', 'pais', 'país', 'layer', 'capa', 'disposition', 'disposición', 'disposicion', 'effort', 'esfuerzo', 'radar', 'exposure', 'exposición', 'exposicion', 'backup', 'respaldo', 'controls', 'controles', 'in', 'dentro', 'c4', 'sla', 'rpo', 'rto', 'replicas', 'réplicas', ...PHASE_KEYS];
   /* ---------- gobierno: dueño, responsable, equipo, centro de costo ---------- */
   const GOV_KEYS = { owner: 'owner', dueño: 'owner', dueno: 'owner', steward: 'steward', responsable: 'steward', team: 'team', equipo: 'team',
     costcenter: 'costCenter', centro: 'costCenter', centrocosto: 'costCenter', centrodecosto: 'costCenter' };
@@ -144,6 +145,16 @@
       if (i > 0 && st && c > 0 && c < k.length - 1) controls[k] = st; else bad.push(p);
     });
     return { controls, bad };
+  };
+  /* ---------- esfuerzo: effort=perfil:días,… ---------- */
+  // → { effort: [{ role, days }], bad: [par no válido] }
+  const parseEffort = v => {
+    const effort = [], bad = [];
+    String(v).split(/[,;]/).map(x => x.trim()).filter(Boolean).forEach(p => {
+      const i = p.indexOf(':'), role = p.slice(0, i).trim().toLowerCase(), days = Number(p.slice(i + 1).trim().replace(',', '.'));
+      if (i > 0 && /^[a-z][a-z0-9_-]{0,19}$/.test(role) && Number.isFinite(days) && days > 0) effort.push({ role, days }); else bad.push(p);
+    });
+    return { effort, bad };
   };
   /* ---------- niveles C4: in=<nodo> y c4=<tipo> ---------- */
   const C4_IN = { person: 'person', persona: 'person', system: 'system', sistema: 'system', container: 'container', contenedor: 'container', component: 'component', componente: 'component', external: 'external', externo: 'external' };
@@ -268,12 +279,12 @@
     en: { title: 'title', direction: 'direction', group: 'group', cost: 'cost', hour: 'hour', month: 'month', year: 'year', years: 'years', data: 'data', encrypted: 'encrypted', both: 'both', yes: 'yes', no: 'no', lines: 'lines', line: 'line', region: 'region', transfer: 'transfer', ok: 'ok', elbow: 'elbow', curved: 'curved', elbowOne: 'elbow', curvedOne: 'curved', author: 'author', version: 'version', view: 'view', kind: 'kind', physical: 'physical', logical: 'logical',
       review: 'review', by: 'by', raised: 'raised', due: 'due', status: 'status', closed: 'closed', resolved: 'resolved', layer: 'layer', layers: 'layers', zones: 'zones',
       owner: 'owner', steward: 'steward', team: 'team', costCenter: 'costcenter',
-      in: 'in', layerOf: { bronze: 'bronze', silver: 'silver', gold: 'gold' }, disposition: 'disposition', dispOf: { retain: 'retain', rehost: 'rehost', replatform: 'replatform', refactor: 'refactor', repurchase: 'repurchase', retire: 'retire', relocate: 'relocate' }, exposure: 'exposure', backup: 'backup', expoOf: { public: 'public', internal: 'internal' },
+      in: 'in', layerOf: { bronze: 'bronze', silver: 'silver', gold: 'gold' }, effort: 'effort', disposition: 'disposition', dispOf: { retain: 'retain', rehost: 'rehost', replatform: 'replatform', refactor: 'refactor', repurchase: 'repurchase', retire: 'retire', relocate: 'relocate' }, exposure: 'exposure', backup: 'backup', expoOf: { public: 'public', internal: 'internal' },
       note: 'note', zone: 'zone', trust: 'trust', threat: 'threat', dismiss: 'dismiss', phase: 'phase', until: 'until', goal: 'goal', at: 'at', size: 'size', severity: 'severity', date: 'date', inside: 'inside', sevOf: { low: 'low', medium: 'medium', high: 'high', critical: 'critical' } },
     es: { title: 'título', direction: 'dirección', group: 'grupo', cost: 'costo', hour: 'hora', month: 'mes', year: 'año', years: 'años', data: 'datos', encrypted: 'cifrado', both: 'ambos', yes: 'sí', no: 'no', lines: 'líneas', line: 'línea', region: 'región', transfer: 'transferencia', ok: 'ok', elbow: 'codos', curved: 'curvas', elbowOne: 'codo', curvedOne: 'curva', author: 'autor', version: 'versión', view: 'vista', kind: 'tipo', physical: 'físico', logical: 'lógico',
       review: 'revisión', by: 'por', raised: 'levantada', due: 'compromiso', status: 'estado', closed: 'cerrada', resolved: 'resuelta', layer: 'capa', layers: 'capas', zones: 'zonas',
       owner: 'dueño', steward: 'responsable', team: 'equipo', costCenter: 'centro',
-      in: 'dentro', layerOf: { bronze: 'bronce', silver: 'plata', gold: 'oro' }, disposition: 'disposición', dispOf: { retain: 'retener', rehost: 'rehospedar', replatform: 'replataformar', refactor: 'refactorizar', repurchase: 'recomprar', retire: 'retirar', relocate: 'reubicar' }, exposure: 'exposición', backup: 'respaldo', expoOf: { public: 'pública', internal: 'interna' },
+      in: 'dentro', layerOf: { bronze: 'bronce', silver: 'plata', gold: 'oro' }, effort: 'esfuerzo', disposition: 'disposición', dispOf: { retain: 'retener', rehost: 'rehospedar', replatform: 'replataformar', refactor: 'refactorizar', repurchase: 'recomprar', retire: 'retirar', relocate: 'reubicar' }, exposure: 'exposición', backup: 'respaldo', expoOf: { public: 'pública', internal: 'interna' },
       note: 'nota', zone: 'zona', trust: 'confianza', threat: 'amenaza', dismiss: 'descartar', phase: 'fase', until: 'hasta', goal: 'objetivo', at: 'en', size: 'tamaño', severity: 'severidad', date: 'fecha', inside: 'dentro', sevOf: { low: 'baja', medium: 'media', high: 'alta', critical: 'crítica' } }
   };
   const MSG = {
@@ -287,6 +298,7 @@
       data: v => `unknown data class “${v}” (e.g. pii, pci, confidential)`, enc: v => `invalid encrypted value “${v}” (use yes or no)`,
       route: v => `invalid line style “${v}” (use curved or elbow)`, transfer: v => `invalid transfer value “${v}” (use ok)`, threats: v => `invalid threat “${v}” (use e.g. T=mitigated; letters S T R I D E; mitigated, accepted or na)`,
       day: v => `invalid date “${v}” (use YYYY-MM-DD)`, status: v => `invalid status “${v}” (use open or resolved)`,
+      effort: v => `invalid effort “${v}” (use role:days, e.g. effort=dev:10,devops:3)`,
       ctl: v => `invalid control “${v}” (use framework:id=met|partial|gap|na, e.g. iso27001:A.8.24=met)`,
       layer: v => `unknown layer “${v}” (use bronze, silver or gold; also raw, curated or serving)`, lnames: v => `invalid layer naming “${v}” (use medallion or zones)`,
       radar: v => `invalid radar entry “${v}” (use an entry id from the tech radar, or none)`,
@@ -329,6 +341,7 @@
       data: v => `clasificación de datos desconocida «${v}» (ej.: pii, pci, confidential)`, enc: v => `valor de cifrado no válido «${v}» (usa sí o no)`,
       route: v => `estilo de línea no válido «${v}» (usa curvas o codos)`, transfer: v => `valor de transferencia no válido «${v}» (usa ok)`, threats: v => `amenaza no válida «${v}» (usa p. ej. T=mitigada; letras S T R I D E; mitigada, aceptada o na)`,
       day: v => `fecha no válida «${v}» (usa AAAA-MM-DD)`, status: v => `estado no válido «${v}» (usa abierta o resuelta)`,
+      effort: v => `esfuerzo no válido «${v}» (usa perfil:días, ej.: esfuerzo=dev:10,devops:3)`,
       ctl: v => `control no válido «${v}» (usa marco:id=cumple|parcial|brecha|na, ej.: iso27001:A.8.24=cumple)`,
       layer: v => `capa desconocida «${v}» (usa bronce, plata u oro; también crudo, curado o consumo)`, lnames: v => `nombres de capa no válidos «${v}» (usa medallón o zonas)`,
       radar: v => `entrada de radar no válida «${v}» (usa el id de una entrada del radar tecnológico, o ninguno)`,
@@ -944,6 +957,8 @@
         if (lv != null) { const l = checkLayer(lv, ln); if (l) n.layer = l; }
         const dpv = tk.kv.disposition ?? tk.kv.disposición ?? tk.kv.disposicion;
         if (dpv != null) { const d = checkDisp(dpv, ln); if (d) n.disposition = d; }
+        const efv = tk.kv.effort ?? tk.kv.esfuerzo;
+        if (efv != null) { const r = parseEffort(efv); r.bad.forEach(x => err(ln, msg.effort(x))); if (r.effort.length) n.effort = r.effort; }
         if (tk.kv.radar != null) { const rv = tk.kv.radar.trim(); if (/^(none|ninguno|ninguna)$/i.test(rv)) n.radar = 'none'; else if (/^[A-Za-z0-9_.-]{1,40}$/.test(rv)) n.radar = rv; else err(ln, msg.radar(rv)); }
         const ev = tk.kv.exposure ?? tk.kv.exposición ?? tk.kv.exposicion;
         if (ev != null) { if (/^(public|publico|público|pública|publica|external|externa?)$/i.test(ev.trim())) n.exposure = 'public'; else if (/^(internal|interno|interna|private|privado|privada)$/i.test(ev.trim())) n.exposure = 'internal'; else err(ln, msg.expo(ev)); }
@@ -1068,6 +1083,7 @@
       if (n.region) p.push(`${w.region}=${bare(n.region)}`);
       if (n.layer) p.push(`${w.layer}=${w.layerOf[n.layer] || n.layer}`);
       if (n.disposition) p.push(`${w.disposition}=${w.dispOf[n.disposition] || n.disposition}`);
+      if (n.effort?.length) p.push(`${w.effort}=${bare(n.effort.map(e => `${e.role}:${e.days}`).join(','))}`);
       if (n.radar) p.push(`radar=${bare(n.radar)}`);
       if (n.exposure) p.push(`${w.exposure}=${w.expoOf[n.exposure] || n.exposure}`);
       if (typeof n.backup === 'boolean') p.push(`${w.backup}=${n.backup ? w.yes : w.no}`);

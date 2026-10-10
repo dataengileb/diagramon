@@ -826,7 +826,8 @@
     if (raw.routing === 'elbow') m.routing = 'elbow';
     if (raw.layerNames === 'zones') m.layerNames = 'zones';
     { const rd = cleanRadarList(raw.radar); if (rd.length) m.radar = rd; }   // entradas propias del radar tecnológico; sin ellas no hay clave
-    { const ph = cleanPhases(raw.phases); if (ph.length) m.phases = ph; }   // sin fases no hay clave: JSON y exportaciones idénticos
+    { const ph = cleanPhases(raw.phases); if (ph.length) m.phases = ph; }
+    { const es = cleanEstimation(raw.estimation); if (es) m.estimation = es; }   // imprevistos propios del diagrama; sin ellos no hay clave   // sin fases no hay clave: JSON y exportaciones idénticos
     { const et = cleanEdgeTypes(raw.edgeTypes); if (et.length) m.edgeTypes = et; }
     { const dm = cleanDismissed(raw.dismissed); if (dm) m.dismissed = dm; }
     if (raw.meta && typeof raw.meta === 'object') {
@@ -882,6 +883,7 @@
       if (cleanRegion(o.region)) o.region = cleanRegion(o.region); else delete o.region;
       { const l = cleanLayer(o.layer); if (l) o.layer = l; else delete o.layer; }
       { const dp = cleanDisposition(o.disposition); if (dp) o.disposition = dp; else delete o.disposition; }
+      { const ef = cleanEffort(o.effort); if (ef.length) o.effort = ef; else delete o.effort; }
       { const rr = cleanRadarRef(o.radar); if (rr) o.radar = rr; else delete o.radar; }
       { const ex = cleanExposure(o.exposure); if (ex) o.exposure = ex; else delete o.exposure; const bk = cleanBackup(o.backup); if (bk != null) o.backup = bk; else delete o.backup; }
       { const c = cleanControls(o.controls); if (c) o.controls = c; else delete o.controls; }
@@ -1783,6 +1785,22 @@
   // En nodos, conexiones y grupos: phase = fase en la que aparece (sin él, ya estaba en la primera) y until = fase en la que se retira (ya no está desde ella; debe ir después de phase).
   // Es del diagrama (entra en las fotos de versiones). Sin fases, el JSON y las exportaciones quedan idénticos. Un id desconocido se descarta: el elemento queda «siempre presente».
   /* phaseModel:start */
+  // Esfuerzo (días-persona): node.effort = [{ role, days }] (hasta 8 perfiles), phase.extra = [{ label, role, days }] (trabajo que no es un componente), m.estimation = { contingency } (% sobre el esfuerzo).
+  // Un perfil que config.js no conoce se conserva (cada empresa trae los suyos); sin esfuerzo no hay clave: JSON y exportaciones idénticos.
+  const EF_MAX = 8, EF_EXTRA_MAX = 20, EF_ROLE = /^[a-z][a-z0-9_-]{0,19}$/, EF_DAYS = 9999;
+  const efDays = v => { const n = typeof v === 'number' ? v : typeof v === 'string' ? Number(v.trim().replace(',', '.')) : NaN; return Number.isFinite(n) && n > 0 ? Math.min(EF_DAYS, Math.round(n * 100) / 100) : 0; };
+  const efRole = v => { const r = String(v ?? '').trim().toLowerCase(); return EF_ROLE.test(r) ? r : ''; };
+  function cleanEffort(raw) {
+    const sum = new Map();
+    (Array.isArray(raw) ? raw : []).forEach(e => { if (!e || typeof e !== 'object') return; const role = efRole(e.role), days = efDays(e.days); if (role && days) sum.set(role, Math.min(EF_DAYS, Math.round(((sum.get(role) || 0) + days) * 100) / 100)); });
+    return [...sum].slice(0, EF_MAX).map(([role, days]) => ({ role, days }));
+  }
+  function cleanExtra(raw) {
+    const out = [];
+    (Array.isArray(raw) ? raw : []).forEach(e => { if (!e || typeof e !== 'object') return; const role = efRole(e.role), days = efDays(e.days), label = String(e.label ?? '').replace(/\s+/g, ' ').trim().slice(0, 80); if (label && role && days) out.push({ label, role, days }); });
+    return out.slice(0, EF_EXTRA_MAX);
+  }
+  const cleanEstimation = raw => { const c = raw && typeof raw === 'object' && !Array.isArray(raw) && raw.contingency != null && raw.contingency !== '' ? Number(raw.contingency) : NaN; return Number.isFinite(c) && c >= 0 && c <= 100 ? { contingency: Math.round(c * 10) / 10 } : null; };
   const PHASE_MAX = 12, PHASE_ID = /^[A-Za-z0-9_-]{1,30}$/;
   const phaseDay = v => { const r = /^(\d{4})-(\d{2})(?:-(\d{2}))?$/.exec(String(v ?? '').trim()); if (!r) return ''; const mo = +r[2], d = r[3] == null ? 1 : +r[3]; return mo >= 1 && mo <= 12 && d >= 1 && d <= new Date(Date.UTC(+r[1], mo, 0)).getUTCDate() ? String(v).trim() : ''; };
   function cleanPhases(raw) {
@@ -1796,6 +1814,7 @@
       const date = phaseDay(p.date), goal = String(p.goal ?? '').replace(/\r\n?/g, '\n').trim().slice(0, 500);
       if (date) o.date = date;
       if (goal) o.goal = goal;
+      { const ex = cleanExtra(p.extra); if (ex.length) o.extra = ex; }
       out.push(o);
     });
     return out.slice(0, PHASE_MAX);
@@ -1873,6 +1892,12 @@
     });
   }
   /* phaseModel:end */
+  /* ---------- estimación de esfuerzo (días-persona por perfil; los perfiles y tarifas vienen de config.js › estimation) ---------- */
+  const EST = { hoursPerDay: 8, contingency: 0, roles: [], ...C.estimation };
+  const EF_ROLES = new Map((Array.isArray(EST.roles) ? EST.roles : []).filter(r => r && efRole(r.id)).map(r => [efRole(r.id), r]));
+  const efInfo = id => { const r = EF_ROLES.get(id), rate = r ? Number(r.rate) : NaN; return { id, known: !!r, label: r ? loc(r.label) || id : id, rate: Number.isFinite(rate) && rate >= 0 ? rate : null }; };
+  const efDaysOf = list => round2((list || []).reduce((a, e) => a + e.days, 0));
+  const efCostOf = list => round2((list || []).reduce((a, e) => a + e.days * (efInfo(e.role).rate || 0), 0));
   const phaseHelpers = { monthly: m => monthlyTotal(m.nodes), hasCost: m => m.nodes.some(hasCost), findings: m => findingsOf(m).filter(f => !f.dismissed), storage: ds => storageEstimate(ds, { prices: dsPrices() }) };
   const phaseCostText = (r, k = 'cost') => (r[k] == null ? '—' : k === 'cost' ? money(round2(r.cost)) : r.dCost === 0 ? money(0) : `${r.dCost > 0 ? '+' : '−'}${money(round2(Math.abs(r.dCost)))}`);
 
@@ -4146,7 +4171,7 @@
 
   const ORDER = {
     group: ['id', 'label', 'icon', 'color', 'parent', 'kind', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'controls', 'in', 'phase', 'until'],
-    node: ['id', 'label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'x', 'y', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'exposure', 'backup', 'controls', 'in', 'c4', 'sla', 'rpo', 'rto', 'replicas', 'disposition', 'radar', 'phase', 'until'],
+    node: ['id', 'label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'x', 'y', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'exposure', 'backup', 'controls', 'in', 'c4', 'sla', 'rpo', 'rto', 'replicas', 'disposition', 'radar', 'effort', 'phase', 'until'],
     edge: ['id', 'from', 'to', 'label', 'style', 'weight', 'route', 'both', 'color', 'data', 'encrypted', 'datasets', 'latency', 'transferOk', 'threats', 'phase', 'until'],
     note: ['id', 'x', 'y', 'w', 'h', 'text', 'color', 'in'],
     zone: ['id', 'x', 'y', 'w', 'h', 'label', 'severity', 'desc', 'kind', 'trust', 'in'],
@@ -4154,7 +4179,7 @@
     decision: ['id', 'title', 'status', 'date', 'deciders', 'context', 'decision', 'consequences', 'supersededBy', 'area', 'criteria', 'options', 'chosen', 'links', 'history', 'signoffs'],
     raid: ['id', 'type', 'title', 'detail', 'owner', 'status', 'probability', 'impact', 'mitigation', 'validation', 'due', 'raised', 'links', 'history']
   };
-  ORDER.phase = ['id', 'name', 'date', 'goal'];
+  ORDER.phase = ['id', 'name', 'date', 'goal', 'extra'];
   ORDER.dataset = ['id', 'name', 'domain', 'layer', 'description', 'owner', 'steward', 'product', 'classes', 'format', 'freshness', 'volume', 'schema', 'quality', 'contract', 'phase'];
   ORDER.dsColumn = ['name', 'type', 'key', 'pii', 'nullable', 'desc'];
   ORDER.dsRule = ['rule', 'column', 'param', 'severity'];
@@ -4186,6 +4211,7 @@
     if (m.layerNames === 'zones') head.push(`  "layerNames": "zones"`);
     if (m.radar?.length) head.push(`  "radar": [\n${m.radar.map(e => '    ' + JSON.stringify(e)).join(',\n')}\n  ]`);
     if (m.phases?.length) head.push(arr('phases', m.phases, ORDER.phase));
+    if (m.estimation) head.push(`  "estimation": ${JSON.stringify(m.estimation)}`);
     if (m.datasets?.length) head.push(`  "datasets": [\n${m.datasets.map(d => '    ' + line(dsOrdered(d, ordered))).join(',\n')}\n  ]`);
     if (m.edgeTypes?.length) head.push(`  "edgeTypes": ${JSON.stringify(m.edgeTypes)}`);
     if (m.dismissed && Object.keys(m.dismissed).length) head.push(`  "dismissed": ${JSON.stringify(m.dismissed)}`);
@@ -4252,6 +4278,8 @@
       if (!Array.isArray(raw.raid)) raw = { ...raw, raid: S.model.raid };   // el texto siempre trae el registro RAID; el JSON, si omite la clave, lo conserva
       if (!Array.isArray(raw.stakeholders) && S.model.stakeholders) raw = { ...raw, stakeholders: S.model.stakeholders };   // igual: el texto siempre trae los interesados; el JSON, si omite la clave, los conserva
       if (!Array.isArray(raw.comments) && S.model.comments) raw = { ...raw, comments: S.model.comments };   // el texto no lleva comentarios; el JSON, si omite la clave, los conserva
+      if (opts.fromEditor === 'text' && S.model.estimation && raw.estimation == null) raw = { ...raw, estimation: S.model.estimation };   // los imprevistos y el trabajo extra de cada fase solo viven en el JSON: el texto no los lleva
+      if (opts.fromEditor === 'text' && Array.isArray(raw.phases) && (S.model.phases || []).some(p => p.extra)) raw = { ...raw, phases: raw.phases.map(p => { const old = p && (S.model.phases || []).find(q => q.id === p.id); return old?.extra && !p.extra ? { ...p, extra: old.extra } : p; }) };
       if (!Array.isArray(raw.radar) && S.model.radar) raw = { ...raw, radar: S.model.radar };   // el texto solo lleva radar=<id> por componente: las entradas propias del radar se conservan
       if (!Array.isArray(raw.datasets) && S.model.datasets) raw = { ...raw, datasets: S.model.datasets };   // el texto siempre trae los conjuntos de datos; el JSON, si omite la clave, los conserva
       if (!Array.isArray(raw.decisions)) raw = { ...raw, decisions: S.model.decisions }; // el texto siempre trae las decisiones (ADR; borrarlas del texto las borra); el JSON, si omite la clave, las conserva
@@ -5438,7 +5466,7 @@
 
   // Diferencias entre lo guardado (a) y el lienzo (b). La posición no cuenta como cambio.
   const DIFF_FIELDS = {
-    node: ['label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'exposure', 'backup', 'controls', 'in', 'c4', 'sla', 'rpo', 'rto', 'replicas', 'disposition', 'radar', 'phase', 'until'],
+    node: ['label', 'type', 'icon', 'sub', 'badge', 'group', 'color', 'cost', 'costPeriod', 'costYears', 'data', 'review', 'desc', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'exposure', 'backup', 'controls', 'in', 'c4', 'sla', 'rpo', 'rto', 'replicas', 'disposition', 'radar', 'effort', 'phase', 'until'],
     edge: ['label', 'style', 'weight', 'route', 'both', 'color', 'data', 'encrypted', 'datasets', 'latency', 'transferOk', 'threats', 'phase', 'until'],
     group: ['label', 'icon', 'color', 'parent', 'kind', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'controls', 'in', 'phase', 'until'],
     type: ['label', 'dash', 'color', 'width', 'particles'] // tipos de conexión propios (model.edgeTypes), por id
@@ -6268,6 +6296,18 @@
     const detail = one ? `<span class="cost-hint"><span class="mg-chip" style="--mg:${esc(one.ring.color)}">${esc(one.ring.label)}</span>${esc([one.eosDay ? T(one.status === 'ended' ? 'radar.eos.ended' : 'radar.eos.on', fmtDay(one.eosDay)) : '', one.replaceWith ? T('radar.replace', one.replaceWith) : '', one.note].filter(Boolean).join(' · '))}</span>` : `<span class="cost-hint">${esc(list.length === 1 ? T('radar.hint') : cur === null ? T('radar.mixed') : T('radar.hint'))}</span>`;
     return `<div class="field"><label>${T('radar.label')}<select data-radar>${cur === null ? `<option value="__mixed" selected>${T('insp.mixed')}</option>` : ''}${opts.map(([v, l]) => `<option value="${esc(v)}"${cur === v ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select></label>${detail}</div>`;
   };
+  // Esfuerzo del componente: una fila por perfil (perfil + días) y una fila para añadir; solo con un componente y si hay perfiles en config.js (o el componente ya trae esfuerzo)
+  const effortField = items => {
+    const list = [].concat(items);
+    if (list.length !== 1 || !('type' in list[0]) || (!EF_ROLES.size && !list[0].effort?.length)) return '';
+    const ef = list[0].effort || [], used = new Set(ef.map(e => e.role)), free = [...EF_ROLES.keys()].filter(k => !used.has(k));
+    const opt = (id, sel) => `<option value="${esc(id)}"${sel ? ' selected' : ''}>${esc(efInfo(id).label)}${efInfo(id).known ? '' : ' ⚠'}</option>`;
+    const rows = ef.map((e, i) => `<div class="ef-row"><select data-ef-role="${i}" aria-label="${esc(T('est.role'))}">${[...new Set([...EF_ROLES.keys(), e.role])].map(k => opt(k, k === e.role)).join('')}</select><input type="number" min="0" max="${EF_DAYS}" step="0.5" data-ef-days="${i}" value="${e.days}" aria-label="${esc(T('est.days'))}"><button type="button" class="ef-btn" data-ef-rm="${i}" title="${esc(T('est.remove'))}" aria-label="${esc(T('est.remove'))}">×</button></div>`).join('');
+    const add = free.length && ef.length < EF_MAX ? `<div class="ef-row"><select id="ef-new-role" aria-label="${esc(T('est.role'))}">${free.map(k => opt(k, false)).join('')}</select><input type="number" min="0" max="${EF_DAYS}" step="0.5" id="ef-new-days" placeholder="${esc(T('est.days'))}" aria-label="${esc(T('est.days'))}"><button type="button" class="ef-btn" data-ef-add="1">${esc(T('est.add'))}</button></div>` : '';
+    const price = efCostOf(ef), unknown = ef.some(e => !efInfo(e.role).known);
+    const total = ef.length ? `<span class="cost-hint">${esc(T('est.total', { d: efDaysOf(ef), h: round2(efDaysOf(ef) * (+EST.hoursPerDay || 8)), c: price ? money(price) : '' }))}${unknown ? ` ${esc(T('est.unknown'))}` : ''}</span>` : `<span class="cost-hint">${esc(T('est.hint'))}</span>`;
+    return `<div class="field ef"><label>${T('est.label')}</label>${rows}${add}${total}</div>`;
+  };
   const layerField = items => {
     const list = [].concat(items), keys = Object.keys(DL);
     if (!keys.length) return '';
@@ -6462,6 +6502,7 @@
         ${layerField(t)}
         ${dispField(t)}
         ${radarField(t)}
+        ${effortField(t)}
         ${secField(t)}
         ${cmpField(t, 'node')}
         ${reviewField(t)}
@@ -6702,6 +6743,25 @@
     pushHistory();
     (Array.isArray(t) ? t : [t]).filter(x => 'type' in x).forEach(x => { if (v) x.radar = v; else delete x.radar; });
     changed(true); renderInspector();
+  });
+  // Esfuerzo del componente: cambiar perfil o días de una fila, añadir y quitar
+  function efEdit(fn) {
+    const t = selTarget();
+    if (!t || Array.isArray(t) || !('type' in t)) return;
+    pushHistory();
+    const next = cleanEffort(fn([...(t.effort || [])].map(e => ({ ...e }))));
+    if (next.length) t.effort = next; else delete t.effort;
+    changed(true); renderInspector();
+  }
+  inspector.addEventListener('change', ev => {
+    const el = ev.target;
+    if (el.matches('select[data-ef-role]')) efEdit(l => { l[+el.dataset.efRole].role = el.value; return l; });
+    else if (el.matches('input[data-ef-days]')) efEdit(l => { l[+el.dataset.efDays].days = el.value; return l; });
+  });
+  inspector.addEventListener('click', ev => {
+    const b = ev.target.closest('button');
+    if (b?.dataset.efRm != null) efEdit(l => l.filter((_, i) => i !== +b.dataset.efRm));
+    else if (b?.dataset.efAdd) { const r = $('#ef-new-role')?.value, d = $('#ef-new-days')?.value; if (r && efDays(d)) efEdit(l => [...l, { role: r, days: d }]); else $('#ef-new-days')?.focus(); }
   });
   inspector.addEventListener('change', ev => { if (ev.target.matches('select[data-c4-into]') && ev.target.value) moveToScope(selIds(), ev.target.value); });
   // Añadir conjuntos de datos a la conexión elegida (Intro o coma; también al elegir de la lista o salir del campo)

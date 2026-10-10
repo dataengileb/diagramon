@@ -220,6 +220,16 @@ window.DIAGRAMON_CONFIG = {
     }
   },
 
+  /* Estimación de esfuerzo por componente y por fase. Cada empresa trae sus perfiles: vacíos por defecto (sin perfiles no se ofrece el campo).
+     roles: lista ORDENADA de { id, label: { en, es }, rate }. `id`: minúsculas, dígitos, guion o guion bajo (empieza con letra, hasta 20).
+       · rate: tarifa por día-persona, en la moneda de `cost.currency`.
+       · Un componente lleva `effort: [{ role, days }]` (hasta 8 perfiles); en la pestaña Texto se escribe `effort=dev:10,devops:3` (es: `esfuerzo=`).
+       · Una fase puede llevar `extra: [{ label, role, days }]` para trabajo que no es un componente (gestión, pruebas, migración de datos); va en el JSON.
+       · Un perfil que no está aquí se conserva en el diagrama, pero no tiene tarifa.
+     hoursPerDay: horas de un día-persona (para mostrar horas). contingency: imprevistos por defecto, en % sobre el esfuerzo; el diagrama puede fijar los suyos con `estimation: { contingency }`.
+     El esfuerzo de un componente cuenta en la fase donde aparece (`phase`; sin fase, la primera). */
+  estimation: { hoursPerDay: 8, contingency: 0, roles: [] },
+
   /* Radar tecnológico: qué productos se aceptan, cuáles están a prueba, en pausa o en retirada, y cuándo termina su soporte.
      entries: lista ORDENADA de { id, name?, match, ring, eos?, replaceWith?, note? }. Vacía por defecto: sin entradas no cambia nada.
        · id: letras, dígitos, punto, guion o guion bajo (hasta 40). Un componente puede fijarse a una entrada con `radar: '<id>'` (o `radar: 'none'` para excluirlo).
