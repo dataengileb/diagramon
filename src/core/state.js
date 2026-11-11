@@ -19,6 +19,19 @@ window.DiagramonCore.state = (() => {
   for (const [k, f] of Object.entries(FONTS)) { f.faces = window.DIAGRAMON_FONTS?.[k]?.faces || []; f.family = window.DIAGRAMON_FONTS?.[k]?.family; }
   const fontKey = k => FONTS[k] ? k : FONTS[C.fonts.default] ? C.fonts.default : 'system';
 
+  // Las tipografías se inyectan y se empiezan a cargar ya (antes de que cargue app.js): así suelen estar listas para el primer pintado
+  // y el lienzo no tiene que medirse y dibujarse dos veces al abrir. app.js › loadFonts las reutiliza.
+  const startFonts = key => {
+    try {
+      const st = document.createElement('style');
+      st.id = 'font-faces';
+      st.textContent = Object.values(FONTS).flatMap(f => f.faces.map(x => `@font-face{font-family:"${f.family}";font-style:${x.style};font-weight:${x.weight};font-display:swap;src:url(${x.src}) format("woff2");unicode-range:${x.unicodeRange}}`)).join('\n');
+      document.head.appendChild(st);
+      const f = FONTS[key];
+      if (f?.family) ['400', '500', '600', '700', '800'].forEach(w => document.fonts.load(`${w} 13px "${f.family}"`, 'AÁñŁ').catch(() => {}));
+    } catch { /* sin document.fonts: app.js lo vuelve a intentar */ }
+  };
+
   /* ---------- vistas: filtros de presentación del mismo modelo (reglas en config.js › views) ---------- */
   const VIEW_DEFAULTS = { groups: 'all', nodeDetail: 'full', edgeLabels: true, dataTags: true, locks: true, cost: true, zones: true, notes: true, review: true, emphasis: null, legendGroups: false, layers: true };
   const VIEWS = {};
@@ -54,5 +67,6 @@ window.DiagramonCore.state = (() => {
   const VW = { dimNodes: 0, dimEdges: 0, hideNodes: new Set(), hideEdges: new Set(), hideGroups: new Set(), boxed: new Set(), flows: new Map(), ctxBoxes: new Map(), ctxEdges: new Map(), gcost: null, sc: { nodes: new Set(), edges: new Set(), groups: new Set() }, xs: null, ph: null };
   const HL = { f: null, fr: null };
 
+  startFonts(S.font);
   return { FONTS, fontKey, VIEW_DEFAULTS, VIEWS, VIEW_KEYS, VR, viewKey, viewLabel, S, R, VW, HL };
 })();

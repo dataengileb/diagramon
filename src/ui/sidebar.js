@@ -13,7 +13,7 @@ window.DiagramonUI.sidebar = { create(ctx) {
   const { $, esc, fold, store } = window.DiagramonCore.util;
   const { S } = window.DiagramonCore.state;
   const { toast } = window.DiagramonUI.dialogs;
-  const { EXAMPLES, ICONS, kwHit, iconRank, iconInfo, colorVar, categories, typeIcon, addNode, setModel } = ctx;
+  const { EXAMPLES, ICONS, kwHit, iconRank, iconInfo, colorVar, categories, typeIcon, nodeIconHtml, addNode, setModel } = ctx;
 
   const chip = (attrs, color, iconHtml, label, isLogo) =>
     `<button class="chip" draggable="true" ${attrs} style="--c:${color}" title="${esc(label)}"><i${isLogo ? ' class="logo"' : ''}>${iconHtml}</i><span>${esc(label)}</span></button>`;

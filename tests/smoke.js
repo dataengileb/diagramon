@@ -192,6 +192,149 @@ async function run(cdp) {
     });
   }
 
+  // Diagrama grande (300 componentes): la geometría de las conexiones se calcula en JS (pathGeom) y debe coincidir con la que mide el navegador
+  await test('a large diagram opens, and arrowheads, labels and handles sit on their lines (curved and elbow)', async () => {
+    for (const routing of ['curved', 'elbow']) {
+      const r = await app.call(routing => {
+        const N = 300, nodes = [], edges = [], seen = new Set();
+        const groups = Array.from({ length: 30 }, (_, i) => ({ id: 'g' + i, label: 'Group ' + i, ...(i >= 6 ? { parent: 'g' + (i % 6) } : {}) }));
+        for (let i = 0; i < N; i++) nodes.push({ id: 'n' + i, label: 'Service ' + i, type: ['compute', 'db', 'queue', 'storage'][i % 4], group: 'g' + (i % 30), cost: i % 50, data: ['pii'], x: (i % 20) * 240, y: Math.floor(i / 20) * 160 });
+        let s = 7; const rnd = () => (s = (s * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+        for (let i = 0; i < N * 1.6; i++) {
+          const a = Math.floor(rnd() * N), b = Math.min(N - 1, a + 1 + Math.floor(rnd() * 12));
+          if (a === b || seen.has(a + '>' + b)) continue;
+          seen.add(a + '>' + b);
+          edges.push({ from: 'n' + a, to: 'n' + b, ...(i % 4 ? { label: 'HTTPS' } : {}), ...(i % 9 ? {} : { both: true }), encrypted: i % 2 === 0 });
+        }
+        edges.push({ from: 'n0', to: 'n0' }, { from: 'n3', to: 'n40', bend: { x: 30, y: -60 } });
+        const t0 = performance.now();
+        window.Diagramon.load({ title: 'Big', routing, groups, nodes, edges });
+        const ms = performance.now() - t0;
+        let worst = 0, n = 0;
+        document.querySelectorAll('#l-edges .edge').forEach(g => {
+          const line = g.querySelector('.edge-line'), lab = g.querySelector('.edge-label'), bh = g.querySelector('.edge-handle');
+          if (!line.getAttribute('d')) return;
+          n++;
+          const len = line.getTotalLength(), mid = line.getPointAtLength(len / 2), end = line.getPointAtLength(len);
+          worst = Math.max(worst, Math.hypot(mid.x - bh.getAttribute('cx'), mid.y - bh.getAttribute('cy')));
+          if (lab) { const m = /translate\(([-\d.e]+) ([-\d.e]+)\)/.exec(lab.getAttribute('transform')); worst = Math.max(worst, Math.hypot(mid.x - m[1], mid.y - m[2])); }
+          const tip = g.querySelector('.edge-arrow').getAttribute('d').match(/-?[\d.]+(?:e-?\d+)?/g).map(Number);
+          worst = Math.max(worst, Math.hypot(end.x - tip[0], end.y - tip[1]));
+        });
+        return { n, worst, ms, drawn: document.querySelectorAll('#l-nodes .node').length };
+      }, routing);
+      assert(r.drawn === 300 && r.n > 400, `${routing}: drew ${r.drawn} components and ${r.n} connections`);
+      assert(r.worst < 1, `${routing}: geometry is off by ${r.worst.toFixed(2)} px`);
+      assert(r.ms < 8000, `${routing}: took ${Math.round(r.ms)} ms to load`);
+    }
+  });
+
+  // Al arrastrar solo se recolocan el nodo movido y sus conexiones: el resultado debe ser el mismo que al dibujar todo de nuevo
+  await test('dragging a component leaves the same drawing as a full redraw (curved and elbow)', async () => {
+    // Un nodo distinto en cada pasada: dos pulsaciones seguidas sobre el mismo nodo contarían como doble clic (renombrar) y no como arrastre
+    for (const [routing, k] of [['curved', 6], ['elbow', 8]]) {
+      const r = await app.call((routing, k) => {
+        const d = JSON.parse(JSON.stringify(window.DIAGRAMON_EXAMPLES[0].diagram));
+        d.routing = routing;
+        window.Diagramon.load(d);
+        const snap = () => [...document.querySelectorAll('#l-edges .edge')].map(g => `${g.dataset.id} ${g.querySelector('.edge-line').getAttribute('d')} ${g.querySelector('.edge-arrow').getAttribute('d')} ${g.querySelector('.edge-label')?.getAttribute('transform')}`).join('\n')
+          + [...document.querySelectorAll('#l-groups rect')].map(x => ['x', 'y', 'width', 'height'].map(k => x.getAttribute(k)).join(',')).join(';')
+          + [...document.querySelectorAll('#l-nodes .node')].map(x => x.getAttribute('transform')).join(';');
+        const id = window.Diagramon.model.nodes[k].id, before = window.Diagramon.model.nodes[k].x;
+        const card = document.querySelector(`#l-nodes .node[data-id="${id}"] .node-card`), bb = card.getBoundingClientRect(), x = bb.x + bb.width / 2, y = bb.y + bb.height / 2, c = document.querySelector('#canvas');
+        const ev = (t, type, dx = 0, dy = 0) => t.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, clientX: x + dx, clientY: y + dy, button: 0, buttons: type === 'pointerup' ? 0 : 1, pointerId: 1, isPrimary: true, pointerType: 'mouse' }));
+        ev(card, 'pointerdown');
+        for (let i = 1; i <= 12; i++) ev(c, 'pointermove', i * 9, -i * 7);
+        ev(c, 'pointerup', 108, -84);
+        const dragged = snap(), moved = window.Diagramon.model.nodes[k].x - before;
+        window.Diagramon.load(window.Diagramon.model, { animate: false, fit: false });
+        return { moved, same: dragged === snap() };
+      }, routing, k);
+      assert(r.moved !== 0, `${routing}: the component did not move`);
+      assert(r.same, `${routing}: the drawing after dragging differs from a full redraw`);
+    }
+  });
+
+  // Nombres que una pieza de src/ui/ usa pero no recibió (fallos que solo saltan al usar esa función): añadir una fase,
+  // la paleta de un proveedor con atajos (SAP), la ficha de un conjunto de datos con reglas de calidad y el esfuerzo de un componente
+  await test('add a phase, SAP palette, dataset with quality rules and component effort work', async () => {
+    await app.evaluate(`document.querySelector('.tab[data-tab="components"]').click()`);
+    await app.evaluate(`document.querySelector('#examples .ex[data-ex="0"]').click()`);
+    await sleep(300);
+    assert(await app.evaluate(`window.Diagramon.addPhase({ name: 'Phase one' })`) === 'phase-one', 'addPhase');
+    const chips = await app.call(async () => {
+      const sel = document.querySelector('#provider'), out = {};
+      for (const op of [...sel.options]) { sel.value = op.value; sel.dispatchEvent(new Event('change', { bubbles: true })); await new Promise(r => setTimeout(r, 50)); out[op.value] = document.querySelectorAll('#palette-list .chips > *').length; }
+      sel.value = sel.options[0].value; sel.dispatchEvent(new Event('change', { bubbles: true }));
+      return out;
+    });
+    app.clean();
+    assert(chips.sap > 0 && Object.values(chips).every(n => n > 0), `palette per provider: ${JSON.stringify(chips)}`);
+    const quality = await app.call(async () => {
+      window.Diagramon.addDataset({ name: 'smoke_orders', schema: [{ name: 'id', type: 'int' }], quality: [{ rule: 'not_null', column: 'id', severity: 'high' }] });
+      document.querySelector('.tab[data-tab="data"]').click();
+      await new Promise(r => setTimeout(r, 150));
+      document.querySelector('#ds-list [data-ds-toggle]').click();
+      await new Promise(r => setTimeout(r, 150));
+      document.querySelector('#ds-list [data-ds-sec="quality"]').click();
+      await new Promise(r => setTimeout(r, 150));
+      return document.querySelectorAll('#ds-list .ds-q').length;
+    });
+    app.clean();
+    assert(quality === 1, `quality rules drawn: ${quality}`);
+    const effort = await app.call(async () => {
+      const m = window.Diagramon.model;
+      m.nodes[1].effort = [{ role: 'dev', days: 3 }];
+      window.Diagramon.load(m, { animate: false });
+      window.Diagramon.select([m.nodes[1].id]);
+      await new Promise(r => setTimeout(r, 150));
+      return document.querySelectorAll('#inspector .ef-row').length;
+    });
+    app.clean();
+    assert(effort >= 1, `effort rows drawn: ${effort}`);
+    await app.evaluate(`document.querySelector('.tab[data-tab="components"]').click()`);
+  });
+
+  await test('a connection to a missing component is refused, and deleting the component being connected ends connect mode', async () => {
+    await app.evaluate(`document.querySelector('#examples .ex[data-ex="0"]').click()`);
+    await sleep(300);
+    const r = await app.call(() => {
+      const D = window.Diagramon, n0 = D.model.edges.length, ids = D.model.nodes.map(n => n.id);
+      D.addEdge(ids[0], 'no-such-node'); D.addEdge('no-such-node', ids[0]);
+      const afterBad = D.model.edges.length;
+      D.addNode('compute', 0, 0);
+      const fresh = D.model.nodes.find(n => !ids.includes(n.id)).id;
+      D.select([fresh]);
+      document.querySelector('#inspector [data-act="connect"], #inspector .btn[data-connect]')?.click();
+      const banner = !document.querySelector('#banner').hidden;
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true }));
+      return { n0, afterBad, banner, bannerAfter: !document.querySelector('#banner').hidden, gone: !D.model.nodes.some(n => n.id === fresh) };
+    });
+    assert(r.afterBad === r.n0, 'a connection with a missing end was added');
+    assert(r.banner, 'connect mode did not start');
+    assert(r.gone, 'the component was not deleted');
+    assert(!r.bannerAfter, 'connect mode stayed on after deleting its component');
+    app.clean();
+  });
+
+  // Los editores de Texto y JSON solo se escriben con su pestaña abierta: al abrirla deben traer el diagrama actual
+  await test('the Text and JSON editors fill in when their tab opens', async () => {
+    await app.evaluate(`document.querySelector('.tab[data-tab="components"]').click()`);
+    await app.evaluate(`document.querySelector('#examples .ex[data-ex="0"]').click()`);
+    await sleep(300);
+    const title = await app.evaluate('window.Diagramon.model.title');
+    await app.evaluate(`document.querySelector('.tab[data-tab="code"]').click()`);
+    assert(await app.call(t => JSON.parse(document.querySelector('#json').value).title === t, title), 'JSON editor is stale');
+    assert(await app.evaluate(`document.querySelector('#json').previousElementSibling.children.length > 10`), 'JSON gutter is empty');
+    await app.evaluate(`document.querySelector('.tab[data-tab="text"]').click()`);
+    assert(await app.call(t => document.querySelector('#text-src').value.includes(t), title), 'Text editor is stale');
+    // con la pestaña abierta se sigue actualizando al momento
+    await app.evaluate(`window.Diagramon.addNode('compute', 0, 0, { label: 'Smoke probe node' })`);
+    await sleep(400);
+    assert(await app.evaluate(`document.querySelector('#text-src').value.includes('Smoke probe node')`), 'open Text editor did not follow a change');
+    await app.evaluate(`document.querySelector('.tab[data-tab="components"]').click()`);
+  });
+
   await test('exports produce their files (SVG, PNG, JSON, Mermaid, PlantUML, draw.io, Excel)', async () => {
     await app.evaluate(`document.querySelector('#examples .ex[data-ex="0"]').click()`);
     await sleep(500);

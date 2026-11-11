@@ -12,7 +12,7 @@ window.DiagramonUI.datatab = { create(ctx) {
   const { $, esc } = window.DiagramonCore.util;
   const { S } = window.DiagramonCore.state;
   const { confirmBox, toast } = window.DiagramonUI.dialogs;
-  const { DATA, DL, DS_COLS, DS_DEFAULT_DAYS, DS_FORMATS, DS_MAX, DS_RULES, DS_RULES_MAX, DS_STATUS, DUR_TIERS, addDataset, catalog, colorVar, dsById, dsEdges, dsFind, dsHelpers, dsK, dsPrices, e2eOf, exportContract, fmtDur, focusTarget, layerInfo, layerOf, money, normDur, numFmt, parseDur, removeDataset, renameDatasetApi, sevLabel, showLineage, storageEstimate, updateDataset } = ctx;
+  const { DATA, DL, DS_COLS, DS_DEFAULT_DAYS, DS_FORMATS, DS_MAX, DS_RULES, DS_RULES_MAX, DS_SEV, DS_STATUS, DUR_TIERS, addDataset, catalog, colorVar, dsById, dsEdges, dsFind, dsHelpers, dsK, dsPrices, e2eOf, exportContract, fmtDur, focusTarget, layerInfo, layerOf, money, normDur, numFmt, parseDur, removeDataset, renameDatasetApi, sevLabel, showLineage, storageEstimate, updateDataset } = ctx;
 
   const DSX = { open: null, q: '', domain: '', layer: '', prod: '', cst: '', wide: null, sec: new Set(), free: null, focus: '' };   // ficha abierta, filtros, esquema ampliado, secciones abiertas
   const dsPanel = $('#ds-panel');
