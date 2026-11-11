@@ -13,7 +13,7 @@ window.DiagramonUI.inspfields = { create(ctx) {
   const { $, $$, ICON, esc, fold, store } = window.DiagramonCore.util;
   const { S } = window.DiagramonCore.state;
   const { toast } = window.DiagramonUI.dialogs;
-  const { COLOR_ALIAS, COST, DATA, DL, EF_MAX, EF_ROLES, EST, ICONS, MG, PERIODS, beginEdit, categories, changed, colorVar, datasetList, datasetsOfNode, dsFind, dsKey, efCostOf, efDaysOf, efInfo, endEdit, fmtDay, groupById, hasCost, iconInfo, layerInfo, layerNaming, layerOf, markEdit, mgInfo, money, nodeColor, nodeIconHtml, perMonth, pushHistory, radarEntries, radarInfo, rdRingInfo, renderInspector, round2, selTarget, today, yearsOf } = ctx;
+  const { COLOR_ALIAS, COST, DATA, DL, EF_DAYS, EF_MAX, EF_ROLES, EST, ICONS, MG, PERIODS, beginEdit, categories, changed, colorVar, datasetList, datasetsOfNode, dsFind, dsKey, efCostOf, efDaysOf, efInfo, endEdit, fmtDay, groupById, hasCost, iconInfo, layerInfo, layerNaming, layerOf, markEdit, mgInfo, money, nodeColor, nodeIconHtml, perMonth, pushHistory, radarEntries, radarInfo, rdRingInfo, renderInspector, round2, selTarget, today, yearsOf } = ctx;
 
   const CP_RECENT = 7, CP_FAV = 14;
   // #RGB o #RRGGBB (con o sin #) -> #rrggbb, o null si no es válido

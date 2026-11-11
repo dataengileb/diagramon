@@ -885,7 +885,8 @@
         for (let k = 0; k < parts.length; k += 2) if (!ID.test(parts[k])) return err(ln, msg.id(parts[k]));
         let label = right, km;
         const kv = {};
-        while ((km = label.match(EDGE_OPT))) { kv[km[1].toLowerCase()] = km[2]; label = label.slice(0, km.index).trim(); }
+        // Una etiqueta entera entre comillas es solo etiqueta, aunque dentro tenga algo como «color=red» (así la escribe stringify)
+        while (!/^"(?:[^"\\]|\\.)*"$/.test(label) && (km = label.match(EDGE_OPT))) { kv[km[1].toLowerCase()] = km[2]; label = label.slice(0, km.index).trim(); }
         const dsV = kv.datasets ?? kv.tablas ?? kv.conjuntos, dsets = dsV == null ? [] : parseDatasets(dsV);
         const color = kv.color, data = checkData(kv.data ?? kv.datos, ln), encV = kv.encrypted ?? kv.cifrado;
         const enc = encV == null ? null : parseBool(encV);
@@ -1059,7 +1060,7 @@
 
   function stringify(m, lang = 'en') {
     const w = { ...(WORDS[lang] || WORDS.en), ...(TYPE_W[lang] || TYPE_W.en) };
-    const out = [`${w.title}: ${m.title}`];
+    const out = [`${w.title}: ${String(m.title ?? '').replace(/\s*[\r\n]+\s*/g, ' ')}`];
     if (m.direction) out.push(`${w.direction}: ${m.direction}`);
     if (m.routing === 'elbow') out.push(`${w.lines}: ${w.elbow}`);
     if (m.layerNames === 'zones') out.push(`${w.layers}: ${w.zones}`);

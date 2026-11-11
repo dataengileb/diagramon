@@ -1156,7 +1156,7 @@
   // m.phases = [{ id: 'mvp', name, date?: 'AAAA-MM' | 'AAAA-MM-DD', goal? }]: el orden del arreglo ES la línea de tiempo (máx. 12).
   // En nodos, conexiones y grupos: phase = fase en la que aparece (sin él, ya estaba en la primera) y until = fase en la que se retira (ya no está desde ella; debe ir después de phase).
   // Es del diagrama (entra en las fotos de versiones). Sin fases, el JSON y las exportaciones quedan idénticos. Un id desconocido se descarta: el elemento queda «siempre presente».
-  const { EF_MAX, efDays, efRole, cleanEffort, cleanExtra, cleanEstimation, PHASE_MAX, phaseDay, cleanPhases, phaseIndex, cleanPhaseRefs, phaseState, inPhase, phaseStates, phaseModel, phaseDiff, phaseStats, phaseRows, phaseEffort } = window.DiagramonModels.phases;
+  const { EF_MAX, EF_DAYS, PHASE_ID, efDays, efRole, cleanEffort, cleanExtra, cleanEstimation, PHASE_MAX, phaseDay, cleanPhases, phaseIndex, cleanPhaseRefs, phaseState, inPhase, phaseStates, phaseModel, phaseDiff, phaseStats, phaseRows, phaseEffort } = window.DiagramonModels.phases;
   const { EST, EF_ROLES, efInfo, efDaysOf, effortHelpers, efCostOf } = window.DiagramonModels.phases.estimation({ C, loc, addFindingSource, SEVERITY, T, round2 });
   const phaseHelpers = { monthly: m => monthlyTotal(m.nodes), hasCost: m => m.nodes.some(hasCost), findings: m => findingsOf(m).filter(f => !f.dismissed), storage: ds => storageEstimate(ds, { prices: dsPrices() }) };
   const phaseCostText = (r, k = 'cost') => (r[k] == null ? '—' : k === 'cost' ? money(round2(r.cost)) : r.dCost === 0 ? money(0) : `${r.dCost > 0 ? '+' : '−'}${money(round2(Math.abs(r.dCost)))}`);
@@ -1192,7 +1192,7 @@
   //   contract?: { version, status: 'draft'|'agreed'|'deprecated', consumers?: [ids de nodos], terms? }, phase?: id de fase }] (máx. 500)
   // Es del diagrama (entra en las fotos de versiones). En conexiones: latency = tiempo que tarda el dato en ese salto. Sin conjuntos ni latencias, el JSON y las exportaciones quedan idénticos.
   // El bloque solo usa lo que recibe en `h` (cleanCatalog: layer, classes, formats, rules, normDur · e2eFreshness y datasetIssues: lineageOf, parseDur, T…).
-  const { DS_MAX, DS_COLS, DS_RULES_MAX, DS_DEFAULT_DAYS, DS_FORMATS, DS_RULES, DS_STATUS, dsK, dsText, cleanCatalog, dsEdges, catalog, e2eFreshness, storageEstimate, renameDataset, datasetIssues } = window.DiagramonModels.datasets();
+  const { DS_MAX, DS_COLS, DS_RULES_MAX, DS_DEFAULT_DAYS, DS_FORMATS, DS_RULES, DS_STATUS, DS_SEV, dsK, dsText, cleanCatalog, dsEdges, catalog, e2eFreshness, storageEstimate, renameDataset, datasetIssues } = window.DiagramonModels.datasets();
   // Lo que el bloque recibe de la app
   const dsPrices = () => C.datasets?.storagePrice || { default: 0.023 };
   const dsHelpers = () => ({ layer: cleanLayer, classes: Object.keys(DATA), formats: C.datasets?.formats, rules: C.datasets?.qualityRules, normDur, lineageOf, parseDur, prices: dsPrices(), T: (k, v) => T(k, v), fmtDur: s => fmtDur(s),
@@ -4016,9 +4016,10 @@
       }
     });
     if (best) n.group = best;
-    S.model.nodes.push(n);
     // En la vista Contexto un nodo dentro de una caja cerrada no se vería: se pasa a la Completa
+    // (antes de añadirlo: cambiar de vista recoloca el lienzo, y el nodo nuevo aún no tiene medidas)
     if (best && vc().groups === 'collapse-top') { setView('full', { toast: false }); toast(T('view.auto'), 2600); }
+    S.model.nodes.push(n);
     changed(true);
     const body = R.nodes.get(n.id)?.firstChild;
     if (body) { body.classList.add('enter'); endEnter(body); }
@@ -4465,7 +4466,7 @@
     $('#pb-dots').innerHTML = P.slides.map((_, i) => `<button class="pb-dot${i === P.i ? ' on' : ''}" data-i="${i}" tabindex="-1" aria-label="${i + 1}"></button>`).join('');
   }
   function presentShow(i, instant = false) {
-    if (!P) return;
+    if (!P || !P.slides.length) return;   // las diapositivas se preparan dos fotogramas después de entrar: una tecla en ese instante no debe fallar
     stopPlay();
     P.i = clamp(i, 0, P.slides.length - 1);
     const sl = P.slides[P.i];
@@ -5230,12 +5231,12 @@
     return `<div class="swatches">
       <button class="sw auto${!cur ? ' on' : ''}" data-color="" title="${esc(T('insp.auto'))}"></button>
       ${paletteKeys().map(k => `<button class="sw${cur === k ? ' on' : ''}" data-color="${k}" title="${esc(I.colorName(k))}" style="--c:var(--p-${k})"></button>`).join('')}
-      <button class="sw sw-custom${custom ? ' on' : ''}" type="button" aria-haspopup="dialog" aria-expanded="false" title="${esc(T('color.custom') + (custom ? ` · ${cur}` : ''))}" aria-label="${esc(T('color.custom'))}"${custom ? ` style="--c:${esc(cur)}"` : ''}></button>
+      <button class="sw sw-custom${custom ? ' on' : ''}" type="button" aria-haspopup="dialog" aria-expanded="false" title="${esc(T('color.custom') + (custom ? ` · ${cur}` : ''))}" aria-label="${esc(T('color.custom'))}"${custom && colorVar(cur) ? ` style="--c:${esc(colorVar(cur))}"` : ''}></button>
     </div>`;
   };
 
   /* ---------- color personalizado: selector con recientes y favoritos (src/ui/inspfields.js) ---------- */
-  const { allIcons, costField, costHint, dataField, dispField, dsField, effortField, head, hideIconList, iconPicker, iconRank, kwHit, latencyField, layerField, nodeDsField, normHex, pickIcon, radarField, refField, showIconList, typeOptions } = window.DiagramonUI.inspfields.create({ COLOR_ALIAS, COST, DATA, DL, EF_MAX, EF_ROLES, EST, ICONS, MG, PERIODS, beginEdit, categories, changed, colorVar, datasetList, datasetsOfNode, dsFind, dsKey, efCostOf, efDaysOf, efInfo, endEdit, fmtDay, groupById, hasCost, iconInfo, layerInfo, layerNaming, layerOf, markEdit, mgInfo, money, nodeColor, nodeIconHtml, perMonth, pushHistory, radarEntries, radarInfo, rdRingInfo, renderInspector: (...a) => renderInspector(...a), round2, selTarget, today, yearsOf, get DUR_TIERS() { return DUR_TIERS; }, get WS() { return WS; } });
+  const { allIcons, costField, costHint, dataField, dispField, dsField, effortField, head, hideIconList, iconPicker, iconRank, kwHit, latencyField, layerField, nodeDsField, normHex, pickIcon, radarField, refField, showIconList, typeOptions } = window.DiagramonUI.inspfields.create({ COLOR_ALIAS, COST, DATA, DL, EF_DAYS, EF_MAX, EF_ROLES, EST, ICONS, MG, PERIODS, beginEdit, categories, changed, colorVar, datasetList, datasetsOfNode, dsFind, dsKey, efCostOf, efDaysOf, efInfo, endEdit, fmtDay, groupById, hasCost, iconInfo, layerInfo, layerNaming, layerOf, markEdit, mgInfo, money, nodeColor, nodeIconHtml, perMonth, pushHistory, radarEntries, radarInfo, rdRingInfo, renderInspector: (...a) => renderInspector(...a), round2, selTarget, today, yearsOf, get DUR_TIERS() { return DUR_TIERS; }, get WS() { return WS; } });
 
   /* ---------- STRIDE: sección del inspector de la conexión (src/ui/inspconn.js) ---------- */
   const { DUR_TIERS, encField, govField, pathField, regionField, regionHint, regionJurText, resField, resHintHtml, reviewField, strideField, xferField } = window.DiagramonUI.inspconn.create({ GOV_FIELDS, REV_COLOR, STR, THREAT_ST, availOf, cleanRegion, crossBorder, crossInfo, downtime, fmtPct, govOf, isInsecure, jurOf, regionLabel, regionOf, replicasOf, reviewHint, reviewState, sevLabel, spofList, strideCtx, strideFor, trustName, xbWarn });
@@ -5250,7 +5251,7 @@
   const { cmTargetText, cmtField, openEdgeTypes, openFeedbackImport } = window.DiagramonUI.comments.create({ CM_MAX, CM_REPLIES, CM_TEXT, EDGE_DASHES, changed, cleanComments, cleanEdgeTypes, cleanFeedback, customTypes, edgeSample, edgeTypeId, fmtDay, focusTarget, mergeFeedback, paletteKeys, pushHistory, renderInspector, today, verLabel, adrTitle: (...a) => adrTitle(...a) });
 
   /* ---------- barra lateral (src/ui/sidebar.js) ---------- */
-  const { renderProviders, renderPalette, renderExamples } = window.DiagramonUI.sidebar.create({ EXAMPLES, ICONS, kwHit, iconRank, iconInfo, colorVar, categories, typeIcon, addNode, setModel });
+  const { renderProviders, renderPalette, renderExamples } = window.DiagramonUI.sidebar.create({ EXAMPLES, ICONS, kwHit, iconRank, iconInfo, colorVar, categories, typeIcon, nodeIconHtml, addNode, setModel });
 
   /* ---------- pestañas agrupadas (src/ui/tabs.js) ---------- */
   window.DiagramonUI.tabs.create({ renderFindings: (...a) => renderFindings(...a), renderAdr: (...a) => renderAdr(...a), renderReq: (...a) => renderReq(...a), renderRaid: (...a) => renderRaid(...a), renderDs: (...a) => renderDs(...a), renderPeople: (...a) => renderPeople(...a), showEditor: (...a) => showEditor(...a) });
@@ -5897,7 +5898,7 @@
   const { addRaid, raidBanner, raidChipsFor, raidField, raidLate, removeRaid, renderRaid, updateRaid, validateAssumption } = window.DiagramonUI.raid.create({ RAID_COLOR, RAID_LEVEL_COLOR, RAID_MAX, RAID_STATUS, RAID_TYPES, RAID_TYPE_COLOR, RAID_VAL, adrAuthor, adrById, adrLinkLabel, adrOpen, adrPanel, adrTitle, beginEdit, changed, cleanRaid, endEdit, fmtDay, focusTarget, isDay, markEdit, pushHistory, raidById, raidHeat, raidLevel, raidOf, raidScore, raidState, raidSummary, raidType, renderAdr, renderInspector, reqOpen: (...a) => reqOpen(...a), save, syncEditor, today, updateDecision, adrKindOfSel: (...a) => adrKindOfSel(...a) });
 
   /* ---------- catálogo de datos: pestaña Datos (fichas de conjuntos: general, esquema, calidad, contrato y linaje) (src/ui/datatab.js) ---------- */
-  const { DSX, renderDs } = window.DiagramonUI.datatab.create({ DATA, DL, DS_COLS, DS_DEFAULT_DAYS, DS_FORMATS, DS_MAX, DS_RULES, DS_RULES_MAX, DS_STATUS, DUR_TIERS, addDataset, catalog, colorVar, dsById, dsEdges, dsFind, dsHelpers, dsK, dsPrices, e2eOf, exportContract, fmtDur, focusTarget, layerInfo, layerOf, money, normDur, numFmt, parseDur, removeDataset, renameDatasetApi, sevLabel, showLineage, storageEstimate, updateDataset });
+  const { DSX, renderDs } = window.DiagramonUI.datatab.create({ DATA, DL, DS_COLS, DS_DEFAULT_DAYS, DS_FORMATS, DS_MAX, DS_RULES, DS_RULES_MAX, DS_SEV, DS_STATUS, DUR_TIERS, addDataset, catalog, colorVar, dsById, dsEdges, dsFind, dsHelpers, dsK, dsPrices, e2eOf, exportContract, fmtDur, focusTarget, layerInfo, layerOf, money, normDur, numFmt, parseDur, removeDataset, renameDatasetApi, sevLabel, showLineage, storageEstimate, updateDataset });
 
   /* ---------- interesados: crear/cambiar/borrar, pestaña (fichas) y matriz RACI (src/ui/people.js) ---------- */
   const { PEOPLE, addStakeholder, adrField, adrKindOfSel, adrMatrixText, exportDecisions, removeStakeholder, renderPeople, shRaciOf, updateStakeholder } = window.DiagramonUI.people.create({ SH_MAX, SH_ORG, SH_RACI, addDecision, adrAddLinks, adrById, adrChips, adrFull, adrHist, adrLeader, adrLinkList, adrOpen, adrScore, adrSelLinks, adrTitle, beginEdit, changed, cleanStakeholders, decisionsOf, download, endEdit, findVersion, head, markEdit, money, pushHistory, save, shAreas, shById, shGaps, shHasSignoffs, syncEditor, updateDecision, verLabel, reqField: (...a) => reqField(...a) });

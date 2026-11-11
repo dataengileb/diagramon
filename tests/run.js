@@ -140,6 +140,26 @@
       eq((r1.model.decisions || []).map(d => [d.id, d.status]), (model.decisions || []).map(d => [d.id, d.status]), 'decisions');
     });
   }));
+  test('edge label that looks like options survives the text round trip', () => {
+    const ctx = textCtx('en');
+    for (const label of ['color=red style=data', 'TTL=60 both=yes', 'retry weight=high', 'plain "quoted" text']) {
+      const r = TXT.parse('a: A [db]\nb: B [db]\na -> b : x', ctx);
+      r.model.edges[0].label = label;
+      const back = TXT.parse(TXT.stringify(r.model, 'en'), ctx);
+      eq(back.errors, [], `parse errors · ${label}`);
+      eq(back.model.edges[0].label, label, `label · ${label}`);
+      eq([back.model.edges[0].color, back.model.edges[0].style, back.model.edges[0].both, back.model.edges[0].weight], [undefined, undefined, undefined, undefined], `no options taken from the label · ${label}`);
+    }
+    // las opciones después de una etiqueta entre comillas siguen funcionando
+    const q = TXT.parse('a: A [db]\nb: B [db]\na -> b : "color=red" style=data both=yes', ctx);
+    eq([q.errors, q.model.edges[0].label, q.model.edges[0].style, q.model.edges[0].both], [[], 'color=red', 'data', true], 'quoted label + options');
+  });
+  test('a title with line breaks stays on one line in the text format', () => {
+    const ctx = textCtx('en'), r = TXT.parse('a: A [db]', ctx);
+    r.model.title = 'Shop\nplatform';
+    const back = TXT.parse(TXT.stringify(r.model, 'en'), ctx);
+    eq([back.errors, back.model.title, back.model.nodes.length], [[], 'Shop platform', 1], 'title');
+  });
   test('edge bend: text round trip, sanitize and invalid values', () => {
     const ctx = textCtx('en'), r = TXT.parse('a: A [db]\nb: B [db]\na -> b : x bend=40,-20', ctx);
     eq(r.errors, [], 'parse errors');

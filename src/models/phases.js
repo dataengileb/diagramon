@@ -153,5 +153,5 @@ window.DiagramonModels.phases = (() => {
     return { EST, EF_ROLES, efInfo, efDaysOf, effortHelpers, efCostOf };
   };
 
-  return { EF_MAX, efDays, efRole, cleanEffort, cleanExtra, cleanEstimation, PHASE_MAX, phaseDay, cleanPhases, phaseIndex, cleanPhaseRefs, phaseState, inPhase, phaseStates, phaseModel, phaseDiff, phaseStats, phaseRows, phaseEffort, estimation };
+  return { EF_MAX, EF_DAYS, PHASE_ID, efDays, efRole, cleanEffort, cleanExtra, cleanEstimation, PHASE_MAX, phaseDay, cleanPhases, phaseIndex, cleanPhaseRefs, phaseState, inPhase, phaseStates, phaseModel, phaseDiff, phaseStats, phaseRows, phaseEffort, estimation };
 })();

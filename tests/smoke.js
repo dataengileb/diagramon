@@ -254,6 +254,46 @@ async function run(cdp) {
     }
   });
 
+  // Nombres que una pieza de src/ui/ usa pero no recibió (fallos que solo saltan al usar esa función): añadir una fase,
+  // la paleta de un proveedor con atajos (SAP), la ficha de un conjunto de datos con reglas de calidad y el esfuerzo de un componente
+  await test('add a phase, SAP palette, dataset with quality rules and component effort work', async () => {
+    await app.evaluate(`document.querySelector('.tab[data-tab="components"]').click()`);
+    await app.evaluate(`document.querySelector('#examples .ex[data-ex="0"]').click()`);
+    await sleep(300);
+    assert(await app.evaluate(`window.Diagramon.addPhase({ name: 'Phase one' })`) === 'phase-one', 'addPhase');
+    const chips = await app.call(async () => {
+      const sel = document.querySelector('#provider'), out = {};
+      for (const op of [...sel.options]) { sel.value = op.value; sel.dispatchEvent(new Event('change', { bubbles: true })); await new Promise(r => setTimeout(r, 50)); out[op.value] = document.querySelectorAll('#palette-list .chips > *').length; }
+      sel.value = sel.options[0].value; sel.dispatchEvent(new Event('change', { bubbles: true }));
+      return out;
+    });
+    app.clean();
+    assert(chips.sap > 0 && Object.values(chips).every(n => n > 0), `palette per provider: ${JSON.stringify(chips)}`);
+    const quality = await app.call(async () => {
+      window.Diagramon.addDataset({ name: 'smoke_orders', schema: [{ name: 'id', type: 'int' }], quality: [{ rule: 'not_null', column: 'id', severity: 'high' }] });
+      document.querySelector('.tab[data-tab="data"]').click();
+      await new Promise(r => setTimeout(r, 150));
+      document.querySelector('#ds-list [data-ds-toggle]').click();
+      await new Promise(r => setTimeout(r, 150));
+      document.querySelector('#ds-list [data-ds-sec="quality"]').click();
+      await new Promise(r => setTimeout(r, 150));
+      return document.querySelectorAll('#ds-list .ds-q').length;
+    });
+    app.clean();
+    assert(quality === 1, `quality rules drawn: ${quality}`);
+    const effort = await app.call(async () => {
+      const m = window.Diagramon.model;
+      m.nodes[1].effort = [{ role: 'dev', days: 3 }];
+      window.Diagramon.load(m, { animate: false });
+      window.Diagramon.select([m.nodes[1].id]);
+      await new Promise(r => setTimeout(r, 150));
+      return document.querySelectorAll('#inspector .ef-row').length;
+    });
+    app.clean();
+    assert(effort >= 1, `effort rows drawn: ${effort}`);
+    await app.evaluate(`document.querySelector('.tab[data-tab="components"]').click()`);
+  });
+
   // Los editores de Texto y JSON solo se escriben con su pestaña abierta: al abrirla deben traer el diagrama actual
   await test('the Text and JSON editors fill in when their tab opens', async () => {
     await app.evaluate(`document.querySelector('.tab[data-tab="components"]').click()`);
