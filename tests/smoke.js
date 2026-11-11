@@ -231,24 +231,25 @@ async function run(cdp) {
 
   // Al arrastrar solo se recolocan el nodo movido y sus conexiones: el resultado debe ser el mismo que al dibujar todo de nuevo
   await test('dragging a component leaves the same drawing as a full redraw (curved and elbow)', async () => {
-    for (const routing of ['curved', 'elbow']) {
-      const r = await app.call(routing => {
+    // Un nodo distinto en cada pasada: dos pulsaciones seguidas sobre el mismo nodo contarían como doble clic (renombrar) y no como arrastre
+    for (const [routing, k] of [['curved', 6], ['elbow', 8]]) {
+      const r = await app.call((routing, k) => {
         const d = JSON.parse(JSON.stringify(window.DIAGRAMON_EXAMPLES[0].diagram));
         d.routing = routing;
         window.Diagramon.load(d);
         const snap = () => [...document.querySelectorAll('#l-edges .edge')].map(g => `${g.dataset.id} ${g.querySelector('.edge-line').getAttribute('d')} ${g.querySelector('.edge-arrow').getAttribute('d')} ${g.querySelector('.edge-label')?.getAttribute('transform')}`).join('\n')
           + [...document.querySelectorAll('#l-groups rect')].map(x => ['x', 'y', 'width', 'height'].map(k => x.getAttribute(k)).join(',')).join(';')
           + [...document.querySelectorAll('#l-nodes .node')].map(x => x.getAttribute('transform')).join(';');
-        const id = window.Diagramon.model.nodes[6].id, before = window.Diagramon.model.nodes[6].x;
+        const id = window.Diagramon.model.nodes[k].id, before = window.Diagramon.model.nodes[k].x;
         const card = document.querySelector(`#l-nodes .node[data-id="${id}"] .node-card`), bb = card.getBoundingClientRect(), x = bb.x + bb.width / 2, y = bb.y + bb.height / 2, c = document.querySelector('#canvas');
         const ev = (t, type, dx = 0, dy = 0) => t.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, clientX: x + dx, clientY: y + dy, button: 0, buttons: type === 'pointerup' ? 0 : 1, pointerId: 1, isPrimary: true, pointerType: 'mouse' }));
         ev(card, 'pointerdown');
         for (let i = 1; i <= 12; i++) ev(c, 'pointermove', i * 9, -i * 7);
         ev(c, 'pointerup', 108, -84);
-        const dragged = snap(), moved = window.Diagramon.model.nodes[6].x - before;
+        const dragged = snap(), moved = window.Diagramon.model.nodes[k].x - before;
         window.Diagramon.load(window.Diagramon.model, { animate: false, fit: false });
         return { moved, same: dragged === snap() };
-      }, routing);
+      }, routing, k);
       assert(r.moved !== 0, `${routing}: the component did not move`);
       assert(r.same, `${routing}: the drawing after dragging differs from a full redraw`);
     }
