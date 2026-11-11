@@ -21,7 +21,7 @@ window.DiagramonCore.util = (() => {
 
   const store = {
     get(k, d) { try { const v = localStorage.getItem(`${C.app.storageKey}.${k}`); return v == null ? d : JSON.parse(v); } catch { return d; } },
-    set(k, v) { try { localStorage.setItem(`${C.app.storageKey}.${k}`, JSON.stringify(v)); } catch { /* sin almacenamiento disponible */ } }
+    set(k, v) { try { localStorage.setItem(`${C.app.storageKey}.${k}`, JSON.stringify(v)); return true; } catch { return false; /* sin almacenamiento disponible o lleno */ } }
   };
   // Recupera lo guardado con el nombre anterior del proyecto (Nimbo)
   try {

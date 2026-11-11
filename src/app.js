@@ -3199,6 +3199,7 @@
     if (!edit) beginEdit();
     if (edit.pushed) return;
     S.history.push(edit.snap);
+    if (S.history.length > 150) S.history.shift(); // mismo tope que pushHistory: arrastrar o escribir no debe crecer sin límite
     S.future.length = 0;
     edit.pushed = true;
     updateUndoButtons();
@@ -3221,7 +3222,17 @@
   }
 
   // Además de guardar, refresca el aviso de "cambios sin guardar" de la versión abierta
-  const save = debounce(() => { store.set('model', S.model); updateMeta(); renderVersions(); renderAdr(); renderReq(); renderRaid(); }, 250);
+  // Si el navegador no deja guardar (almacenamiento lleno o bloqueado) se avisa una vez, en vez de perder el trabajo en silencio
+  let saveWarned = false;
+  const persistModel = () => {
+    if (store.set('model', S.model)) saveWarned = false;
+    else if (!saveWarned) { saveWarned = true; toast(T('toast.saveFail')); }
+  };
+  const saveNow = () => { persistModel(); updateMeta(); renderVersions(); renderAdr(); renderReq(); renderRaid(); };
+  let saveTimer = 0;
+  const save = () => { clearTimeout(saveTimer); saveTimer = setTimeout(() => { saveTimer = 0; saveNow(); }, 250); };
+  // Cerrar la pestaña justo tras editar no debe perder el último cambio pendiente del guardado diferido
+  addEventListener('pagehide', () => { if (saveTimer) { clearTimeout(saveTimer); saveTimer = 0; persistModel(); } });
 
   const ORDER = {
     group: ['id', 'label', 'icon', 'color', 'parent', 'kind', 'owner', 'steward', 'team', 'costCenter', 'region', 'layer', 'controls', 'in', 'phase', 'until'],
@@ -4777,7 +4788,7 @@
           S.verAsk = false;
           if (!ok || !findVersion(v.id) || v.status === 'approved') return;
           markEdit(); setVerStatus(v, 'approved'); endEdit();
-          store.set('model', S.model);
+          persistModel();
           updateMeta();
           renderVersions();
           toast(T('ver.statusSet', { name: verLabel(v), status: T('ver.st.approved') }));
@@ -4801,7 +4812,7 @@
     c.querySelector('.ver-head b').textContent = verLabel(v);
     const warn = c.querySelector('.ver-warn');
     if (warn) warn.hidden = !!v.reason;
-    store.set('model', S.model);
+    persistModel();
     updateMeta();
     if (k === 'status') renderVersions();
   };
