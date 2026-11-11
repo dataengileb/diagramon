@@ -2078,12 +2078,23 @@
     const sx = dir > 0 ? A.x + A.w : A.x, ex = dir > 0 ? B.x : B.x + B.w;
     const sy = A.y + A.h / 2 + off, ey = B.y + B.h / 2 + eoff;
     const M = 16, STUB = 18, pad = 10;
-    const blocks = (x1, y1, x2, y2, list) => list.some(o => {
-      const l = o.x - pad, t = o.y - pad, rr = o.x + o.w + pad, bb = o.y + o.h + pad;
-      return Math.max(x1, x2) > l && Math.min(x1, x2) < rr && Math.max(y1, y2) > t && Math.min(y1, y2) < bb;
-    });
-    // El primer y el último tramo salen del nodo de origen y llegan al de destino: esos dos no cuentan
-    const hits = pts => pts.slice(1).reduce((n, q, i) => n + (blocks(pts[i][0], pts[i][1], q[0], q[1], i === 0 || i === pts.length - 2 ? obs : [...obs, A, B]) ? 1 : 0), 0);
+    // Rectángulos con margen, calculados una vez por conexión (esta función se llama por cada conexión en cada cambio de geometría)
+    const padded = o => [o.x - pad, o.y - pad, o.x + o.w + pad, o.y + o.h + pad];
+    const obsP = obs.map(padded), endsP = [padded(A), padded(B)];
+    const blocks = (x1, y1, x2, y2, list) => {
+      const xa = Math.min(x1, x2), xb = Math.max(x1, x2), ya = Math.min(y1, y2), yb = Math.max(y1, y2);
+      for (let i = 0; i < list.length; i++) { const o = list[i]; if (xb > o[0] && xa < o[2] && yb > o[1] && ya < o[3]) return true; }
+      return false;
+    };
+    // El primer y el último tramo salen del nodo de origen y llegan al de destino: esos dos no cuentan como tapados por los propios extremos
+    const hits = pts => {
+      let n = 0;
+      for (let i = 0, last = pts.length - 2; i <= last; i++) {
+        const p = pts[i], q = pts[i + 1];
+        if (blocks(p[0], p[1], q[0], q[1], obsP) || (i !== 0 && i !== last && blocks(p[0], p[1], q[0], q[1], endsP))) n++;
+      }
+      return n;
+    };
     if (bend) { // tramo central en la posición elegida a mano (solo cuenta la coordenada perpendicular a los extremos)
       const P = bendPt(a, b, bend);
       let bx = flip ? P.y : P.x;
@@ -2095,14 +2106,16 @@
     if (Math.abs(sy - ey) < 1) cands.push([[sx, sy], [ex, ey]]);
     const lo = Math.min(sx, ex), hi = Math.max(sx, ex);
     if ((ex - sx) * dir > STUB * 2) {
-      [(sx + ex) / 2, ...obs.flatMap(o => [o.x - M, o.x + o.w + M])].filter(x => x > lo + STUB - 1 && x < hi - STUB + 1)
+      // Los nodos alineados dan el mismo canal muchas veces: cada valor se prueba una sola vez (el primero, como antes)
+      new Set([(sx + ex) / 2, ...obs.flatMap(o => [o.x - M, o.x + o.w + M])].filter(x => x > lo + STUB - 1 && x < hi - STUB + 1))
         .forEach(x => cands.push([[sx, sy], [x, sy], [x, ey], [ex, ey]]));
     }
     const x1 = sx + dir * STUB, x2 = ex - dir * STUB;
-    [A, B, ...obs].flatMap(o => [o.y - M, o.y + o.h + M]).forEach(y => cands.push([[sx, sy], [x1, sy], [x1, y], [x2, y], [x2, ey], [ex, ey]]));
-    const score = pts => pts.slice(1).reduce((n, q, i) => n + Math.abs(q[0] - pts[i][0]) + Math.abs(q[1] - pts[i][1]), 0) + (pts.length - 2) * 40 + hits(pts) * 1e5;
+    new Set([A, B, ...obs].flatMap(o => [o.y - M, o.y + o.h + M])).forEach(y => cands.push([[sx, sy], [x1, sy], [x1, y], [x2, y], [x2, ey], [ex, ey]]));
+    // Largo + codos; los tramos tapados pesan tanto que solo se cuentan si el camino aún puede ganar (es lo caro de calcular)
+    const base = pts => { let n = (pts.length - 2) * 40; for (let i = 1; i < pts.length; i++) n += Math.abs(pts[i][0] - pts[i - 1][0]) + Math.abs(pts[i][1] - pts[i - 1][1]); return n; };
     let best = cands[0], bs = Infinity;
-    cands.forEach(c => { const v = score(c); if (v < bs) { bs = v; best = c; } });
+    cands.forEach(c => { const b0 = base(c); if (b0 >= bs) return; const v = b0 + hits(c) * 1e5; if (v < bs) { bs = v; best = c; } });
     return roundPath(best.map(([x, y]) => (flip ? [y, x] : [x, y])));
   }
   // Lado por el que sale el origen y entra el destino (misma regla que elbowPath): 'r', 'l', 'b' o 't'
@@ -2209,12 +2222,14 @@
     return ad;
   }
 
-  function updateGeometry() {
+  // moved (opcional) = ids de los nodos que se están arrastrando: solo se recolocan ellos y sus conexiones.
+  // Las conexiones en ángulo recto se recalculan siempre, porque esquivan a los demás nodos.
+  function updateGeometry(moved = null) {
     // Las insignias numeradas del camino / linaje siguen a su nodo cuando se arrastra
     if (S.path) $$('.path-badge[data-id]', L.guides).forEach(b => { const n = findNode(S.model, b.dataset.id); if (n) b.setAttribute('transform', `translate(${n.x + 2} ${n.y + 2})`); });
     const m = S.model, byId = new Map(m.nodes.map(n => [n.id, n]));
     const rect = id => { const n = byId.get(id); return { x: n.x, y: n.y, w: R.width.get(id), h: H }; };
-    m.nodes.forEach(n => R.nodes.get(n.id)?.setAttribute('transform', `translate(${n.x} ${n.y})`));
+    m.nodes.forEach(n => (!moved || moved.has(n.id)) && R.nodes.get(n.id)?.setAttribute('transform', `translate(${n.x} ${n.y})`));
     updateItems();
 
     const sc = R.edges.size && m.zones.some(z => z.kind === 'trust') ? strideCtx(m) : null;
@@ -2224,7 +2239,9 @@
     const ports = elbowPorts(sm.edges, rect, routeOf);
     R.edges.forEach(r => {
       if (VW.sc.edges.has(r.e.id)) return;
-      const e = r.e, a = rect(e.from), b = rect(e.to), off = pairs.has(e.to + '\0' + e.from) ? 7 + Math.max(0, ((r.wpx || 1.8) - 1.8) / 2) : 0, pt = ports.get(e.id);
+      const e = r.e, pt = ports.get(e.id);
+      if (moved && !pt && !moved.has(e.from) && !moved.has(e.to)) return;
+      const a = rect(e.from), b = rect(e.to), off = pairs.has(e.to + '\0' + e.from) ? 7 + Math.max(0, ((r.wpx || 1.8) - 1.8) / 2) : 0;
       const d = e.from === e.to ? loopPath(a)
         : pt ? elbowPath(a, b, pt.s, allRects.filter(o => o.id !== e.from && o.id !== e.to), pt.t, e.bend) : curvePath(a, b, off, e.bend);
       r.hit.setAttribute('d', d);
@@ -2263,7 +2280,7 @@
       r.box.setAttribute('width', box.w); r.box.setAttribute('height', box.h);
       r.tag.setAttribute('transform', `translate(${box.x + 12} ${box.y + 10})`);
     });
-    updateContext();
+    updateContext(!!moved);
     drawScopeFrame();
     if (S.compare?.diff) drawGhosts();
   }
@@ -3041,10 +3058,10 @@
   }
 
   /* ---------- vista Contexto: cajas cerradas y conexiones agregadas (solo dibujo; el modelo no cambia) ---------- */
-  function updateContext() {
+  function updateContext(dragging = false) {
     L.ctx.textContent = '';
     VW.ctxBoxes = new Map(); VW.ctxEdges = new Map(); VW.flows = new Map();
-    if (vc().groups !== 'collapse-top') { S.flow = null; return syncViewUI(); }
+    if (vc().groups !== 'collapse-top') { S.flow = null; return dragging ? undefined : syncViewUI(); }   // arrastrando no cambia nada de la vista: no se rehace su barra en cada movimiento
     const m = S.model, gmap = new Map(m.groups.map(g => [g.id, g])), byId = new Map(m.nodes.map(n => [n.id, n]));
     const topOf = gid => { let g = gmap.get(gid), i = 0; while (g?.parent && gmap.has(g.parent) && i++ < 50) g = gmap.get(g.parent); return g; };
     // Representante visible de cada nodo: la caja cerrada de su grupo de primer nivel, o él mismo
@@ -3211,8 +3228,10 @@
     stage.style.backgroundPosition = `${x}px ${y}px`;
     $('#zoomv').textContent = `${Math.round(k * 100)}%`;
   }
+  // Durante un arrastre el lienzo no cambia de sitio: su posición se lee una vez al empezar (leerla en cada movimiento obliga al navegador a recalcular la página)
+  let dragRect = null;
   const toWorld = (cx, cy) => {
-    const r = svg.getBoundingClientRect();
+    const r = dragRect || svg.getBoundingClientRect();
     return { x: (cx - r.left - S.view.x) / S.view.k, y: (cy - r.top - S.view.y) / S.view.k };
   };
   let viewAnim = 0;
@@ -5520,6 +5539,7 @@
   svg.addEventListener('pointermove', ev => {
     const d = S.drag;
     if (!d) return;
+    if (!dragRect) dragRect = svg.getBoundingClientRect();
     if (d.kind === 'pan') {
       const dx = ev.clientX - d.cx, dy = ev.clientY - d.cy;
       if (!d.moved && Math.hypot(dx, dy) > 3) { d.moved = true; svg.classList.add('panning'); }
@@ -5558,11 +5578,12 @@
       o.n.y = g?.y != null ? o.y + g.y : snap(o.y + dy);
     });
     drawGuides(g?.lines || []);
-    updateGeometry();
+    updateGeometry(d.ids || (d.ids = new Set(d.orig.map(o => o.n.id))));
   });
 
   const endDrag = () => {
     const d = S.drag;
+    dragRect = null;
     if (!d) return;
     S.drag = null;
     svg.classList.remove('panning', 'dragging');
