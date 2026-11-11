@@ -3513,6 +3513,7 @@
   // Tras cambiar el modelo desde el lienzo o el inspector
   function changed(structural = true) {
     if (S.path) clearPath();
+    if (S.connecting && !findNode(S.model, S.connecting)) { S.connecting = null; $('#banner').hidden = true; }   // se borró el nodo desde el que se estaba conectando (el resaltado se rehace al pintar)
     if (S.model.decisions?.length) pruneAdrLinks();
     if (S.model.requirements?.length) pruneReqLinks();
     if (S.model.raid?.length) pruneRaidLinks();
@@ -4030,6 +4031,7 @@
   function addEdge(from, to) {
     cancelConnect();
     if (from === to) return;
+    if (!findNode(S.model, from) || !findNode(S.model, to)) return;   // un extremo que ya no existe (o un id equivocado desde la API) dejaría una conexión que no se puede dibujar
     if (S.model.edges.some(e => e.from === from && e.to === to)) { toast(T('toast.edgeExists')); return; }
     pushHistory();
     const id = uniqueId('e');
@@ -4146,6 +4148,8 @@
   /* ---------- crear y editar notas y zonas ---------- */
   const viewCenter = () => { const r = svg.getBoundingClientRect(); return toWorld(r.left + r.width / 2, r.top + r.height / 2); };
   function addItem(kind, o) {
+    // En una vista que oculta las notas o las zonas lo nuevo no se vería (ni se podría elegir): se pasa a la Completa, como al añadir un componente
+    if (!vc()[kind === 'note' ? 'notes' : 'zones']) { setView('full', { toast: false }); toast(T('view.auto'), 2600); }
     pushHistory();
     const id = uniqueId(kind);
     S.model[kind === 'note' ? 'notes' : 'zones'].push({ id, ...o, ...(S.scope ? { in: S.scope } : {}) });
@@ -4153,7 +4157,7 @@
     select({ kind, id });
     toast(T(kind === 'note' ? 'toast.noteAdded' : o.kind === 'trust' ? 'toast.trustAdded' : 'toast.zoneAdded'));
   }
-  const addNote = () => { const c = viewCenter(); addItem('note', { x: snap(c.x - 90), y: snap(c.y - 55), w: 180, h: 110, text: '', color: 'limon' }); editItemText('note', S.sel.id); };
+  const addNote = () => { const c = viewCenter(); addItem('note', { x: snap(c.x - 90), y: snap(c.y - 55), w: 180, h: 110, text: '', color: 'limon' }); if (S.sel?.kind === 'note') editItemText('note', S.sel.id); };
   const addZone = () => { const c = viewCenter(); addItem('zone', { x: snap(c.x - 180), y: snap(c.y - 110), w: 360, h: 220, label: T('zone.new'), severity: 'medium' }); };
   // Caja alrededor de los nodos elegidos, con margen
   function markZone(kind) {

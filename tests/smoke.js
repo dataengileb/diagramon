@@ -294,6 +294,28 @@ async function run(cdp) {
     await app.evaluate(`document.querySelector('.tab[data-tab="components"]').click()`);
   });
 
+  await test('a connection to a missing component is refused, and deleting the component being connected ends connect mode', async () => {
+    await app.evaluate(`document.querySelector('#examples .ex[data-ex="0"]').click()`);
+    await sleep(300);
+    const r = await app.call(() => {
+      const D = window.Diagramon, n0 = D.model.edges.length, ids = D.model.nodes.map(n => n.id);
+      D.addEdge(ids[0], 'no-such-node'); D.addEdge('no-such-node', ids[0]);
+      const afterBad = D.model.edges.length;
+      D.addNode('compute', 0, 0);
+      const fresh = D.model.nodes.find(n => !ids.includes(n.id)).id;
+      D.select([fresh]);
+      document.querySelector('#inspector [data-act="connect"], #inspector .btn[data-connect]')?.click();
+      const banner = !document.querySelector('#banner').hidden;
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true }));
+      return { n0, afterBad, banner, bannerAfter: !document.querySelector('#banner').hidden, gone: !D.model.nodes.some(n => n.id === fresh) };
+    });
+    assert(r.afterBad === r.n0, 'a connection with a missing end was added');
+    assert(r.banner, 'connect mode did not start');
+    assert(r.gone, 'the component was not deleted');
+    assert(!r.bannerAfter, 'connect mode stayed on after deleting its component');
+    app.clean();
+  });
+
   // Los editores de Texto y JSON solo se escriben con su pestaña abierta: al abrirla deben traer el diagrama actual
   await test('the Text and JSON editors fill in when their tab opens', async () => {
     await app.evaluate(`document.querySelector('.tab[data-tab="components"]').click()`);
