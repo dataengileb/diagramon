@@ -29,6 +29,7 @@ window.DiagramonUI.tabs = { create(ctx) {
     else if (t.dataset.tab === 'raid') ctx.renderRaid(true);
     else if (t.dataset.tab === 'data') ctx.renderDs(true);
     else if (t.dataset.tab === 'people') ctx.renderPeople(true);
+    else if (t.dataset.tab === 'text' || t.dataset.tab === 'code') ctx.showEditor(t.dataset.tab);
   }));
   TABG.forEach(g => g.addEventListener('click', () => {
     const mine = TABS.filter(t => t.dataset.group === g.dataset.g), last = store.get('tabg', {})[g.dataset.g];

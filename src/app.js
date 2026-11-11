@@ -19,6 +19,27 @@
   const svg = $('#canvas'), viewport = $('#viewport'), stage = $('#stage');
   const L = { zones: $('#l-zones'), groups: $('#l-groups'), edges: $('#l-edges'), ctx: $('#l-ctx'), ghosts: $('#l-ghosts'), nodes: $('#l-nodes'), zoneTop: $('#l-zone-top'), notes: $('#l-notes'), guides: $('#l-guides'), scope: $('#l-scope') };
 
+  /* ---------- índices del modelo ---------- */
+  // Buscar un nodo o un grupo por id recorriendo la lista es barato una vez, pero al pintar y al revisar se hace por cada nodo y conexión:
+  // con cientos de componentes el costo crece al cuadrado. withIndex(m, fn) prepara los índices de m mientras dura fn (que no debe cambiar el modelo);
+  // fuera de ahí findNode / findGroup / edgesAt recorren la lista como siempre, así nunca devuelven algo desfasado.
+  let IX = null;
+  const firstById = list => { const o = new Map(); list.forEach(x => { if (x && !o.has(x.id)) o.set(x.id, x); }); return o; };
+  function withIndex(m, fn) {
+    if (!m || (IX && IX.m === m)) return fn();
+    const prev = IX;
+    IX = { m, nodes: firstById(m.nodes || []), groups: firstById(m.groups || []), adj: null };
+    try { return fn(); } finally { IX = prev; }
+  }
+  const findNode = (m, id) => (IX && IX.m === m ? IX.nodes.get(id) : m.nodes.find(n => n.id === id));
+  const findGroup = (m, id) => (IX && IX.m === m ? IX.groups.get(id) : m.groups.find(g => g.id === id));
+  // Conexiones que tocan un nodo (como origen o destino), en el orden del modelo
+  const edgesAt = (m, id) => {
+    if (!IX || IX.m !== m) return m.edges.filter(e => e.from === id || e.to === id);
+    if (!IX.adj) { IX.adj = new Map(); const add = (k, e) => { const l = IX.adj.get(k); if (l) l.push(e); else IX.adj.set(k, [e]); }; m.edges.forEach(e => { add(e.from, e); if (e.to !== e.from) add(e.to, e); }); }
+    return IX.adj.get(id) || [];
+  };
+
   /* ---------- colores ---------- */
   const paletteKeys = () => Object.keys((C.palettes[S.palette] || Object.values(C.palettes)[0]).dark);
   // También acepta los nombres en inglés de los colores (peach, sky…)
@@ -107,10 +128,15 @@
   const hasCost = n => n.cost != null && n.cost !== '' && Number.isFinite(+n.cost);
   const periodOf = n => (PERIODS[n.costPeriod] ? n.costPeriod : 'month');
   const yearsOf = n => Math.max(1, Math.round(+n.costYears) || COST.defaultYears);
+  const moneyFmt = new Map();
   const money = v => {
     v = +v;
     const d = Number.isInteger(v) ? 0 : Math.abs(v) < 1 ? 4 : 2;
-    try { return new Intl.NumberFormat(COST.locale, { style: 'currency', currency: COST.currency, minimumFractionDigits: Math.min(d, 2), maximumFractionDigits: d }).format(v); }
+    try {
+      const k = `${COST.locale}|${COST.currency}|${d}`;   // crear el formateador es caro: se reutiliza
+      if (!moneyFmt.has(k)) moneyFmt.set(k, new Intl.NumberFormat(COST.locale, { style: 'currency', currency: COST.currency, minimumFractionDigits: Math.min(d, 2), maximumFractionDigits: d }));
+      return moneyFmt.get(k).format(v);
+    }
     catch { return `$${v.toFixed(d)}`; }
   };
   const costText = n => {
@@ -160,7 +186,7 @@
     if (own) return { value: own, from: null };
     const isNode = 'type' in x, chain = [];
     let g = isNode ? x.group : x.parent, i = 0;
-    while (g && i++ < 50) { const gg = m.groups.find(q => q.id === g); if (!gg) break; chain.push(gg); g = gg.parent; }
+    while (g && i++ < 50) { const gg = findGroup(m, g); if (!gg) break; chain.push(gg); g = gg.parent; }
     const hit = chain.find(q => cleanRegion(q.region));
     if (hit) return { value: cleanRegion(hit.region), from: { id: hit.id, label: hit.label, deduced: false } };
     // Un grupo también puede llamarse como su región
@@ -243,7 +269,7 @@
   const addFindingSource = (key, fn) => { FINDING_SOURCES.push({ key, fn }); };
   const SEVERITY = ['low', 'medium', 'high', 'critical'];
   function allFindings(m = S.model) {
-    return m ? FINDING_SOURCES.flatMap(s => { try { return s.fn(m) || []; } catch (err) { console.error(`findings/${s.key}`, err); return []; } }) : [];
+    return m ? withIndex(m, () => FINDING_SOURCES.flatMap(s => { try { return s.fn(m) || []; } catch (err) { console.error(`findings/${s.key}`, err); return []; } })) : [];
   }
   // CSV para Excel: separador coma, comillas cuando hace falta y BOM para que respete tildes
   const csvCell = v => { const t = v == null ? '' : String(v); return /[",\r\n]/.test(t) || /^[=+\-@]/.test(t) ? `"${(/^[=+\-@]/.test(t) ? "'" : '') + t.replace(/"/g, '""')}"` : t; };
@@ -297,13 +323,13 @@
     if (!x) return out;
     const chain = [];
     let g = 'type' in x ? x.group : x.parent, i = 0;
-    while (g && i++ < 50) { const gg = m.groups.find(q => q.id === g); if (!gg) break; chain.push(gg); g = gg.parent; }
+    while (g && i++ < 50) { const gg = findGroup(m, g); if (!gg) break; chain.push(gg); g = gg.parent; }
     chain.reverse().forEach(q => Object.entries(q.controls || {}).forEach(([k, s]) => out.set(k, { status: s, from: q.id })));
     Object.entries(x.controls || {}).forEach(([k, s]) => out.set(k, { status: s, from: null }));
     return out;
   }
   // Clases de datos que maneja un nodo: las suyas y las de sus conexiones
-  const dataClassesOf = (n, m = S.model) => [...new Set([...(n.data || []), ...m.edges.filter(e => e.from === n.id || e.to === n.id).flatMap(e => e.data || [])])]
+  const dataClassesOf = (n, m = S.model) => [...new Set([...(n.data || []), ...edgesAt(m, n.id).flatMap(e => e.data || [])])]
     .sort((a, b) => Object.keys(DATA).indexOf(a) - Object.keys(DATA).indexOf(b));
   const nodesUnder = (x, m = S.model) => ('type' in x ? [x] : m.nodes.filter(n => inGroup(n, x.id)));
   // Sugerencias para una lista de nodos/grupos según sus clases de datos (y las conexiones entre jurisdicciones); sin las ya marcadas en todos
@@ -459,18 +485,23 @@
   };
   // Inyecta las tipografías en la página y vuelve a medir y pintar cuando terminan de cargar
   function loadFonts() {
-    const st = document.createElement('style');
-    st.id = 'font-faces';
-    st.textContent = Object.keys(FONTS).map(k => fontFaces(k)).join('\n');
-    document.head.appendChild(st);
+    if (!$('#font-faces')) {   // normalmente ya las inyectó src/core/state.js al cargar, para que estén listas antes del primer pintado
+      const st = document.createElement('style');
+      st.id = 'font-faces';
+      st.textContent = Object.keys(FONTS).map(k => fontFaces(k)).join('\n');
+      document.head.appendChild(st);
+    }
     refreshFont();
   }
+  // Huella de las medidas de texto: si no cambia al terminar de cargar la tipografía, el lienzo ya está bien medido y no hace falta repintarlo entero
+  const fontSig = () => Object.values(FONT).map(f => textW('AÁñŁ Diagramon 0123', f).toFixed(2)).join('|');
+  let paintedSig = '';
   function refreshFont() {
     const f = FONTS[S.font], key = S.font;
     if (!f.family) return;
     Promise.all(['400', '500', '600', '700', '800'].map(w => document.fonts.load(`${w} 13px "${f.family}"`, 'AÁñŁ'))).catch(() => {}).then(() => {
       if (key !== S.font || !S.model) return;
-      render(false);
+      if (fontSig() !== paintedSig) render(false);
       renderInspector();
     });
   }
@@ -589,7 +620,7 @@
       while (p) {
         if (seen.has(p)) { delete g.parent; break; }
         seen.add(p);
-        p = m.groups.find(x => x.id === p)?.parent;
+        p = findGroup(m, p)?.parent;
       }
     });
 
@@ -767,13 +798,13 @@
     });
   }
 
-  const groupById = id => S.model.groups.find(g => g.id === id);
+  const groupById = id => findGroup(S.model, id);
   // Tipo de grupo deducido (físico si su icono o su nombre son de red, cuenta o región) y tipo efectivo
   const groupKindAuto = g => (VR.physicalGroupIcons.includes(g.icon) || VR.physicalGroupName.test(String(g.label ?? '')) ? 'physical' : 'logical');
   const groupKind = g => (g.kind === 'logical' || g.kind === 'physical' ? g.kind : groupKindAuto(g));
   function groupDepth(g, m = S.model) {
     let d = 0, p = g.parent;
-    while (p && d < 50) { d++; p = m.groups.find(x => x.id === p)?.parent; }
+    while (p && d < 50) { d++; p = findGroup(m, p)?.parent; }
     return d;
   }
   function inGroup(n, gid) {
@@ -791,14 +822,14 @@
   const inScope = (x, sc = S.scope) => scopeId(x) === sc;
   // Nivel al que pertenece un elemento (objeto, o id de nodo / grupo)
   function scopeOf(x, m = S.model) {
-    if (typeof x === 'string') x = m.nodes.find(n => n.id === x) || m.groups.find(g => g.id === x);
+    if (typeof x === 'string') x = findNode(m, x) || findGroup(m, x);
     return scopeId(x);
   }
   // Ids desde el nivel superior hasta `id` (incluido); [] para el nivel superior
   function scopePath(id, m = S.model) {
     const out = [];
     let cur = id, i = 0;
-    while (cur && i++ < 50) { const n = m.nodes.find(x => x.id === cur); if (!n) break; out.unshift(cur); cur = n.in; }
+    while (cur && i++ < 50) { const n = findNode(m, cur); if (!n) break; out.unshift(cur); cur = n.in; }
     return out;
   }
   // Lo que contiene directamente un nodo (null = nivel superior)
@@ -833,7 +864,7 @@
     m.groups.forEach(g => { if (g.parent && (gmap.get(g.parent)?.in || null) !== (g.in || null)) delete g.parent; });
     m.nodes.forEach(n => { if (n.group && (gmap.get(n.group)?.in || null) !== (n.in || null)) delete n.group; });
   }
-  const scopeNode = (id = S.scope) => (id ? S.model.nodes.find(n => n.id === id) || null : null);
+  const scopeNode = (id = S.scope) => (id ? findNode(S.model, id) || null : null);
   const c4Label = k => (C4_KINDS.includes(k) ? T(`c4.k.${k}`) : '');
   // Nivel C4 de lo que hay dentro de un nodo: 1 contexto, 2 contenedores, 3 componentes, 4 código. Manda el tipo C4 del nodo; si no, la profundidad
   function levelOf(id = S.scope) {
@@ -849,7 +880,7 @@
     const out = [];
     const walk = (id, depth) => {
       const nodes = m.nodes.filter(n => (n.in || null) === id);
-      if (id === null || nodes.length) out.push({ id, label: id ? m.nodes.find(n => n.id === id).label : T('c4.top'), depth, path: scopePath(id, m), nodes: nodes.length });
+      if (id === null || nodes.length) out.push({ id, label: id ? findNode(m, id).label : T('c4.top'), depth, path: scopePath(id, m), nodes: nodes.length });
       if (depth < 20) nodes.forEach(n => walk(n.id, depth + 1));
     };
     walk(null, 0);
@@ -867,7 +898,7 @@
     if (own) return { value: own, from: null };
     let gid = x?.group || x?.parent, i = 0;
     while (gid && i++ < 50) {
-      const g = m.groups.find(y => y.id === gid), v = String(g?.[f] ?? '').trim();
+      const g = findGroup(m, gid), v = String(g?.[f] ?? '').trim();
       if (v) return { value: v, from: g.id };
       gid = g?.parent;
     }
@@ -930,14 +961,14 @@
     return out;
   };
   // Grupos de un nodo, del más cercano al más lejano
-  const groupChain = (n, m) => { const out = []; let g = n.group, i = 0; while (g && i++ < 50) { const gg = m.groups.find(x => x.id === g); if (!gg) break; out.push(gg); g = gg.parent; } return out; };
+  const groupChain = (n, m) => { const out = []; let g = n.group, i = 0; while (g && i++ < 50) { const gg = findGroup(m, g); if (!gg) break; out.push(gg); g = gg.parent; } return out; };
   // Exposición: { value: 'public' | 'internal', auto, why }. Lo explícito gana; si no, se deduce del grupo o de quién le envía tráfico
   function exposureOf(n, m = S.model) {
     if (n.exposure === 'public' || n.exposure === 'internal') return { value: n.exposure, auto: false, why: T('sec.why.manual') };
     const P = SR['sec.public-sensitive'] || {}, clients = P.clientTypes || [];
     const g = groupChain(n, m).find(x => (P.publicGroupIcons || []).includes(x.icon) || srRx(P.publicGroupName, x.label));
     if (g) return { value: 'public', auto: true, why: T('sec.why.group', g.label) };
-    const src = m.edges.filter(e => e.to === n.id || (e.both && e.from === n.id)).map(e => m.nodes.find(x => x.id === (e.to === n.id ? e.from : e.to))).find(x => x && x.id !== n.id && clients.includes(x.type));
+    const src = edgesAt(m, n.id).filter(e => e.to === n.id || (e.both && e.from === n.id)).map(e => findNode(m, e.to === n.id ? e.from : e.to)).find(x => x && x.id !== n.id && clients.includes(x.type));
     return src ? { value: 'public', auto: true, why: T('sec.why.client', src.label) } : { value: 'internal', auto: true, why: T('sec.why.none') };
   }
   const isClientNode = n => (SR['sec.public-sensitive']?.clientTypes || []).includes(n.type);
@@ -949,7 +980,7 @@
     const D = SR['sec.datastore-backup'] || {};
     for (const e of m.edges) {
       if (e.from !== n.id && e.to !== n.id) continue;
-      const o = m.nodes.find(x => x.id === (e.from === n.id ? e.to : e.from));
+      const o = findNode(m, e.from === n.id ? e.to : e.from);
       if (o && o.id !== n.id && isBackupNode(o)) return { value: true, auto: true, why: T('sec.why.bknode', o.label) };
       if (srRx(D.backupEdgeLabel, e.label)) return { value: true, auto: true, why: T('sec.why.bkedge', String(e.label).replace(/\s+/g, ' ')) };
     }
@@ -1109,8 +1140,8 @@
   const REQ_H = {
     T: (k, v) => T(k, v), availability: (a, b) => availability(a, b), e2e: name => e2eOf(name), cost: m => { const ns = m.nodes.filter(hasCost); return ns.length ? monthlyTotal(ns) : null; },
     carries: (e, get, cls) => (e.data?.length ? e.data : [...(get(e.from)?.data || []), ...(e.both ? get(e.to)?.data || [] : [])]).includes(cls),
-    crossBorder: e => crossBorder(e, id => S.model.nodes.find(n => n.id === id)), sensitive: cls => !!DATA[cls]?.sensitive, nodeJur: n => jurOf(regionOf(n).value)?.key || '',
-    edgeName: e => { const nm = id => S.model.nodes.find(n => n.id === id)?.label || id; return `${nm(e.from)} ${e.both ? '↔' : '→'} ${nm(e.to)}`; }, pct: a => fmtPct(a), dur: s => fmtDur(s), money: v => money(v), num: v => numFmt(v, 4)
+    crossBorder: e => crossBorder(e, id => findNode(S.model, id)), sensitive: cls => !!DATA[cls]?.sensitive, nodeJur: n => jurOf(regionOf(n).value)?.key || '',
+    edgeName: e => { const nm = id => findNode(S.model, id)?.label || id; return `${nm(e.from)} ${e.both ? '↔' : '→'} ${nm(e.to)}`; }, pct: a => fmtPct(a), dur: s => fmtDur(s), money: v => money(v), num: v => numFmt(v, 4)
   };
   const reqCheck = (r, m = S.model) => reqEval(r, m, REQ_H);
   // Hallazgos (fuente «req»): obligatorios y recomendables acordados sin cobertura (ni decisión aceptada ni componente enlazado); controles que fallan
@@ -1165,8 +1196,8 @@
   // Lo que el bloque recibe de la app
   const dsPrices = () => C.datasets?.storagePrice || { default: 0.023 };
   const dsHelpers = () => ({ layer: cleanLayer, classes: Object.keys(DATA), formats: C.datasets?.formats, rules: C.datasets?.qualityRules, normDur, lineageOf, parseDur, prices: dsPrices(), T: (k, v) => T(k, v), fmtDur: s => fmtDur(s),
-    sensitive: k => !!DATA[k]?.sensitive, short: k => loc(DATA[k]?.short) || String(k).toUpperCase(), nodeName: id => S.model.nodes.find(n => n.id === id)?.label || id,
-    edgeName: e => { const nm = id => S.model.nodes.find(n => n.id === id)?.label || id; return `${nm(e.from)} ${e.both ? '↔' : '→'} ${nm(e.to)}`; } });
+    sensitive: k => !!DATA[k]?.sensitive, short: k => loc(DATA[k]?.short) || String(k).toUpperCase(), nodeName: id => findNode(S.model, id)?.label || id,
+    edgeName: e => { const nm = id => findNode(S.model, id)?.label || id; return `${nm(e.from)} ${e.both ? '↔' : '→'} ${nm(e.to)}`; } });
   const e2eOf = (name, m = S.model) => e2eFreshness(m, name, dsHelpers());
   const dsById = (id, m = S.model) => (m.datasets || []).find(d => d.id === id);
   const dsFind = (v, m = S.model) => dsById(v, m) || (m.datasets || []).find(d => dsK(d.name) === dsK(v));
@@ -1510,7 +1541,7 @@
     const gpath = n => {
       const chain = [];
       let g = n.group, i = 0;
-      while (g && i++ < 50) { chain.unshift(String(gIndex.get(g)).padStart(3, '0')); g = m.groups.find(x => x.id === g)?.parent; }
+      while (g && i++ < 50) { chain.unshift(String(gIndex.get(g)).padStart(3, '0')); g = findGroup(m, g)?.parent; }
       return chain.join('/');
     };
     const TB = (m.direction || C.layout.direction) === 'TB';
@@ -1552,17 +1583,23 @@
   }
   const endEnter = node => node.addEventListener('animationend', ev => { if (ev.target === node) node.classList.remove('enter'); });
 
-  function render(animate = false) {
+  function render(animate = false) { withIndex(S.model, () => renderNow(animate)); }
+  function renderNow(animate) {
     const m = S.model;
+    paintedSig = fontSig();
     for (const k in L) L[k].textContent = '';
     R.nodes.clear(); R.edges.clear(); R.groups.clear(); R.width.clear();
     m.nodes.forEach(n => R.width.set(n.id, nodeWidth(n)));
     viewPrep();
     drawItems();
+    if (m.nodes.length + m.edges.length > 250) animate = false;
     [...m.groups].sort((a, b) => groupDepth(a) - groupDepth(b)).forEach(g => buildGroup(g, animate));
-    const base = m.nodes.length * C.animation.enterStagger * 0.6;
-    m.edges.forEach((e, i) => buildEdge(e, animate ? base + i * 30 : -1));
-    m.nodes.forEach((n, i) => buildNode(n, animate ? i * C.animation.enterStagger : -1));
+    // La entrada escalonada tiene un tope de duración: con el paso fijo, un diagrama de 300 componentes tardaba más de 20 s en terminar de aparecer.
+    // Un diagrama grande se pinta de una vez (cientos de animaciones a la vez solo frenan la apertura).
+    const stag = Math.min(C.animation.enterStagger, 500 / Math.max(1, m.nodes.length)), estag = Math.min(30, 350 / Math.max(1, m.edges.length));
+    const base = m.nodes.length * stag * 0.5;
+    m.edges.forEach((e, i) => buildEdge(e, animate ? base + i * estag : -1));
+    m.nodes.forEach((n, i) => buildNode(n, animate ? i * stag : -1));
     refreshFindings(true);
     applyViewMode();
     updateGeometry();
@@ -1736,7 +1773,7 @@
   function buildEdge(e, delay) {
     const st = edgeKey(e.style), cfg = edgeStyleOf(st), mu = edgeMult(e), wt = EDGE_W[e.weight] ? e.weight : '';
     const g = el('g', { class: `edge ${edgeCls(st)}${cfg.dash ? ' edge-dashed' : ''}${wt ? ` w-${wt}` : ''}${delay >= 0 ? ' enter' : ''}`, 'data-id': e.id }, L.edges);
-    g.style.setProperty('--c', colorVar(e.color) || colorVar(cfg.color) || nodeColor(S.model.nodes.find(n => n.id === e.from)));
+    g.style.setProperty('--c', colorVar(e.color) || colorVar(cfg.color) || nodeColor(findNode(S.model, e.from)));
     g.style.setProperty('--w', `${+(cfg.width * mu).toFixed(2)}px`);
     if (delay >= 0) { g.style.animationDelay = `${delay}ms`; endEnter(g); }
     const hit = el('path', { class: 'edge-hit' }, g);
@@ -1752,7 +1789,7 @@
     // Con punta en ambos extremos las partículas van y vienen (al menos dos, alternando sentido); el peso suma partículas (solo si el tipo ya las tiene)
     const np = cfg.particles ? cfg.particles + (wt === 'critical' ? 2 : wt === 'high' ? 1 : 0) : 0, pr = (st === 'data' || st === 'stream' ? 2.4 : 3) + (wt === 'critical' ? 1 : wt === 'high' ? 0.5 : 0);
     const parts = Array.from({ length: np ? (e.both ? Math.max(2, np) : np) : 0 }, () => el('circle', { class: 'particle', r: pr, cx: -9999, cy: -9999 }, g));
-    const byId = id => S.model.nodes.find(n => n.id === id);
+    const byId = id => findNode(S.model, id);
     if (isInsecure(e, byId)) g.classList.add('insecure');
     const bh = el('circle', { class: 'edge-handle', r: 5 }, g); // tirador para mover la flecha (solo con la conexión elegida)
     el('title', null, bh).textContent = T('edge.bend.tip');
@@ -1768,7 +1805,7 @@
   /* ---------- marcador de datos fuera de su jurisdicción (solo se ve en la vista Seguridad) ---------- */
   // Un globo en el punto medio (rojo) o un ✓ gris si la transferencia está autorizada; se reconstruye con la conexión
   function xbMarker(r) {
-    const cb = crossBorder(r.e, id => S.model.nodes.find(n => n.id === id));
+    const cb = crossBorder(r.e, id => findNode(S.model, id));
     if (!cb) return;
     const mk = el('g', { class: `edge-xb${cb.approved ? ' ok' : ''}` }, r.g);
     el('circle', { r: 10 }, mk);
@@ -1864,7 +1901,7 @@
       tx.textContent = txt;
       rc.setAttribute('x', -w / 2); rc.setAttribute('width', w);
     }
-    const mp = r.line.getPointAtLength(r.len * 0.7);
+    const mp = r.geo.at(r.len * 0.7);
     mk.setAttribute('transform', `translate(${mp.x} ${mp.y})`);
   }
   // Modelo de amenazas en CSV: una fila por conexión que cruza × categoría sugerida
@@ -2117,14 +2154,54 @@
 
   const loopPath = a => `M${a.x + a.w - 34},${a.y} C${a.x + a.w - 34},${a.y - 56} ${a.x + a.w + 52},${a.y - 30} ${a.x + a.w},${a.y + a.h / 2 - 6}`;
 
-  // Punta de flecha al final de la línea (y al inicio si es bidireccional)
+  // Longitud y puntos de una ruta calculados aquí (M, L, C y Q absolutos: lo único que generan curvePath, elbowPath y loopPath).
+  // getTotalLength / getPointAtLength del navegador vuelven a recorrer la ruta en cada llamada, y entre cambios de atributos
+  // obligan a recalcular: con cientos de conexiones se llevaban casi todo el tiempo de abrir el diagrama y de la animación.
+  // Devuelve { len, at(l) → { x, y }, box } con la curva aproximada por tramos rectos cortos (error muy por debajo de un píxel).
+  const PATH_TOK = /[MLCQ]|-?(?:\d+\.?\d*|\.\d+)(?:e[-+]?\d+)?/g;
+  function pathGeom(d) {
+    const tk = String(d).match(PATH_TOK) || [], xs = [], ys = [], ls = [];
+    let i = 0, cmd = '', x = 0, y = 0, len = 0;
+    const num = () => +tk[i++];
+    const to = (nx, ny) => { if (xs.length) len += Math.hypot(nx - x, ny - y); xs.push(x = nx); ys.push(y = ny); ls.push(len); };
+    while (i < tk.length) {
+      if (/[MLCQ]/.test(tk[i])) cmd = tk[i++];
+      if (cmd === 'M' || cmd === 'L') { const nx = num(), ny = num(); to(nx, ny); }
+      else if (cmd === 'C') {
+        const x0 = x, y0 = y, x1 = num(), y1 = num(), x2 = num(), y2 = num(), x3 = num(), y3 = num();
+        const n = Math.min(40, Math.max(6, Math.ceil((Math.hypot(x1 - x0, y1 - y0) + Math.hypot(x2 - x1, y2 - y1) + Math.hypot(x3 - x2, y3 - y2)) / 10)));
+        for (let s = 1; s <= n; s++) { const t = s / n, u = 1 - t, a = u * u * u, b = 3 * u * u * t, c = 3 * u * t * t, e = t * t * t; to(a * x0 + b * x1 + c * x2 + e * x3, a * y0 + b * y1 + c * y2 + e * y3); }
+      } else if (cmd === 'Q') {
+        const x0 = x, y0 = y, x1 = num(), y1 = num(), x2 = num(), y2 = num();
+        const n = Math.min(40, Math.max(4, Math.ceil((Math.hypot(x1 - x0, y1 - y0) + Math.hypot(x2 - x1, y2 - y1)) / 10)));
+        for (let s = 1; s <= n; s++) { const t = s / n, u = 1 - t, a = u * u, b = 2 * u * t, c = t * t; to(a * x0 + b * x1 + c * x2, a * y0 + b * y1 + c * y2); }
+      } else break;
+      if (x !== x || y !== y) break;   // coordenada no numérica: se deja lo que haya
+    }
+    if (x !== x || y !== y) { xs.pop(); ys.pop(); ls.pop(); len = ls.length ? ls[ls.length - 1] : 0; }
+    const N = xs.length;
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (let j = 0; j < N; j++) { if (xs[j] < x0) x0 = xs[j]; if (xs[j] > x1) x1 = xs[j]; if (ys[j] < y0) y0 = ys[j]; if (ys[j] > y1) y1 = ys[j]; }
+    const at = l => {
+      if (!N) return { x: 0, y: 0 };
+      if (!(l > 0)) return { x: xs[0], y: ys[0] };
+      if (l >= len) return { x: xs[N - 1], y: ys[N - 1] };
+      let lo = 0, hi = N - 1;
+      while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (ls[mid] <= l) lo = mid; else hi = mid; }
+      const seg = ls[hi] - ls[lo], t = seg > 0 ? (l - ls[lo]) / seg : 0;
+      return { x: xs[lo] + (xs[hi] - xs[lo]) * t, y: ys[lo] + (ys[hi] - ys[lo]) * t };
+    };
+    return { len, at, box: { x0, y0, x1, y1 } };
+  }
+
+  // Punta de flecha al final de la línea (y al inicio si es bidireccional). line = pathGeom(d)
   function arrowD(line, len, both, k = 1) { // k > 1: punta más grande para líneas gruesas (peso)
-    const p = line.getPointAtLength(len), q = line.getPointAtLength(Math.max(0, len - 9));
+    const p = line.at(len), q = line.at(Math.max(0, len - 9));
     const ang = Math.atan2(p.y - q.y, p.x - q.x), c = Math.cos(ang), s = Math.sin(ang);
     const bx = p.x - 10 * k * c, by = p.y - 10 * k * s;
     let ad = `M${p.x},${p.y} L${bx - 5 * k * s},${by + 5 * k * c} L${bx + 5 * k * s},${by - 5 * k * c} Z`;
     if (both) { // segunda punta en el origen, mirando hacia fuera
-      const p0 = line.getPointAtLength(0), q0 = line.getPointAtLength(Math.min(len, 9));
+      const p0 = line.at(0), q0 = line.at(Math.min(len, 9));
       const a0 = Math.atan2(p0.y - q0.y, p0.x - q0.x), c0 = Math.cos(a0), s0 = Math.sin(a0);
       const bx0 = p0.x - 10 * k * c0, by0 = p0.y - 10 * k * s0;
       ad += ` M${p0.x},${p0.y} L${bx0 - 5 * k * s0},${by0 + 5 * k * c0} L${bx0 + 5 * k * s0},${by0 - 5 * k * c0} Z`;
@@ -2134,7 +2211,7 @@
 
   function updateGeometry() {
     // Las insignias numeradas del camino / linaje siguen a su nodo cuando se arrastra
-    if (S.path) $$('.path-badge[data-id]', L.guides).forEach(b => { const n = S.model.nodes.find(x => x.id === b.dataset.id); if (n) b.setAttribute('transform', `translate(${n.x + 2} ${n.y + 2})`); });
+    if (S.path) $$('.path-badge[data-id]', L.guides).forEach(b => { const n = findNode(S.model, b.dataset.id); if (n) b.setAttribute('transform', `translate(${n.x + 2} ${n.y + 2})`); });
     const m = S.model, byId = new Map(m.nodes.map(n => [n.id, n]));
     const rect = id => { const n = byId.get(id); return { x: n.x, y: n.y, w: R.width.get(id), h: H }; };
     m.nodes.forEach(n => R.nodes.get(n.id)?.setAttribute('transform', `translate(${n.x} ${n.y})`));
@@ -2152,16 +2229,17 @@
         : pt ? elbowPath(a, b, pt.s, allRects.filter(o => o.id !== e.from && o.id !== e.to), pt.t, e.bend) : curvePath(a, b, off, e.bend);
       r.hit.setAttribute('d', d);
       r.line.setAttribute('d', d);
-      r.len = r.line.getTotalLength();
-      r.arrow.setAttribute('d', arrowD(r.line, r.len, e.both, r.ak));
-      { const hp = r.line.getPointAtLength(r.len / 2); r.bh.setAttribute('cx', hp.x); r.bh.setAttribute('cy', hp.y); }
+      r.geo = pathGeom(d);
+      r.len = r.geo.len;
+      r.arrow.setAttribute('d', arrowD(r.geo, r.len, e.both, r.ak));
+      { const hp = r.geo.at(r.len / 2); r.bh.setAttribute('cx', hp.x); r.bh.setAttribute('cy', hp.y); }
       if (r.label || r.ds) {
-        const mp = r.line.getPointAtLength(r.len / 2);
+        const mp = r.geo.at(r.len / 2);
         r.label?.setAttribute('transform', `translate(${mp.x} ${mp.y})`);
         r.ds?.setAttribute('transform', `translate(${mp.x} ${mp.y})`);
       }
       if (r.xb) { // si hay etiqueta, el marcador se corre hacia el origen para no taparla
-        const mp = r.line.getPointAtLength(r.len * (r.label ? 0.3 : 0.5));
+        const mp = r.geo.at(r.len * (r.label ? 0.3 : 0.5));
         r.xb.setAttribute('transform', `translate(${mp.x} ${mp.y})`);
       }
       if (r.sm) strideMarkUpdate(r, sc);
@@ -2253,7 +2331,7 @@
     if (!res) { directed = false; res = shortestPaths(m, a, b, false); }
     clearPath();
     S.path = { a, b, res, directed };
-    const lab = id => m.nodes.find(n => n.id === id).label;
+    const lab = id => findNode(m, id).label;
     const name = `${esc(lab(a))} → ${esc(lab(b))}`;
     const txt = !res ? T('path.none', { name })
       : (directed ? '' : T('path.undirected') + ' · ') + T('path.summary', { name, hops: res.hops, count: res.count }) + pathResText(b, res);
@@ -2264,7 +2342,7 @@
     if (res) {
       res.nodes.forEach(id => {
         if (VW.hideNodes.has(id)) return;
-        const n = m.nodes.find(x => x.id === id), g = el('g', { class: 'path-badge', 'data-id': id, transform: `translate(${n.x + 2} ${n.y + 2})` }, L.guides);
+        const n = findNode(m, id), g = el('g', { class: 'path-badge', 'data-id': id, transform: `translate(${n.x + 2} ${n.y + 2})` }, L.guides);
         el('circle', { r: 9 }, g);
         el('text', {}, g).textContent = res.dist.get(id) + 1;
       });
@@ -2349,7 +2427,7 @@
     const boxOf = new Map(), onBox = new Map(), shown = [];
     VW.ctxBoxes.forEach((b, gid) => b.ids.forEach(id => boxOf.set(id, gid)));
     res.nodes.forEach(id => {
-      const n = m.nodes.find(x => x.id === id), gid = boxOf.get(id);
+      const n = findNode(m, id), gid = boxOf.get(id);
       if (gid) {
         const o = onBox.get(gid) || onBox.set(gid, { id: gid, src: false, dst: false, dist: Infinity }).get(gid);
         o.src ||= res.origins.includes(id); o.dst ||= res.consumers.includes(id); o.dist = Math.min(o.dist, res.dist.get(id));
@@ -2361,7 +2439,7 @@
     });
     onBox.forEach((o, gid) => { const c = VW.ctxBoxes.get(gid).card; badge('data-gid', o, c.x, c.y, o.dist); });
     if (onBox.size) {
-      const rs = [...shown.map(id => { const n = m.nodes.find(x => x.id === id); return { x: n.x, y: n.y, w: R.width.get(id), h: nodeBoxH(n) }; }), ...[...onBox.keys()].map(g => VW.ctxBoxes.get(g).card)];
+      const rs = [...shown.map(id => { const n = findNode(m, id); return { x: n.x, y: n.y, w: R.width.get(id), h: nodeBoxH(n) }; }), ...[...onBox.keys()].map(g => VW.ctxBoxes.get(g).card)];
       const x0 = Math.min(...rs.map(r => r.x)), y0 = Math.min(...rs.map(r => r.y));
       fitBox({ x: x0, y: y0, w: Math.max(...rs.map(r => r.x + r.w)) - x0, h: Math.max(...rs.map(r => r.y + r.h)) - y0 });
     } else fitNodes([...res.nodes]);
@@ -2732,7 +2810,7 @@
   const scopeUp = () => { if (S.scope) setScope(scopeNode()?.in || null); };
   // Abre el diagrama interno del nodo; si está vacío, entra igualmente y avisa de cómo empezarlo
   function openInner(id) {
-    const n = S.model.nodes.find(x => x.id === id);
+    const n = findNode(S.model, id);
     if (!n) return false;
     const empty = !innerCount(id);
     setScope(id);
@@ -2742,7 +2820,7 @@
   // La selección puede estar en otro nivel (un hallazgo, un vecino del inspector, el diff de versiones…): se abre ese nivel
   function revealScope(sel) {
     if (!sel || !S.model) return;
-    const m = S.model, o = sel.kind === 'node' ? m.nodes.find(x => x.id === sel.id) : sel.kind === 'group' ? m.groups.find(x => x.id === sel.id)
+    const m = S.model, o = sel.kind === 'node' ? findNode(m, sel.id) : sel.kind === 'group' ? findGroup(m, sel.id)
       : sel.kind === 'note' ? m.notes.find(x => x.id === sel.id) : sel.kind === 'zone' ? m.zones.find(x => x.id === sel.id)
       : sel.kind === 'edge' ? m.nodes.find(x => x.id === m.edges.find(e => e.id === sel.id)?.from) : null;
     if (o && scopeId(o) !== S.scope) setScope(scopeId(o), { fit: false, keepSel: true });
@@ -2822,15 +2900,16 @@
       if (!gr || collapse) return;
       const t = target(l.target), A = l.out ? t : gr, B = l.out ? gr : t;
       const d = m.routing === 'elbow' ? elbowPath(A, B, 0, []) : curvePath(A, B, 0);
-      const g = el('g', { class: 'xs-edge' }, L.scope), line = el('path', { class: 'xs-edge-line', d }, g);
-      el('path', { class: 'xs-edge-arrow', d: arrowD(line, line.getTotalLength(), l.both) }, g);
+      const g = el('g', { class: 'xs-edge' }, L.scope), line = pathGeom(d);
+      el('path', { class: 'xs-edge-line', d }, g);
+      el('path', { class: 'xs-edge-arrow', d: arrowD(line, line.len, l.both) }, g);
       if (l.label) {
-        const txt = fitText(String(l.label).split('\n')[0], FONT.edge, 150), len = line.getTotalLength(), w = Math.ceil(textW(txt, FONT.edge)) + 10;
+        const txt = fitText(String(l.label).split('\n')[0], FONT.edge, 150), len = line.len, w = Math.ceil(textW(txt, FONT.edge)) + 10;
         const boxAt = (p, dy = 0) => ({ x0: p.x - w / 2, x1: p.x + w / 2, y0: p.y - 15 + dy, y1: p.y + 4 + dy });
         // Posiciones a lo largo de la línea y desplazadas en vertical; gana la de menor solape (pisar otra etiqueta pesa más que pisar una tarjeta)
         let pos = null, best = Infinity;
         for (const dy of [0, -15, 15, -30, 30, -45, 45]) for (const f of [0.5, 0.35, 0.65, 0.25, 0.75, 0.18, 0.82]) {
-          const p = line.getPointAtLength(len * f), bx = boxAt(p, dy);
+          const p = line.at(len * f), bx = boxAt(p, dy);
           const sc = labelBoxes.reduce((a, o) => a + 4 * over(bx, o), 0) + cards.reduce((a, o) => a + over(bx, o), 0) + Math.abs(dy) * 0.5 + Math.abs(f - 0.5) * 20;
           if (sc < best) { best = sc; pos = { x: p.x, y: p.y + dy }; }
         }
@@ -2884,7 +2963,7 @@
     S.sel = null; S.hover = null;
     changed(true);
     renderInspector();
-    toast(T('c4.moved', { n: nodes.length, where: target ? m.nodes.find(n => n.id === target).label : T('c4.top') }));
+    toast(T('c4.moved', { n: nodes.length, where: target ? findNode(m, target).label : T('c4.top') }));
     return true;
   }
   const moveUp = () => { if (S.scope && selIds().length) moveToScope(selIds(), scopeNode()?.in || null); };
@@ -2924,7 +3003,7 @@
   async function exportLevels(format = 'png') {
     format = format === 'svg' ? 'svg' : 'png';
     if (viewBusy || P || !S.model.nodes.length) return false;
-    const list = scopeList().filter(s => s.nodes), slug = s => (s.id ? s.path.map(id => fold(S.model.nodes.find(n => n.id === id)?.label || id).replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || id).join('-') : 'top');
+    const list = scopeList().filter(s => s.nodes), slug = s => (s.id ? s.path.map(id => fold(findNode(S.model, id)?.label || id).replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || id).join('-') : 'top');
     if (list.length < 2) { toast(T('c4.noLevels'), 3000); return 0; }
     let done = 0;
     try {
@@ -3030,11 +3109,11 @@
         g.style.setProperty('--dash-to', `${-dist}px`);
         g.style.setProperty('--dash-dur', `${(dist / (C.animation.particleSpeed * 0.5)).toFixed(2)}s`);
       }
-      const len = line.getTotalLength();
-      el('path', { class: 'edge-arrow', d: arrowD(line, len, both, arrowK(mu)) }, g);
+      const geo = pathGeom(d), len = geo.len;
+      el('path', { class: 'edge-arrow', d: arrowD(geo, len, both, arrowK(mu)) }, g);
       const txt = one ? list[0].label : T('ctx.flows', list.length);
       if (txt) {
-        const lines = String(txt).split('\n'), LH = 14, lw = Math.max(...lines.map(l => textW(l, FONT.edge))) + 16, ph = Math.max(20, lines.length * LH + 6), mp = line.getPointAtLength(len / 2);
+        const lines = String(txt).split('\n'), LH = 14, lw = Math.max(...lines.map(l => textW(l, FONT.edge))) + 16, ph = Math.max(20, lines.length * LH + 6), mp = geo.at(len / 2);
         const lab = el('g', { class: 'edge-label', transform: `translate(${mp.x} ${mp.y})` }, g);
         el('rect', { x: -lw / 2, y: -ph / 2, width: lw, height: ph, rx: Math.min(10, ph / 2) }, lab);
         const tx = el('text', { x: 0, y: 4 - (lines.length - 1) * LH / 2, 'text-anchor': 'middle' }, lab);
@@ -3071,7 +3150,7 @@
     renderInspector();
   }
   function flowInspector(box) {
-    const fl = VW.flows.get(S.flow), wasHidden = box.hidden, nm = id => S.model.nodes.find(x => x.id === id), arrow = fl.both ? '↔' : '→';
+    const fl = VW.flows.get(S.flow), wasHidden = box.hidden, nm = id => findNode(S.model, id), arrow = fl.both ? '↔' : '→';
     const rows = fl.edges.map(e => {
       const a = nm(e.from), b = nm(e.to);
       const info = [e.label ? String(e.label).replace(/\n/g, ' ') : '', dataTags(e).map(t => t.short).join(' '), e.encrypted === true ? T('enc.yes') : e.encrypted === false ? T('enc.no') : ''].filter(Boolean).join(' · ');
@@ -3093,17 +3172,27 @@
 
   /* ---------- partículas (bucle de animación) ---------- */
   let lastT = performance.now();
+  // Tamaño del lienzo en pantalla, sin leerlo del DOM en cada fotograma (leerlo obliga al navegador a recalcular la página)
+  const stageSize = { w: 0, h: 0 };
+  const measureStage = () => { stageSize.w = stage.clientWidth; stageSize.h = stage.clientHeight; };
+  if (window.ResizeObserver) new ResizeObserver(measureStage).observe(stage);
+  else addEventListener('resize', measureStage);
   function tick(now) {
     const dt = Math.min(0.05, (now - lastT) / 1000);
     lastT = now;
     if (S.anim && !document.hidden) {
+      // Solo se mueven las partículas de las conexiones que caen dentro de la pantalla (con un margen); las demás siguen su fase sin tocar el DOM
+      const { x: vx, y: vy, k: vk } = S.view, pad = 40;
+      const wx0 = (-vx - pad) / vk, wy0 = (-vy - pad) / vk, wx1 = ((stageSize.w || 1e5) - vx + pad) / vk, wy1 = ((stageSize.h || 1e5) - vy + pad) / vk;
       R.edges.forEach(r => {
-        if (!r.parts.length || r.len < 1) return;
+        if (!r.parts.length || r.len < 1 || !r.geo) return;
         const f = r.g.classList.contains('pulse') ? 3 : 1;
         r.phase = (r.phase + dt * C.animation.particleSpeed * f * (r.speed || 1) / r.len) % 1;
+        const bx = r.geo.box;
+        if (bx.x1 < wx0 || bx.x0 > wx1 || bx.y1 < wy0 || bx.y0 > wy1) return;
         const count = r.parts.length;
         r.parts.forEach((c, i) => {
-          const t = (r.phase + i / count) % 1, p = r.line.getPointAtLength((r.e.both && i % 2 ? 1 - t : t) * r.len);
+          const t = (r.phase + i / count) % 1, p = r.geo.at((r.e.both && i % 2 ? 1 - t : t) * r.len);
           c.setAttribute('cx', p.x.toFixed(1));
           c.setAttribute('cy', p.y.toFixed(1));
           c.setAttribute('opacity', Math.min(1, t * 6, (1 - t) * 6).toFixed(2));
@@ -3175,7 +3264,7 @@
     smooth ? animateView(to) : animateView(to, 0);
   }
   function centerOn(id) {
-    const n = S.model.nodes.find(x => x.id === id);
+    const n = findNode(S.model, id);
     if (!n) return;
     const r = svg.getBoundingClientRect(), k = S.view.k;
     const shift = r.width > 900 ? 150 : 0;
@@ -3313,19 +3402,34 @@
     g.scrollTop = box.scrollTop;
   }
   const EDITORS = {
-    json: { sel: '#json', status: '#json-status', ok: () => T('ed.json.ok'), write: () => serialize(S.model) },
-    text: { sel: '#text-src', status: '#text-status', ok: () => T('ed.text.ok'), write: () => window.DiagramonText?.stringify(S.model, I.lang) ?? '' }
+    json: { sel: '#json', pane: 'code', status: '#json-status', ok: () => T('ed.json.ok'), write: () => serialize(S.model) },
+    text: { sel: '#text-src', pane: 'text', status: '#text-status', ok: () => T('ed.text.ok'), write: () => window.DiagramonText?.stringify(S.model, I.lang) ?? '' }
   };
-  // Escribe el modelo en los editores; se salta el que originó el cambio y el que tiene el foco
+  // Escribe el modelo en los editores; se salta el que originó el cambio y el que tiene el foco.
+  // El editor cuya pestaña no está abierta solo se marca como pendiente y se escribe al abrirla (showEditor):
+  // generar el texto y los números de línea de un diagrama grande en cada cambio era trabajo que nadie veía.
   function writeEditors(skip, force) {
     for (const [k, ed] of Object.entries(EDITORS)) {
       const box = $(ed.sel);
       if (k === skip || (!force && document.activeElement === box)) continue;
+      if (!$(`.pane[data-pane="${ed.pane}"]`)?.classList.contains('on')) { ed.stale = true; continue; }
+      ed.stale = false;
       box.value = ed.write();
       box._errs = null;
       refreshGutter(box);
       setStatus(ed.status, true, ed.ok());
     }
+  }
+  // Al abrir la pestaña Texto o JSON: se pone al día si quedó pendiente
+  function showEditor(pane) {
+    const ed = Object.values(EDITORS).find(x => x.pane === pane);
+    if (!ed?.stale || !S.model) return;
+    const box = $(ed.sel);
+    ed.stale = false;
+    box.value = ed.write();
+    box._errs = null;
+    refreshGutter(box);
+    setStatus(ed.status, true, ed.ok());
   }
   const writeEditorsLater = debounce(() => writeEditors(null), 150);
   const syncEditor = now => (now ? writeEditors(null, true) : writeEditorsLater());
@@ -3402,12 +3506,13 @@
     renderDs();
   }
 
-  function updateMeta() {
+  function updateMeta() { withIndex(S.model, updateMetaNow); }
+  function updateMetaNow() {
     const m = S.model;
     { const nb = $('#cmt-n'); if (nb) { const n = cmOpen(m).length; nb.hidden = !n; nb.textContent = n > 99 ? '99+' : n; nb.title = T('cmt.badge', n); } }   // hilos sin resolver, junto al botón de comentarios
     $('#stage-h1').textContent = m.title;
     const costs = m.nodes.some(hasCost) ? `≈ ${money(round2(monthlyTotal(m.nodes)))}${T('cost.mo')}` : '';
-    const byId = id => m.nodes.find(n => n.id === id), insecure = m.edges.filter(e => isInsecure(e, byId)).length;
+    const byId = id => findNode(m, id), insecure = m.edges.filter(e => isInsecure(e, byId)).length;
     const xb = m.edges.filter(e => isXBorder(e, byId)).length;
     const open = m.nodes.filter(n => n.review && n.review.status !== 'resolved'), overdue = open.filter(n => reviewState(n.review) === 'overdue').length;
     const rz = m.zones.filter(z => z.kind !== 'trust'), zc = rz.filter(z => z.severity === 'critical').length;
@@ -3562,7 +3667,7 @@
   // Lo que se queda normal: conjuntos de nodos, conexiones y grupos (null = sin filtro)
   function filterResult(m = S.model, f = S.filter) {
     if (!f || !Object.keys(f).length) return null;
-    const byId = id => m.nodes.find(n => n.id === id), ends = new Set();
+    const byId = id => findNode(m, id), ends = new Set();
     if (f.data?.length) m.edges.forEach(e => {
       if (f.data.some(k => k === '@insecure' ? isInsecure(e, byId) : k === '@xborder' ? isXBorder(e, byId) : (e.data || []).includes(k))) { ends.add(e.from); ends.add(e.to); }
     });
@@ -4001,7 +4106,7 @@
     const own = new Set([...tops, ...deep]); // nodos de origen: los duplicados y todo lo que cuelga de ellos
     const gmap = new Map();
     // Orden de copia: nodos por profundidad (el padre antes que sus hijos), para que `in` ya esté remapeado
-    const depth = n => { let d = 0, c = n; while (c.in && d < 50) { c = m.nodes.find(x => x.id === c.in) || {}; d++; } return d; };
+    const depth = n => { let d = 0, c = n; while (c.in && d < 50) { c = findNode(m, c.in) || {}; d++; } return d; };
     const src = m.nodes.filter(n => deep.has(n.id)).sort((a, b) => depth(a) - depth(b));
     const copies = src.map(n => { const c = { ...clone(n), id: uniqueId(`${n.type}-`) }; ids.set(n.id, c.id); m.nodes.push(c); return c; }); // el id se reserva al insertar
     const inOwn = x => x.in && own.has(x.in);
@@ -4103,7 +4208,7 @@
     return { left: l, top: t, width: Math.max(...rs.map(r => r.right)) - l, height: Math.max(...rs.map(r => r.bottom)) - t };
   };
   function renameNode(id) {
-    const n = S.model.nodes.find(x => x.id === id), g = R.nodes.get(id);
+    const n = findNode(S.model, id), g = R.nodes.get(id);
     if (!n || !g) return;
     const rect = unionRect([...g.querySelectorAll('.node-label')]) || g.getBoundingClientRect();
     inlineEdit({ rect, value: n.label, aria: T('prompt.node'), font: 13.5, minW: 170, onCommit: v => {
@@ -5129,7 +5234,7 @@
   const { renderProviders, renderPalette, renderExamples } = window.DiagramonUI.sidebar.create({ EXAMPLES, ICONS, kwHit, iconRank, iconInfo, colorVar, categories, typeIcon, addNode, setModel });
 
   /* ---------- pestañas agrupadas (src/ui/tabs.js) ---------- */
-  window.DiagramonUI.tabs.create({ renderFindings: (...a) => renderFindings(...a), renderAdr: (...a) => renderAdr(...a), renderReq: (...a) => renderReq(...a), renderRaid: (...a) => renderRaid(...a), renderDs: (...a) => renderDs(...a), renderPeople: (...a) => renderPeople(...a) });
+  window.DiagramonUI.tabs.create({ renderFindings: (...a) => renderFindings(...a), renderAdr: (...a) => renderAdr(...a), renderReq: (...a) => renderReq(...a), renderRaid: (...a) => renderRaid(...a), renderDs: (...a) => renderDs(...a), renderPeople: (...a) => renderPeople(...a), showEditor: (...a) => showEditor(...a) });
 
   function codeBox(box, apply) {
     box.addEventListener('focus', beginEdit);
@@ -5617,16 +5722,16 @@
   }
   const findingTarget = t => {
     const m = S.model;
-    if (t.kind === 'node') return m.nodes.find(n => n.id === t.id);
+    if (t.kind === 'node') return findNode(m, t.id);
     if (t.kind === 'edge') return m.edges.find(e => e.id === t.id);
-    if (t.kind === 'group') return m.groups.find(g => g.id === t.id);
+    if (t.kind === 'group') return findGroup(m, t.id);
     if (t.kind === 'zone') return m.zones.find(z => z.id === t.id);
     return null;
   };
   const findingTargetLabel = t => {
     const o = findingTarget(t), m = S.model;
     if (!o) return t.id;
-    if (t.kind === 'edge') return `${m.nodes.find(n => n.id === o.from)?.label || o.from} ${o.both ? '↔' : '→'} ${m.nodes.find(n => n.id === o.to)?.label || o.to}`;
+    if (t.kind === 'edge') return `${findNode(m, o.from)?.label || o.from} ${o.both ? '↔' : '→'} ${findNode(m, o.to)?.label || o.to}`;
     return t.kind === 'zone' ? o.label || T('zone.new') : o.label;
   };
   // Selecciona el objetivo y encuadra la vista sobre él
@@ -5641,7 +5746,7 @@
     if (!S.sel) return toast(T('view.hiddenHere'));
     if (k === 'node') fitBox({ x: o.x, y: o.y, w: R.width.get(o.id) || nodeWidth(o), h: H }, 1);
     else if (k === 'edge') {
-      const a = S.model.nodes.find(n => n.id === o.from), b = S.model.nodes.find(n => n.id === o.to);
+      const a = findNode(S.model, o.from), b = findNode(S.model, o.to);
       if (a && b) { const x0 = Math.min(a.x, b.x), y0 = Math.min(a.y, b.y); fitBox({ x: x0, y: y0, w: Math.max(a.x + R.width.get(a.id), b.x + R.width.get(b.id)) - x0, h: Math.max(a.y, b.y) + H - y0 }, 1); }
     } else if (k === 'group') { const bx = R.gbox.get(o.id); if (bx) fitBox({ x: bx.x, y: bx.y, w: bx.w, h: bx.h }, 1); }
     else if (k === 'zone') fitBox({ x: o.x, y: o.y, w: o.w, h: o.h }, 1);
@@ -5754,7 +5859,7 @@
       return;
     } else if (d.fRestore != null) { restoreFinding(d.fRestore); toast(T('find.toast.restored')); return; }
     else if (d.fRaise != null) {
-      const f = FC.byId.get(d.fRaise), n = f && S.model.nodes.find(x => x.id === f.target.id);
+      const f = FC.byId.get(d.fRaise), n = f && findNode(S.model, f.target.id);
       if (!n || n.review) return;
       pushHistory();
       n.review = { status: 'open', raised: today(), note: f.title, ...(store.get('reviewer', '') ? { by: store.get('reviewer', '') } : {}) };

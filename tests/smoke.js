@@ -192,6 +192,61 @@ async function run(cdp) {
     });
   }
 
+  // Diagrama grande (300 componentes): la geometría de las conexiones se calcula en JS (pathGeom) y debe coincidir con la que mide el navegador
+  await test('a large diagram opens, and arrowheads, labels and handles sit on their lines (curved and elbow)', async () => {
+    for (const routing of ['curved', 'elbow']) {
+      const r = await app.call(routing => {
+        const N = 300, nodes = [], edges = [], seen = new Set();
+        const groups = Array.from({ length: 30 }, (_, i) => ({ id: 'g' + i, label: 'Group ' + i, ...(i >= 6 ? { parent: 'g' + (i % 6) } : {}) }));
+        for (let i = 0; i < N; i++) nodes.push({ id: 'n' + i, label: 'Service ' + i, type: ['compute', 'db', 'queue', 'storage'][i % 4], group: 'g' + (i % 30), cost: i % 50, data: ['pii'], x: (i % 20) * 240, y: Math.floor(i / 20) * 160 });
+        let s = 7; const rnd = () => (s = (s * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+        for (let i = 0; i < N * 1.6; i++) {
+          const a = Math.floor(rnd() * N), b = Math.min(N - 1, a + 1 + Math.floor(rnd() * 12));
+          if (a === b || seen.has(a + '>' + b)) continue;
+          seen.add(a + '>' + b);
+          edges.push({ from: 'n' + a, to: 'n' + b, ...(i % 4 ? { label: 'HTTPS' } : {}), ...(i % 9 ? {} : { both: true }), encrypted: i % 2 === 0 });
+        }
+        edges.push({ from: 'n0', to: 'n0' }, { from: 'n3', to: 'n40', bend: { x: 30, y: -60 } });
+        const t0 = performance.now();
+        window.Diagramon.load({ title: 'Big', routing, groups, nodes, edges });
+        const ms = performance.now() - t0;
+        let worst = 0, n = 0;
+        document.querySelectorAll('#l-edges .edge').forEach(g => {
+          const line = g.querySelector('.edge-line'), lab = g.querySelector('.edge-label'), bh = g.querySelector('.edge-handle');
+          if (!line.getAttribute('d')) return;
+          n++;
+          const len = line.getTotalLength(), mid = line.getPointAtLength(len / 2), end = line.getPointAtLength(len);
+          worst = Math.max(worst, Math.hypot(mid.x - bh.getAttribute('cx'), mid.y - bh.getAttribute('cy')));
+          if (lab) { const m = /translate\(([-\d.e]+) ([-\d.e]+)\)/.exec(lab.getAttribute('transform')); worst = Math.max(worst, Math.hypot(mid.x - m[1], mid.y - m[2])); }
+          const tip = g.querySelector('.edge-arrow').getAttribute('d').match(/-?[\d.]+(?:e-?\d+)?/g).map(Number);
+          worst = Math.max(worst, Math.hypot(end.x - tip[0], end.y - tip[1]));
+        });
+        return { n, worst, ms, drawn: document.querySelectorAll('#l-nodes .node').length };
+      }, routing);
+      assert(r.drawn === 300 && r.n > 400, `${routing}: drew ${r.drawn} components and ${r.n} connections`);
+      assert(r.worst < 1, `${routing}: geometry is off by ${r.worst.toFixed(2)} px`);
+      assert(r.ms < 8000, `${routing}: took ${Math.round(r.ms)} ms to load`);
+    }
+  });
+
+  // Los editores de Texto y JSON solo se escriben con su pestaña abierta: al abrirla deben traer el diagrama actual
+  await test('the Text and JSON editors fill in when their tab opens', async () => {
+    await app.evaluate(`document.querySelector('.tab[data-tab="components"]').click()`);
+    await app.evaluate(`document.querySelector('#examples .ex[data-ex="0"]').click()`);
+    await sleep(300);
+    const title = await app.evaluate('window.Diagramon.model.title');
+    await app.evaluate(`document.querySelector('.tab[data-tab="code"]').click()`);
+    assert(await app.call(t => JSON.parse(document.querySelector('#json').value).title === t, title), 'JSON editor is stale');
+    assert(await app.evaluate(`document.querySelector('#json').previousElementSibling.children.length > 10`), 'JSON gutter is empty');
+    await app.evaluate(`document.querySelector('.tab[data-tab="text"]').click()`);
+    assert(await app.call(t => document.querySelector('#text-src').value.includes(t), title), 'Text editor is stale');
+    // con la pestaña abierta se sigue actualizando al momento
+    await app.evaluate(`window.Diagramon.addNode('compute', 0, 0, { label: 'Smoke probe node' })`);
+    await sleep(400);
+    assert(await app.evaluate(`document.querySelector('#text-src').value.includes('Smoke probe node')`), 'open Text editor did not follow a change');
+    await app.evaluate(`document.querySelector('.tab[data-tab="components"]').click()`);
+  });
+
   await test('exports produce their files (SVG, PNG, JSON, Mermaid, PlantUML, draw.io, Excel)', async () => {
     await app.evaluate(`document.querySelector('#examples .ex[data-ex="0"]').click()`);
     await sleep(500);
