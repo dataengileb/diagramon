@@ -4,6 +4,8 @@
 
 Larger changes that would be useful but touch many parts of the code. They are open for contributors: if you want to take one, open an issue first so we can agree on the approach.
 
+A second, feature-by-feature roadmap inspired by the Databricks reference architecture tool lives in [roadmap-databricks.md](roadmap-databricks.md).
+
 ## Connections between groups
 
 **The need.** Sometimes the arrow should not come from one service but from a *set of possible services*. For example, an ETL step could be done with Glue, Lambda, EC2 or EMR: you would draw an **ETL** group with those options and point it at another group or at an S3 bucket.

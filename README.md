@@ -133,6 +133,7 @@ And the basics: undo and redo, autosave, automatic layout, dark, light and high-
 | [🗂️ Project structure](docs/project-structure.md) | What each file and folder does, and how the code is split |
 | [🧭 Known gaps](docs/known-gaps.md) | What still needs testing outside the browser, small improvements not done yet, and limits by design |
 | [🛣️ Ideas and possible improvements](docs/roadmap.md) | Larger changes open for contributors, such as connections between groups, and the ideas that are not planned |
+| [🧱 Roadmap from the Databricks Reference Architecture](docs/roadmap-databricks.md) | What Databricks' reference architecture tool offers and 23 ideas to bring its reading and presentation layer to Diagramon |
 
 ---
 
