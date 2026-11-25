@@ -4,6 +4,8 @@
 
 Cambios grandes que serían útiles pero tocan muchas partes del código. Están abiertos a colaboradores: si quieres encargarte de uno, abre antes un *issue* para acordar el enfoque.
 
+Hay un segundo roadmap, idea a idea, inspirado en la herramienta de arquitecturas de referencia de Databricks: [roadmap-databricks.es.md](roadmap-databricks.es.md).
+
 ## Conexiones entre grupos
 
 **La necesidad.** A veces la flecha no debe salir de un servicio concreto, sino de un *conjunto de servicios posibles*. Por ejemplo, un paso de ETL podría hacerse con Glue, Lambda, EC2 o EMR: dibujarías un grupo **ETL** con esas opciones y apuntarías desde él a otro grupo o a un bucket de S3.

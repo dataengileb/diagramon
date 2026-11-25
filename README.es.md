@@ -133,6 +133,7 @@ Y lo básico: deshacer y rehacer, guardado automático, orden automático, modos
 | [🗂️ Estructura del proyecto](docs/project-structure.es.md) | Qué hace cada archivo y carpeta, y cómo está dividido el código |
 | [🧭 Pendientes conocidos](docs/known-gaps.es.md) | Lo que falta probar fuera del navegador, mejoras pequeñas pendientes y límites por diseño |
 | [🛣️ Ideas y posibles mejoras](docs/roadmap.es.md) | Cambios grandes abiertos a colaboradores, como las conexiones entre grupos, y las ideas que no están previstas |
+| [🧱 Roadmap a partir de la Databricks Reference Architecture](docs/roadmap-databricks.es.md) | Qué ofrece la herramienta de arquitecturas de referencia de Databricks y 23 ideas para traer su capa de lectura y presentación a Diagramon |
 
 ---
 
